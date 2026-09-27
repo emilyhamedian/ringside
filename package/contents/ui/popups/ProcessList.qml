@@ -16,7 +16,10 @@ ColumnLayout {
     // ProcessDataModel's usage is per core; divide by threads for the share of the CPU.
     required property int threads
 
-    property var rows: []
+    // Fixed rows ({ name, usage, memory, count }) stand in for the process
+    // scan when set; the preview gallery uses them.
+    property var sample: null
+    property var rows: sample || []
 
     function refresh() {
         const n = model.rowCount();
@@ -40,13 +43,14 @@ ColumnLayout {
 
     Process.ProcessDataModel {
         id: model
+        enabled: list.sample === null
         // Resident memory (PSS where readable) arrives in KiB.
         enabledAttributes: ["name", "usage", "memory"]
     }
 
     Timer {
         interval: 2000
-        running: true
+        running: list.sample === null
         repeat: true
         triggeredOnStart: true
         onTriggered: list.refresh()

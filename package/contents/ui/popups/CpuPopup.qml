@@ -167,5 +167,6 @@ PopupPage {
     ProcessList {
         key: "usage"
         threads: popup.threads
+        sample: popup.monitor.processSample || null
     }
 }

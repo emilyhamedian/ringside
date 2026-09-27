@@ -18,6 +18,13 @@ QtObject {
         swap: ["zram"]
     })
 
+    // Stands in for ProcessList's scan, so renders don't show this machine's processes.
+    property var processSample: [
+        { name: "firefox", usage: 8.4 * 16, memory: 3.9 * 1024 ** 3, count: 1 },
+        { name: "plasmashell", usage: 3.1 * 16, memory: 620 * 1024 ** 2, count: 1 },
+        { name: "kwin_wayland", usage: 2.6 * 16, memory: 410 * 1024 ** 2, count: 1 }
+    ]
+
     signal systemMonitorRequested()
     signal configureRequested()
 

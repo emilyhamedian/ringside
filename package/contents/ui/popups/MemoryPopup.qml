@@ -179,6 +179,7 @@ PopupPage {
     ProcessList {
         key: "memory"
         threads: popup.monitor.cpuThreads
+        sample: popup.monitor.processSample || null
     }
 
     // A legend label, led by a square in its segment's colour when it has one.
