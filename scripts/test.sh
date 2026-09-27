@@ -2,50 +2,106 @@
 set -u
 
 # Runs the whole check suite: qmllint over the QML, the QtTest suites under
-# tests/qml/, and the hardware-helper shell tests. Needs the Qt 6 tools
-# (qmllint, qmltestrunner), so run it on a Plasma host, not in a bare
-# container: QMLLINT/QMLTESTRUNNER can point at non-default locations.
+# tests/qml/, and the hardware-helper shell tests. Needs the Qt 6 qmllint and
+# qmltestrunner, so run it on a Plasma host, not in a bare container. They are
+# looked for in /usr/lib/qt6/bin, /usr/lib64/qt6/bin and then PATH, and must
+# prove to be Qt 6 builds; set QMLLINT and QMLTESTRUNNER to use others.
 #
 # Usage: sh scripts/test.sh
 
 cd "$(dirname "$0")/.."
 
-QMLLINT=${QMLLINT:-/usr/lib/qt6/bin/qmllint}
-QMLTESTRUNNER=${QMLTESTRUNNER:-/usr/lib/qt6/bin/qmltestrunner}
-[ -x "$QMLLINT" ] || QMLLINT=$(command -v qmllint || true)
-[ -x "$QMLTESTRUNNER" ] || QMLTESTRUNNER=$(command -v qmltestrunner || true)
+# Without a terminal, Qt sends its log output to the journal.
+export QT_FORCE_STDERR_LOGGING=1
+
+find_tool() {
+    for tool in /usr/lib/qt6/bin/"$1" /usr/lib64/qt6/bin/"$1"; do
+        [ -x "$tool" ] && { echo "$tool"; return; }
+    done
+    command -v "$1" || echo "$1"
+}
+QMLLINT=${QMLLINT:-$(find_tool qmllint)}
+QMLTESTRUNNER=${QMLTESTRUNNER:-$(find_tool qmltestrunner)}
 
 failed=0
-
-echo "== qmllint =="
-if [ -z "${QMLLINT:-}" ]; then
-    echo "qmllint not found (need the Qt 6 build, e.g. /usr/lib/qt6/bin/qmllint)" >&2
+fail() {
+    printf 'scripts/test.sh: %s\n' "$*" >&2
     failed=1
+}
+
+echo "== qmllint ($QMLLINT) =="
+version=$("$QMLLINT" --version 2>&1)
+if ! printf '%s\n' "$version" | grep -q '^qmllint 6\.'; then
+    fail "need the Qt 6 qmllint, but $QMLLINT --version says: ${version:-nothing}. Set QMLLINT to it."
 else
     qml_files=$(find package/contents/ui tests/qml -name '*.qml' | sort)
     # shellcheck disable=SC2086
     lint_out=$("$QMLLINT" $qml_files 2>&1)
+    lint_rc=$?
     printf '%s\n' "$lint_out"
-    # "unqualified" (i18n calls) and "missing-property" (duck-typed monitor)
-    # are accepted ongoing warnings; anything else must not regress.
-    bad=$(printf '%s\n' "$lint_out" | grep -E '^(Error|Warning):' | grep -vE '\[(unqualified|missing-property)\]')
+    # qmllint exits 255 (-1) when it reports a problem, on Qt 6.6 and 6.7
+    # even for accepted warnings. Any other status, or 255 with nothing
+    # reported, means it did not finish.
+    case $lint_rc in
+        0) ;;
+        255) printf '%s\n' "$lint_out" | grep -qE '^(Error|Warning):' ||
+                 fail "qmllint exited $lint_rc without reporting a problem" ;;
+        *) fail "qmllint exited $lint_rc" ;;
+    esac
+    # The one accepted warning is [unqualified] on an i18n call, which Plasma
+    # provides at run time. Its header gives the column, counted in
+    # characters, and the next line quotes the source; awk runs in the C
+    # locale, so at() skips UTF-8 continuation bytes to find that column.
+    # A deliberate duck-typed access is marked "// qmllint disable
+    # missing-property", which qmllint honours by staying quiet.
+    bad=$(printf '%s\n' "$lint_out" | LC_ALL=C awk '
+        function at(s, col,    i, n, c) {
+            for (i = 1; i <= length(s); i++) {
+                c = substr(s, i, 1)
+                if ((c < "\200" || c >= "\300") && ++n == col) return i
+            }
+            return 0
+        }
+        held != "" {
+            if (/^(Error|Warning):/ || substr($0, at($0, col), 4) != "i18n") print held
+            held = ""
+        }
+        /^(Error|Warning):/ {
+            if (/\[unqualified\]$/ && match($0, /:[0-9]+: /)) {
+                col = substr($0, RSTART + 1, RLENGTH - 3) + 0
+                held = $0
+            } else {
+                print
+            }
+        }
+        END { if (held != "") print held }')
     if [ -n "$bad" ]; then
-        echo "qmllint: unexpected warnings/errors:" >&2
+        fail "qmllint: unexpected warnings/errors:"
         printf '%s\n' "$bad" >&2
-        failed=1
     fi
 fi
 
 echo
-echo "== QtTest suites =="
-if [ -z "${QMLTESTRUNNER:-}" ]; then
-    echo "qmltestrunner not found (need the Qt 6 build, e.g. /usr/lib/qt6/bin/qmltestrunner)" >&2
-    failed=1
+echo "== QtTest suites ($QMLTESTRUNNER) =="
+# qmltestrunner has no --version: a Qt 6 build states its QtTest version
+# when it runs a test, and a Qt 5 one can't load the unversioned imports.
+probe=$(mktemp -d)
+trap 'rm -rf "$probe"' EXIT
+printf 'import QtTest\nTestCase { name: "probe" }\n' > "$probe/tst_probe.qml"
+probe_out=$(QT_QUICK_BACKEND=software "$QMLTESTRUNNER" -platform offscreen -input "$probe/tst_probe.qml" 2>&1)
+if ! printf '%s\n' "$probe_out" | grep -q '^Config: Using QtTest library 6\.'; then
+    fail "need the Qt 6 qmltestrunner, but $QMLTESTRUNNER ran a probe test with: ${probe_out:-no output}. Set QMLTESTRUNNER to it."
 else
     for f in tests/qml/tst_*.qml; do
         echo "-- $f --"
         QT_QUICK_BACKEND=software "$QMLTESTRUNNER" -platform offscreen -input "$f" || failed=1
     done
+    # Numbers follow the locale; a German run catches a slide back to toFixed().
+    if locale -a 2>/dev/null | grep -qix 'de_DE.utf-\{0,1\}8'; then
+        echo "-- tests/qml/tst_format.qml (de_DE) --"
+        LANG=de_DE.UTF-8 LC_ALL=de_DE.UTF-8 QT_QUICK_BACKEND=software "$QMLTESTRUNNER" -platform offscreen \
+            -input tests/qml/tst_format.qml || failed=1
+    fi
 fi
 
 echo

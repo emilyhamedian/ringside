@@ -36,30 +36,36 @@ Item {
     // CPU
     readonly property real cpuUsage: value(cpuUsageSensor)
     readonly property real cpuTemperature: {
-        const t = value(cpuTemperatureReaders.count > 0 ? cpuTemperatureReaders.objectAt(0) : null);
+        const t = value(member(cpuTemperatureReaders, 0));
         return Format.temperatureValid(t) ? t : NaN;
     }
     readonly property string cpuTemperatureLabel: {
         if (config.cpuTemperatureSensor) {
-            const s = cpuTemperatureReaders.count > 0 ? cpuTemperatureReaders.objectAt(0) : null;
+            const s = member(cpuTemperatureReaders, 0);
             return s ? s.shortName : "";
         }
         return hardware.cpu && hardware.cpu.tempLabel ? hardware.cpu.tempLabel : i18nc("CPU temperature source", "hottest core");
     }
     readonly property string cpuModel: hardware.cpu ? Format.cpuModel(hardware.cpu.model) : ""
     readonly property int cpuCores: hardware.cpu ? hardware.cpu.cores : 0
-    readonly property int cpuThreads: hardware.cpu ? hardware.cpu.threads : Math.max(0, value(cpuCountSensor)) || 0
+    // ksystemstats' coreCount is the number of logical processors.
+    readonly property int cpuThreads: hardware.cpu ? hardware.cpu.threads : Math.max(0, value(coreCountSensor)) || 0
+    // ksystemstats names CPUs by processor number, which skips offline threads.
+    readonly property var cpuIds: hardware.cpu && Array.isArray(hardware.cpu.ids) ? hardware.cpu.ids
+                                : Array.from({ length: cpuThreads }, (_, i) => i)
     property var cpuHistory: []
 
-    // Memory
+    // Memory. ksystemstats' "used" is the total minus MemAvailable, and its
+    // "cache" (Cached plus Slab) also counts shared memory and unreclaimable
+    // slab, which "used" already holds. So free is taken from "application"
+    // (total - MemFree - Cached - Buffers - Slab), which makes it MemFree, and
+    // cached is the rest of what's available. The three add up to the total.
     readonly property real memoryTotal: value(memoryTotalSensor)
     readonly property real memoryUsed: value(memoryUsedSensor)
-    // ksystemstats' "used" is total minus MemAvailable, and the page cache
-    // sits inside the available part. So used, cached and free here add up
-    // to the total, and free is what neither holds.
-    readonly property real memoryCached: Math.min(value(memoryCacheSensor) + (value(memoryBufferSensor) || 0),
-                                                  memoryTotal - memoryUsed)
-    readonly property real memoryFree: Math.max(0, memoryTotal - memoryUsed - memoryCached)
+    readonly property real memoryFree: Math.max(0, Math.min(
+        memoryTotal - value(memoryApplicationSensor) - value(memoryCacheSensor) - (value(memoryBufferSensor) || 0),
+        memoryTotal - memoryUsed))
+    readonly property real memoryCached: memoryTotal - memoryUsed - memoryFree
     readonly property real memoryPercent: memoryTotal > 0 ? memoryUsed / memoryTotal * 100 : NaN
     readonly property string memoryModules: Format.memoryModules(hardware.memory)
     readonly property real swapUsed: value(swapUsedSensor)
@@ -70,24 +76,18 @@ Item {
     readonly property real memoryPressure: value(pressureSensor)
     property var memoryHistory: []
 
-    // GPUs: the outer ring's and the inner ring's. See GpuSlot.qml.
+    // GPUs: one reader per GPU (see GpuReader.qml); the rings point at two.
     readonly property var gpuChoice: Hardware.assignGpus(hardware.gpus, config.outerGpu, config.innerGpu)
-    readonly property GpuSlot gpuOuter: GpuSlot {
-        info: monitor.gpuChoice.outer
-        rateLimit: monitor.interval
-        watched: monitor.openPopup === "gpu"
-    }
-    readonly property GpuSlot gpuInner: GpuSlot {
-        info: monitor.gpuChoice.inner
-        rateLimit: monitor.interval
-        watched: monitor.openPopup === "gpu"
-    }
+    readonly property var gpuOuter: readerFor(gpuChoice.outer)
+    readonly property var gpuInner: readerFor(gpuChoice.inner)
 
     // Network
     readonly property bool networkBits: config.networkBits
     readonly property string networkSource: config.networkInterface || "all"
+    // The default route's interface, re-read while the network popup is open.
+    property string routeInterface: ""
     // The interface the popup describes: the chosen one, or the default route's.
-    readonly property string networkInterface: config.networkInterface || hardware.defaultInterface || ""
+    readonly property string networkInterface: config.networkInterface || routeInterface
     readonly property real networkDown: groupValue(networkReaders, 0)
     readonly property real networkUp: groupValue(networkReaders, 1)
     readonly property real networkTotalDown: groupValue(networkReaders, 2)
@@ -97,20 +97,23 @@ Item {
     property var networkDownHistory: []
     property var networkUpHistory: []
 
-    // Disk: I/O of one device (or all), free space of one volume.
+    // Disk: I/O of one device or of every whole disk, free space of one volume.
+    // ksystemstats' disk/all counts a volume and the disk under it both, so
+    // "all" here adds up the whole disks the helper lists instead.
     readonly property string diskDevice: config.diskDevice === "all" ? "all"
                                        : config.diskDevice || (hardware.root && hardware.root.disk) || "all"
-    readonly property string volumeId: config.diskVolume || (hardware.root && hardware.root.uuid) || "all"
-    readonly property string volumeLabel: config.diskVolume ? groupText(volumeReaders, 2) : volumeId === "all" ? i18n("all volumes") : "/"
-    readonly property real diskRead: groupValue(diskReaders, 0)
-    readonly property real diskWrite: groupValue(diskReaders, 1)
-    readonly property real diskSize: groupValue(diskReaders, 2)
+    readonly property var diskIds: diskDevice === "all" ? (hardware.disks || []) : [diskDevice]
+    readonly property string volumeId: config.diskVolume || (hardware.root && hardware.root.uuid) || ""
+    readonly property string volumeLabel: config.diskVolume ? groupText(volumeReaders, 2) : volumeId ? "/" : ""
+    readonly property real diskRead: diskSum(0)
+    readonly property real diskWrite: diskSum(1)
+    readonly property real diskSize: diskSum(2)
     readonly property real volumeTotal: groupValue(volumeReaders, 0)
     readonly property real volumeFree: groupValue(volumeReaders, 1)
     readonly property string diskTemperatureSensorId: config.diskTemperatureSensor === "none" ? ""
         : config.diskTemperatureSensor || (!config.diskDevice && hardware.root ? hardware.root.tempSensor : "")
     readonly property real diskTemperature: {
-        const t = value(diskTemperatureReaders.count > 0 ? diskTemperatureReaders.objectAt(0) : null);
+        const t = value(member(diskTemperatureReaders, 0));
         return Format.temperatureValid(t) ? t : NaN;
     }
     property var diskReadHistory: []
@@ -131,23 +134,72 @@ Item {
         return sensor && typeof sensor.value === "number" ? sensor.value : NaN;
     }
 
-    function groupValue(group, index) {
+    // An Instantiator's object at index, as a binding dependency. Qt 6.10 and
+    // older emit no countChanged when the objects are recreated at the same
+    // count (new ids, same length); modelChanged comes after regeneration.
+    function member(group, index) {
+        group.model;
         group.count;
-        return value(group.objectAt(index));
+        return group.objectAt(index);
+    }
+
+    function groupValue(group, index) {
+        return value(member(group, index));
     }
 
     function groupText(group, index) {
-        group.count;
-        const sensor = group.objectAt(index);
+        const sensor = member(group, index);
         return sensor && typeof sensor.value === "string" ? sensor.value : "";
+    }
+
+    // The sum of one reading across the disks, NaN until any arrives.
+    function diskSum(key) {
+        let total = NaN;
+        for (let i = 0; i < diskIds.length; ++i) {
+            const v = groupValue(diskReaders, i * 3 + key);
+            if (Number.isFinite(v)) {
+                total = (Number.isFinite(total) ? total : 0) + v;
+            }
+        }
+        return total;
+    }
+
+    function readers() {
+        gpuReaders.model;
+        gpuReaders.count;
+        const list = [];
+        for (let i = 0; i < gpuReaders.count; ++i) {
+            const r = gpuReaders.objectAt(i);
+            if (r) {
+                list.push(r);
+            }
+        }
+        return list;
+    }
+
+    function readerFor(info) {
+        return (info && readers().find(r => r.info.id === info.id)) || noGpu;
+    }
+
+    function pollPower() {
+        const bdfs = readers().filter(r => r.kind === "discrete").map(r => r.info.bdf);
+        // On a machine too busy to answer within the interval, don't pile up runs.
+        if (bdfs.length > 0 && powerStates.connectedSources.length === 0) {
+            // The start time rides along in a shell comment: it makes each run a
+            // new source, and tells the gate how old the answer is.
+            powerStates.connectSource(helper.command("pm " + bdfs.join(" ")) + " #" + Date.now());
+        }
     }
 
     function sample() {
         const n = historyLength;
         cpuHistory = History.push(cpuHistory, cpuUsage, n);
         memoryHistory = History.push(memoryHistory, memoryPercent, n);
-        gpuOuter.history = History.push(gpuOuter.history, gpuOuter.usage, n);
-        gpuInner.history = History.push(gpuInner.history, gpuInner.usage, n);
+        for (const r of [gpuOuter, gpuInner]) {
+            if (r.present) {
+                r.history = History.push(r.history, r.usage, n);
+            }
+        }
         networkDownHistory = History.push(networkDownHistory, networkDown, n);
         networkUpHistory = History.push(networkUpHistory, networkUp, n);
         diskReadHistory = History.push(diskReadHistory, diskRead, n);
@@ -158,8 +210,9 @@ Item {
     onHistoryLengthChanged: {
         cpuHistory = [];
         memoryHistory = [];
-        gpuOuter.history = [];
-        gpuInner.history = [];
+        for (const r of readers()) {
+            r.history = [];
+        }
         networkDownHistory = [];
         networkUpHistory = [];
         diskReadHistory = [];
@@ -173,16 +226,27 @@ Item {
         onTriggered: monitor.sample()
     }
 
-    // Steps the discrete GPU's sleep gate between runtime_status polls.
+    // Steps each discrete GPU's sleep gate between power-state polls.
     Timer {
         interval: 1000
-        running: monitor.gpuOuter.gated || monitor.gpuInner.gated
+        running: monitor.readers().some(r => r.gated)
         repeat: true
         onTriggered: {
             const now = Date.now();
-            monitor.gpuOuter.tick(now);
-            monitor.gpuInner.tick(now);
+            for (const r of monitor.readers()) {
+                r.tick(now);
+            }
         }
+    }
+
+    // Every discrete GPU's power state, whether or not a ring shows it, so
+    // its gate is current the moment it is put on one.
+    Timer {
+        interval: 2000
+        running: monitor.readers().some(r => r.kind === "discrete")
+        repeat: true
+        triggeredOnStart: true
+        onTriggered: monitor.pollPower()
     }
 
     component Reader: Sensors.Sensor {
@@ -190,9 +254,10 @@ Item {
     }
 
     Reader { id: cpuUsageSensor; sensorId: "cpu/all/usage" }
-    Reader { id: cpuCountSensor; sensorId: "cpu/all/cpuCount" }
+    Reader { id: coreCountSensor; sensorId: "cpu/all/coreCount" }
     Reader { id: memoryTotalSensor; sensorId: "memory/physical/total" }
     Reader { id: memoryUsedSensor; sensorId: "memory/physical/used" }
+    Reader { id: memoryApplicationSensor; sensorId: "memory/physical/application" }
     Reader { id: memoryCacheSensor; sensorId: "memory/physical/cache" }
     Reader { id: memoryBufferSensor; sensorId: "memory/physical/buffer" }
     Reader { id: swapUsedSensor; sensorId: "memory/swap/used" }
@@ -228,17 +293,37 @@ Item {
 
     ReaderSet {
         id: diskReaders
-        model: ["read", "write", "total"].map(key => "disk/" + monitor.diskDevice + "/" + key)
+        model: monitor.diskIds.flatMap(id => ["read", "write", "total"].map(key => "disk/" + id + "/" + key))
     }
 
     ReaderSet {
         id: volumeReaders
-        model: ["total", "free", "name"].map(key => "disk/" + monitor.volumeId + "/" + key)
+        model: monitor.volumeId ? ["total", "free", "name"].map(key => "disk/" + monitor.volumeId + "/" + key) : []
     }
 
     ReaderSet {
         id: diskTemperatureReaders
         model: monitor.diskTemperatureSensorId ? [monitor.diskTemperatureSensorId] : []
+    }
+
+    // One reader per GPU. The helper's report arrives once, so readers and
+    // their sensor ids stay put for the session.
+    Instantiator {
+        id: gpuReaders
+        model: monitor.hardware.gpus || []
+        delegate: GpuReader {
+            required property var modelData
+            info: modelData
+            rateLimit: monitor.interval
+            onRing: [monitor.gpuChoice.outer, monitor.gpuChoice.inner].some(g => g !== null && g.id === modelData.id)
+            watched: onRing && monitor.openPopup === "gpu"
+        }
+        onObjectAdded: Qt.callLater(monitor.pollPower)
+    }
+
+    // The empty ring.
+    GpuReader {
+        id: noGpu
     }
 
     // Static facts, read once. The report also goes into the configuration,
@@ -266,8 +351,10 @@ Item {
                 monitor.hardware = JSON.parse(data.stdout);
             } catch (err) {
                 console.warn("ringside: unreadable hardware report:", err);
+                retry.start();
                 return;
             }
+            monitor.routeInterface = monitor.hardware.defaultInterface || "";
             const report = JSON.stringify(monitor.hardware);
             if (monitor.config.detectedHardware !== report) {
                 monitor.config.detectedHardware = report;
@@ -288,25 +375,42 @@ Item {
         }
     }
 
-    // runtime_status of the gated GPUs, polled from sysfs (which doesn't wake them).
+    // Answers to pollPower(): "BDF runtime_status control" per line. Reading
+    // these from sysfs doesn't wake a GPU.
     P5Support.DataSource {
+        id: powerStates
         engine: "executable"
-        interval: 2000
-        connectedSources: {
-            const bdfs = [monitor.gpuOuter, monitor.gpuInner].filter(s => s.gated).map(s => s.info.bdf);
-            return bdfs.length > 0 ? [helper.command("pm " + bdfs.join(" "))] : [];
-        }
         onNewData: (source, data) => {
-            const status = {};
+            disconnectSource(source);
+            const readAt = Number(source.slice(source.lastIndexOf("#") + 1));
+            const states = {};
             for (const line of String(data.stdout || "").split("\n")) {
-                const [bdf, state] = line.trim().split(" ");
+                const [bdf, status, control] = line.trim().split(/\s+/);
                 if (bdf) {
-                    status[bdf] = state || "";
+                    states[bdf] = { status: status || "", control: control || "" };
                 }
             }
-            for (const slot of [monitor.gpuOuter, monitor.gpuInner]) {
-                if (slot.gated) {
-                    slot.pmStatus = status[slot.info.bdf] || "";
+            for (const r of monitor.readers()) {
+                const s = states[r.info.bdf];
+                if (s) {
+                    r.takeStatus(s.status, s.control, readAt);
+                }
+            }
+        }
+    }
+
+    // The default route moves with docks, Wi-Fi and VPNs; re-read it while
+    // the network popup shows it.
+    P5Support.DataSource {
+        engine: "executable"
+        interval: 3000
+        connectedSources: monitor.openPopup === "network" || monitor.openPopup === "disk"
+                          ? [helper.command("route")] : []
+        onNewData: (source, data) => {
+            if (data["exit code"] === 0) {
+                const name = String(data.stdout || "").trim();
+                if (name !== monitor.routeInterface) {
+                    monitor.routeInterface = name;
                 }
             }
         }

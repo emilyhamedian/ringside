@@ -5,8 +5,8 @@ import "../../package/contents/ui/code/hardware.js" as Hardware
 // Fixed readings in the shape of Monitor.qml, for the preview gallery: every
 // property and function the panel and the popups read. All of them are
 // writable, so a gallery entry overrides one to show a state.
-// The GPU slots are shaped like GpuSlot.qml; their readings are NaN unless
-// the phase is live, as there.
+// The GPU slots are shaped like GpuReader.qml: live readings, the last ones
+// held while resting (usage 0), NaN while asleep.
 QtObject {
     id: monitor
 
@@ -27,6 +27,7 @@ QtObject {
     property string cpuModel: "AMD Ryzen 7 7840HS"
     property int cpuCores: 8
     property int cpuThreads: 16
+    property var cpuIds: Array.from({ length: cpuThreads }, (_, i) => i)
     property var cpuHistory: wave(cpuUsage, 14, 1)
 
     property real memoryTotal: 31.9 * gib
@@ -44,24 +45,24 @@ QtObject {
     property FakeGpu gpuOuter: FakeGpu {
         kind: "discrete"
         name: "AMD Radeon RX 7700S"
-        usage: live ? 12 : NaN
-        temperature: live ? 48 : NaN
-        vramUsed: live ? 1.6 * monitor.gib : NaN
+        usage: live ? 12 : resting ? 0 : NaN
+        temperature: awake ? 48 : NaN
+        vramUsed: awake ? 1.6 * monitor.gib : NaN
         vramTotal: live ? 8 * monitor.gib : NaN
         knownVramTotal: 8 * monitor.gib
-        clock: live ? 800 : NaN
-        power: live ? 14 : NaN
+        clock: awake ? 800 : NaN
+        power: awake ? 14 : NaN
         history: monitor.wave(12, 10, 3)
     }
     property FakeGpu gpuInner: FakeGpu {
         kind: "integrated"
         name: "AMD Radeon 780M Graphics"
-        usage: live ? 3 : NaN
-        temperature: live ? 41 : NaN
-        vramUsed: live ? 0.4 * monitor.gib : NaN
+        usage: live ? 3 : resting ? 0 : NaN
+        temperature: awake ? 41 : NaN
+        vramUsed: awake ? 0.4 * monitor.gib : NaN
         vramTotal: live ? 0.5 * monitor.gib : NaN
         knownVramTotal: 0.5 * monitor.gib
-        clock: live ? 400 : NaN
+        clock: awake ? 400 : NaN
         history: monitor.wave(3, 3, 4)
     }
 
@@ -132,6 +133,11 @@ QtObject {
         // live, resting or asleep
         property string phase: "live"
         readonly property bool live: phase === "live"
+        readonly property bool resting: phase === "resting"
+        readonly property bool awake: phase !== "asleep"
+        // False for Intel GPUs, which publish no temperature.
+        property bool reportsTemperature: true
+        property bool reportsVram: true
         property string kind: ""
         property string name: ""
         property string temperatureLabel: "edge"

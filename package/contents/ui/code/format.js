@@ -17,6 +17,12 @@ function temperatureValid(celsius) {
     return usable(celsius) && celsius >= 1 && celsius < 150;
 }
 
+// Board power as reported by hwmon; the same uninitialised-value bug as
+// temperatures can produce absurd numbers.
+function powerValid(watts) {
+    return usable(watts) && watts >= 0 && watts < 1000;
+}
+
 function percent(v) {
     return usable(v) ? String(Math.round(Math.max(0, Math.min(100, v)))) : DASH;
 }
@@ -36,15 +42,25 @@ function heat(celsius, warm, hot) {
     return celsius >= hot ? 2 : celsius >= warm ? 1 : 0;
 }
 
-// One decimal under 100, whole numbers above, so a readout keeps its width.
-function number(v) {
-    return Math.abs(v) < 100 ? v.toFixed(1) : String(Math.round(v));
+// A fixed number of decimals in the user's number format ("3,66" under a
+// German locale). Group separators are left out, to match the whole numbers
+// elsewhere, which never carry them.
+function decimal(v, digits) {
+    const locale = Qt.locale();
+    locale.numberOptions |= 1; // Locale.OmitGroupSeparator, which a .pragma library can't name
+    return v.toLocaleString(locale, "f", digits);
 }
 
-// Like number(), but drops a trailing ".0" for totals such as "16 GiB".
+// One decimal under 100, whole numbers above, so a readout keeps its width.
+function number(v) {
+    return Math.abs(v) < 99.95 ? decimal(v, 1) : String(Math.round(v));
+}
+
+// Like number(), but drops a trailing zero decimal for totals such as "16 GiB".
 function compact(v) {
     const text = number(v);
-    return text.endsWith(".0") ? text.slice(0, -2) : text;
+    const zero = Qt.locale().decimalPoint + Qt.locale().zeroDigit;
+    return text.endsWith(zero) ? text.slice(0, -zero.length) : text;
 }
 
 const BYTE_UNITS = ["B", "KiB", "MiB", "GiB", "TiB", "PiB"];
@@ -101,21 +117,22 @@ function frequency(megahertz) {
     if (!usable(megahertz) || megahertz <= 0) {
         return { value: DASH, unit: "" };
     }
-    return megahertz >= 1000 ? { value: (megahertz / 1000).toFixed(2), unit: "GHz" }
+    return megahertz >= 1000 ? { value: decimal(megahertz / 1000, 2), unit: "GHz" }
                              : { value: String(Math.round(megahertz)), unit: "MHz" };
 }
 
 function watts(v) {
-    return usable(v) && v >= 0 ? { value: String(Math.round(v)), unit: "W" } : { value: DASH, unit: "" };
+    return powerValid(v) ? { value: String(Math.round(v)), unit: "W" } : { value: DASH, unit: "" };
 }
 
 function fixed(v, digits) {
-    return usable(v) ? v.toFixed(digits) : DASH;
+    return usable(v) ? decimal(v, digits) : DASH;
 }
 
-// "30 s", "90 s", "2 min" for graph captions.
-function duration(seconds) {
-    return seconds < 120 || seconds % 60 !== 0 ? seconds + " s" : seconds / 60 + " min";
+// A graph's span in whole minutes where that reads better ("2 min" rather
+// than "120 s"), otherwise 0 and the caption gives it in seconds.
+function spanMinutes(seconds) {
+    return seconds >= 120 && seconds % 60 === 0 ? seconds / 60 : 0;
 }
 
 // Load averages keep four characters or so: "1.42", "14.2", "143".
@@ -123,7 +140,7 @@ function load(v) {
     if (!usable(v)) {
         return DASH;
     }
-    return v < 10 ? v.toFixed(2) : v < 100 ? v.toFixed(1) : String(Math.round(v));
+    return v < 10 ? decimal(v, 2) : v < 100 ? decimal(v, 1) : String(Math.round(v));
 }
 
 // "AMD Ryzen 7 7840HS w/ Radeon 780M Graphics" → "AMD Ryzen 7 7840HS";
@@ -155,7 +172,8 @@ function gpuModel(marketing, sensorName, pciName, vendor) {
     return family && !family.startsWith(brand.trim()) ? brand + family : family;
 }
 
-// "DDR5-4800 · 2 × 16 GiB" from the helper's memory block.
+// "DDR5-4800 · 2 × 16 GiB" from the helper's memory block. Mixed sizes share
+// the largest module's unit: "8 + 16 GiB", "0.5 + 1 GiB".
 function memoryModules(memory) {
     if (!memory || !Array.isArray(memory.modules) || memory.modules.length === 0) {
         return "";
@@ -163,9 +181,13 @@ function memoryModules(memory) {
     const type = memory.type && !/^(Unknown|Other|)$/.test(memory.type) ? memory.type : "";
     const kind = type && memory.speed > 0 ? type + "-" + memory.speed : type;
     const sizes = memory.modules.map(Number);
-    const same = sizes.every(s => s === sizes[0]);
-    const one = bytes(sizes[0], true);
-    const layout = same ? sizes.length + " × " + one.value + " " + one.unit
-                        : sizes.map(s => bytes(s, true).value).join(" + ") + " " + one.unit;
+    let layout;
+    if (sizes.every(s => s === sizes[0])) {
+        const one = bytes(sizes[0], true);
+        layout = sizes.length + " × " + one.value + " " + one.unit;
+    } else {
+        const i = byteScale(Math.max(...sizes));
+        layout = sizes.map(s => compact(s / 1024 ** i)).join(" + ") + " " + BYTE_UNITS[i];
+    }
     return kind ? kind + " · " + layout : layout;
 }

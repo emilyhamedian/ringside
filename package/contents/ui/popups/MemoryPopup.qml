@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
 import "../code/format.js" as Format
+import "../code/style.js" as Style
 import ".."
 
 PopupPage {
@@ -75,6 +76,13 @@ PopupPage {
                 GradientStop { position: 1; color: bar.trackColor }
             }
 
+            // A gradient ignores layout mirroring; flip the bar so used memory
+            // starts on the same side as its legend in a right-to-left layout.
+            transform: Scale {
+                origin.x: bar.width / 2
+                xScale: bar.LayoutMirroring.enabled ? -1 : 1
+            }
+
             Accessible.role: Accessible.ProgressBar
             Accessible.name: i18nc("@info accessible name of the memory usage bar", "Memory use")
             Accessible.description: i18nc("@info accessible description of the memory usage bar",
@@ -122,7 +130,7 @@ PopupPage {
         Tile {
             Layout.columnSpan: 2
             caption: i18nc("@title:group memory in use", "Used")
-            detail: "· " + Format.duration(popup.monitor.historySeconds)
+            graphSeconds: popup.monitor.historySeconds
 
             Graph {
                 Layout.fillWidth: true
@@ -142,7 +150,7 @@ PopupPage {
                 readonly property var swap: Format.bytesOf(popup.monitor.swapUsed, popup.monitor.swapTotal)
                 value: none ? i18nc("@info no swap space configured", "none") : swap.value
                 unit: none ? "" : "/ " + swap.total + " " + swap.unit
-                color: none ? Qt.alpha(Kirigami.Theme.textColor, 0.6) : Kirigami.Theme.textColor
+                color: none ? Style.dim(Kirigami.Theme.textColor) : Kirigami.Theme.textColor
                 unitScale: 0.67
                 pointSize: Kirigami.Theme.defaultFont.pointSize * 1.38
             }
@@ -191,7 +199,7 @@ PopupPage {
 
         Text {
             id: label
-            color: Qt.alpha(Kirigami.Theme.textColor, 0.6)
+            color: Style.dim(Kirigami.Theme.textColor)
             font.pointSize: Kirigami.Theme.smallFont.pointSize
             textFormat: Text.PlainText
         }

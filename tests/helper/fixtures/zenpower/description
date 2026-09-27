@@ -1,0 +1,2 @@
+The same CPU with zenpower loaded instead of k10temp. ksystemstats reads only
+k10temp, so there is no label to show. Borrows k10temp-tdie's procfs.

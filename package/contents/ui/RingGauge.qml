@@ -1,3 +1,4 @@
+pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Shapes
 import org.kde.kirigami as Kirigami
@@ -5,6 +6,8 @@ import org.kde.kirigami as Kirigami
 // A progress ring filling clockwise from twelve o'clock, with an optional
 // thinner, dimmer ring inside it for a second reading: the integrated GPU
 // under the discrete one. NaN draws the track alone.
+// Assistive technology sees a progress bar from 0 to 100 with the outer
+// reading as its value; the caller gives it a name.
 Item {
     id: gauge
 
@@ -21,8 +24,16 @@ Item {
     readonly property real innerRadius: outer.radius - strokeWidth / 2 - innerStrokeWidth / 2
                                         - Math.max(1, strokeWidth / 2)
 
+    // Qt reports these as the progress bar's range.
+    readonly property real from: 0
+    readonly property real to: 100
+
     implicitWidth: 30
     implicitHeight: implicitWidth
+
+    Accessible.role: Accessible.ProgressBar
+    Accessible.description: Number.isFinite(value) ? i18nc("@info:status a percentage", "%1%", Math.round(value))
+                                                   : i18nc("@info:status no reading", "unavailable")
 
     component Arc: Shape {
         id: arc
@@ -103,5 +114,7 @@ Item {
         font.family: Kirigami.Theme.fixedWidthFont.family
         font.pixelSize: Math.round(gauge.width * gauge.textScale)
         textFormat: Text.PlainText
+        // The gauge's own description reads it out.
+        Accessible.ignored: true
     }
 }

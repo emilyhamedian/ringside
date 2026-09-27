@@ -3,6 +3,7 @@ import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
 import "../code/format.js" as Format
 import "../code/history.js" as History
+import "../code/style.js" as Style
 import ".."
 
 // Opened by both the network and the disk items.
@@ -62,7 +63,7 @@ PopupPage {
             readonly property var up: Format.rate(popup.monitor.networkUp, popup.monitor.networkBits)
             readonly property real arrowHeight: Math.round(downValue.implicitHeight * 0.62)
             readonly property color markColor: Qt.alpha(Kirigami.Theme.textColor, 0.75)
-            readonly property color unitColor: Qt.alpha(Kirigami.Theme.textColor, 0.6)
+            readonly property color unitColor: Style.dim(Kirigami.Theme.textColor)
 
             columns: 3
             rowSpacing: Math.round(Kirigami.Units.smallSpacing * 1.25)
@@ -116,7 +117,7 @@ PopupPage {
         Tile {
             Layout.columnSpan: 2
             caption: i18nc("@title:group", "Throughput")
-            detail: "· " + Format.duration(popup.monitor.historySeconds)
+            graphSeconds: popup.monitor.historySeconds
 
             Graph {
                 Layout.fillWidth: true
@@ -195,7 +196,7 @@ PopupPage {
                 color: {
                     const level = popup.monitor.heat(popup.diskTemperature);
                     return level === 2 ? Kirigami.Theme.negativeTextColor
-                         : level === 1 ? Kirigami.Theme.neutralTextColor : Qt.alpha(Kirigami.Theme.textColor, 0.6);
+                         : level === 1 ? Kirigami.Theme.neutralTextColor : Style.dim(Kirigami.Theme.textColor);
                 }
             }
 

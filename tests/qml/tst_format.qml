@@ -5,6 +5,32 @@ import "../../package/contents/ui/code/format.js" as Format
 TestCase {
     name: "Format"
 
+    // Expected numbers are written with a full stop; the formatters use the
+    // running locale's decimal separator, so the suite passes under any LC_NUMERIC.
+    function local(text) {
+        return text.split(".").join(Qt.locale().decimalPoint);
+    }
+
+    function test_decimal_followsTheLocale() {
+        compare(Format.decimal(3.66, 2), (3.66).toLocaleString(Qt.locale(), "f", 2));
+        compare(Format.decimal(3.66, 2), local("3.66"));
+    }
+
+    function test_decimal_leavesOutGroupSeparators() {
+        compare(Format.decimal(1234567.26, 1), local("1234567.3"));
+    }
+
+    function test_fixed_data() {
+        return [
+            { tag: "twoDigits", v: 0.4213, digits: 2, expected: "0.42" },
+            { tag: "noGrouping", v: 1234.5, digits: 1, expected: "1234.5" },
+            { tag: "nan", v: NaN, digits: 1, expected: "–" }
+        ];
+    }
+    function test_fixed(data) {
+        compare(Format.fixed(data.v, data.digits), local(data.expected));
+    }
+
     function test_percent_data() {
         return [
             { tag: "rounds", input: 50.4, expected: "50" },
@@ -65,7 +91,7 @@ TestCase {
     }
     function test_bytes(data) {
         var result = Format.bytes(data.v, data.trim);
-        compare(result.value, data.value);
+        compare(result.value, local(data.value));
         compare(result.unit, data.unit);
     }
 
@@ -73,7 +99,7 @@ TestCase {
     // the next unit already rounds up into it once formatted to one decimal.
     function test_bytes_roundsAcrossUnitBoundary() {
         var result = Format.bytes(1023.9 * 1024, false);
-        compare(result.value, "1.0");
+        compare(result.value, local("1.0"));
         compare(result.unit, "MiB");
     }
 
@@ -92,7 +118,7 @@ TestCase {
     }
     function test_bytesOf(data) {
         var result = Format.bytesOf(data.used, data.total);
-        compare(result.value, data.value);
+        compare(result.value, local(data.value));
         compare(result.total, data.total_);
         compare(result.unit, data.unit);
     }
@@ -110,7 +136,7 @@ TestCase {
     }
     function test_rate(data) {
         var result = Format.rate(data.bytesPerSecond, data.bits);
-        compare(result.value, data.value);
+        compare(result.value, local(data.value));
         compare(result.unit, data.unit);
     }
 
@@ -126,7 +152,7 @@ TestCase {
     }
     function test_frequency(data) {
         var result = Format.frequency(data.megahertz);
-        compare(result.value, data.value);
+        compare(result.value, local(data.value));
         compare(result.unit, data.unit);
     }
 
@@ -145,17 +171,19 @@ TestCase {
         compare(result.unit, data.unit);
     }
 
-    function test_duration_data() {
+    // 0 means the caption gives the span in seconds.
+    function test_spanMinutes_data() {
         return [
-            { tag: "underAMinute", seconds: 30, expected: "30 s" },
-            { tag: "notAMultipleOfAMinute", seconds: 90, expected: "90 s" },
-            { tag: "oneMinuteInSeconds", seconds: 60, expected: "60 s" },
-            { tag: "twoMinutes", seconds: 120, expected: "2 min" },
-            { tag: "tenMinutes", seconds: 600, expected: "10 min" }
+            { tag: "underAMinute", seconds: 30, expected: 0 },
+            { tag: "notAMultipleOfAMinute", seconds: 90, expected: 0 },
+            { tag: "oneMinuteStaysInSeconds", seconds: 60, expected: 0 },
+            { tag: "twoMinutes", seconds: 120, expected: 2 },
+            { tag: "notAWholeMinute", seconds: 150, expected: 0 },
+            { tag: "tenMinutes", seconds: 600, expected: 10 }
         ];
     }
-    function test_duration(data) {
-        compare(Format.duration(data.seconds), data.expected);
+    function test_spanMinutes(data) {
+        compare(Format.spanMinutes(data.seconds), data.expected);
     }
 
     function test_load_data() {
@@ -167,7 +195,7 @@ TestCase {
         ];
     }
     function test_load(data) {
-        compare(Format.load(data.value), data.expected);
+        compare(Format.load(data.value), local(data.expected));
     }
 
     function test_cpuModel_data() {
@@ -220,6 +248,19 @@ TestCase {
     function test_memoryModules_mixedSizes() {
         var memory = { type: "DDR4", speed: 3200, modules: [8 * 1024 * 1024 * 1024, 16 * 1024 * 1024 * 1024] };
         compare(Format.memoryModules(memory), "DDR4-3200 · 8 + 16 GiB");
+    }
+
+    // Every module in the largest one's unit, whichever order the slots report.
+    function test_memoryModules_mixedUnits_data() {
+        return [
+            { tag: "smallerFirst", modules: [512 * 1024 * 1024, 1024 * 1024 * 1024], expected: "DDR2-800 · 0.5 + 1 GiB" },
+            { tag: "largerFirst", modules: [1024 * 1024 * 1024, 512 * 1024 * 1024], expected: "DDR2-800 · 1 + 0.5 GiB" },
+            { tag: "gibAndTib", modules: [512 * 1024 * 1024 * 1024, 1024 * 1024 * 1024 * 1024],
+              expected: "DDR2-800 · 0.5 + 1 TiB" }
+        ];
+    }
+    function test_memoryModules_mixedUnits(data) {
+        compare(Format.memoryModules({ type: "DDR2", speed: 800, modules: data.modules }), local(data.expected));
     }
 
     function test_memoryModules_missingTypeDropsTheKindPrefix() {

@@ -10,8 +10,11 @@ function assignGpus(gpus, outerChoice, innerChoice) {
         .map(e => e.g);
     const byId = id => list.find(g => g.id === id) || null;
     let outer = outerChoice === "none" ? null : outerChoice ? byId(outerChoice) : list[0] || null;
+    // With the outer ring turned off, automatic still means the GPU that
+    // would sit inside, not the one the user just took away.
+    const taken = outerChoice === "none" ? list[0] : outer;
     let inner = innerChoice === "none" ? null
-              : innerChoice ? byId(innerChoice) : list.find(g => g !== outer) || null;
+              : innerChoice ? byId(innerChoice) : list.find(g => g !== taken) || null;
     if (inner && outer && inner.id === outer.id) {
         inner = null;
     }

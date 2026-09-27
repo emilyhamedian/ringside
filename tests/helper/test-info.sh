@@ -10,6 +10,8 @@
 #
 # Cases may share a sysfs/procfs tree (see legacy-ids and empty-slot, which
 # point their env at another case's tree) rather than duplicating fixtures.
+# Every "static" case pins RINGSIDE_DISKS or RINGSIDE_LSBLK, so the host's
+# own disks never reach the output.
 #
 # Usage: sh tests/helper/test-info.sh
 
@@ -40,6 +42,15 @@ normalise_json() {
 
 pass=0
 fail=0
+
+# git doesn't store empty directories, so a case that needs one passes here
+# and fails in a fresh clone. Put a file in it (drm/cardN/dev, say).
+empty=$(find "$FIXTURES" -type d -empty)
+if [ -n "$empty" ]; then
+    echo "FAIL  empty fixture directories, which a clone won't have:"
+    printf '%s\n' "$empty" | sed "s|^$FIXTURES/|        |"
+    fail=$((fail + 1))
+fi
 
 for case_dir in "$FIXTURES"/*/; do
     case_dir=${case_dir%/}

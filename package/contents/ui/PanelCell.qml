@@ -11,6 +11,13 @@ MouseArea {
     property bool vertical: false
     // The loaded content, which the cell sizes itself around.
     property Item contentItem: null
+    // Its readings in words.
+    property string description: ""
+    readonly property string title: item === "cpu" ? i18nc("@info:tooltip", "Processor")
+                                  : item === "gpu" ? i18nc("@info:tooltip", "Graphics")
+                                  : item === "memory" ? i18nc("@info:tooltip", "Memory")
+                                  : item === "network" ? i18nc("@info:tooltip", "Network")
+                                  : i18nc("@info:tooltip", "Disk activity")
 
     signal activated()
 
@@ -19,13 +26,12 @@ MouseArea {
     implicitHeight: (contentItem ? contentItem.implicitHeight : 0) + 2 * Kirigami.Units.smallSpacing
     hoverEnabled: true
     activeFocusOnTab: true
+    // Rates squeezed onto a narrow vertical panel stop at its edge.
+    clip: vertical
 
     Accessible.role: Accessible.Button
-    Accessible.name: cell.item === "cpu" ? i18nc("@info:tooltip", "Processor")
-                   : cell.item === "gpu" ? i18nc("@info:tooltip", "Graphics")
-                   : cell.item === "memory" ? i18nc("@info:tooltip", "Memory")
-                   : cell.item === "network" ? i18nc("@info:tooltip", "Network")
-                   : i18nc("@info:tooltip", "Disk activity")
+    Accessible.name: title
+    Accessible.description: description
     Accessible.onPressAction: activated()
 
     onClicked: activated()

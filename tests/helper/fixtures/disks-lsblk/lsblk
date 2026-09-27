@@ -1,0 +1,5 @@
+#!/bin/sh
+# Fake lsblk: what "lsblk -dnr -o NAME,TYPE" prints on a machine with two NVMe
+# drives, a SATA disk, an SD card, an optical drive, a loop mount and zram swap.
+# lsblk calls zram a disk, so only its name tells it apart.
+printf '%s\n' 'nvme0n1 disk' 'nvme1n1 disk' 'sda disk' 'mmcblk0 disk' 'sr0 rom' 'loop0 loop' 'zram0 disk'

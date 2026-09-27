@@ -1,1 +1,1 @@
-{"plasma":"6.7.5","cpu":{"model":"ARMv8 Processor rev 1 (v8l)","cores":1,"threads":1,"tempLabel":""},"memory":{"type":"DDR4","speed":2666,"modules":[8589934592]},"swap":[],"gpus":[],"defaultInterface":"end0","root":{"uuid":"","disk":"","tempSensor":""}}
+{"plasma":"6.7.5","cpu":{"model":"ARMv8 Processor rev 1 (v8l)","cores":1,"threads":1,"ids":[0],"tempLabel":""},"memory":{"type":"DDR4","speed":2666,"modules":[8589934592]},"swap":[],"gpus":[],"defaultInterface":"end0","disks":["mmcblk0"],"root":{"uuid":"","disk":"","tempSensor":""}}

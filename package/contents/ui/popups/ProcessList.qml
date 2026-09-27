@@ -85,6 +85,8 @@ ColumnLayout {
                 font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.92
                 elide: Text.ElideRight
                 textFormat: Text.PlainText
+                // Set, so the names move to the other edge in a mirrored layout.
+                horizontalAlignment: Text.AlignLeft
             }
 
             Text {

@@ -46,13 +46,13 @@ PlasmoidItem {
     }
 
     preferredRepresentation: fullRepresentation
-    toolTipMainText: ""
-    toolTipSubText: ""
 
-    Layout.minimumWidth: vertical ? 0 : strip.implicitWidth
+    // With every item hidden the applet keeps a square the panel's thickness,
+    // for the icon below.
+    Layout.minimumWidth: vertical ? 0 : items.length > 0 ? strip.implicitWidth : thickness
     Layout.preferredWidth: Layout.minimumWidth
     Layout.maximumWidth: vertical ? Infinity : Layout.minimumWidth
-    Layout.minimumHeight: vertical ? strip.implicitHeight : 0
+    Layout.minimumHeight: vertical ? (items.length > 0 ? strip.implicitHeight : thickness) : 0
     Layout.preferredHeight: Layout.minimumHeight
     Layout.maximumHeight: vertical ? Layout.minimumHeight : Infinity
     Layout.fillWidth: vertical
@@ -105,7 +105,17 @@ PlasmoidItem {
             id: mouse
             anchors.fill: parent
             hoverEnabled: true
+            activeFocusOnTab: parent.visible
+            Accessible.role: Accessible.Button
+            Accessible.name: i18nc("@action:button", "Configure Ringside…")
+            Accessible.onPressAction: Plasmoid.internalAction("configure").trigger()
             onClicked: Plasmoid.internalAction("configure").trigger()
+            Keys.onPressed: event => {
+                if ([Qt.Key_Space, Qt.Key_Enter, Qt.Key_Return, Qt.Key_Select].includes(event.key)) {
+                    Plasmoid.internalAction("configure").trigger();
+                    event.accepted = true;
+                }
+            }
         }
     }
 
@@ -147,8 +157,11 @@ PlasmoidItem {
         mainItem: Loader {
             id: popupContent
 
-            Layout.preferredWidth: item ? item.implicitWidth : 0
-            Layout.preferredHeight: item ? item.implicitHeight : 0
+            Layout.preferredWidth: item ? (item as Item).implicitWidth : 0
+            Layout.preferredHeight: item ? (item as Item).implicitHeight : 0
+            // As Plasma's own applet popups do for right-to-left languages.
+            LayoutMirroring.enabled: Application.layoutDirection === Qt.RightToLeft
+            LayoutMirroring.childrenInherit: true
             focus: true
             Keys.onEscapePressed: popup.visible = false
         }

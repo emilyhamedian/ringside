@@ -4,8 +4,10 @@ import QtQuick.Layouts
 import QtQuick.Controls as QQC2
 import org.kde.kirigami as Kirigami
 import org.kde.kcmutils as KCM
+import org.kde.plasma.core as PlasmaCore
 import org.kde.plasma.plasmoid
 import "../code/format.js" as Format
+import "../code/style.js" as Style
 
 KCM.SimpleKCM {
     id: page
@@ -23,6 +25,8 @@ KCM.SimpleKCM {
         disk: i18nc("@item panel item", "Disk")
     })
     readonly property var rings: ["cpu", "gpu", "memory"]
+    // A vertical panel shows rings without their text, whatever the setting.
+    readonly property bool vertical: Plasmoid.formFactor === PlasmaCore.Types.Vertical
 
     // What the widget found on this machine, for the hints. Read from the live
     // configuration rather than a cfg_ property: Apply writes back every cfg_
@@ -77,10 +81,10 @@ KCM.SimpleKCM {
 
         QQC2.Label {
             Layout.fillWidth: true
-            text: i18nc("@info:usagetip", "Drag to reorder · uncheck to hide")
+            text: i18nc("@info:usagetip", "Drag or use the arrows to reorder · uncheck to hide")
             textFormat: Text.PlainText
             wrapMode: Text.Wrap
-            color: Qt.alpha(Kirigami.Theme.textColor, 0.6)
+            color: Style.dim(Kirigami.Theme.textColor)
             font.pointSize: Kirigami.Theme.defaultFont.pointSize * 11.5 / 13
         }
 
@@ -111,9 +115,23 @@ KCM.SimpleKCM {
                     id: entry
 
                     required property string key
-                    // Unused here, but ListItemDragHandle looks it up by name.
+                    // ListItemDragHandle also looks it up by name.
                     required property int index
                     readonly property bool ring: page.rings.includes(key)
+
+                    // Moves the row one place. The pressed button travels with
+                    // its row and keeps focus, unless the move took the row to
+                    // the end of the list and disabled it: then its twin takes
+                    // focus, so keyboard users stay in the row.
+                    function step(by, button, twin) {
+                        const focused = button.activeFocus;
+                        const reason = button.visualFocus ? Qt.TabFocusReason : Qt.OtherFocusReason;
+                        const to = index + by;
+                        page.move(index, to);
+                        if (focused && (to === 0 || to === list.count - 1)) {
+                            twin.forceActiveFocus(reason);
+                        }
+                    }
 
                     width: list.width
                     implicitHeight: row.implicitHeight
@@ -157,12 +175,13 @@ KCM.SimpleKCM {
                                 text: page.hints[entry.key]
                                 textFormat: Text.PlainText
                                 elide: Text.ElideRight
-                                color: Qt.alpha(Kirigami.Theme.textColor, 0.6)
+                                color: Style.dim(Kirigami.Theme.textColor)
                                 font.pointSize: Kirigami.Theme.defaultFont.pointSize * 11.5 / 13
                             }
                             QQC2.ComboBox {
                                 id: mode
                                 visible: entry.ring
+                                enabled: !page.vertical
                                 model: [i18nc("@item:inlistbox what a ring item shows", "Ring and text"),
                                         i18nc("@item:inlistbox what a ring item shows", "Ring only")]
                                 currentIndex: page.cfg_ringsOnly.includes(entry.key) ? 1 : 0
@@ -170,10 +189,42 @@ KCM.SimpleKCM {
                                                        page.names[entry.key])
                                 onActivated: index => page.cfg_ringsOnly = page.including(page.cfg_ringsOnly, entry.key, index === 1)
                             }
+                            QQC2.ToolButton {
+                                id: up
+                                icon.name: "go-up"
+                                display: QQC2.AbstractButton.IconOnly
+                                text: i18nc("@action:button %1 is a panel item", "Move %1 up", page.names[entry.key])
+                                enabled: entry.index > 0
+                                QQC2.ToolTip.text: text
+                                QQC2.ToolTip.visible: hovered
+                                QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
+                                onClicked: entry.step(-1, up, down)
+                            }
+                            QQC2.ToolButton {
+                                id: down
+                                icon.name: "go-down"
+                                display: QQC2.AbstractButton.IconOnly
+                                text: i18nc("@action:button %1 is a panel item", "Move %1 down", page.names[entry.key])
+                                enabled: entry.index < list.count - 1
+                                QQC2.ToolTip.text: text
+                                QQC2.ToolTip.visible: hovered
+                                QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
+                                onClicked: entry.step(1, down, up)
+                            }
                         }
                     }
                 }
             }
+        }
+
+        QQC2.Label {
+            Layout.fillWidth: true
+            visible: page.vertical
+            text: i18nc("@info", "This panel is vertical, so the rings show without their text.")
+            textFormat: Text.PlainText
+            wrapMode: Text.Wrap
+            color: Style.dim(Kirigami.Theme.textColor)
+            font.pointSize: Kirigami.Theme.defaultFont.pointSize * 11.5 / 13
         }
 
         Kirigami.FormLayout {
@@ -203,7 +254,7 @@ KCM.SimpleKCM {
             QQC2.Label {
                 text: i18nc("@info", "Rings shrink to fit a thinner panel.")
                 textFormat: Text.PlainText
-                color: Qt.alpha(Kirigami.Theme.textColor, 0.6)
+                color: Style.dim(Kirigami.Theme.textColor)
                 font.pointSize: Kirigami.Theme.defaultFont.pointSize * 11.5 / 13
             }
         }
