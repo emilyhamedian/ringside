@@ -28,6 +28,9 @@ Item {
     property var hardware: ({})
     // Which popup is open, so GPU reads can follow what's on screen.
     property string openPopup: ""
+    // The hardware helper; the tests swap in a stub.
+    property string helperPath: decodeURIComponent(Qt.resolvedUrl("../code/ringside-info.sh").toString()
+                                                   .replace(/^file:\/\//, ""))
 
     // Asked for by the popups' footers.
     signal systemMonitorRequested()
@@ -293,7 +296,8 @@ Item {
 
     ReaderSet {
         id: diskReaders
-        model: monitor.diskIds.flatMap(id => ["read", "write", "total"].map(key => "disk/" + id + "/" + key))
+        // Qt's JavaScript engine has no flatMap.
+        model: monitor.diskIds.reduce((ids, id) => ids.concat(["read", "write", "total"].map(key => "disk/" + id + "/" + key)), [])
     }
 
     ReaderSet {
@@ -331,11 +335,9 @@ Item {
     P5Support.DataSource {
         id: helper
 
-        readonly property string path: decodeURIComponent(Qt.resolvedUrl("../code/ringside-info.sh").toString()
-                                                           .replace(/^file:\/\//, ""))
         // Run by sh, so a quote in the install path is closed, escaped and reopened.
         function command(args) {
-            return "sh '" + path.replace(/'/g, "'\\''") + "' " + args;
+            return "sh '" + monitor.helperPath.replace(/'/g, "'\\''") + "' " + args;
         }
 
         engine: "executable"
