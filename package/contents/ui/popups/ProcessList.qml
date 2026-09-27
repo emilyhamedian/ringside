@@ -60,7 +60,7 @@ ColumnLayout {
     }
 
     Caption {
-        text: i18nc("@title:group", "Top processes")
+        label: i18nc("@title:group", "Top processes")
         Layout.fillWidth: true
     }
 

@@ -1,0 +1,8 @@
+export RINGSIDE_SYSFS="$FIXTURES/desktop/sys"
+export RINGSIDE_PROCFS="$FIXTURES/desktop/proc"
+export RINGSIDE_UDEVADM="$FIXTURES/common/udevadm"
+export RINGSIDE_AMDGPU_IDS="$FIXTURES/common/amdgpu.ids"
+export RINGSIDE_DMI_PROPS="$FIXTURES/desktop/dmi-props"
+export RINGSIDE_ROOT_UUID="1a2b3c4d-0000-0000-0000-000000000000"
+export RINGSIDE_ROOT_DISK="sda"
+export RINGSIDE_PLASMA_VERSION="6.7.5"

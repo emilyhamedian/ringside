@@ -1,0 +1,2 @@
+Same machine as the laptop fixture, but pre-6.7: Plasma 6.3.4 numbers GPUs by
+DRM card, not PCI order, so the two GPU ids swap relative to the laptop case.

@@ -1,0 +1,2 @@
+Reuses the no-gpu sysfs tree; its own dmi-props has one populated DIMM slot
+and one empty slot (PRESENT=0), which must be skipped, not counted as 0 GiB.

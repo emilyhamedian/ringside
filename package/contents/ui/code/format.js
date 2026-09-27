@@ -14,7 +14,7 @@ function usable(v) {
 // (a suspended GPU, a sensor mid-reset), and 0 before the first sample. No
 // component the widget shows runs below freezing or above 150 °C.
 function temperatureValid(celsius) {
-    return usable(celsius) && celsius > 0 && celsius < 150;
+    return usable(celsius) && celsius >= 1 && celsius < 150;
 }
 
 function percent(v) {
@@ -113,9 +113,17 @@ function fixed(v, digits) {
     return usable(v) ? v.toFixed(digits) : DASH;
 }
 
-// "30 s", "2 min" for graph captions.
+// "30 s", "90 s", "2 min" for graph captions.
 function duration(seconds) {
-    return seconds < 60 || seconds % 60 !== 0 ? seconds + " s" : seconds / 60 + " min";
+    return seconds < 120 || seconds % 60 !== 0 ? seconds + " s" : seconds / 60 + " min";
+}
+
+// Load averages keep four characters or so: "1.42", "14.2", "143".
+function load(v) {
+    if (!usable(v)) {
+        return DASH;
+    }
+    return v < 10 ? v.toFixed(2) : v < 100 ? v.toFixed(1) : String(Math.round(v));
 }
 
 // "AMD Ryzen 7 7840HS w/ Radeon 780M Graphics" → "AMD Ryzen 7 7840HS";

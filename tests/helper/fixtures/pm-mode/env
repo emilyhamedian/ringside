@@ -1,0 +1,1 @@
+export RINGSIDE_SYSFS="$FIXTURES/pm-mode/sys"

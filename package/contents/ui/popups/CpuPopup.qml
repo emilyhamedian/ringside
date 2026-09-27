@@ -63,8 +63,8 @@ PopupPage {
 
         Tile {
             Layout.columnSpan: 2
-            caption: i18nc("@title:group graph span, e.g. Usage · 60 s", "Usage · %1",
-                           Format.duration(popup.monitor.historySeconds))
+            caption: i18nc("@title:group", "Usage")
+            detail: "· " + Format.duration(popup.monitor.historySeconds)
 
             Graph {
                 Layout.fillWidth: true
@@ -89,8 +89,8 @@ PopupPage {
             caption: i18nc("@title:group", "Load average")
 
             Reading {
-                value: Format.fixed(popup.sensorValue(load1), 2)
-                unit: Format.fixed(popup.sensorValue(load5), 2) + " · " + Format.fixed(popup.sensorValue(load15), 2)
+                value: Format.load(popup.sensorValue(load1))
+                unit: Format.load(popup.sensorValue(load5)) + " · " + Format.load(popup.sensorValue(load15))
                 unitScale: 0.67
                 pointSize: Kirigami.Theme.defaultFont.pointSize * 1.38
             }

@@ -1,0 +1,15 @@
+#!/bin/sh
+# Fake udevadm: answers only what ringside-info.sh asks for.
+#   info -q property -p <sysfs-path>     -> ID_MODEL_FROM_DATABASE for known PCI paths
+# Unknown paths print nothing, like real udevadm with no hwdb match.
+path=""
+prev=""
+for a in "$@"; do
+    [ "$prev" = "-p" ] && path=$a
+    prev=$a
+done
+case "${path##*/}" in
+    0000:03:00.0) echo "ID_MODEL_FROM_DATABASE=Navi 22 [Radeon RX 6700 XT]" ;;
+    0000:2d:00.0) echo "ID_MODEL_FROM_DATABASE=GA104 [GeForce RTX 3070]" ;;
+    0000:00:02.0) echo "ID_MODEL_FROM_DATABASE=Alder Lake-P [Iris Xe Graphics]" ;;
+esac

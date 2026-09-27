@@ -13,9 +13,9 @@ Item {
     property bool inner: false
     property color color: Kirigami.Theme.textColor
     property real strokeWidth: Math.max(2, Math.round(width / 10))
-    // Shown in the middle; left empty for dual rings, which have no room.
+    // Shown in the middle of a single ring large enough to read it.
     property string text: ""
-    property real textPointSize: Kirigami.Theme.smallFont.pointSize
+    property real textScale: 0.33
 
     readonly property real innerStrokeWidth: Math.max(1.5, Math.round(strokeWidth * 2 / 3 * 2) / 2)
     readonly property real innerRadius: outer.radius - strokeWidth / 2 - innerStrokeWidth / 2
@@ -97,11 +97,11 @@ Item {
 
     Text {
         anchors.centerIn: parent
-        visible: gauge.text !== "" && !gauge.inner
+        visible: gauge.text !== "" && !gauge.inner && gauge.width >= 24
         text: gauge.text
         color: gauge.color
         font.family: Kirigami.Theme.fixedWidthFont.family
-        font.pointSize: gauge.textPointSize
+        font.pixelSize: Math.round(gauge.width * gauge.textScale)
         textFormat: Text.PlainText
     }
 }

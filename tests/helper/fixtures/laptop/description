@@ -1,0 +1,2 @@
+This laptop's shape: AMD dGPU with runtime PM + AMD APU with in1_input, NVMe
+root disk, zram swap, k10temp Tctl, two DDR5 modules, PCI-order GPU ids (Plasma 6.7+).

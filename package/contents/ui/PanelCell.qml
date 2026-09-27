@@ -38,9 +38,9 @@ MouseArea {
 
     Rectangle {
         anchors.fill: parent
-        anchors.topMargin: cell.vertical ? 0 : Math.round(Kirigami.Units.smallSpacing / 2)
+        anchors.topMargin: cell.vertical ? 0 : Kirigami.Units.smallSpacing
         anchors.bottomMargin: anchors.topMargin
-        radius: Kirigami.Units.cornerRadius
+        radius: Kirigami.Units.smallSpacing
         color: Qt.alpha(Kirigami.Theme.textColor, cell.open ? 0.14 : 0.1)
         visible: cell.open || cell.containsMouse || cell.activeFocus
     }

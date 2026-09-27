@@ -9,7 +9,7 @@ import org.kde.kirigami as Kirigami
 GridLayout {
     id: strip
 
-    required property Monitor monitor
+    required property var monitor
     required property var items
     required property bool vertical
     required property real thickness
@@ -98,6 +98,7 @@ GridLayout {
                         monitor: strip.monitor
                         item: entry.modelData
                         vertical: strip.vertical
+                        singleRow: !strip.vertical && !strip.twoLines
                     }
                 }
             }

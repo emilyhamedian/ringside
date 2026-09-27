@@ -54,13 +54,18 @@ Item {
     // Memory
     readonly property real memoryTotal: value(memoryTotalSensor)
     readonly property real memoryUsed: value(memoryUsedSensor)
-    readonly property real memoryCached: value(memoryCacheSensor) + (value(memoryBufferSensor) || 0)
-    readonly property real memoryFree: value(memoryFreeSensor)
+    // ksystemstats' "used" is total minus MemAvailable, and the page cache
+    // sits inside the available part. So used, cached and free here add up
+    // to the total, and free is what neither holds.
+    readonly property real memoryCached: Math.min(value(memoryCacheSensor) + (value(memoryBufferSensor) || 0),
+                                                  memoryTotal - memoryUsed)
+    readonly property real memoryFree: Math.max(0, memoryTotal - memoryUsed - memoryCached)
     readonly property real memoryPercent: memoryTotal > 0 ? memoryUsed / memoryTotal * 100 : NaN
     readonly property string memoryModules: Format.memoryModules(hardware.memory)
     readonly property real swapUsed: value(swapUsedSensor)
     readonly property real swapTotal: value(swapTotalSensor)
-    readonly property string swapLabel: Hardware.swapLabel(hardware.swap)
+    readonly property string swapLabel: Hardware.swapLabel((hardware.swap || []).map(kind =>
+        kind === "disk" ? i18nc("@info swap on a disk partition or file", "disk") : kind))
     // Plasma 6.2 and later; NaN before.
     readonly property real memoryPressure: value(pressureSensor)
     property var memoryHistory: []
@@ -190,7 +195,6 @@ Item {
     Reader { id: memoryUsedSensor; sensorId: "memory/physical/used" }
     Reader { id: memoryCacheSensor; sensorId: "memory/physical/cache" }
     Reader { id: memoryBufferSensor; sensorId: "memory/physical/buffer" }
-    Reader { id: memoryFreeSensor; sensorId: "memory/physical/free" }
     Reader { id: swapUsedSensor; sensorId: "memory/swap/used" }
     Reader { id: swapTotalSensor; sensorId: "memory/swap/total" }
     Reader { id: pressureSensor; sensorId: "pressure/memory/some10Sec" }

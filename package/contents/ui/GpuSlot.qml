@@ -35,8 +35,12 @@ QtObject {
     }
     readonly property real vramUsed: live ? read(2) : NaN
     readonly property real vramTotal: live ? read(3) : NaN
+    // The size doesn't change while the GPU sleeps, so keep the last one read.
+    property real knownVramTotal: NaN
     readonly property real clock: live ? read(4) : NaN
-    readonly property real power: live ? read(5) : NaN
+    // An APU's power sensor measures the whole package, not the GPU, so
+    // integrated GPUs report none.
+    readonly property real power: live && kind !== "integrated" ? read(5) : NaN
     property var history: []
 
     readonly property string prefix: present ? "gpu/" + info.id + "/" : ""
@@ -46,6 +50,13 @@ QtObject {
         const sensor = sensors.objectAt(index);
         return sensor && typeof sensor.value === "number" ? sensor.value : NaN;
     }
+
+    onVramTotalChanged: {
+        if (Number.isFinite(vramTotal) && vramTotal > 0) {
+            knownVramTotal = vramTotal;
+        }
+    }
+    onInfoChanged: knownVramTotal = NaN
 
     function tick(now) {
         if (gated) {
@@ -63,8 +74,9 @@ QtObject {
     // Recreated whenever the GPU changes: a Sensor never unsubscribes an id it
     // is moved away from. AMD reports board power as power1; NVIDIA as power.
     property Instantiator sensors: Instantiator {
-        model: slot.prefix ? ["usage", "temperature", "usedVram", "totalVram", "coreFrequency",
-                              slot.info.vendor === "1002" ? "power1" : "power"].map(key => slot.prefix + key) : []
+        model: slot.prefix ? ["usage", "temperature", "usedVram", "totalVram", "coreFrequency"]
+            .concat(slot.kind === "integrated" ? [] : [slot.info.vendor === "1002" ? "power1" : "power"])
+            .map(key => slot.prefix + key) : []
         delegate: Sensors.Sensor {
             required property string modelData
             sensorId: modelData
