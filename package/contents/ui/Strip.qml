@@ -2,10 +2,13 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
+import org.kde.plasma.core as PlasmaCore
+import org.kde.plasma.plasmoid
 
 // The row of items in the panel. Rings come first in the user's order; a
 // hairline separates them from the text-only transfer rates. On a vertical
-// panel the items stack and show their rings alone.
+// panel the items stack and show their rings alone. A ring without its text
+// shows the readings in a tooltip instead.
 GridLayout {
     id: strip
 
@@ -29,7 +32,7 @@ GridLayout {
     }
 
     function cellAt(index) {
-        const entry = cells.itemAt(index);
+        const entry = cells.itemAt(index) as Entry;
         return entry ? entry.cell : null;
     }
 
@@ -39,40 +42,48 @@ GridLayout {
     rowSpacing: 0
     columnSpacing: 0
 
-    Repeater {
-        id: cells
-        model: strip.items
+    component Entry: RowLayout {
+        id: entry
 
-        delegate: RowLayout {
-            id: entry
+        required property string modelData
+        required property int index
+        readonly property alias cell: cell
+        // A hairline where the rings end and the rates begin.
+        readonly property bool separated: index > 0 && strip.isRing(strip.items[index - 1]) !== strip.isRing(modelData)
+        readonly property bool textShown: !strip.isRing(modelData) || !strip.vertical && !strip.ringsOnly.includes(modelData)
 
-            required property string modelData
-            required property int index
-            readonly property alias cell: cell
-            // A hairline where the rings end and the rates begin.
-            readonly property bool separated: index > 0 && strip.isRing(strip.items[index - 1]) !== strip.isRing(modelData)
+        Layout.fillWidth: strip.vertical
+        Layout.fillHeight: !strip.vertical
+        spacing: 0
 
+        Rectangle {
+            visible: entry.separated && !strip.vertical
+            Layout.preferredWidth: 1
+            Layout.preferredHeight: Math.round(strip.thickness * 0.4)
+            Layout.leftMargin: 2
+            Layout.rightMargin: 2
+            Layout.alignment: Qt.AlignVCenter
+            color: Qt.alpha(Kirigami.Theme.textColor, 0.14)
+        }
+
+        PlasmaCore.ToolTipArea {
             Layout.fillWidth: strip.vertical
             Layout.fillHeight: !strip.vertical
-            spacing: 0
-
-            Rectangle {
-                visible: entry.separated && !strip.vertical
-                Layout.preferredWidth: 1
-                Layout.preferredHeight: Math.round(strip.thickness * 0.4)
-                Layout.leftMargin: 2
-                Layout.rightMargin: 2
-                Layout.alignment: Qt.AlignVCenter
-                color: Qt.alpha(Kirigami.Theme.textColor, 0.14)
-            }
+            implicitWidth: cell.implicitWidth
+            implicitHeight: cell.implicitHeight
+            active: !entry.textShown && !cell.open
+            mainText: cell.title
+            subText: cell.description
+            textFormat: Text.PlainText
+            // Plasmoid is empty outside a panel, as in the preview gallery.
+            location: Plasmoid.location ?? PlasmaCore.Types.Floating
 
             PanelCell {
                 id: cell
+                anchors.fill: parent
                 item: entry.modelData
                 open: strip.openItem === entry.modelData
                 vertical: strip.vertical
-                Layout.fillWidth: strip.vertical
-                Layout.fillHeight: !strip.vertical
                 onActivated: strip.activated(entry.modelData, cell)
 
                 Loader {
@@ -84,24 +95,45 @@ GridLayout {
                 Component {
                     id: ringContent
                     RingCellContent {
+                        id: rings
                         monitor: strip.monitor
                         item: entry.modelData
                         ring: strip.ring
-                        textShown: !strip.vertical && !strip.ringsOnly.includes(entry.modelData)
+                        textShown: entry.textShown
                         twoLines: strip.twoLines
+
+                        Binding {
+                            target: cell
+                            property: "description"
+                            value: rings.accessibleDescription
+                        }
                     }
                 }
 
                 Component {
                     id: rateContent
                     RateCellContent {
+                        id: rates
                         monitor: strip.monitor
                         item: entry.modelData
                         vertical: strip.vertical
                         singleRow: !strip.vertical && !strip.twoLines
+                        availableWidth: strip.vertical ? cell.width - 2 * Kirigami.Units.smallSpacing : Infinity
+
+                        Binding {
+                            target: cell
+                            property: "description"
+                            value: rates.accessibleDescription
+                        }
                     }
                 }
             }
         }
+    }
+
+    Repeater {
+        id: cells
+        model: strip.items
+        delegate: Entry {}
     }
 }

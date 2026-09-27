@@ -1,0 +1,3 @@
+Whole disks from /sys/block when lsblk is missing: only entries with a device
+link count (dm-0, zram0 and loop0 are virtual), and sr0 is left out by name.
+The procfs and DMI data come from the no-gpu machine.

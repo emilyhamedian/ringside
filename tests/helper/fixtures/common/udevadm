@@ -8,8 +8,10 @@ for a in "$@"; do
     [ "$prev" = "-p" ] && path=$a
     prev=$a
 done
-case "${path##*/}" in
-    0000:03:00.0) echo "ID_MODEL_FROM_DATABASE=Navi 22 [Radeon RX 6700 XT]" ;;
-    0000:2d:00.0) echo "ID_MODEL_FROM_DATABASE=GA104 [GeForce RTX 3070]" ;;
-    0000:00:02.0) echo "ID_MODEL_FROM_DATABASE=Alder Lake-P [Iris Xe Graphics]" ;;
+case $path in
+    */intel-xe/sys/devices/0000:00:02.0) echo "ID_MODEL_FROM_DATABASE=Lunar Lake [Intel Arc Graphics 130V / 140V]" ;;
+    */0000:03:00.0) echo "ID_MODEL_FROM_DATABASE=Navi 22 [Radeon RX 6700 XT]" ;;
+    */0000:2d:00.0) echo "ID_MODEL_FROM_DATABASE=GA104 [GeForce RTX 3070]" ;;
+    */0000:00:02.0) echo "ID_MODEL_FROM_DATABASE=Alder Lake-P [Iris Xe Graphics]" ;;
+    */0000:01:00.0) echo "ID_MODEL_FROM_DATABASE=AD107M [GeForce RTX 4060 Max-Q / Mobile]" ;;
 esac

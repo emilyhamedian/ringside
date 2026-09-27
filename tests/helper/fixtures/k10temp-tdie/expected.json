@@ -1,0 +1,1 @@
+{"plasma":"6.7.5","cpu":{"model":"AMD Ryzen 7 1800X Eight-Core Processor","cores":4,"threads":4,"ids":[0,2,4,6],"tempLabel":"Tdie"},"memory":{"type":"LPDDR4","speed":3200,"modules":[4294967296]},"swap":[],"gpus":[],"defaultInterface":"","disks":[],"root":{"uuid":"","disk":"","tempSensor":""}}

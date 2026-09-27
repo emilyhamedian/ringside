@@ -3,6 +3,7 @@ import QtQuick
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
 import "../code/format.js" as Format
+import "../code/style.js" as Style
 import ".."
 
 // One section per ring: the outer ring's GPU, then the inner ring's under a
@@ -38,13 +39,15 @@ PopupPage {
         id: section
 
         required property var monitor
-        // A GpuSlot, or an object with the same properties.
+        // A GpuReader, or an object with the same properties.
         required property var slot
         property bool inner: false
 
         readonly property bool asleep: slot.phase === "asleep"
-        readonly property color tone: inner ? Qt.alpha(Kirigami.Theme.textColor, 0.6) : Kirigami.Theme.textColor
-        readonly property color dim: Qt.alpha(Kirigami.Theme.textColor, 0.6)
+        readonly property color dim: Style.dim(Kirigami.Theme.textColor)
+        readonly property color tone: inner ? dim : Kirigami.Theme.textColor
+        // Intel GPUs publish no temperature, so theirs is left out rather than shown as a dash.
+        readonly property bool temperatureShown: !asleep && slot.reportsTemperature
         readonly property bool hasPower: Number.isFinite(slot.power)
         readonly property real tilePointSize: Kirigami.Theme.defaultFont.pointSize * 1.23
 
@@ -97,6 +100,7 @@ PopupPage {
                     font.weight: Font.DemiBold
                     elide: Text.ElideRight
                     textFormat: Text.PlainText
+                    horizontalAlignment: Text.AlignLeft
                 }
 
                 Text {
@@ -119,6 +123,7 @@ PopupPage {
                     font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.85
                     elide: Text.ElideRight
                     textFormat: Text.PlainText
+                    horizontalAlignment: Text.AlignLeft
                 }
             }
 
@@ -127,7 +132,7 @@ PopupPage {
 
                 Text {
                     Layout.alignment: Qt.AlignBaseline
-                    visible: text !== "" && !section.asleep
+                    visible: text !== "" && section.temperatureShown
                     text: section.slot.temperatureLabel
                     color: section.dim
                     font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.81
@@ -136,7 +141,7 @@ PopupPage {
 
                 Reading {
                     Layout.alignment: Qt.AlignBaseline
-                    visible: !section.asleep
+                    visible: section.temperatureShown
                     value: Format.temperature(section.slot.temperature, section.monitor.fahrenheit)
                     degree: true
                     color: {
@@ -166,6 +171,7 @@ PopupPage {
             font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.88
             wrapMode: Text.Wrap
             textFormat: Text.PlainText
+            horizontalAlignment: Text.AlignLeft
         }
 
         GridLayout {
@@ -174,7 +180,7 @@ PopupPage {
             Layout.leftMargin: Math.round(Kirigami.Units.largeSpacing * 1.5)
             Layout.rightMargin: Layout.leftMargin
             Layout.bottomMargin: Layout.leftMargin
-            columns: section.hasPower ? 3 : 2
+            columns: (section.slot.reportsVram ? 1 : 0) + 1 + (section.hasPower ? 1 : 0)
             rowSpacing: Kirigami.Units.largeSpacing
             columnSpacing: Kirigami.Units.largeSpacing
             // Equal columns while the VRAM reading fits one; a long one
@@ -184,7 +190,7 @@ PopupPage {
             Tile {
                 Layout.columnSpan: parent.columns
                 caption: i18nc("@title:group", "Usage")
-                detail: "· " + Format.duration(section.monitor.historySeconds)
+                graphSeconds: section.monitor.historySeconds
 
                 Graph {
                     Layout.fillWidth: true
@@ -199,12 +205,14 @@ PopupPage {
 
             Tile {
                 id: vram
+                visible: section.slot.reportsVram
                 caption: i18nc("@title:group video memory", "VRAM")
 
                 Reading {
                     // An integrated GPU's share of system memory has no meaningful total.
+                    // The known size stands in while a resting GPU's readings are held.
                     readonly property bool ofTotal: section.slot.kind === "discrete"
-                    readonly property var b: ofTotal ? Format.bytesOf(section.slot.vramUsed, section.slot.vramTotal)
+                    readonly property var b: ofTotal ? Format.bytesOf(section.slot.vramUsed, section.slot.knownVramTotal)
                                                      : Format.bytes(section.slot.vramUsed, false)
                     value: b.value
                     unit: ofTotal && b.unit ? "/ " + b.total + " " + b.unit : b.unit

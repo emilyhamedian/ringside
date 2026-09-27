@@ -1,0 +1,2 @@
+The laptop on Plasma 6.6.90, the 6.7 beta, whose ksystemstats already numbers
+GPUs in PCI order: the ids match the laptop case, not legacy-ids.

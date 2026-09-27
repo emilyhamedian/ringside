@@ -1,0 +1,1 @@
+export RINGSIDE_PROCFS="$FIXTURES/quoted-cpu-model/proc"

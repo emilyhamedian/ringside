@@ -70,35 +70,69 @@ TestCase {
         compare(result.holdMs, 10000);
     }
 
-    function test_restingGoesLiveWithDoubledHoldAfterTheProbeWindow() {
+    function test_restingGoesLiveWithDoubledHoldOnAReadingAfterTheProbeWindow() {
         var resting = { phase: "resting", since: 0, quietSince: -1, holdMs: 10000 };
 
         // probeMs = max(autosuspendMs, 2000) + 4000 = 6000 here.
-        var stillWaiting = Gate.step(resting, { now: 5999, status: "active", usage: 0.5, watched: false, autosuspendMs: 1000 });
+        var stillWaiting = Gate.step(resting, { now: 7000, status: "active", statusAt: 5999, usage: undefined,
+                                                watched: false, autosuspendMs: 1000, vendor: "1002" });
         compare(stillWaiting.phase, "resting");
         verify(stillWaiting === resting);
 
-        var probed = Gate.step(resting, { now: 6000, status: "active", usage: 0.5, watched: false, autosuspendMs: 1000 });
+        var probed = Gate.step(resting, { now: 7000, status: "active", statusAt: 6000, usage: undefined,
+                                          watched: false, autosuspendMs: 1000, vendor: "1002" });
         compare(probed.phase, "live");
-        compare(probed.since, 6000);
+        compare(probed.since, 7000);
         compare(probed.holdMs, 20000); // doubled because it was still awake
+    }
+
+    // A slow poll can deliver a status read before the GPU had its chance to
+    // suspend. Acting on it could subscribe a GPU that has since gone to sleep.
+    function test_aStaleActiveStatusDoesNotEndResting() {
+        var resting = { phase: "resting", since: 10000, quietSince: -1, holdMs: 10000 };
+        var result = Gate.step(resting, { now: 60000, status: "active", statusAt: 12000, usage: undefined,
+                                          watched: false, autosuspendMs: 5000, vendor: "1002" });
+        verify(result === resting);
+    }
+
+    // NVIDIA publishes no autosuspend delay and powers down up to ~10 s after idle.
+    function test_nvidiaWaitsLongerBeforeTheProbe() {
+        var resting = { phase: "resting", since: 0, quietSince: -1, holdMs: 10000 };
+        var early = Gate.step(resting, { now: 16000, status: "active", statusAt: 14900, usage: undefined,
+                                         watched: false, autosuspendMs: 0, vendor: "10de" });
+        compare(early.phase, "resting");
+        var probed = Gate.step(resting, { now: 16000, status: "active", statusAt: 15000, usage: undefined,
+                                          watched: false, autosuspendMs: 0, vendor: "10de" });
+        compare(probed.phase, "live");
     }
 
     function test_holdDoublingIsCappedAtTheMaximum() {
         var resting = { phase: "resting", since: 0, quietSince: -1, holdMs: 200000 };
-        var probed = Gate.step(resting, { now: 6000, status: "active", usage: 0, watched: false, autosuspendMs: 0 });
-        compare(probed.holdMs, 300000); // 400000 capped to MAX_HOLD_MS
+        var input = { now: 7000, status: "active", statusAt: 6000, usage: undefined, watched: false,
+                      autosuspendMs: 0, vendor: "1002" };
+        compare(Gate.step(resting, input).holdMs, 300000); // 400000 capped to MAX_HOLD_MS
 
         var alreadyAtCap = { phase: "resting", since: 0, quietSince: -1, holdMs: 300000 };
-        var probedAgain = Gate.step(alreadyAtCap, { now: 6000, status: "active", usage: 0, watched: false, autosuspendMs: 0 });
-        compare(probedAgain.holdMs, 300000);
+        compare(Gate.step(alreadyAtCap, input).holdMs, 300000);
     }
 
-    function test_watchedForcesRestingBackToLive() {
+    // The README promises that opening the GPU popup never wakes the GPU.
+    function test_anOpenPopupNeverCutsRestingShort() {
         var resting = { phase: "resting", since: 0, quietSince: -1, holdMs: 10000 };
-        // Long before the probe window, but the popup is open, so it's read anyway.
-        var result = Gate.step(resting, { now: 1, status: "active", usage: 0.1, watched: true, autosuspendMs: 0 });
-        compare(result.phase, "live");
+        var result = Gate.step(resting, { now: 3000, status: "active", statusAt: 2500, usage: undefined,
+                                          watched: true, autosuspendMs: 5000, vendor: "1002" });
+        verify(result === resting);
+    }
+
+    function test_anOpenPopupLeavesASleepingGpuAsleep() {
+        var statuses = ["suspended", "suspending", ""];
+        for (var i = 0; i < statuses.length; ++i) {
+            var asleep = Gate.initial();
+            var result = Gate.step(asleep, { now: 1000, status: statuses[i], statusAt: 900, usage: undefined,
+                                             watched: true, autosuspendMs: 5000, vendor: "10de" });
+            compare(result.phase, "asleep", statuses[i]);
+            verify(result === asleep);
+        }
     }
 
     function test_watchedResetsTheIdleTimerWhileLive() {

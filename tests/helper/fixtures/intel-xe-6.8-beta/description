@@ -1,0 +1,2 @@
+The intel-xe machine on Plasma 6.7.90, the 6.8 beta, which reads xe: both
+GPUs are listed in PCI order.

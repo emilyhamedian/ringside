@@ -1,0 +1,2 @@
+The desktop machine on Plasma 6.3.4, whose ksystemstats has no Intel backend:
+the Intel iGPU is left out and the NVIDIA card keeps its DRM card id (gpu1).

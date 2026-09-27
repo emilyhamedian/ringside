@@ -1,0 +1,3 @@
+A Ryzen 7 1800X, which has a Tctl offset, so k10temp exposes Tdie next to
+Tctl and ksystemstats reads Tdie: the label is Tdie. An nvme hwmon comes first
+and is skipped. The odd threads are offline, so the CPU ids have gaps.

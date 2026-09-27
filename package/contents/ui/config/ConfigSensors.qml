@@ -8,6 +8,7 @@ import org.kde.plasma.plasmoid
 import org.kde.ksysguard.sensors as Sensors
 import org.kde.kitemmodels as KItemModels
 import "../code/format.js" as Format
+import "../code/style.js" as Style
 
 // Which sensors the widget reads. Each setting stores a ksystemstats id, or
 // one of the words Monitor.qml understands ("" for automatic, "none", "all").
@@ -153,7 +154,7 @@ KCM.SimpleKCM {
         textFormat: Text.PlainText
         wrapMode: Text.Wrap
         font: Kirigami.Theme.smallFont
-        color: Qt.alpha(Kirigami.Theme.textColor, 0.6)
+        color: Style.dim(Kirigami.Theme.textColor)
     }
 
     Kirigami.FormLayout {

@@ -1,0 +1,2 @@
+Whole disks from a fake lsblk: the disks are kept, the optical drive, loop
+device and zram swap are not. The rest reuses the no-gpu machine.

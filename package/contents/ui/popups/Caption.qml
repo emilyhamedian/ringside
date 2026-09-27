@@ -1,5 +1,6 @@
 import QtQuick
 import org.kde.kirigami as Kirigami
+import "../code/style.js" as Style
 
 // The small, dim title over a reading: an upper-case label and an optional
 // detail that keeps its case, as in "USAGE · 60 s" or "SWAP (zram)".
@@ -8,8 +9,11 @@ Text {
     property string detail: ""
 
     text: [label.toLocaleUpperCase(), detail].filter(s => s !== "").join(" ")
-    color: Qt.alpha(Kirigami.Theme.textColor, 0.6)
+    color: Style.dim(Kirigami.Theme.textColor)
     font.pointSize: Kirigami.Theme.smallFont.pointSize
     textFormat: Text.PlainText
+    // Set rather than implied, so it follows layout mirroring; an implied
+    // alignment follows the text's own direction instead.
+    horizontalAlignment: Text.AlignLeft
     elide: Text.ElideRight
 }

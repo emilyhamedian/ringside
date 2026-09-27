@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
+import "../code/style.js" as Style
 import ".."
 
 // Title row: a large ring, the name and hardware under it, and the headline
@@ -29,6 +30,7 @@ RowLayout {
 
     RingGauge {
         visible: header.ringShown
+        Accessible.name: header.title
         Layout.preferredWidth: Math.round(Kirigami.Units.gridUnit * 2.9)
         Layout.preferredHeight: Layout.preferredWidth
         strokeWidth: 4
@@ -48,16 +50,18 @@ RowLayout {
             font.weight: Font.DemiBold
             elide: Text.ElideRight
             textFormat: Text.PlainText
+            horizontalAlignment: Text.AlignLeft
         }
 
         Text {
             Layout.fillWidth: true
             visible: text !== ""
             text: header.subtitle
-            color: Qt.alpha(Kirigami.Theme.textColor, 0.6)
+            color: Style.dim(Kirigami.Theme.textColor)
             font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.88
             elide: Text.ElideRight
             textFormat: Text.PlainText
+            horizontalAlignment: Text.AlignLeft
         }
     }
 
@@ -81,7 +85,7 @@ RowLayout {
             Layout.rightMargin: headline.implicitWidth - headline.numberWidth
             visible: text !== ""
             text: header.caption
-            color: Qt.alpha(Kirigami.Theme.textColor, 0.6)
+            color: Style.dim(Kirigami.Theme.textColor)
             font.pointSize: Kirigami.Theme.smallFont.pointSize * 0.98
             font.letterSpacing: Kirigami.Theme.smallFont.pointSize * 0.08
             textFormat: Text.PlainText

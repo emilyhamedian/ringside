@@ -1,2 +1,4 @@
-Exercises the "pm" subcommand: two valid BDFs report their runtime_status,
-and a path-traversal-shaped argument ("../x") is silently rejected.
+Exercises the "pm" subcommand: each valid BDF prints its runtime_status and
+power/control. 04:00.0 has no control file and 05:00.0 doesn't exist, so their
+empty fields keep their single-space separators. A path-traversal-shaped
+argument ("../x") is silently rejected.

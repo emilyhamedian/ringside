@@ -21,16 +21,6 @@ PopupPage {
     Sensors.Sensor { id: load5; sensorId: "cpu/loadaverages/loadaverage5" }
     Sensors.Sensor { id: load15; sensorId: "cpu/loadaverages/loadaverage15" }
 
-    Instantiator {
-        id: perThread
-        model: popup.threads
-        delegate: Sensors.Sensor {
-            required property int index
-            sensorId: "cpu/cpu" + index + "/usage"
-            updateRateLimit: popup.monitor.interval
-        }
-    }
-
     PopupHeader {
         ringValue: popup.monitor.cpuUsage
         title: i18nc("@title", "CPU")
@@ -64,7 +54,7 @@ PopupPage {
         Tile {
             Layout.columnSpan: 2
             caption: i18nc("@title:group", "Usage")
-            detail: "· " + Format.duration(popup.monitor.historySeconds)
+            graphSeconds: popup.monitor.historySeconds
 
             Graph {
                 Layout.fillWidth: true
@@ -97,25 +87,44 @@ PopupPage {
         }
 
         Tile {
+            id: perThread
+
             Layout.columnSpan: 2
             caption: i18nc("@title:group usage of each CPU thread", "Per thread")
 
-            RowLayout {
+            // Balanced rows of bars at least 2 px wide, so a 256-thread
+            // machine still shows every thread.
+            GridLayout {
+                id: bars
+
+                readonly property int count: popup.monitor.cpuIds.length
+                readonly property int gap: count > 32 ? 1 : 3
+                // From the tile rather than this layout's own width, which it
+                // only learns mid-layout: changing columns then makes the
+                // layout rearrange itself recursively.
+                readonly property real available: perThread.width - 2 * perThread.horizontalPadding
+                readonly property int maxColumns: Math.max(1, Math.floor((available + gap) / (2 + gap)))
+                // One row until the tile has a width to fit, and while no thread is known.
+                readonly property int rowCount: available > 0 ? Math.max(1, Math.ceil(count / maxColumns)) : 1
+
                 Layout.fillWidth: true
-                Layout.preferredHeight: Math.round(Kirigami.Units.gridUnit * 1.9)
-                spacing: popup.threads > 32 ? 1 : 3
+                Layout.preferredHeight: Math.round(Kirigami.Units.gridUnit * (1.9 + 0.9 * (rowCount - 1)))
+                columns: Math.max(1, Math.ceil(count / rowCount))
+                columnSpacing: gap
+                rowSpacing: Kirigami.Units.smallSpacing
+                uniformCellWidths: true
+                uniformCellHeights: true
 
                 Repeater {
-                    model: popup.threads
+                    // ksystemstats names CPUs by their /proc/cpuinfo number,
+                    // which skips offline and SMT-disabled threads.
+                    model: popup.monitor.cpuIds
 
                     delegate: Rectangle {
                         id: bar
 
-                        required property int index
-                        readonly property real usage: {
-                            perThread.count;
-                            return popup.sensorValue(perThread.objectAt(index));
-                        }
+                        required property int modelData
+                        readonly property real usage: popup.sensorValue(sensor)
 
                         Layout.fillWidth: true
                         Layout.fillHeight: true
@@ -124,8 +133,14 @@ PopupPage {
                         clip: true
 
                         Accessible.role: Accessible.ProgressBar
-                        Accessible.name: i18nc("@info accessible name of a thread's usage bar", "Thread %1", index + 1)
+                        Accessible.name: i18nc("@info accessible name of a thread's usage bar", "Thread %1", modelData + 1)
                         Accessible.description: Format.percent(usage) + "%"
+
+                        Sensors.Sensor {
+                            id: sensor
+                            sensorId: "cpu/cpu" + bar.modelData + "/usage"
+                            updateRateLimit: popup.monitor.interval
+                        }
 
                         Rectangle {
                             anchors.bottom: parent.bottom

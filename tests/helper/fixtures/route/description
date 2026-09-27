@@ -1,0 +1,2 @@
+The "route" subcommand prints the default-route interface from the laptop's
+procfs.

@@ -1,1 +1,1 @@
-{"plasma":"6.7.5","cpu":{"model":"Custom \"Overclocked\" Xeon","cores":1,"threads":1,"tempLabel":""},"memory":{"type":"","speed":0,"modules":[]},"swap":[],"gpus":[],"defaultInterface":"","root":{"uuid":"","disk":"","tempSensor":""}}
+{"plasma":"6.7.5","cpu":{"model":"Custom \"Overclocked\" Xeon","cores":1,"threads":1,"ids":[0],"tempLabel":""},"memory":{"type":"","speed":0,"modules":[]},"swap":[],"gpus":[],"defaultInterface":"","disks":[],"root":{"uuid":"","disk":"","tempSensor":""}}
