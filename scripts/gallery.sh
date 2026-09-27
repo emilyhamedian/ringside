@@ -15,8 +15,16 @@ esac
 
 cd "$(dirname "$0")/.."
 
+# Arch and Debian keep the Qt 6 tools in /usr/lib/qt6/bin, Fedora and openSUSE
+# in /usr/lib64/qt6/bin; the bare qml on PATH may be Qt 5.
+if [ -z "${QML:-}" ]; then
+    for QML in /usr/lib/qt6/bin/qml /usr/lib64/qt6/bin/qml qml6; do
+        command -v "$QML" >/dev/null 2>&1 && break
+    done
+fi
+
 rm -f "$out"
 QT_FORCE_STDERR_LOGGING=1 QT_QPA_PLATFORMTHEME=kde QT_QUICK_BACKEND=software \
-    "${QML:-/usr/lib/qt6/bin/qml}" -platform offscreen tests/qml/Gallery.qml -- --snapshot "$out"
+    "$QML" -platform offscreen tests/qml/Gallery.qml -- --snapshot "$out"
 [ -s "$out" ] || { echo "gallery.sh: no image written to $out" >&2; exit 1; }
 echo "$out"
