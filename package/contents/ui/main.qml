@@ -80,6 +80,10 @@ PlasmoidItem {
     Strip {
         id: strip
         anchors.centerIn: parent
+        // Cells take the panel's full thickness, so their hover and pressed
+        // backgrounds line up with the rest of the panel.
+        width: root.vertical ? parent.width : implicitWidth
+        height: Plasmoid.formFactor === PlasmaCore.Types.Horizontal ? parent.height : implicitHeight
         visible: root.items.length > 0
         monitor: monitor
         items: root.items

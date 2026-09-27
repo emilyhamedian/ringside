@@ -34,7 +34,7 @@ RowLayout {
         strokeWidth: 4
         value: header.ringValue
         text: Number.isFinite(header.ringValue) ? Math.round(header.ringValue) + "%" : "–"
-        textPointSize: Kirigami.Theme.defaultFont.pointSize * 1.1
+        textScale: 0.29
     }
 
     ColumnLayout {

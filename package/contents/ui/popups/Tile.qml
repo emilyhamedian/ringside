@@ -7,6 +7,7 @@ Rectangle {
     id: tile
 
     property string caption: ""
+    property string detail: ""
     default property alias content: body.data
 
     readonly property real horizontalPadding: Math.round(Kirigami.Units.largeSpacing * 1.5)
@@ -15,7 +16,7 @@ Rectangle {
     Layout.fillWidth: true
     implicitWidth: column.implicitWidth + 2 * horizontalPadding
     implicitHeight: column.implicitHeight + 2 * verticalPadding
-    radius: Kirigami.Units.cornerRadius
+    radius: Kirigami.Units.smallSpacing
     color: Qt.alpha(Kirigami.Theme.textColor, 0.05)
 
     ColumnLayout {
@@ -30,7 +31,8 @@ Rectangle {
 
         Caption {
             visible: text !== ""
-            text: tile.caption
+            label: tile.caption
+            detail: tile.detail
             Layout.fillWidth: true
         }
 

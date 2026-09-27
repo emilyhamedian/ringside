@@ -5,13 +5,14 @@ import org.kde.kirigami as Kirigami
 import "code/format.js" as Format
 
 // Two transfer rates in the panel: down and up for the network, read and
-// write for the disk.
+// write for the disk. Stacked, or side by side on a thin panel.
 GridLayout {
     id: rates
 
-    required property Monitor monitor
+    required property var monitor
     required property string item
     required property bool vertical
+    property bool singleRow: false
 
     readonly property bool network: item === "network"
     readonly property var lines: network
@@ -20,7 +21,7 @@ GridLayout {
     readonly property real pointSize: Kirigami.Theme.smallFont.pointSize * (vertical ? 0.9 : 1.05)
     readonly property color markColor: Qt.alpha(Kirigami.Theme.textColor, 0.75)
 
-    columns: vertical ? 2 : 3
+    columns: vertical ? 2 : singleRow ? 6 : 3
     rowSpacing: Math.round(Kirigami.Units.smallSpacing * 0.75)
     columnSpacing: Math.round(Kirigami.Units.smallSpacing * 1.5)
 
@@ -32,8 +33,9 @@ GridLayout {
 
             required property int index
 
-            Layout.row: index
-            Layout.column: 0
+            Layout.row: rates.singleRow ? 0 : index
+            Layout.column: rates.singleRow ? index * 3 : 0
+            Layout.leftMargin: rates.singleRow && index === 1 ? Kirigami.Units.smallSpacing : 0
             implicitWidth: rates.network ? arrow.width : letter.implicitWidth
             implicitHeight: letter.implicitHeight
 
@@ -65,8 +67,8 @@ GridLayout {
         delegate: Text {
             required property int index
 
-            Layout.row: index
-            Layout.column: 1
+            Layout.row: rates.singleRow ? 0 : index
+            Layout.column: rates.singleRow ? index * 3 + 1 : 1
             Layout.alignment: Qt.AlignRight
             horizontalAlignment: Text.AlignRight
             // On a vertical panel there is no room for a unit column.
@@ -84,8 +86,8 @@ GridLayout {
         delegate: Text {
             required property int index
 
-            Layout.row: index
-            Layout.column: 2
+            Layout.row: rates.singleRow ? 0 : index
+            Layout.column: rates.singleRow ? index * 3 + 2 : 2
             text: rates.lines[index].unit
             color: Qt.alpha(Kirigami.Theme.textColor, 0.6)
             font.family: Kirigami.Theme.fixedWidthFont.family

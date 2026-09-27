@@ -1,0 +1,2 @@
+# tiny fixture subset of libdrm's amdgpu.ids, format: device, rev, name
+1638, C1, Rembrandt [Radeon 680M]

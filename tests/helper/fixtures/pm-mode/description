@@ -1,0 +1,2 @@
+Exercises the "pm" subcommand: two valid BDFs report their runtime_status,
+and a path-traversal-shaped argument ("../x") is silently rejected.

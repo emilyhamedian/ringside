@@ -8,14 +8,14 @@ import "code/format.js" as Format
 RowLayout {
     id: content
 
-    required property Monitor monitor
+    required property var monitor
     required property string item
     required property real ring
     required property bool textShown
     required property bool twoLines
 
-    readonly property GpuSlot gpuOuter: monitor.gpuOuter
-    readonly property GpuSlot gpuInner: monitor.gpuInner
+    readonly property var gpuOuter: monitor.gpuOuter
+    readonly property var gpuInner: monitor.gpuInner
     readonly property bool dual: item === "gpu" && gpuInner.present
     readonly property color dimColor: Qt.alpha(Kirigami.Theme.textColor, 0.6)
     readonly property real valuePointSize: Kirigami.Theme.defaultFont.pointSize * 0.96
@@ -35,7 +35,6 @@ RowLayout {
              : content.item === "memory" ? content.monitor.memoryPercent : content.gpuOuter.usage
         innerValue: content.gpuInner.usage
         text: Format.percent(value)
-        textPointSize: Kirigami.Theme.smallFont.pointSize * content.ring / 32
     }
 
     ColumnLayout {

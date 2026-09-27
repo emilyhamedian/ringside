@@ -1,0 +1,2 @@
+A CPU model string containing a double quote, to prove str() escapes it into
+valid JSON rather than breaking the object.

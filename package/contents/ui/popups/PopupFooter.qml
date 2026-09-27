@@ -4,12 +4,11 @@ import QtQuick.Templates as T
 import org.kde.kirigami as Kirigami
 import org.kde.plasma.components as PlasmaComponents
 import org.kde.plasma.extras as PlasmaExtras
-import ".."
 
 PlasmaExtras.PlasmoidHeading {
     id: footer
 
-    required property Monitor monitor
+    required property var monitor
 
     position: T.ToolBar.Footer
 
