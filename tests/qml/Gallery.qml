@@ -9,8 +9,8 @@ import "../../package/contents/ui/code/style.js" as Style
 
 // The panel strip and the four popups with FakeMonitor's readings, then the
 // states they have to cope with, then the same under Breeze Light. The
-// top-process lists and the CPU popup's frequency, load average and
-// per-thread bars read this machine.
+// top-process lists show FakeMonitor's processSample; only the CPU popup's
+// frequency, load average and per-thread bars read this machine.
 // scripts/gallery.sh renders it to a PNG; qml tests/qml/Gallery.qml shows it
 // in a window, and adding -- --snapshot out.png saves a PNG and quits.
 Rectangle {

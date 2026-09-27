@@ -15,10 +15,13 @@
 //   live     awake; subscribed
 //   resting  awake; unsubscribed while waiting to see whether it suspends
 //
-// Nothing here wakes a GPU: asleep only turns live on a status that says the
-// GPU is awake, and resting only on a status read after the GPU had its
-// chance to suspend. An open popup keeps a live GPU live but never cuts
-// resting short, since that could subscribe a GPU that suspended moments ago.
+// Nothing here wakes a GPU: asleep only turns live on a status read too
+// recently for the GPU to have gone back to sleep since, and resting only on
+// a status read after the GPU had its chance to suspend. An open popup keeps
+// a live GPU live but never cuts resting short, since that could subscribe a
+// GPU that suspended moments ago.
+//
+// Times are milliseconds on the caller's monotonic clock, never wall time.
 
 const BASE_HOLD_MS = 10000;
 const MAX_HOLD_MS = 300000;
@@ -35,12 +38,21 @@ function sleeping(status) {
     return status === "suspended" || status === "suspending";
 }
 
+function delayMs(input) {
+    return input.autosuspendMs > 0 ? input.autosuspendMs : input.vendor === "10de" ? NVIDIA_DELAY_MS : 0;
+}
+
 // How long after letting go a status must have been read to prove the GPU
 // stayed awake: its autosuspend delay (plus the kernel's timer slack) and
 // one poll.
 function probeMs(input) {
-    const delay = input.autosuspendMs > 0 ? input.autosuspendMs : input.vendor === "10de" ? NVIDIA_DELAY_MS : 0;
-    return Math.max(delay, 2000) + 4000;
+    return Math.max(delayMs(input), 2000) + 4000;
+}
+
+// How old an "awake" status may be and still be acted on: younger than the
+// shortest time the GPU could take to suspend again, less a tick.
+function freshMs(input) {
+    return Math.max(delayMs(input), 3000) - 1000;
 }
 
 // input: { now, status (runtime_status text), statusAt (when that status was
@@ -54,7 +66,9 @@ function step(state, input) {
     }
 
     if (state.phase === "asleep") {
-        return { phase: "live", since: now, quietSince: -1, holdMs: state.holdMs };
+        return now - input.statusAt < freshMs(input)
+            ? { phase: "live", since: now, quietSince: -1, holdMs: state.holdMs }
+            : state;
     }
 
     if (state.phase === "resting") {

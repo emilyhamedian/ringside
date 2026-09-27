@@ -62,7 +62,7 @@ GridLayout {
             rounded = 1;
             prefix = prefixes[prefixes.indexOf(prefix) + 1];
         }
-        return rounded + prefix;
+        return Format.whole(rounded) + prefix;
     }
 
     function rateText(reading) {

@@ -32,8 +32,8 @@ GridLayout {
     }
 
     function cellAt(index) {
-        const entry = cells.itemAt(index) as Entry;
-        return entry ? entry.cell : null;
+        const entry = cells.itemAt(index);
+        return entry ? entry.cell : null; // qmllint disable missing-property
     }
 
     flow: vertical ? GridLayout.TopToBottom : GridLayout.LeftToRight

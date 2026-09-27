@@ -24,14 +24,14 @@ function powerValid(watts) {
 }
 
 function percent(v) {
-    return usable(v) ? String(Math.round(Math.max(0, Math.min(100, v)))) : DASH;
+    return usable(v) ? whole(Math.max(0, Math.min(100, v))) : DASH;
 }
 
 function temperature(celsius, fahrenheit) {
     if (!temperatureValid(celsius)) {
         return DASH;
     }
-    return String(Math.round(fahrenheit ? celsius * 9 / 5 + 32 : celsius));
+    return whole(fahrenheit ? celsius * 9 / 5 + 32 : celsius);
 }
 
 // 0 below the first threshold, 1 from warm, 2 from hot.
@@ -42,18 +42,24 @@ function heat(celsius, warm, hot) {
     return celsius >= hot ? 2 : celsius >= warm ? 1 : 0;
 }
 
-// A fixed number of decimals in the user's number format ("3,66" under a
-// German locale). Group separators are left out, to match the whole numbers
-// elsewhere, which never carry them.
+// A fixed number of decimals in the user's number format: "3,66" under a
+// German locale, native digits under Arabic or Marathi ones. Group
+// separators are left out, so "1023" keeps the width of "99.9".
 function decimal(v, digits) {
     const locale = Qt.locale();
     locale.numberOptions |= 1; // Locale.OmitGroupSeparator, which a .pragma library can't name
     return v.toLocaleString(locale, "f", digits);
 }
 
+// A whole number in the same digits as decimal(), so a readout never mixes
+// numeral systems as it crosses a unit or 99.95.
+function whole(v) {
+    return decimal(Math.round(v), 0);
+}
+
 // One decimal under 100, whole numbers above, so a readout keeps its width.
 function number(v) {
-    return Math.abs(v) < 99.95 ? decimal(v, 1) : String(Math.round(v));
+    return Math.abs(v) < 99.95 ? decimal(v, 1) : whole(v);
 }
 
 // Like number(), but drops a trailing zero decimal for totals such as "16 GiB".
@@ -80,7 +86,7 @@ function bytes(v, trim) {
     }
     const i = byteScale(v);
     const scaled = v / 1024 ** i;
-    return { value: i === 0 ? String(Math.round(scaled)) : trim ? compact(scaled) : number(scaled),
+    return { value: i === 0 ? whole(scaled) : trim ? compact(scaled) : number(scaled),
              unit: BYTE_UNITS[i] };
 }
 
@@ -110,7 +116,7 @@ function rate(bytesPerSecond, bits) {
         v /= 1000;
         ++i;
     }
-    return { value: i === 0 ? String(Math.round(v)) : number(v), unit: units[i] };
+    return { value: i === 0 ? whole(v) : number(v), unit: units[i] };
 }
 
 function frequency(megahertz) {
@@ -118,11 +124,11 @@ function frequency(megahertz) {
         return { value: DASH, unit: "" };
     }
     return megahertz >= 1000 ? { value: decimal(megahertz / 1000, 2), unit: "GHz" }
-                             : { value: String(Math.round(megahertz)), unit: "MHz" };
+                             : { value: whole(megahertz), unit: "MHz" };
 }
 
 function watts(v) {
-    return powerValid(v) ? { value: String(Math.round(v)), unit: "W" } : { value: DASH, unit: "" };
+    return powerValid(v) ? { value: whole(v), unit: "W" } : { value: DASH, unit: "" };
 }
 
 function fixed(v, digits) {
@@ -140,7 +146,7 @@ function load(v) {
     if (!usable(v)) {
         return DASH;
     }
-    return v < 10 ? decimal(v, 2) : v < 100 ? decimal(v, 1) : String(Math.round(v));
+    return v < 10 ? decimal(v, 2) : v < 100 ? decimal(v, 1) : whole(v);
 }
 
 // "AMD Ryzen 7 7840HS w/ Radeon 780M Graphics" → "AMD Ryzen 7 7840HS";
@@ -184,7 +190,7 @@ function memoryModules(memory) {
     let layout;
     if (sizes.every(s => s === sizes[0])) {
         const one = bytes(sizes[0], true);
-        layout = sizes.length + " × " + one.value + " " + one.unit;
+        layout = whole(sizes.length) + " × " + one.value + " " + one.unit;
     } else {
         const i = byteScale(Math.max(...sizes));
         layout = sizes.map(s => compact(s / 1024 ** i)).join(" + ") + " " + BYTE_UNITS[i];
