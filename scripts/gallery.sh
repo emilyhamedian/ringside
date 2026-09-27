@@ -24,7 +24,13 @@ if [ -z "${QML:-}" ]; then
 fi
 
 rm -f "$out"
-QT_FORCE_STDERR_LOGGING=1 QT_QPA_PLATFORMTHEME=kde QT_QUICK_BACKEND=software \
-    "$QML" -platform offscreen tests/qml/Gallery.qml -- --snapshot "$out"
+log=$(QT_FORCE_STDERR_LOGGING=1 QT_QPA_PLATFORMTHEME=kde QT_QUICK_BACKEND=software \
+    "$QML" -platform offscreen tests/qml/Gallery.qml -- --snapshot "$out" 2>&1)
+printf '%s\n' "$log" >&2
 [ -s "$out" ] || { echo "gallery.sh: no image written to $out" >&2; exit 1; }
+# A script error still leaves an image, with a part missing.
+if printf '%s\n' "$log" | grep -qE 'TypeError|ReferenceError|SyntaxError|Binding loop'; then
+    echo "gallery.sh: script errors while rendering (above)" >&2
+    exit 1
+fi
 echo "$out"

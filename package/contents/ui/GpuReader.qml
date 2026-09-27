@@ -3,14 +3,17 @@ import QtQuick
 import org.kde.ksysguard.sensors as Sensors
 import "code/format.js" as Format
 import "code/gpugate.js" as Gate
+import "code/gpushare.js" as GpuShare
 
 // One GPU's readings. Monitor keeps one reader per GPU the helper found and
 // points the outer and inner rings at two of them. A reader's sensor ids
 // never change: putting a GPU on or off a ring only switches its Sensors on
 // or off, because a Sensor moved to a new id never unsubscribes the old one.
 //
-// A discrete GPU the kernel can power down is only read while gpugate.js
-// says so, from runtime PM states that Monitor polls for every discrete GPU.
+// Across every Ringside widget in plasmashell, one reader per GPU leads (see
+// gpushare.js): it alone subscribes, and the others show its readings. The
+// leader reads a discrete GPU the kernel can power down only while
+// gpugate.js says so, from runtime PM states Monitor polls from sysfs.
 QtObject {
     id: reader
 
@@ -20,13 +23,23 @@ QtObject {
     // Its popup is open, so an awake GPU stays read while someone looks.
     property bool watched: false
     property int rateLimit: 1000
+    // Monitor's monotonic clock in milliseconds; polls are stamped with it.
+    property real timeMs: 0
 
-    // The latest poll of power/runtime_status and power/control, and when
-    // that poll started.
+    // The latest poll of power/runtime_status and power/control, and the
+    // clock when that poll started.
     property string pmStatus: ""
     property string pmControl: ""
-    property real pmReadAt: 0
+    property real pmReadAt: -1
     property var gate: Gate.initial()
+
+    // This GPU's leader, which is this reader when it leads.
+    property QtObject leader: null
+    readonly property bool leading: present && leader === reader
+    // Set on the leader from every widget's interest in this GPU.
+    property bool wanted: false
+    property bool anyWatched: false
+    property real wantedSince: 0
 
     readonly property bool present: info !== null
     readonly property string kind: present ? info.kind : ""
@@ -36,11 +49,16 @@ QtObject {
     // with the power source.
     readonly property bool gated: kind === "discrete"
         && (pmControl || (info.runtimePm ? "auto" : "on")) === "auto"
-    // live, resting or asleep; always live when there is nothing to gate.
-    readonly property string phase: !present ? "asleep" : gated ? gate.phase : "live"
+    readonly property string ownPhase: !present ? "asleep" : gated ? gate.phase : "live"
+    // qmllint disable missing-property
+    // (the leader is another GpuReader; a file can't name its own type)
+    // live, resting or asleep, as the leader sees it.
+    readonly property string phase: !present ? "asleep" : leading ? ownPhase : leader ? leader.phase : "asleep"
     readonly property bool live: phase === "live"
     readonly property bool resting: phase === "resting"
-    readonly property bool subscribed: onRing && live
+    // A GPU that can sleep is only subscribed on a state read after it was
+    // put on a ring: an older one may predate its going to sleep.
+    readonly property bool subscribed: leading && wanted && ownPhase === "live" && (!gated || pmReadAt >= wantedSince)
     readonly property string name: present ? Format.gpuModel(info.name, nameSensor.value, info.pciName, info.vendor) : ""
     readonly property string temperatureLabel: vendor === "1002" ? i18nc("@label amdgpu's edge temperature sensor", "edge") : ""
     // ksystemstats' Intel backend publishes no temperature and no VRAM.
@@ -48,16 +66,25 @@ QtObject {
     readonly property bool reportsVram: present && vendor !== "8086"
 
     // While resting the GPU is awake and idle but unread, so its last
-    // readings stand in and usage is known to be near zero.
+    // readings stand in and usage is known to be near zero. A reader that
+    // doesn't lead shows the leader's.
     property var held: ({})
-    readonly property real usage: subscribed ? read(0) : onRing && resting ? 0 : NaN
-    readonly property real temperature: subscribed ? liveTemperature : onRing && resting ? held.temperature ?? NaN : NaN
-    readonly property real vramUsed: subscribed ? read(2) : onRing && resting ? held.vramUsed ?? NaN : NaN
-    readonly property real vramTotal: subscribed ? read(3) : NaN
+    readonly property bool showsHeld: wanted && ownPhase === "resting"
+    readonly property real usage: !leading ? (leader ? leader.usage : NaN)
+        : subscribed ? read(0) : showsHeld ? 0 : NaN
+    readonly property real temperature: !leading ? (leader ? leader.temperature : NaN)
+        : subscribed ? liveTemperature : showsHeld ? held.temperature ?? NaN : NaN
+    readonly property real vramUsed: !leading ? (leader ? leader.vramUsed : NaN)
+        : subscribed ? read(2) : showsHeld ? held.vramUsed ?? NaN : NaN
+    readonly property real vramTotal: !leading ? (leader ? leader.vramTotal : NaN) : subscribed ? read(3) : NaN
     // The size doesn't change while the GPU sleeps, so keep the last one read.
-    property real knownVramTotal: NaN
-    readonly property real clock: subscribed ? read(4) : onRing && resting ? held.clock ?? NaN : NaN
-    readonly property real power: subscribed ? livePower : onRing && resting ? held.power ?? NaN : NaN
+    property real ownVramTotal: NaN
+    readonly property real knownVramTotal: !leading ? (leader ? leader.knownVramTotal : NaN) : ownVramTotal
+    readonly property real clock: !leading ? (leader ? leader.clock : NaN)
+        : subscribed ? read(4) : showsHeld ? held.clock ?? NaN : NaN
+    readonly property real power: !leading ? (leader ? leader.power : NaN)
+        : subscribed ? livePower : showsHeld ? held.power ?? NaN : NaN
+    // qmllint enable missing-property
     property var history: []
 
     readonly property real liveTemperature: {
@@ -86,27 +113,54 @@ QtObject {
         }
     }
 
-    // Polls can finish out of order on a busy machine; keep the newest.
+    function gateInput(now, status, statusAt) {
+        return { now: now, status: status, statusAt: statusAt, usage: subscribed ? read(0) : undefined,
+                 watched: anyWatched, autosuspendMs: info.autosuspendMs, vendor: vendor };
+    }
+
+    // One poll runs at a time, so answers arrive in order.
     function takeStatus(status, control, readAt) {
-        if (readAt > pmReadAt) {
-            pmStatus = status;
-            pmControl = control;
-            pmReadAt = readAt;
+        const wasGated = gated;
+        pmStatus = status;
+        pmControl = control;
+        pmReadAt = readAt;
+        // Switched from "on" to "auto" (TLP on unplugging): start the gate from
+        // this state rather than asleep, so an awake GPU stays shown.
+        if (!wasGated && gated) {
+            gate = Gate.step(Gate.initial(), gateInput(timeMs, status, readAt));
         }
     }
 
     function tick(now) {
+        if (!present) {
+            return;
+        }
+        GpuShare.note(info.id, reader, onRing, watched);
+        // Taking over from a leader that went away happens here, a tick after
+        // it left, so its unsubscribes reach ksystemstats before this one's
+        // subscribes.
+        if (!leader) {
+            leader = GpuShare.lead(info.id, reader);
+        }
+        if (!leading) {
+            return;
+        }
+        const want = GpuShare.wanted(info.id);
+        if (want && !wanted) {
+            wantedSince = now;
+        }
+        wanted = want;
+        anyWatched = GpuShare.watched(info.id);
         if (gated) {
-            gate = Gate.step(gate, { now: now, status: pmStatus, statusAt: pmReadAt,
-                                     usage: subscribed ? read(0) : undefined, watched: watched,
-                                     autosuspendMs: info.autosuspendMs, vendor: vendor });
+            gate = Gate.step(gate, gateInput(now, pmStatus, pmReadAt));
         }
     }
 
-    onGatedChanged: gate = Gate.initial()
+    onOnRingChanged: if (present) GpuShare.note(info.id, reader, onRing, watched)
+    onWatchedChanged: if (present) GpuShare.note(info.id, reader, onRing, watched)
     onVramTotalChanged: {
-        if (Number.isFinite(vramTotal) && vramTotal > 0) {
-            knownVramTotal = vramTotal;
+        if (leading && Number.isFinite(vramTotal) && vramTotal > 0) {
+            ownVramTotal = vramTotal;
         }
     }
     onLiveTemperatureChanged: hold("temperature", liveTemperature)
@@ -114,7 +168,24 @@ QtObject {
     onClockChanged: hold("clock", clock)
     onLivePowerChanged: hold("power", livePower)
 
-    // The name is fixed at ksystemstats' start, so reading it wakes nothing.
+    Component.onCompleted: {
+        if (present) {
+            GpuShare.note(info.id, reader, onRing, watched);
+            leader = GpuShare.lead(info.id, reader);
+            if (leading) {
+                wanted = GpuShare.wanted(info.id);
+                wantedSince = timeMs;
+            }
+        }
+    }
+    Component.onDestruction: {
+        if (present) {
+            GpuShare.leave(info.id, reader);
+        }
+    }
+
+    // The name is fixed at ksystemstats' start, so reading it wakes nothing,
+    // and a second subscription to it costs nothing.
     property Sensors.Sensor nameSensor: Sensors.Sensor {
         sensorId: reader.present ? "gpu/" + reader.info.id + "/name" : ""
         enabled: reader.present && reader.onRing

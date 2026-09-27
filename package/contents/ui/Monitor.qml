@@ -65,10 +65,10 @@ Item {
     // cached is the rest of what's available. The three add up to the total.
     readonly property real memoryTotal: value(memoryTotalSensor)
     readonly property real memoryUsed: value(memoryUsedSensor)
-    readonly property real memoryFree: Math.max(0, Math.min(
-        memoryTotal - value(memoryApplicationSensor) - value(memoryCacheSensor) - (value(memoryBufferSensor) || 0),
-        memoryTotal - memoryUsed))
-    readonly property real memoryCached: memoryTotal - memoryUsed - memoryFree
+    readonly property var memoryParts: Hardware.memoryParts(memoryTotal, memoryUsed, value(memoryApplicationSensor),
+                                                            value(memoryCacheSensor), value(memoryBufferSensor))
+    readonly property real memoryFree: memoryParts.free
+    readonly property real memoryCached: memoryParts.cached
     readonly property real memoryPercent: memoryTotal > 0 ? memoryUsed / memoryTotal * 100 : NaN
     readonly property string memoryModules: Format.memoryModules(hardware.memory)
     readonly property real swapUsed: value(swapUsedSensor)
@@ -80,6 +80,12 @@ Item {
     property var memoryHistory: []
 
     // GPUs: one reader per GPU (see GpuReader.qml); the rings point at two.
+    // A hidden GPU item reads nothing, so hiding it leaves the GPU alone.
+    readonly property bool gpuShown: !config.hiddenItems.includes("gpu")
+    // Milliseconds since this widget started, counted by its own timer: the
+    // GPU gate must not follow wall-clock steps. A late timer only makes it
+    // wait longer, which never wakes a GPU.
+    property real clockMs: 0
     readonly property var gpuChoice: Hardware.assignGpus(hardware.gpus, config.outerGpu, config.innerGpu)
     readonly property var gpuOuter: readerFor(gpuChoice.outer)
     readonly property var gpuInner: readerFor(gpuChoice.inner)
@@ -190,7 +196,7 @@ Item {
         if (bdfs.length > 0 && powerStates.connectedSources.length === 0) {
             // The start time rides along in a shell comment: it makes each run a
             // new source, and tells the gate how old the answer is.
-            powerStates.connectSource(helper.command("pm " + bdfs.join(" ")) + " #" + Date.now());
+            powerStates.connectSource(helper.command("pm " + bdfs.join(" ")) + " #" + clockMs);
         }
     }
 
@@ -229,27 +235,21 @@ Item {
         onTriggered: monitor.sample()
     }
 
-    // Steps each discrete GPU's sleep gate between power-state polls.
+    // The clock: steps every GPU reader (leadership, interest, sleep gates)
+    // each second and polls the discrete GPUs' power states every other.
     Timer {
         interval: 1000
-        running: monitor.readers().some(r => r.gated)
+        running: monitor.readers().length > 0
         repeat: true
         onTriggered: {
-            const now = Date.now();
+            monitor.clockMs += 1000;
+            if (monitor.clockMs % 2000 === 0) {
+                monitor.pollPower();
+            }
             for (const r of monitor.readers()) {
-                r.tick(now);
+                r.tick(monitor.clockMs);
             }
         }
-    }
-
-    // Every discrete GPU's power state, whether or not a ring shows it, so
-    // its gate is current the moment it is put on one.
-    Timer {
-        interval: 2000
-        running: monitor.readers().some(r => r.kind === "discrete")
-        repeat: true
-        triggeredOnStart: true
-        onTriggered: monitor.pollPower()
     }
 
     component Reader: Sensors.Sensor {
@@ -319,8 +319,12 @@ Item {
             required property var modelData
             info: modelData
             rateLimit: monitor.interval
-            onRing: [monitor.gpuChoice.outer, monitor.gpuChoice.inner].some(g => g !== null && g.id === modelData.id)
+            timeMs: monitor.clockMs
+            onRing: monitor.gpuShown
+                    && [monitor.gpuChoice.outer, monitor.gpuChoice.inner].some(g => g !== null && g.id === modelData.id)
             watched: onRing && monitor.openPopup === "gpu"
+            // A state read after this moment is needed before subscribing.
+            onOnRingChanged: if (onRing) Qt.callLater(monitor.pollPower)
         }
         onObjectAdded: Qt.callLater(monitor.pollPower)
     }
@@ -386,10 +390,11 @@ Item {
             disconnectSource(source);
             const readAt = Number(source.slice(source.lastIndexOf("#") + 1));
             const states = {};
+            // Fields are separated by exactly one space and may be empty.
             for (const line of String(data.stdout || "").split("\n")) {
-                const [bdf, status, control] = line.trim().split(/\s+/);
-                if (bdf) {
-                    states[bdf] = { status: status || "", control: control || "" };
+                const fields = line.split(" ");
+                if (fields[0]) {
+                    states[fields[0]] = { status: fields[1] || "", control: fields[2] || "" };
                 }
             }
             for (const r of monitor.readers()) {

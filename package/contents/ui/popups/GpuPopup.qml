@@ -78,7 +78,7 @@ PopupPage {
                 strokeWidth: 3.5
                 color: section.tone
                 value: section.slot.usage
-                text: section.asleep ? "" : Number.isFinite(value) ? Math.round(value) + "%" : "–"
+                text: section.asleep ? "" : Number.isFinite(value) ? Format.percent(value) + "%" : "–"
                 textScale: 0.275
 
                 Accessible.role: Accessible.ProgressBar

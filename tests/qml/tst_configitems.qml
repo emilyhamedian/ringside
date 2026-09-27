@@ -43,6 +43,10 @@ Item {
 
     TestCase {
         name: "ConfigItems"
+
+        function init() {
+            failOnWarning(/TypeError|ReferenceError|SyntaxError|is not a function|Unable to assign|Cannot assign|Binding loop/);
+        }
         when: windowShown
 
         function find(item, pred) {

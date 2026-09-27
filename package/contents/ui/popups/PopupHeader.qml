@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
 import "../code/style.js" as Style
+import "../code/format.js" as Format
 import ".."
 
 // Title row: a large ring, the name and hardware under it, and the headline
@@ -35,7 +36,7 @@ RowLayout {
         Layout.preferredHeight: Layout.preferredWidth
         strokeWidth: 4
         value: header.ringValue
-        text: Number.isFinite(header.ringValue) ? Math.round(header.ringValue) + "%" : "–"
+        text: Number.isFinite(header.ringValue) ? Format.percent(header.ringValue) + "%" : "–"
         textScale: 0.29
     }
 

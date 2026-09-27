@@ -7,8 +7,8 @@ import org.kde.plasma.plasmoid
 import org.kde.plasma.plasma5support as P5Support
 
 // The items sit straight in the panel (there is no full representation to
-// expand), and each opens its own popup under it. One AppletPopup serves them
-// all, moved to whichever item was clicked.
+// expand), and each opens its own popup. One AppletPopup serves them all,
+// moved to whichever item was clicked.
 PlasmoidItem {
     id: root
 

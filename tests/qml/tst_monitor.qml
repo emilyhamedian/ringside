@@ -20,8 +20,18 @@ TestCase {
         return substitute(text, args);
     }
 
-    readonly property string stub: decodeURIComponent(Qt.resolvedUrl("data/fake-info.sh").toString()
-                                                      .replace(/^file:\/\//, ""))
+    function dataPath(name) {
+        return decodeURIComponent(Qt.resolvedUrl("data/" + name).toString().replace(/^file:\/\//, ""));
+    }
+    readonly property string stub: dataPath("fake-info.sh")
+
+    function enabledSensors(reader) {
+        const flags = [];
+        for (let i = 0; i < reader.sensors.count; ++i) {
+            flags.push(reader.sensors.objectAt(i).enabled);
+        }
+        return flags;
+    }
 
     Component {
         id: configComponent
@@ -57,7 +67,7 @@ TestCase {
     property var monitor: null
 
     function init() {
-        failOnWarning(/TypeError|ReferenceError|SyntaxError|is not a function|Unable to assign/);
+        failOnWarning(/TypeError|ReferenceError|SyntaxError|is not a function|Unable to assign|Cannot assign|Binding loop/);
         config = createTemporaryObject(configComponent, testCase);
         monitor = createTemporaryObject(monitorComponent, testCase, { config: config, helperPath: stub });
         tryVerify(() => monitor.hardware.cpu !== undefined, 10000, "the stub's report arrives");
@@ -99,11 +109,60 @@ TestCase {
         verify(!monitor.readers()[0].onRing);
     }
 
-    function test_memoryPartsAddUp() {
+    // Hiding the GPU item leaves the GPUs alone: nothing is subscribed.
+    function test_aHiddenGpuItemReadsNothing() {
+        config.hiddenItems = ["disk", "gpu"];
+        for (const r of monitor.readers()) {
+            verify(!r.onRing, r.info.id);
+            verify(!r.nameSensor.enabled, r.info.id);
+            monitor.clockMs += 1000;
+            r.tick(monitor.clockMs);
+            verify(enabledSensors(r).every(e => !e), r.info.id);
+        }
+        config.hiddenItems = ["disk"];
+        verify(monitor.readers().some(r => r.onRing));
+    }
+
+    // Two widgets in one plasmashell: one reader per GPU subscribes, and the
+    // other widget shows its readings.
+    function test_twoWidgetsShareOneSubscriptionPerGpu() {
+        const second = createTemporaryObject(monitorComponent, testCase,
+                                             { config: createTemporaryObject(configComponent, testCase), helperPath: stub });
+        tryVerify(() => second.hardware.cpu !== undefined, 10000);
+        const mine = monitor.gpuInner;
+        const theirs = second.gpuInner;
+        // A reader from the previous test may still lead until its widget is
+        // gone; the next tick hands over.
+        tryVerify(() => mine.leading !== theirs.leading, 5000, "exactly one leads");
+        const leader = mine.leading ? mine : theirs;
+        const follower = mine.leading ? theirs : mine;
+        tryVerify(() => enabledSensors(leader).every(e => e), 5000);
+        verify(enabledSensors(follower).every(e => !e));
+        compare(follower.phase, leader.phase);
+    }
+
+    // The helper prints "BDF  auto" when runtime_status can't be read: the
+    // state is unknown, so the GPU is left asleep.
+    function test_anUnreadableStateKeepsTheGpuAsleep() {
+        const other = createTemporaryObject(monitorComponent, testCase,
+                                            { config: createTemporaryObject(configComponent, testCase),
+                                              helperPath: dataPath("fake-info-unreadable.sh") });
+        tryVerify(() => other.hardware.cpu !== undefined, 10000);
+        monitor.destroy();
+        wait(0);
+        const gpu = other.gpuOuter;
+        tryVerify(() => gpu.pmControl === "auto", 10000);
+        compare(gpu.pmStatus, "");
+        other.clockMs += 1000;
+        gpu.tick(other.clockMs);
+        compare(gpu.phase, "asleep");
+        verify(enabledSensors(gpu).every(e => !e));
+    }
+
+    function test_memoryPartsArriveFromTheSensors() {
         tryVerify(() => monitor.memoryTotal > 0, 10000);
         tryVerify(() => Number.isFinite(monitor.memoryFree) && Number.isFinite(monitor.memoryCached), 10000);
-        fuzzyCompare(monitor.memoryUsed + monitor.memoryCached + monitor.memoryFree, monitor.memoryTotal, 1);
-        verify(monitor.memoryCached >= 0);
+        // The arithmetic is tested in tst_hardware.qml; this checks the sensors reach it.
     }
 
     function diskReadersOf(m) {

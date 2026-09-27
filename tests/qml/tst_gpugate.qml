@@ -11,13 +11,27 @@ TestCase {
         compare(state.holdMs, 10000);
     }
 
-    function test_asleepWakesToLiveOnStatus() {
+    function test_asleepWakesToLiveOnAFreshStatus() {
         var asleep = Gate.initial();
-        var result = Gate.step(asleep, { now: 1000, status: "active", usage: undefined, watched: false, autosuspendMs: 5000 });
+        var result = Gate.step(asleep, { now: 1000, status: "active", statusAt: 900, usage: undefined, watched: false,
+                                         autosuspendMs: 5000, vendor: "1002" });
         compare(result.phase, "live");
         compare(result.since, 1000);
         compare(result.quietSince, -1);
         compare(result.holdMs, 10000); // carried over from the asleep state, not reset
+    }
+
+    // An "awake" status older than the GPU's shortest way back to sleep may
+    // no longer be true, and subscribing a sleeping GPU wakes it.
+    function test_aStaleAwakeStatusLeavesItAsleep() {
+        var asleep = Gate.initial();
+        // freshMs = max(5000, 3000) - 1000 = 4000
+        var stale = Gate.step(asleep, { now: 10000, status: "active", statusAt: 6000, usage: undefined, watched: false,
+                                        autosuspendMs: 5000, vendor: "1002" });
+        verify(stale === asleep);
+        var fresh = Gate.step(asleep, { now: 10000, status: "active", statusAt: 6001, usage: undefined, watched: false,
+                                        autosuspendMs: 5000, vendor: "1002" });
+        compare(fresh.phase, "live");
     }
 
     // The pm poll reports "" for a GPU it hasn't heard back about yet; that

@@ -4,9 +4,9 @@ CPU, GPU, memory, network and disk at a glance in a KDE Plasma 6 panel.
 
 ![Ringside in a panel: CPU, GPU and memory rings with their temperatures and memory in use, then network and disk rates](docs/panel.png)
 
-Each item is a ring or a pair of rates. Click one for a popup under it with
-history graphs, per-thread load, top processes, VRAM, clocks, power, swap,
-memory pressure and disk activity.
+Each item is a ring or a pair of rates. Click one to open its popup: history
+graphs, per-thread load, top processes, VRAM, clocks, power, swap, memory
+pressure and disk activity.
 
 ![The CPU, GPU, memory and network popups](docs/popups.png)
 
@@ -19,8 +19,9 @@ memory pressure and disk activity.
   disk activity too.
 
 Temperatures turn amber and red above thresholds you set, and colours follow
-your Plasma theme. On a vertical panel the items show their rings, tinted when
-hot, with the readings in a tooltip.
+your Plasma theme. On a vertical panel the CPU, GPU and memory items show only
+their rings, tinted when hot, with the readings in a tooltip; network and disk
+keep their rates as text without units, such as 24.8M.
 
 ### Discrete GPUs on laptops
 
@@ -28,11 +29,14 @@ Reading a GPU's sensors keeps it awake. A laptop's discrete GPU normally
 powers down when nothing uses it, so Ringside reads it only while something
 else has woken it, lets go after about ten idle seconds so it can power down
 again, and shows **off** while it sleeps. Opening the GPU popup never wakes
-it.
+it. If the GPU stays awake anyway, say for a display on its outputs, Ringside
+reads it again and waits longer before each next try, up to five minutes, so
+the GPU can stay awake that long after the display goes.
 
-Other widgets that show the same GPU's sensors, such as Plasma's own GPU
-monitors, keep it awake regardless. So does restarting ksystemstats in the
-middle of a session, until Plasma restarts.
+Several Ringside widgets share one reading of each GPU. Other widgets that
+show the same GPU's sensors, such as Plasma's own GPU monitors, keep it awake
+regardless, and so does restarting ksystemstats in the middle of a session,
+until Plasma restarts.
 
 ## Requirements
 

@@ -29,3 +29,12 @@ function assignGpus(gpus, outerChoice, innerChoice) {
 function swapLabel(kinds) {
     return (kinds || []).join(" + ");
 }
+
+// Free and cached memory from ksystemstats' physical-memory readings, such
+// that used, cached and free add up to the total (Monitor.qml says why).
+// Free is MemFree, never more than "used" leaves; cached is the rest. A
+// missing buffer reading counts as none; any other gives NaN.
+function memoryParts(total, used, application, cache, buffer) {
+    const free = Math.max(0, Math.min(total - application - cache - (buffer || 0), total - used));
+    return { free: free, cached: total - used - free };
+}

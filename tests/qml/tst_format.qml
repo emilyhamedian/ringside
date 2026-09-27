@@ -5,10 +5,14 @@ import "../../package/contents/ui/code/format.js" as Format
 TestCase {
     name: "Format"
 
-    // Expected numbers are written with a full stop; the formatters use the
-    // running locale's decimal separator, so the suite passes under any LC_NUMERIC.
+    // Expected numbers are written in ASCII digits with a full stop. The
+    // formatters use the running locale's digits and decimal separator, so
+    // local() rewrites the expectation to match and the suite passes under
+    // any locale: "24,8" in German, "٢٤٫٨" in Egyptian Arabic.
     function local(text) {
-        return text.split(".").join(Qt.locale().decimalPoint);
+        const locale = Qt.locale();
+        const zero = locale.zeroDigit.codePointAt(0);
+        return text.replace(/[0-9.]/g, c => c === "." ? locale.decimalPoint : String.fromCodePoint(zero + Number(c)));
     }
 
     function test_decimal_followsTheLocale() {
@@ -18,6 +22,28 @@ TestCase {
 
     function test_decimal_leavesOutGroupSeparators() {
         compare(Format.decimal(1234567.26, 1), local("1234567.3"));
+    }
+
+    function test_whole_data() {
+        return [
+            { tag: "roundsDown", v: 0.4, expected: "0" },
+            { tag: "roundsHalfUp", v: 0.5, expected: "1" },
+            { tag: "negativeZeroHasNoSign", v: -0.3, expected: "0" },
+            { tag: "roundsUpToHundred", v: 99.96, expected: "100" },
+            { tag: "noGrouping", v: 12345.4, expected: "12345" }
+        ];
+    }
+    function test_whole(data) {
+        compare(Format.whole(data.v), local(data.expected));
+    }
+
+    // Whole numbers and decimals share the locale's digits, so a readout
+    // keeps one numeral system as it crosses 99.95 or a unit boundary.
+    function test_whole_matchesDecimalDigits() {
+        compare(Format.number(99.94), local("99.9"));
+        compare(Format.number(99.96), local("100"));
+        compare(Format.rate(1023, false).value, local("1023"));
+        compare(Format.rate(1024, false).value, local("1.0"));
     }
 
     function test_fixed_data() {
@@ -43,7 +69,7 @@ TestCase {
         ];
     }
     function test_percent(data) {
-        compare(Format.percent(data.input), data.expected);
+        compare(Format.percent(data.input), local(data.expected));
     }
 
     function test_temperature_data() {
@@ -52,9 +78,8 @@ TestCase {
             { tag: "fahrenheitConversion", celsius: 37, fahrenheit: true, expected: "99" },
             { tag: "zeroIsUninitialisedNotAReading", celsius: 0, fahrenheit: false, expected: "–" },
             { tag: "hugeNegativeGarbage", celsius: -1.397e62, fahrenheit: false, expected: "–" },
-            // A subnormal double near zero is technically > 0 and < 150, so the
-            // range check alone doesn't reject it: it prints as "0", the same as
-            // a real freezing-point reading. See the report for a proposed fix.
+            // A subnormal double near zero passes a > 0 check; the 1 °C floor
+            // keeps it from printing as a real freezing-point reading.
             { tag: "tinySubnormalGarbageIsDash", celsius: 6.92e-310, fahrenheit: false, expected: "–" },
             { tag: "nan", celsius: NaN, fahrenheit: false, expected: "–" },
             { tag: "atUpperBoundaryIsInvalid", celsius: 150, fahrenheit: false, expected: "–" },
@@ -62,7 +87,7 @@ TestCase {
         ];
     }
     function test_temperature(data) {
-        compare(Format.temperature(data.celsius, data.fahrenheit), data.expected);
+        compare(Format.temperature(data.celsius, data.fahrenheit), local(data.expected));
     }
 
     function test_heat_data() {
@@ -119,7 +144,7 @@ TestCase {
     function test_bytesOf(data) {
         var result = Format.bytesOf(data.used, data.total);
         compare(result.value, local(data.value));
-        compare(result.total, data.total_);
+        compare(result.total, local(data.total_));
         compare(result.unit, data.unit);
     }
 
@@ -167,7 +192,7 @@ TestCase {
     }
     function test_watts(data) {
         var result = Format.watts(data.v);
-        compare(result.value, data.value);
+        compare(result.value, local(data.value));
         compare(result.unit, data.unit);
     }
 
@@ -240,37 +265,39 @@ TestCase {
         compare(Format.gpuModel(data.marketing, data.sensorName, data.pciName, data.vendor), data.expected);
     }
 
+    // "DDR5-4800" is a part designation and stays in ASCII digits; the
+    // count and sizes follow the locale.
     function test_memoryModules_matchedPair() {
         var memory = { type: "DDR5", speed: 4800, modules: [16 * 1024 * 1024 * 1024, 16 * 1024 * 1024 * 1024] };
-        compare(Format.memoryModules(memory), "DDR5-4800 · 2 × 16 GiB");
+        compare(Format.memoryModules(memory), "DDR5-4800 · " + local("2 × 16 GiB"));
     }
 
     function test_memoryModules_mixedSizes() {
         var memory = { type: "DDR4", speed: 3200, modules: [8 * 1024 * 1024 * 1024, 16 * 1024 * 1024 * 1024] };
-        compare(Format.memoryModules(memory), "DDR4-3200 · 8 + 16 GiB");
+        compare(Format.memoryModules(memory), "DDR4-3200 · " + local("8 + 16 GiB"));
     }
 
     // Every module in the largest one's unit, whichever order the slots report.
     function test_memoryModules_mixedUnits_data() {
         return [
-            { tag: "smallerFirst", modules: [512 * 1024 * 1024, 1024 * 1024 * 1024], expected: "DDR2-800 · 0.5 + 1 GiB" },
-            { tag: "largerFirst", modules: [1024 * 1024 * 1024, 512 * 1024 * 1024], expected: "DDR2-800 · 1 + 0.5 GiB" },
+            { tag: "smallerFirst", modules: [512 * 1024 * 1024, 1024 * 1024 * 1024], expected: "0.5 + 1 GiB" },
+            { tag: "largerFirst", modules: [1024 * 1024 * 1024, 512 * 1024 * 1024], expected: "1 + 0.5 GiB" },
             { tag: "gibAndTib", modules: [512 * 1024 * 1024 * 1024, 1024 * 1024 * 1024 * 1024],
-              expected: "DDR2-800 · 0.5 + 1 TiB" }
+              expected: "0.5 + 1 TiB" }
         ];
     }
     function test_memoryModules_mixedUnits(data) {
-        compare(Format.memoryModules({ type: "DDR2", speed: 800, modules: data.modules }), local(data.expected));
+        compare(Format.memoryModules({ type: "DDR2", speed: 800, modules: data.modules }), "DDR2-800 · " + local(data.expected));
     }
 
     function test_memoryModules_missingTypeDropsTheKindPrefix() {
         var memory = { type: "Unknown", speed: 4800, modules: [16 * 1024 * 1024 * 1024, 16 * 1024 * 1024 * 1024] };
-        compare(Format.memoryModules(memory), "2 × 16 GiB");
+        compare(Format.memoryModules(memory), local("2 × 16 GiB"));
     }
 
     function test_memoryModules_noConfiguredSpeedOmitsIt() {
         var memory = { type: "DDR4", speed: 0, modules: [8 * 1024 * 1024 * 1024] };
-        compare(Format.memoryModules(memory), "DDR4 · 1 × 8 GiB");
+        compare(Format.memoryModules(memory), "DDR4 · " + local("1 × 8 GiB"));
     }
 
     function test_memoryModules_emptyOrMissingModules() {
