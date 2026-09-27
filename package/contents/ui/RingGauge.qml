@@ -1,0 +1,107 @@
+import QtQuick
+import QtQuick.Shapes
+import org.kde.kirigami as Kirigami
+
+// A progress ring filling clockwise from twelve o'clock, with an optional
+// thinner, dimmer ring inside it for a second reading: the integrated GPU
+// under the discrete one. NaN draws the track alone.
+Item {
+    id: gauge
+
+    property real value: NaN
+    property real innerValue: NaN
+    property bool inner: false
+    property color color: Kirigami.Theme.textColor
+    property real strokeWidth: Math.max(2, Math.round(width / 10))
+    // Shown in the middle; left empty for dual rings, which have no room.
+    property string text: ""
+    property real textPointSize: Kirigami.Theme.smallFont.pointSize
+
+    readonly property real innerStrokeWidth: Math.max(1.5, Math.round(strokeWidth * 2 / 3 * 2) / 2)
+    readonly property real innerRadius: outer.radius - strokeWidth / 2 - innerStrokeWidth / 2
+                                        - Math.max(1, strokeWidth / 2)
+
+    implicitWidth: 30
+    implicitHeight: implicitWidth
+
+    component Arc: Shape {
+        id: arc
+
+        required property real radius
+        required property real stroke
+        required property real percent
+        required property color tone
+        required property real trackOpacity
+
+        anchors.fill: parent
+        preferredRendererType: Shape.CurveRenderer
+
+        ShapePath {
+            fillColor: "transparent"
+            strokeColor: Qt.alpha(arc.tone, arc.trackOpacity * arc.tone.a)
+            strokeWidth: arc.stroke
+
+            PathAngleArc {
+                centerX: gauge.width / 2
+                centerY: gauge.height / 2
+                radiusX: arc.radius
+                radiusY: arc.radius
+                startAngle: -90
+                sweepAngle: 360
+            }
+        }
+
+        ShapePath {
+            fillColor: "transparent"
+            // A zero-length arc with round caps would still draw a dot.
+            strokeColor: sweep.sweepAngle >= 1 ? arc.tone : "transparent"
+            strokeWidth: arc.stroke
+            capStyle: ShapePath.RoundCap
+
+            PathAngleArc {
+                id: sweep
+                centerX: gauge.width / 2
+                centerY: gauge.height / 2
+                radiusX: arc.radius
+                radiusY: arc.radius
+                startAngle: -90
+                sweepAngle: Number.isFinite(arc.percent) ? 3.6 * Math.max(0, Math.min(100, arc.percent)) : 0
+
+                Behavior on sweepAngle {
+                    NumberAnimation {
+                        duration: Kirigami.Units.longDuration
+                        easing.type: Easing.OutCubic
+                    }
+                }
+            }
+        }
+    }
+
+    Arc {
+        id: outer
+        radius: (Math.min(gauge.width, gauge.height) - gauge.strokeWidth) / 2 - 0.5
+        stroke: gauge.strokeWidth
+        percent: gauge.value
+        tone: gauge.color
+        trackOpacity: 0.16
+    }
+
+    Arc {
+        visible: gauge.inner
+        radius: gauge.innerRadius
+        stroke: gauge.innerStrokeWidth
+        percent: gauge.innerValue
+        tone: Qt.alpha(gauge.color, 0.55)
+        trackOpacity: 0.22
+    }
+
+    Text {
+        anchors.centerIn: parent
+        visible: gauge.text !== "" && !gauge.inner
+        text: gauge.text
+        color: gauge.color
+        font.family: Kirigami.Theme.fixedWidthFont.family
+        font.pointSize: gauge.textPointSize
+        textFormat: Text.PlainText
+    }
+}

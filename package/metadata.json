@@ -1,0 +1,22 @@
+{
+    "KPackageStructure": "Plasma/Applet",
+    "KPlugin": {
+        "Authors": [
+            {
+                "Email": "me@emily.dev",
+                "Name": "Emily Hamedian"
+            }
+        ],
+        "Category": "System Information",
+        "Description": "CPU, GPU, memory, network and disk as rings and readouts in the panel",
+        "EnabledByDefault": true,
+        "Icon": "utilities-system-monitor",
+        "Id": "dev.emily.ringside",
+        "License": "GPL-3.0-or-later",
+        "Name": "Ringside",
+        "Version": "0.1.0",
+        "Website": "https://github.com/emilyhamedian/ringside",
+        "BugReportUrl": "https://github.com/emilyhamedian/ringside/issues"
+    },
+    "X-Plasma-API-Minimum-Version": "6.0"
+}
