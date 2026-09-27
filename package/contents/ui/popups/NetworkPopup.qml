@@ -51,7 +51,8 @@ PopupPage {
     PopupHeader {
         ringShown: false
         title: i18nc("@title", "Network & Disk")
-        subtitle: [popup.monitor.networkInterface, popup.monitor.networkConnection, popup.monitor.networkAddress]
+        // The interface name goes last: when the line runs long, it's the part to lose.
+        subtitle: [popup.monitor.networkConnection, popup.monitor.networkAddress, popup.monitor.networkInterface]
             .filter(s => s !== "").join(" · ")
 
         GridLayout {

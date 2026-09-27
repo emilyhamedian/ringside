@@ -28,22 +28,36 @@ QtObject {
     // amdgpu's temp1 is the edge sensor; other drivers don't say.
     readonly property string temperatureLabel: present && info.vendor === "1002" ? "edge" : ""
 
-    readonly property real usage: live ? read(0) : NaN
-    readonly property real temperature: {
-        const t = live ? read(1) : NaN;
-        return Format.temperatureValid(t) ? t : NaN;
-    }
-    readonly property real vramUsed: live ? read(2) : NaN
+    // While resting the GPU is awake and idle but unread, so its last
+    // readings stand in and usage is known to be near zero.
+    readonly property bool resting: phase === "resting"
+    property var held: ({})
+
+    readonly property real usage: live ? read(0) : resting ? 0 : NaN
+    readonly property real temperature: live ? liveTemperature : resting ? held.temperature ?? NaN : NaN
+    readonly property real vramUsed: live ? read(2) : resting ? held.vramUsed ?? NaN : NaN
     readonly property real vramTotal: live ? read(3) : NaN
     // The size doesn't change while the GPU sleeps, so keep the last one read.
     property real knownVramTotal: NaN
-    readonly property real clock: live ? read(4) : NaN
-    // An APU's power sensor measures the whole package, not the GPU, so
-    // integrated GPUs report none.
-    readonly property real power: live && kind !== "integrated" ? read(5) : NaN
+    readonly property real clock: live ? read(4) : resting ? held.clock ?? NaN : NaN
+    readonly property real power: live ? livePower : resting ? held.power ?? NaN : NaN
     property var history: []
 
     readonly property string prefix: present ? "gpu/" + info.id + "/" : ""
+
+    readonly property real liveTemperature: {
+        const t = live ? read(1) : NaN;
+        return Format.temperatureValid(t) ? t : NaN;
+    }
+    // An APU's power sensor measures the whole package, not the GPU, so
+    // integrated GPUs report none.
+    readonly property real livePower: live && kind !== "integrated" ? read(5) : NaN
+
+    function hold(key, value) {
+        if (live && Number.isFinite(value)) {
+            held = Object.assign({}, held, { [key]: value });
+        }
+    }
 
     function read(index) {
         sensors.count;
@@ -56,7 +70,14 @@ QtObject {
             knownVramTotal = vramTotal;
         }
     }
-    onInfoChanged: knownVramTotal = NaN
+    onInfoChanged: {
+        knownVramTotal = NaN;
+        held = {};
+    }
+    onLiveTemperatureChanged: hold("temperature", liveTemperature)
+    onVramUsedChanged: hold("vramUsed", vramUsed)
+    onClockChanged: hold("clock", clock)
+    onLivePowerChanged: hold("power", livePower)
 
     function tick(now) {
         if (gated) {
