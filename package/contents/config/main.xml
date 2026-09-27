@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kcfg xmlns="http://www.kde.org/standards/kcfg/1.0"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="http://www.kde.org/standards/kcfg/1.0
+                          http://www.kde.org/standards/kcfg/1.0/kcfg.xsd">
+  <kcfgfile name=""/>
+
+  <group name="General">
+    <entry name="updateInterval" type="Int">
+      <label>Milliseconds between readings</label>
+      <default>1000</default>
+      <min>500</min>
+      <max>10000</max>
+    </entry>
+    <entry name="historySeconds" type="Int">
+      <label>How far back the popup graphs reach, in seconds</label>
+      <default>60</default>
+      <min>30</min>
+      <max>600</max>
+    </entry>
+    <entry name="fahrenheit" type="Bool">
+      <default>false</default>
+    </entry>
+    <entry name="networkBits" type="Bool">
+      <label>Network rates in bits rather than bytes</label>
+      <default>true</default>
+    </entry>
+    <entry name="highlightTemperatures" type="Bool">
+      <default>true</default>
+    </entry>
+    <entry name="warmCelsius" type="Double">
+      <default>75</default>
+    </entry>
+    <entry name="hotCelsius" type="Double">
+      <default>90</default>
+    </entry>
+  </group>
+
+  <group name="Panel">
+    <entry name="itemOrder" type="StringList">
+      <default>cpu,gpu,memory,network,disk</default>
+    </entry>
+    <entry name="hiddenItems" type="StringList">
+      <default>disk</default>
+    </entry>
+    <entry name="ringsOnly" type="StringList">
+      <label>Ring items drawn without their text</label>
+      <default></default>
+    </entry>
+    <entry name="ringSize" type="Int">
+      <default>30</default>
+      <min>16</min>
+      <max>64</max>
+    </entry>
+  </group>
+
+  <group name="Sensors">
+    <entry name="cpuTemperatureSensor" type="String">
+      <label>ksystemstats id, or empty for the CPU's own reading</label>
+      <default></default>
+    </entry>
+    <entry name="outerGpu" type="String">
+      <label>ksystemstats GPU id, "none", or empty for automatic</label>
+      <default></default>
+    </entry>
+    <entry name="innerGpu" type="String">
+      <default></default>
+    </entry>
+    <entry name="networkInterface" type="String">
+      <label>Interface name, or empty for all interfaces</label>
+      <default></default>
+    </entry>
+    <entry name="diskDevice" type="String">
+      <label>Device name, "all", or empty for the disk holding /</label>
+      <default></default>
+    </entry>
+    <entry name="diskVolume" type="String">
+      <label>ksystemstats volume id, or empty for the root file system</label>
+      <default></default>
+    </entry>
+    <entry name="diskTemperatureSensor" type="String">
+      <label>ksystemstats id, "none", or empty for automatic</label>
+      <default></default>
+    </entry>
+    <entry name="detectedHardware" type="String">
+      <label>The helper's last report, kept for the settings pages</label>
+      <default></default>
+    </entry>
+  </group>
+</kcfg>
