@@ -173,8 +173,23 @@ Item {
             return found;
         }
 
+        // The outer of a gauge's two arcs, the one a popup's ring draws.
+        function outerArc(gauge) {
+            const arcs = [];
+            const pending = [gauge];
+            while (pending.length > 0) {
+                const item = pending.shift();
+                if (item.playReset !== undefined && item.animating !== undefined) {
+                    arcs.push(item);
+                }
+                pending.push(...Array.from(item.children));
+            }
+            compare(arcs.length, 2);
+            return arcs[0].radius > arcs[1].radius ? arcs[0] : arcs[1];
+        }
+
         // The header ring, and the GPU popup's ring per GPU, take the level
-        // colours at 75 % and 90 % of their own reading.
+        // colours at 75 % and 90 % of their own reading, in the arc they draw.
         function test_popupRingsTakeTheLevelColours_data() {
             return [{ tag: "74", value: 74, tone: "text" }, { tag: "75", value: 75, tone: "neutral" },
                     { tag: "89", value: 89, tone: "neutral" }, { tag: "90", value: 90, tone: "negative" }];
@@ -188,9 +203,13 @@ Item {
             const cpu = gauges(load("CpuPopup", normal));
             verify(cpu.length > 0);
             compare(cpu[0].outerTone, expected);
+            compare(outerArc(cpu[0]).color, expected, "the header ring as drawn");
             const gpu = gauges(load("GpuPopup", normal)).filter(g => g.value === data.value);
             verify(gpu.length > 0, "the discrete GPU's ring");
-            gpu.forEach(g => compare(g.outerTone, expected));
+            gpu.forEach(g => {
+                compare(g.outerTone, expected);
+                compare(outerArc(g).color, expected, "the discrete GPU's ring as drawn");
+            });
             normal.cpuUsage = 23;
             normal.gpuOuter.usage = Qt.binding(() => normal.gpuOuter.live ? 12 : normal.gpuOuter.resting ? 0 : NaN);
         }

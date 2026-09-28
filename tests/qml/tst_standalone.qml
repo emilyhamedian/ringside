@@ -322,6 +322,11 @@ Item {
                      height: Math.hypot(bottom.x - origin.x, bottom.y - origin.y) };
         }
 
+        // Rendered centre of the dial group in the strip, through its scale and slide.
+        function renderedCentre(group) {
+            return group.mapToItem(strip, group.width / 2, group.height / 2);
+        }
+
         function test_automaticCoverage() {
             compare(strip.visibilityMode, 0);
             compare(strip.collapsed, false);
@@ -983,6 +988,15 @@ Item {
             const nativeChangesBefore = scene.panel.thicknessChanges;
             const expandedLength = strip.vertical ? strip.height : strip.width;
             const before = renderedSize(group);
+            // The dials slide from where they sit open to where the tab's
+            // content will be.
+            const open = renderedCentre(group);
+            const tab = Qt.point(strip.compactCenterX, strip.compactCenterY);
+            const tabDistance = centre => Math.hypot(tab.x - centre.x, tab.y - centre.y);
+            verify(tabDistance(open) > 20, "The open dials must sit away from the tab, " + tabDistance(open) + "px");
+            let previous = { progress: 1, distance: tabDistance(open) };
+            let halfway = null;
+            let late = null;
             strip.visibilityMode = 2;
             compare(strip.collapsed, true);
             compare(button.Accessible.name, "Unfold Ringside");
@@ -1005,6 +1019,28 @@ Item {
                     verify(Math.abs(size.width / size.height - before.width / before.height) <= 0.01,
                            "Dials must shrink uniformly, got " + JSON.stringify(size) + " from " + JSON.stringify(before));
                     verify(size.width >= before.width * 0.7, "Dials keep at least 70% of their size");
+                    const centre = renderedCentre(group);
+                    for (const axis of ["x", "y"]) {
+                        verify(centre[axis] >= Math.min(open[axis], tab[axis]) - 0.01
+                               && centre[axis] <= Math.max(open[axis], tab[axis]) + 0.01,
+                               "Dials must stay between their open place " + open + " and the tab " + tab
+                               + ", at " + centre + " with progress " + progress);
+                    }
+                    const sample = { progress: progress, distance: tabDistance(centre) };
+                    // Each hundredth of the fold brings the dials at least
+                    // 0.2 px closer, well clear of rounding.
+                    if (progress <= previous.progress - 0.01) {
+                        verify(sample.distance < previous.distance - 0.05,
+                               "Dials must approach the tab as the fold goes on: " + JSON.stringify(sample)
+                               + " after " + JSON.stringify(previous));
+                        previous = sample;
+                    }
+                    if (!halfway || Math.abs(progress - 0.5) < Math.abs(halfway.progress - 0.5)) {
+                        halfway = sample;
+                    }
+                    if (!late || Math.abs(progress - 0.1) < Math.abs(late.progress - 0.1)) {
+                        late = sample;
+                    }
                     sawFade = sawFade || (group.opacity > 0 && group.opacity < 1);
                     if (progress < 0.1) {
                         lateFrameOpacity = Math.max(lateFrameOpacity, group.opacity);
@@ -1019,6 +1055,12 @@ Item {
             }
             verify(sawIntermediate, "Folding must show intermediate animation frames");
             verify(sawShrink, "Dials must shrink while approaching the tab");
+            verify(halfway && Math.abs(halfway.progress - 0.5) <= 0.2,
+                   "Folding must show a frame near halfway, closest " + JSON.stringify(halfway));
+            verify(late && late.progress <= 0.2, "Folding must show a frame near its end, closest " + JSON.stringify(late));
+            verify(halfway.distance < tabDistance(open) - 1 && late.distance < halfway.distance - 1,
+                   "Dials must approach the tab: open " + tabDistance(open) + "px, then " + JSON.stringify(halfway)
+                   + ", then " + JSON.stringify(late));
             verify(sawFade, "Dials must fade while folding");
             verify(lateFrameOpacity < 0.11, "Dials must be gone before the native snap, saw opacity " + lateFrameOpacity);
             settleExpansion(0);

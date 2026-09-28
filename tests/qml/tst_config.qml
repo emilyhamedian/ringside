@@ -4,13 +4,15 @@
 pragma ComponentBehavior: Bound
 import QtQuick
 import QtTest
+import org.kde.ksysguard.sensors as Sensors
 import "../../package/contents/ui/config"
 
 // The three settings pages load with their cfg_ properties set and without a
 // script error. Outside Plasma there is no Plasmoid, so the pages see no
 // hardware report. The Sensors page builds its pickers from a fixed sensor
 // list here rather than from this machine's ksystemstats, whose sensors
-// depend on the hardware, udisks and the network the tests run with.
+// depend on the hardware, udisks and the network the tests run with. One
+// test reads the real tree, and skips where it lists nothing to read.
 
 Item {
     id: root
@@ -58,6 +60,12 @@ Item {
             width: root.width
             height: root.height
         }
+    }
+
+    // This machine's sensor tree, walked directly rather than through the
+    // page, to tell whether it lists anything for the page to read.
+    Sensors.SensorTreeModel {
+        id: tree
     }
 
     // What ksystemstats' sensor tree might list, as the Sensors page reads
@@ -200,6 +208,46 @@ Item {
             const page = make(sensors);
             page.fromTree = root.listed;
             compare(page.found, root.found);
+        }
+
+        // The ids in this machine's sensor tree that the page offers.
+        function offeredInTree(page) {
+            const ids = [];
+            const walk = parent => {
+                const count = parent ? tree.rowCount(parent) : tree.rowCount();
+                for (let row = 0; row < count; ++row) {
+                    const index = parent ? tree.index(row, 0, parent) : tree.index(row, 0);
+                    const id = String(tree.data(index, Sensors.SensorTreeModel.SensorId) || "");
+                    if (page.offered(id)) {
+                        ids.push(id);
+                    }
+                    walk(index);
+                }
+            };
+            walk(null);
+            return ids;
+        }
+
+        // collect() reads the rows the pickers use from the real tree, once
+        // ksystemstats answers. What it lists depends on the machine: a
+        // container may have no sensors, network devices or disks for it.
+        function test_sensorsReadFromTheTree() {
+            const page = make(sensors);
+            const deadline = Date.now() + 10000;
+            while (offeredInTree(page).length === 0 && Date.now() < deadline) {
+                wait(50);
+            }
+            if (offeredInTree(page).length === 0) {
+                skip("ksystemstats lists no temperature, network or disk sensor here, or isn't reachable");
+            }
+            tryVerify(() => page.fromTree.length > 0, 10000, "the page read nothing from the tree");
+            for (const row of Array.from(page.fromTree)) {
+                compare(Object.keys(row).sort(), ["groupName", "id", "name"], JSON.stringify(row));
+                for (const key of ["id", "name", "groupName"]) {
+                    compare(typeof row[key], "string", key + " of " + JSON.stringify(row));
+                }
+                verify(page.offered(row.id), row.id);
+            }
         }
 
         // The inner-limit pickers read Plasmoid.configuration.knownLimits;

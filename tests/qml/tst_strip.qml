@@ -161,7 +161,24 @@ Item {
             verify(!visibleTexts(strip).includes("off°"));
         }
 
-        // Rings turn amber from 75 % and red from 90 % of their own reading.
+        // A gauge's two arcs as drawn, the outer one first.
+        function arcs(gauge) {
+            const found = [];
+            const pending = [gauge];
+            while (pending.length > 0) {
+                const item = pending.shift();
+                if (item.playReset !== undefined && item.animating !== undefined) {
+                    found.push(item);
+                }
+                pending.push(...Array.from(item.children));
+            }
+            compare(found.length, 2);
+            return found.sort((a, b) => b.radius - a.radius);
+        }
+
+        // Rings turn amber from 75 % and red from 90 % of their own reading,
+        // in the arcs they draw: the CPU's ring, and with two GPUs the inner
+        // ring at its dimmer alpha, while the ring outside it keeps its level.
         function test_ringLevelColours_data() {
             return [{ tag: "74", usage: 74, tone: "text" }, { tag: "75", usage: 75, tone: "neutral" },
                     { tag: "89", usage: 89, tone: "neutral" }, { tag: "90", usage: 90, tone: "negative" }];
@@ -170,11 +187,19 @@ Item {
         function test_ringLevelColours(data) {
             monitor.cpuUsage = data.usage;
             monitor.cpuTemperature = 50;
-            const strip = makeStrip({ items: ["cpu"] });
+            monitor.gpuInner.usage = data.usage;
+            const strip = makeStrip({ items: ["cpu", "gpu"] });
             const gauge = strip.cellAt(0).contentItem.children[0];
             const expected = data.tone === "negative" ? Kirigami.Theme.negativeTextColor
                            : data.tone === "neutral" ? Kirigami.Theme.neutralTextColor : Kirigami.Theme.textColor;
             compare(gauge.outerTone, expected);
+            compare(arcs(gauge)[0].color, expected, "the CPU ring as drawn");
+
+            const gpu = strip.cellAt(1).contentItem;
+            verify(gpu.dual);
+            const [outer, inner] = arcs(gpu.children[0]);
+            compare(outer.color, Kirigami.Theme.textColor, "the discrete GPU's ring at 12%");
+            compare(inner.color, Qt.alpha(expected, 0.55 * Kirigami.Theme.textColor.a), "the integrated GPU's ring");
         }
 
         function test_intelLeavesTemperatureOut() {
