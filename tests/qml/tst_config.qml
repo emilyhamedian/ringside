@@ -34,6 +34,7 @@ Item {
             cfg_highlightTemperatures: true
             cfg_warmCelsius: 75
             cfg_hotCelsius: 90
+            cfg_usageRefreshMinutes: 5
         }
     }
 
@@ -69,6 +70,18 @@ Item {
             verify(page);
             waitForRendering(page);
             return page;
+        }
+
+        function find(item, pred) {
+            if (pred(item)) return item;
+            for (let i = 0; i < item.children.length; ++i) {
+                const r = find(item.children[i], pred);
+                if (r) return r;
+            }
+            return null;
+        }
+        function combo(page, name) {
+            return find(page, i => i.Accessible && i.Accessible.name === name);
         }
 
         function test_general_data() {
@@ -107,6 +120,57 @@ Item {
             tryVerify(() => page.found.interfaces.length + page.found.devices.length + page.found.volumes.length > 0,
                       10000, "ksystemstats listed no network or disk sensors");
             waitForRendering(page);
+        }
+
+        // The inner-limit pickers read Plasmoid.configuration.knownLimits;
+        // tests substitute it directly, since there's no live Plasmoid to fake.
+        function test_innerLimitPickers_data() {
+            return [
+                { tag: "hiddenWithoutKnownLimits",
+                  known: {}, claudeChoice: "", codexChoice: "",
+                  claudeVisible: false, codexVisible: false },
+                { tag: "entriesFromKnownLimits",
+                  known: { claude: [{ id: "opus", label: "Opus", reported: true }], codex: [] },
+                  claudeChoice: "", codexChoice: "",
+                  claudeVisible: true, codexVisible: false,
+                  claudeEntries: [{ text: "Automatic", value: "" }, { text: "None", value: "none" },
+                                  { text: "Opus", value: "opus" }] },
+                { tag: "notReportedSuffix",
+                  known: { claude: [{ id: "old", label: "Old Model", reported: false }] },
+                  claudeChoice: "old", codexChoice: "",
+                  claudeVisible: true, codexVisible: false,
+                  claudeEntries: [{ text: "Automatic", value: "" }, { text: "None", value: "none" },
+                                  { text: "Old Model (not reported)", value: "old" }] },
+                { tag: "storedChoiceShownWithoutKnownLimits",
+                  known: {}, claudeChoice: "bogus", codexChoice: "",
+                  claudeVisible: true, codexVisible: false }
+            ];
+        }
+        function test_innerLimitPickers(data) {
+            const page = make(sensors, { knownLimits: data.known,
+                                         cfg_claudeInnerLimit: data.claudeChoice, cfg_codexInnerLimit: data.codexChoice });
+            const claude = combo(page, "Claude inner ring");
+            const codex = combo(page, "Codex inner ring");
+            compare(claude.visible, data.claudeVisible);
+            compare(codex.visible, data.codexVisible);
+            if (data.claudeEntries) {
+                compare(claude.entries.map(e => ({ text: e.text, value: e.value })), data.claudeEntries);
+            }
+            if (data.claudeChoice === "bogus") {
+                // A stored choice that isn't among the choices still shows as selected.
+                const index = claude.entries.findIndex(e => e.value === "bogus");
+                verify(index >= 0);
+                compare(claude.currentIndex, index);
+            }
+        }
+
+        function test_choosingAnInnerLimitWritesTheValue() {
+            const page = make(sensors, { knownLimits: { claude: [{ id: "opus", label: "Opus", reported: true }] } });
+            const claude = combo(page, "Claude inner ring");
+            const index = claude.entries.findIndex(e => e.value === "opus");
+            verify(index >= 0);
+            claude.activated(index);
+            compare(page.cfg_claudeInnerLimit, "opus");
         }
     }
 }

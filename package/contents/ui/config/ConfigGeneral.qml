@@ -4,6 +4,7 @@ import QtQuick.Layouts
 import QtQuick.Controls as QQC2
 import org.kde.kirigami as Kirigami
 import org.kde.kcmutils as KCM
+import "../code/style.js" as Style
 
 KCM.SimpleKCM {
     id: page
@@ -15,6 +16,7 @@ KCM.SimpleKCM {
     property bool cfg_highlightTemperatures
     property real cfg_warmCelsius
     property real cfg_hotCelsius
+    property int cfg_usageRefreshMinutes
 
     readonly property var historyChoices: [30, 60, 120, 300, 600]
     readonly property string unit: cfg_fahrenheit ? i18nc("@label temperature unit", "°F")
@@ -149,6 +151,34 @@ KCM.SimpleKCM {
                 checked: !page.cfg_networkBits
                 onToggled: page.cfg_networkBits = !checked
             }
+        }
+
+        Item {
+            Kirigami.FormData.isSection: true
+        }
+
+        Kirigami.Separator {
+            Kirigami.FormData.label: i18nc("@title:group", "Claude and Codex usage:")
+            Kirigami.FormData.isSection: true
+        }
+
+        QQC2.SpinBox {
+            Kirigami.FormData.label: i18nc("@label:spinbox", "Check every:")
+            from: 5
+            to: 60
+            // Stepped only, for the same reason as Update interval above.
+            editable: false
+            value: page.cfg_usageRefreshMinutes
+            textFromValue: (value, locale) => i18ncp("@item:valuesuffix minutes between usage checks", "%1 minute", "%1 minutes", value)
+            Accessible.name: i18nc("@label:spinbox", "Check every")
+            onValueModified: page.cfg_usageRefreshMinutes = value
+        }
+        QQC2.Label {
+            text: i18nc("@info", "Applies only while the Claude or Codex item is on. Checks never run more often than every 5 minutes.")
+            textFormat: Text.PlainText
+            wrapMode: Text.Wrap
+            color: Style.dim(Kirigami.Theme.textColor)
+            font.pointSize: Kirigami.Theme.defaultFont.pointSize * 11.5 / 13
         }
     }
 }

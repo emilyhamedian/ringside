@@ -8,6 +8,7 @@ import org.kde.plasma.core as PlasmaCore
 import org.kde.plasma.plasmoid
 import "../code/format.js" as Format
 import "../code/style.js" as Style
+import "../code/items.js" as Items
 
 KCM.SimpleKCM {
     id: page
@@ -16,15 +17,18 @@ KCM.SimpleKCM {
     property var cfg_hiddenItems: []
     property var cfg_ringsOnly: []
     property int cfg_ringSize
+    property int cfg_layout
+    property int cfg_visibilityMode
 
     readonly property var names: ({
         cpu: i18nc("@item panel item", "CPU"),
         gpu: i18nc("@item panel item", "GPU"),
         memory: i18nc("@item panel item", "Memory"),
         network: i18nc("@item panel item", "Network"),
-        disk: i18nc("@item panel item", "Disk")
+        disk: i18nc("@item panel item", "Disk"),
+        claude: i18nc("@item panel item", "Claude"),
+        codex: i18nc("@item panel item", "Codex")
     })
-    readonly property var rings: ["cpu", "gpu", "memory"]
     // A vertical panel shows rings without their text, whatever the setting.
     readonly property bool vertical: Plasmoid.formFactor === PlasmaCore.Types.Vertical
 
@@ -40,14 +44,52 @@ KCM.SimpleKCM {
             return {};
         }
     }
+    // Same idea as hardware above, but not readonly: there is no live
+    // Plasmoid to fake outside a real applet, so tests substitute a fixed
+    // value here instead.
+    property var usageStatus: {
+        try {
+            const report = JSON.parse(Plasmoid.configuration.usageStatus || "{}");
+            return report && typeof report === "object" ? report : {};
+        } catch (err) {
+            return {};
+        }
+    }
     readonly property var hints: ({
         cpu: hardware.cpu ? Format.cpuModel(hardware.cpu.model) : "",
         gpu: (Array.isArray(hardware.gpus) ? hardware.gpus : []).filter(g => g)
             .map(g => Format.gpuModel(g.name, "", g.pciName, g.vendor)).join(" + "),
         memory: Format.memoryModules(hardware.memory),
         network: String(hardware.defaultInterface || ""),
-        disk: hardware.root ? String(hardware.root.disk || "") : ""
+        disk: hardware.root ? String(hardware.root.disk || "") : "",
+        claude: usageHint("claude"),
+        codex: usageHint("codex")
     })
+
+    function usageHint(id) {
+        if (usageStatus.helperError) {
+            return String(usageStatus.helperError);
+        }
+        const entry = usageStatus[id];
+        if (!entry || !entry.status) {
+            return id === "claude"
+                ? i18nc("@info:usagetip shown before Claude Code has been checked", "Shows while Claude Code is signed in")
+                : i18nc("@info:usagetip shown before Codex has been checked", "Shows while Codex is signed in");
+        }
+        switch (entry.status) {
+        case "ok":
+            return i18nc("@info:usagetip", "Signed in");
+        case "signed_out":
+            return id === "claude"
+                ? i18nc("@info:usagetip", "Not signed in: run claude in a terminal")
+                : i18nc("@info:usagetip", "Not signed in: run codex in a terminal");
+        case "error":
+        case "rate_limited":
+            return String(entry.message || "");
+        default:
+            return "";
+        }
+    }
 
     // Every edit assigns a new array: the dialog learns of changes from the
     // cfg_ properties' change signals, which an in-place edit never sends.
@@ -56,28 +98,77 @@ KCM.SimpleKCM {
         return included ? rest.concat([key]) : rest;
     }
 
+    // Writes the order and hidden lists together, from the rows as shown.
+    // Items.order() always lists every known item regardless of its checked
+    // state, so writing cfg_itemOrder alone would switch an opted-out Claude
+    // or Codex row on the moment it appears in the stored order; writing the
+    // normalised hidden set alongside it every time keeps that from happening.
+    function save() {
+        const order = [];
+        const off = [];
+        for (let i = 0; i < items.count; ++i) {
+            const row = items.get(i);
+            order.push(row.key);
+            if (!row.checked) {
+                off.push(row.key);
+            }
+        }
+        cfg_itemOrder = order;
+        cfg_hiddenItems = off;
+    }
+
     function move(from, to) {
         if (from === to || from < 0 || to < 0 || to >= items.count) {
             return;
         }
         items.move(from, to, 1);
-        const order = [];
-        for (let i = 0; i < items.count; ++i) {
-            order.push(items.get(i).key);
-        }
-        cfg_itemOrder = order;
+        save();
     }
 
-    // Unknown ids are dropped and missing ones appended, as main.qml does.
+    // The checked state starts from Items.hidden(), so Claude and Codex show
+    // unchecked unless the stored order already lists them, without writing
+    // anything back until the user acts (save() only runs from a toggle or a
+    // move).
     Component.onCompleted: {
-        const known = Object.keys(names);
-        const order = cfg_itemOrder.filter((k, i, all) => known.includes(k) && all.indexOf(k) === i);
-        known.forEach(k => { if (!order.includes(k)) order.push(k); });
-        order.forEach(k => items.append({ key: k }));
+        const off = Items.hidden(cfg_itemOrder, cfg_hiddenItems);
+        Items.order(cfg_itemOrder).forEach(k => items.append({ key: k, checked: !off.includes(k) }));
     }
 
     ColumnLayout {
         spacing: Kirigami.Units.smallSpacing
+
+        Kirigami.FormLayout {
+            Layout.fillWidth: true
+
+            QQC2.ComboBox {
+                Kirigami.FormData.label: i18nc("@label:listbox", "Layout:")
+                model: [i18nc("@item:inlistbox items in a row, in any panel", "Inline"),
+                        i18nc("@item:inlistbox large dials in a panel of their own", "Standalone")]
+                currentIndex: page.cfg_layout
+                Accessible.name: i18nc("@label:listbox", "Layout")
+                onActivated: index => page.cfg_layout = index
+            }
+            QQC2.Label {
+                text: page.cfg_layout === 1
+                    ? i18nc("@info", "Large dials in a panel of their own, which folds away behind maximized windows.")
+                    : i18nc("@info", "Items in a row, in any panel.")
+                textFormat: Text.PlainText
+                wrapMode: Text.Wrap
+                color: Style.dim(Kirigami.Theme.textColor)
+                font.pointSize: Kirigami.Theme.defaultFont.pointSize * 11.5 / 13
+            }
+
+            QQC2.ComboBox {
+                Kirigami.FormData.label: i18nc("@label:listbox", "When a window is maximized:")
+                enabled: page.cfg_layout === 1
+                model: [i18nc("@item:inlistbox the standalone panel folds away behind a maximized window", "Fold away"),
+                        i18nc("@item:inlistbox the standalone panel stays open over a maximized window", "Stay open"),
+                        i18nc("@item:inlistbox the standalone panel stays folded even without a maximized window", "Always folded")]
+                currentIndex: page.cfg_visibilityMode
+                Accessible.name: i18nc("@label:listbox", "When a window is maximized")
+                onActivated: index => page.cfg_visibilityMode = index
+            }
+        }
 
         QQC2.Label {
             Layout.fillWidth: true
@@ -117,7 +208,8 @@ KCM.SimpleKCM {
                     required property string key
                     // ListItemDragHandle also looks it up by name.
                     required property int index
-                    readonly property bool ring: page.rings.includes(key)
+                    required property bool checked
+                    readonly property bool ring: Items.isRing(key)
 
                     // Moves the row one place. The pressed button travels with
                     // its row and keeps focus, unless the move took the row to
@@ -166,9 +258,12 @@ KCM.SimpleKCM {
                             QQC2.CheckBox {
                                 Layout.preferredWidth: list.checkWidth
                                 text: page.names[entry.key]
-                                checked: !page.cfg_hiddenItems.includes(entry.key)
+                                checked: entry.checked
                                 onImplicitWidthChanged: list.checkWidth = Math.max(list.checkWidth, implicitWidth)
-                                onToggled: page.cfg_hiddenItems = page.including(page.cfg_hiddenItems, entry.key, !checked)
+                                onToggled: {
+                                    items.setProperty(entry.index, "checked", checked);
+                                    page.save();
+                                }
                             }
                             QQC2.Label {
                                 Layout.fillWidth: true
@@ -181,7 +276,7 @@ KCM.SimpleKCM {
                             QQC2.ComboBox {
                                 id: mode
                                 visible: entry.ring
-                                enabled: !page.vertical
+                                enabled: !page.vertical && page.cfg_layout === 0
                                 model: [i18nc("@item:inlistbox what a ring item shows", "Ring and text"),
                                         i18nc("@item:inlistbox what a ring item shows", "Ring only")]
                                 currentIndex: page.cfg_ringsOnly.includes(entry.key) ? 1 : 0
@@ -227,8 +322,19 @@ KCM.SimpleKCM {
             font.pointSize: Kirigami.Theme.defaultFont.pointSize * 11.5 / 13
         }
 
+        QQC2.Label {
+            Layout.fillWidth: true
+            visible: page.cfg_layout === 1
+            text: i18nc("@info", "Ring size and the Ring/text choice above apply only to the Inline layout.")
+            textFormat: Text.PlainText
+            wrapMode: Text.Wrap
+            color: Style.dim(Kirigami.Theme.textColor)
+            font.pointSize: Kirigami.Theme.defaultFont.pointSize * 11.5 / 13
+        }
+
         Kirigami.FormLayout {
             Layout.fillWidth: true
+            enabled: page.cfg_layout === 0
 
             RowLayout {
                 Kirigami.FormData.label: i18nc("@label:slider", "Ring size:")
