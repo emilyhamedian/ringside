@@ -1,4 +1,7 @@
 #!/bin/sh
+# SPDX-FileCopyrightText: 2026 Emily Hamedian <me@emily.dev>
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 # Hardware facts that ksystemstats doesn't publish, for Ringside's QML.
 #
 #   ringside-info.sh static       one JSON object describing the machine
@@ -251,7 +254,9 @@ root_json() {
 }
 
 static() {
-    plasma=${RINGSIDE_PLASMA_VERSION-$(plasmashell --version 2>/dev/null | awk '{ print $2 }')}
+    # Qt warns about the C locale; without a terminal it would log that to the
+    # journal rather than to the stderr thrown away here.
+    plasma=${RINGSIDE_PLASMA_VERSION-$(QT_FORCE_STDERR_LOGGING=1 plasmashell --version 2>/dev/null | awk '{ print $2 }')}
     printf '{"plasma":%s,' "$(str "$plasma")"
     cpu_json; printf ','
     memory_json; printf ','

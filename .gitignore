@@ -1,3 +1,4 @@
 *.png
 !docs/*.png
 *.plasmoid
+__pycache__/

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Emily Hamedian <me@emily.dev>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Layouts
@@ -6,11 +9,15 @@ import "../code/format.js" as Format
 import "../code/style.js" as Style
 import ".."
 
-// One section per ring: the outer ring's GPU, then the inner ring's under a
-// rule, drawn dimmer as its ring is. A powered-down GPU gets a note instead
-// of readings; nothing here reads it, so opening the popup can't wake it.
+// One section per awake GPU, the outer ring's first, the second under a rule
+// and drawn dimmer as its ring is. A powered-down GPU is a single line at the
+// end; nothing here reads it, so opening the popup can't wake it.
 PopupPage {
     id: popup
+
+    readonly property var slots: [popup.monitor.gpuOuter, popup.monitor.gpuInner].filter(slot => slot.present)
+    readonly property var awake: slots.filter(slot => slot.phase !== "asleep")
+    readonly property var asleep: slots.filter(slot => slot.phase === "asleep")
 
     PopupHeader {
         Layout.bottomMargin: Kirigami.Units.smallSpacing
@@ -24,15 +31,52 @@ PopupPage {
             .join(" · ")
     }
 
-    Section {
-        monitor: popup.monitor
-        slot: popup.monitor.gpuOuter
+    Repeater {
+        model: popup.awake
+
+        delegate: Section {
+            required property var modelData
+            required property int index
+
+            monitor: popup.monitor
+            slot: modelData
+            inner: index > 0
+        }
     }
 
-    Section {
-        monitor: popup.monitor
-        slot: popup.monitor.gpuInner
-        inner: true
+    Repeater {
+        model: popup.asleep
+
+        delegate: ColumnLayout {
+            id: sleeper
+
+            required property var modelData
+
+            Layout.fillWidth: true
+            spacing: 0
+
+            Rectangle {
+                visible: popup.awake.length > 0
+                Layout.fillWidth: true
+                Layout.leftMargin: Math.round(Kirigami.Units.largeSpacing * 1.5)
+                Layout.rightMargin: Layout.leftMargin
+                Layout.preferredHeight: 1
+                color: Qt.alpha(Kirigami.Theme.textColor, 0.1)
+            }
+
+            Text {
+                Layout.fillWidth: true
+                Layout.leftMargin: Math.round(Kirigami.Units.largeSpacing * 2)
+                Layout.rightMargin: Layout.leftMargin
+                Layout.topMargin: Kirigami.Units.largeSpacing
+                Layout.bottomMargin: Kirigami.Units.largeSpacing
+                text: i18nc("@info a powered-down GPU: its name, then off", "%1 · off", sleeper.modelData.name)
+                color: Style.dim(Kirigami.Theme.textColor)
+                elide: Text.ElideRight
+                textFormat: Text.PlainText
+                horizontalAlignment: Text.AlignLeft
+            }
+        }
     }
 
     component Section: ColumnLayout {
@@ -43,11 +87,10 @@ PopupPage {
         required property var slot
         property bool inner: false
 
-        readonly property bool asleep: slot.phase === "asleep"
         readonly property color dim: Style.dim(Kirigami.Theme.textColor)
         readonly property color tone: inner ? dim : Kirigami.Theme.textColor
         // Intel GPUs publish no temperature, so theirs is left out rather than shown as a dash.
-        readonly property bool temperatureShown: !asleep && slot.reportsTemperature
+        readonly property bool temperatureShown: slot.reportsTemperature
         readonly property bool hasPower: Number.isFinite(slot.power)
         readonly property real tilePointSize: Kirigami.Theme.defaultFont.pointSize * 1.23
 
@@ -78,12 +121,12 @@ PopupPage {
                 strokeWidth: 3.5
                 color: section.tone
                 value: section.slot.usage
-                text: section.asleep ? "" : Number.isFinite(value) ? Format.percent(value) + "%" : "–"
+                text: Number.isFinite(value) ? Format.percent(value) + "%" : "–"
                 textScale: 0.275
 
                 Accessible.role: Accessible.ProgressBar
                 Accessible.name: section.slot.name
-                Accessible.description: section.asleep ? i18nc("@info the GPU is powered down", "Asleep") : text
+                Accessible.description: text
             }
 
             // Stacked rather than on one line as in the mock: real names
@@ -144,38 +187,17 @@ PopupPage {
                     visible: section.temperatureShown
                     value: Format.temperature(section.slot.temperature, section.monitor.fahrenheit)
                     degree: true
+                    degreeUnit: section.monitor.fahrenheit ? "F" : "C"
                     color: {
                         const level = section.monitor.heat(section.slot.temperature);
                         return level === 2 ? Kirigami.Theme.negativeTextColor
                              : level === 1 ? Kirigami.Theme.neutralTextColor : Kirigami.Theme.textColor;
                     }
                 }
-
-                Text {
-                    visible: section.asleep
-                    text: i18nc("@info the GPU is powered down", "off")
-                    color: section.dim
-                    textFormat: Text.PlainText
-                }
             }
         }
 
-        Text {
-            visible: section.asleep
-            Layout.fillWidth: true
-            Layout.leftMargin: Math.round(Kirigami.Units.largeSpacing * 2)
-            Layout.rightMargin: Layout.leftMargin
-            Layout.bottomMargin: Math.round(Kirigami.Units.largeSpacing * 1.5)
-            text: i18nc("@info", "Powered down to save energy. Readings resume when something wakes it.")
-            color: section.dim
-            font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.88
-            wrapMode: Text.Wrap
-            textFormat: Text.PlainText
-            horizontalAlignment: Text.AlignLeft
-        }
-
         GridLayout {
-            visible: !section.asleep
             Layout.fillWidth: true
             Layout.leftMargin: Math.round(Kirigami.Units.largeSpacing * 1.5)
             Layout.rightMargin: Layout.leftMargin

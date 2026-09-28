@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Emily Hamedian <me@emily.dev>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 import QtQuick
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
@@ -26,11 +29,16 @@ Rectangle {
     ColumnLayout {
         id: column
 
-        anchors.fill: parent
+        // Anchored at the top rather than filling the tile, whose height comes
+        // from this layout's: Qt 6.6 rearranges a layout as soon as its height
+        // changes, and when the content depends on the tile's width (the CPU
+        // popup's bar rows) that re-enters the tile's implicitHeight binding.
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
         anchors.leftMargin: tile.horizontalPadding
         anchors.rightMargin: tile.horizontalPadding
         anchors.topMargin: tile.verticalPadding
-        anchors.bottomMargin: tile.verticalPadding
         spacing: Math.round(Kirigami.Units.smallSpacing / 2)
 
         Caption {

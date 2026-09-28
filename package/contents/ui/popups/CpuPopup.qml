@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Emily Hamedian <me@emily.dev>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Layouts
@@ -32,6 +35,7 @@ PopupPage {
         }
         value: Format.temperature(popup.monitor.cpuTemperature, popup.monitor.fahrenheit)
         degree: true
+        degreeUnit: popup.monitor.fahrenheit ? "F" : "C"
         valueColor: {
             const level = popup.monitor.heat(popup.monitor.cpuTemperature);
             return level === 2 ? Kirigami.Theme.negativeTextColor
@@ -107,7 +111,12 @@ PopupPage {
                 // One row until the tile has a width to fit, and while no thread is known.
                 readonly property int rowCount: available > 0 ? Math.max(1, Math.ceil(count / maxColumns)) : 1
 
+                // Asks for no width of its own: a width hint that grew with the
+                // columns would feed back into the tile's width, which follows
+                // its content until the popup lays it out.
                 Layout.fillWidth: true
+                Layout.minimumWidth: 0
+                Layout.preferredWidth: 0
                 Layout.preferredHeight: Math.round(Kirigami.Units.gridUnit * (1.9 + 0.9 * (rowCount - 1)))
                 columns: Math.max(1, Math.ceil(count / rowCount))
                 columnSpacing: gap

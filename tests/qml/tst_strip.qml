@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Emily Hamedian <me@emily.dev>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 import QtQuick
 import QtTest
 import org.kde.kirigami as Kirigami
@@ -18,6 +21,9 @@ Item {
     }
     function i18nc(context, text, ...args) {
         return substitute(text, args);
+    }
+    function i18ncp(context, singular, plural, n, ...args) {
+        return substitute(n === 1 ? singular : plural, [n].concat(args));
     }
 
     Component {
@@ -90,8 +96,6 @@ Item {
                 () => { monitor.cpuTemperature = NaN; },
                 () => { monitor.fahrenheit = true; monitor.cpuTemperature = 38; },
                 () => { monitor.cpuTemperature = 140; },
-                () => { monitor.gpuOuter.phase = "asleep"; },
-                () => { monitor.gpuOuter.phase = "live"; monitor.gpuInner.phase = "asleep"; },
             ];
             for (let i = 0; i < changes.length; ++i) {
                 compare(widthAfter(strip, changes[i]), width, "change " + i);
@@ -116,21 +120,86 @@ Item {
             }
         }
 
-        function test_innerAsleepSaysOff() {
-            monitor.gpuInner.kind = "discrete";
-            monitor.gpuInner.phase = "asleep";
-            const strip = makeStrip({ items: ["gpu"] });
+        function visibleTexts(item) {
             const texts = [];
-            const collect = item => {
-                if (item.visible && item.text !== undefined && item.text !== "") {
-                    texts.push(item.text);
+            const collect = i => {
+                if (i.visible && i.text !== undefined && i.text !== "") {
+                    texts.push(i.text);
                 }
-                item.children.forEach(collect);
+                i.children.forEach(collect);
             };
-            collect(strip);
-            verify(texts.includes("off"), JSON.stringify(texts));
-            verify(!texts.includes("–"), JSON.stringify(texts));
-            compare(strip.cellAt(0).description.split("\n")[1], "AMD Radeon 780M Graphics: Off");
+            collect(item);
+            return texts;
+        }
+
+        // A sleeping GPU drops out of the panel, whichever ring it is on: the
+        // one still awake shows alone, as on a single-GPU machine.
+        function test_aSleepingGpuDropsOut_data() {
+            return [{ tag: "outer asleep", outer: "asleep", inner: "live", shown: "AMD Radeon 780M Graphics", temp: "41" },
+                    { tag: "inner asleep", outer: "live", inner: "asleep", shown: "AMD Radeon RX 7700S", temp: "48" }];
+        }
+
+        function test_aSleepingGpuDropsOut(data) {
+            monitor.gpuInner.kind = "discrete";
+            monitor.gpuOuter.phase = data.outer;
+            monitor.gpuInner.phase = data.inner;
+            const strip = makeStrip({ items: ["gpu"] });
+            const content = strip.cellAt(0).contentItem;
+            verify(!content.dual);
+            compare(content.primary.name, data.shown);
+            const texts = visibleTexts(strip);
+            verify(texts.includes(data.temp), JSON.stringify(texts));
+            verify(!texts.includes("off"), JSON.stringify(texts));
+            verify(strip.cellAt(0).description.indexOf("\n") < 0, "one GPU described");
+        }
+
+        function test_theOnlyGpuAsleepSaysOff() {
+            monitor.gpuInner.present = false;
+            monitor.gpuOuter.phase = "asleep";
+            const strip = makeStrip({ items: ["gpu"] });
+            verify(visibleTexts(strip).includes("off"));
+            verify(!visibleTexts(strip).includes("off°"));
+        }
+
+        // A gauge's two arcs as drawn, the outer one first.
+        function arcs(gauge) {
+            const found = [];
+            const pending = [gauge];
+            while (pending.length > 0) {
+                const item = pending.shift();
+                if (item.playReset !== undefined && item.animating !== undefined) {
+                    found.push(item);
+                }
+                pending.push(...Array.from(item.children));
+            }
+            compare(found.length, 2);
+            return found.sort((a, b) => b.radius - a.radius);
+        }
+
+        // Rings turn amber from 75 % and red from 90 % of their own reading,
+        // in the arcs they draw: the CPU's ring, and with two GPUs the inner
+        // ring at its dimmer alpha, while the ring outside it keeps its level.
+        function test_ringLevelColours_data() {
+            return [{ tag: "74", usage: 74, tone: "text" }, { tag: "75", usage: 75, tone: "neutral" },
+                    { tag: "89", usage: 89, tone: "neutral" }, { tag: "90", usage: 90, tone: "negative" }];
+        }
+
+        function test_ringLevelColours(data) {
+            monitor.cpuUsage = data.usage;
+            monitor.cpuTemperature = 50;
+            monitor.gpuInner.usage = data.usage;
+            const strip = makeStrip({ items: ["cpu", "gpu"] });
+            const gauge = strip.cellAt(0).contentItem.children[0];
+            const expected = data.tone === "negative" ? Kirigami.Theme.negativeTextColor
+                           : data.tone === "neutral" ? Kirigami.Theme.neutralTextColor : Kirigami.Theme.textColor;
+            compare(gauge.outerTone, expected);
+            compare(arcs(gauge)[0].color, expected, "the CPU ring as drawn");
+
+            const gpu = strip.cellAt(1).contentItem;
+            verify(gpu.dual);
+            const [outer, inner] = arcs(gpu.children[0]);
+            compare(outer.color, Kirigami.Theme.textColor, "the discrete GPU's ring at 12%");
+            compare(inner.color, Qt.alpha(expected, 0.55 * Kirigami.Theme.textColor.a), "the integrated GPU's ring");
         }
 
         function test_intelLeavesTemperatureOut() {
@@ -151,6 +220,25 @@ Item {
             compare(strip.cellAt(0).Accessible.description, "Usage 23%, temperature unavailable");
         }
 
+        // Claude and Codex sit among the rings, named and described like them.
+        function test_usageCells() {
+            const strip = makeStrip({ items: ["cpu", "claude", "codex", "network"] });
+            const claude = strip.cellAt(1);
+            compare(claude.Accessible.name, "Claude");
+            verify(/^62% used, Opus 78%, resets in 2 days 2\d hours$/.test(claude.Accessible.description),
+                   claude.Accessible.description);
+            compare(strip.cellAt(2).Accessible.name, "Codex");
+            verify(/^34% used, resets in 5 days [34] hours$/.test(strip.cellAt(2).Accessible.description),
+                   strip.cellAt(2).Accessible.description);
+            verify(visibleTexts(strip).includes("CLAUDE"), JSON.stringify(visibleTexts(strip)));
+
+            const width = strip.implicitWidth;
+            const entries = JSON.parse(JSON.stringify(monitor.usage.entries));
+            entries.claude.weekly.percent = 100;
+            entries.claude.weekly.resetsAt = monitor.usage.createdAt + 600;
+            compare(widthAfter(strip, () => monitor.usage.entries = entries), width);
+        }
+
         function test_hiddenTextShowsTooltipAndHeat() {
             monitor.cpuTemperature = 95;
             const strip = makeStrip({ vertical: true, width: 38, thickness: 38 });
@@ -160,7 +248,7 @@ Item {
             compare(area.mainText, "Processor");
             compare(area.subText, "Usage 23%, temperature 95 °C, hot");
             const gauge = cell.contentItem.children[0];
-            compare(gauge.color, root.hotColor);
+            compare(gauge.outerTone, root.hotColor);
             verify(!strip.cellAt(3).parent.active, "rates keep their text");
 
             mouseMove(cell, cell.width / 2, cell.height / 2);

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Emily Hamedian <me@emily.dev>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Layouts
@@ -22,14 +25,16 @@ ColumnLayout {
     property var rows: sample || []
 
     function refresh() {
+        // The columns are the attributes the model took, in order.
+        const columns = Array.from(model.enabledAttributes);
         const n = model.rowCount();
         const found = [];
         for (let r = 0; r < n; ++r) {
-            found.push({
-                name: model.data(model.index(r, 0), Process.ProcessDataModel.Value),
-                usage: Number(model.data(model.index(r, 1), Process.ProcessDataModel.Value)),
-                memory: Number(model.data(model.index(r, 2), Process.ProcessDataModel.Value)) * 1024
-            });
+            const values = [];
+            for (let c = 0; c < columns.length; ++c) {
+                values.push(model.data(model.index(r, c), Process.ProcessDataModel.Value));
+            }
+            found.push(Processes.reading(columns, values));
         }
         rows = Processes.top(found, key, 3);
     }
@@ -44,8 +49,8 @@ ColumnLayout {
     Process.ProcessDataModel {
         id: model
         enabled: list.sample === null
-        // Resident memory (PSS where readable) arrives in KiB.
-        enabledAttributes: ["name", "usage", "memory"]
+        // Plasma 6.0 to 6.2 lack "memory", so the list asks for what they offer.
+        enabledAttributes: Processes.attributes(model.availableAttributes)
     }
 
     Timer {
@@ -85,7 +90,7 @@ ColumnLayout {
                 Layout.fillWidth: true
                 text: !row.entry ? " " : row.entry.count > 1 ? row.entry.name + " ×" + row.entry.count : row.entry.name
                 color: Kirigami.Theme.textColor
-                font.family: Kirigami.Theme.fixedWidthFont.family
+                font.family: Kirigami.Theme.fixedWidthFont?.family ?? "monospace" // qmllint disable redundant-optional-chaining
                 font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.92
                 elide: Text.ElideRight
                 textFormat: Text.PlainText
@@ -105,7 +110,7 @@ ColumnLayout {
                     return Format.fixed(row.entry.usage / Math.max(1, list.threads), 1) + "%";
                 }
                 color: Kirigami.Theme.textColor
-                font.family: Kirigami.Theme.fixedWidthFont.family
+                font.family: Kirigami.Theme.fixedWidthFont?.family ?? "monospace" // qmllint disable redundant-optional-chaining
                 font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.92
                 textFormat: Text.PlainText
             }

@@ -1,9 +1,13 @@
+// SPDX-FileCopyrightText: 2026 Emily Hamedian <me@emily.dev>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 import QtQuick
 import org.kde.kirigami as Kirigami
 import "code/style.js" as Style
 
 // A number in the monospace face with its unit after it, dimmer and
-// optionally smaller, or with a small raised degree sign for temperatures.
+// optionally smaller. A temperature gets a small raised degree sign, or with
+// `degreeUnit` set the full unit, "61 °C", like any other unit.
 Item {
     id: reading
 
@@ -14,9 +18,13 @@ Item {
 
     property string value: ""
     property string unit: ""
-    // A temperature. The degree sign follows a number, not a dash or a word
-    // such as "off".
+    // A temperature. The caller turns this off when the value is a word such
+    // as "off"; a missing reading's dash gets no sign either.
     property bool degree: false
+    // "C" or "F" to spell the unit out rather than show a bare degree sign.
+    property string degreeUnit: ""
+    readonly property bool spelled: degree && degreeUnit !== ""
+    readonly property string degreeText: spelled ? "°" + degreeUnit : "°"
     property real pointSize: Kirigami.Theme.defaultFont.pointSize
     property real unitScale: 1
     property color color: Kirigami.Theme.textColor
@@ -42,14 +50,16 @@ Item {
     TextMetrics {
         id: widestSuffix
         font: suffix.font
-        text: reading.widest === "" ? "" : reading.degree ? "°" : reading.widestUnit
+        text: reading.widest === "" ? "" : reading.degree ? reading.degreeText : reading.widestUnit
     }
 
+    // Kirigami.Theme.fixedWidthFont arrived in KF 6.14; before that the
+    // fontconfig alias stands in, here and wherever digits are set.
     Text {
         id: number
         text: reading.value
         color: reading.color
-        font.family: Kirigami.Theme.fixedWidthFont.family
+        font.family: Kirigami.Theme.fixedWidthFont?.family ?? "monospace" // qmllint disable redundant-optional-chaining
         font.pointSize: reading.pointSize
         textFormat: Text.PlainText
     }
@@ -57,14 +67,15 @@ Item {
     Text {
         id: suffix
         visible: text !== ""
-        text: reading.degree ? (/\d$/.test(reading.value) ? "°" : "") : reading.unit
+        text: reading.degree ? (reading.value === "–" ? "" : reading.degreeText) : reading.unit
+        readonly property bool raised: reading.degree && !reading.spelled
         anchors.left: number.right
-        anchors.leftMargin: reading.degree ? 0 : Math.round(reading.pointSize * 0.4)
+        anchors.leftMargin: raised ? 0 : Math.round(reading.pointSize * 0.4)
         // The degree sign sits high in the sans face; nudge it up a little more.
-        y: number.baselineOffset - baselineOffset - (reading.degree ? number.implicitHeight * 0.1 : 0)
-        color: reading.degree ? reading.color : reading.unitColor
-        font.family: reading.degree ? Kirigami.Theme.defaultFont.family : Kirigami.Theme.fixedWidthFont.family
-        font.pointSize: reading.pointSize * (reading.degree ? 0.7 : reading.unitScale)
+        y: number.baselineOffset - baselineOffset - (raised ? number.implicitHeight * 0.1 : 0)
+        color: raised ? reading.color : reading.unitColor
+        font.family: reading.degree ? Kirigami.Theme.defaultFont.family : (Kirigami.Theme.fixedWidthFont?.family ?? "monospace") // qmllint disable redundant-optional-chaining
+        font.pointSize: reading.pointSize * (raised ? 0.7 : reading.unitScale)
         textFormat: Text.PlainText
     }
 }

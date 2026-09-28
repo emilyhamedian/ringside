@@ -1,0 +1,81 @@
+name: Tests
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    # The QtTest suites import org.kde.plasma.plasmoid, which libplasma
+    # ships as a QML module from 6.5 on, so the checks run on Fedora 44
+    # (Plasma 6.7, Qt 6.11).
+    container: fedora:44
+    steps:
+      # Before the checkout, which needs git to clone rather than download
+      # the files without .git.
+      - name: Install Qt 6, the Plasma 6 QML modules and the check tools
+        run: >-
+          dnf -y -q install --setopt=install_weak_deps=False
+          git diffutils qt6-qtdeclarative-devel libplasma kf6-kirigami kf6-ksvg
+          kf6-kcmutils kf6-kitemmodels kf6-qqc2-desktop-style libksysguard
+          ksystemstats plasma5support plasma-workspace plasma-breeze
+          plasma-integration breeze-icon-theme google-noto-sans-fonts
+          python3 ShellCheck reuse jq dbus-daemon
+
+      - uses: actions/checkout@v7
+
+      # The checkout belongs to the runner's user, not the container's, and
+      # reuse lint only lists tracked files through a git it trusts.
+      - name: Trust the checkout
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      # D-Bus starts ksystemstats when the tests ask for it.
+      - name: Run the check suite
+        run: dbus-run-session -- sh scripts/test.sh
+
+      # Into the workspace, which this step and the upload both see at the
+      # same path inside the container.
+      - name: Render the gallery
+        run: dbus-run-session -- sh scripts/gallery.sh ringside-gallery.png
+
+      - name: Upload the gallery
+        uses: actions/upload-artifact@v7
+        with:
+          name: ringside-gallery
+          path: ringside-gallery.png
+
+  floor:
+    runs-on: ubuntu-latest
+    # The supported floor, Plasma 6.0 with Qt 6.6 and KF 6.0, is Fedora 40
+    # as released. Qt 6.6 reports binding loops that Qt 6.11 doesn't, so
+    # only this job catches a regression of the fixes for them. Its libplasma
+    # ships no importable org.kde.plasma.plasmoid module, so
+    # scripts/test-floor.sh runs the tests that don't need it.
+    container: fedora:40
+    steps:
+      # Fedora 40 is end of life and its release repository lives in the
+      # archive. That repository alone is enabled, so everything installed
+      # here is at its release version.
+      - name: Install Qt 6.6, the Plasma 6.0 QML modules and the test tools
+        run: >-
+          dnf -y -q install --setopt=install_weak_deps=False --repo=fedora
+          --setopt=fedora.metalink=
+          --setopt=fedora.baseurl=https://archives.fedoraproject.org/pub/archive/fedora/linux/releases/40/Everything/x86_64/os/
+          diffutils qt6-qtdeclarative-devel libplasma kf6-kirigami kf6-ksvg
+          kf6-kcmutils kf6-kitemmodels kf6-qqc2-desktop-style libksysguard
+          ksystemstats plasma5support plasma-workspace plasma-breeze
+          plasma-integration breeze-icon-theme google-noto-sans-fonts
+          python3 jq dbus-daemon
+
+      - name: Show the versions under test
+        run: rpm -q qt6-qtdeclarative kf6-kirigami libplasma libksysguard python3
+
+      - uses: actions/checkout@v7
+
+      # D-Bus starts ksystemstats when the tests ask for it.
+      - name: Run the tests that load on Plasma 6.0
+        run: dbus-run-session -- sh scripts/test-floor.sh

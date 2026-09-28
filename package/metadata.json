@@ -8,13 +8,13 @@
             }
         ],
         "Category": "System Information",
-        "Description": "CPU, GPU, memory, network and disk as rings and readouts in the panel",
+        "Description": "CPU, GPU, memory, network and disk in the panel, with optional Claude and Codex usage limits",
         "EnabledByDefault": true,
         "Icon": "utilities-system-monitor",
         "Id": "dev.emily.ringside",
         "License": "GPL-3.0-or-later",
         "Name": "Ringside",
-        "Version": "0.1.0",
+        "Version": "0.2.0",
         "Website": "https://github.com/emilyhamedian/ringside",
         "BugReportUrl": "https://github.com/emilyhamedian/ringside/issues"
     },

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Emily Hamedian <me@emily.dev>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 import QtQuick
 import "../../package/contents/ui/code/format.js" as Format
 import "../../package/contents/ui/code/hardware.js" as Hardware
@@ -27,6 +30,9 @@ QtObject {
 
     signal systemMonitorRequested()
     signal configureRequested()
+
+    // The Claude and Codex readings, as Monitor.usage.
+    property FakeUsage usage: FakeUsage {}
 
     property real cpuUsage: 23
     property real cpuTemperature: 61

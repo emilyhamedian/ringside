@@ -1,0 +1,7 @@
+package/contents/icons/openai.svg is the OpenAI logo as a single-colour mask,
+which Plasma tints to match the theme.
+
+OpenAI and the OpenAI logo are trademarks of OpenAI OpCo, LLC. Ringside is not
+affiliated with or endorsed by OpenAI and includes the logo only to label its
+Codex item. The file is not covered by Ringside's GPL-3.0-or-later licence,
+and its inclusion grants no rights to use the mark.

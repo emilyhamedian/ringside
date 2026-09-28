@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Emily Hamedian <me@emily.dev>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 .pragma library
 
 // Readings come back as { value, unit } so the panel and popups can set the
@@ -32,6 +35,12 @@ function temperature(celsius, fahrenheit) {
         return DASH;
     }
     return whole(fahrenheit ? celsius * 9 / 5 + 32 : celsius);
+}
+
+// A ring's alert level from its own percentage: 0 below 75, 1 (amber) from
+// 75, 2 (red) from 90. No reading is level 0.
+function level(percent) {
+    return !usable(percent) ? 0 : percent >= 90 ? 2 : percent >= 75 ? 1 : 0;
 }
 
 // 0 below the first threshold, 1 from warm, 2 from hot.
@@ -139,6 +148,27 @@ function fixed(v, digits) {
 // than "120 s"), otherwise 0 and the caption gives it in seconds.
 function spanMinutes(seconds) {
     return seconds >= 120 && seconds % 60 === 0 ? seconds / 60 : 0;
+}
+
+// Time left until `resetsAt` (epoch seconds), to the nearest minute, as
+// { days, hours, minutes }; null once it has passed or without a time.
+function timeLeft(resetsAt, nowMs) {
+    if (!usable(resetsAt)) {
+        return null;
+    }
+    const minutes = Math.round((resetsAt * 1000 - nowMs) / 60000);
+    return minutes > 0 ? { days: Math.floor(minutes / 1440), hours: Math.floor(minutes % 1440 / 60), minutes: minutes % 60 }
+                       : null;
+}
+
+// A local Date whose fields read as the wall clock at `epoch` in a zone
+// `offset` seconds east of UTC, so the locale's own day names and time
+// format can show a time in the desktop clock's zone. A wall time that falls
+// in the system zone's daylight-saving gap moves by the gap.
+function wallClock(epoch, offset) {
+    const shifted = new Date((epoch + offset) * 1000);
+    return new Date(shifted.getUTCFullYear(), shifted.getUTCMonth(), shifted.getUTCDate(),
+                    shifted.getUTCHours(), shifted.getUTCMinutes(), shifted.getUTCSeconds());
 }
 
 // Load averages keep four characters or so: "1.42", "14.2", "143".

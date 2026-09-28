@@ -1,9 +1,13 @@
+// SPDX-FileCopyrightText: 2026 Emily Hamedian <me@emily.dev>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
 import org.kde.plasma.core as PlasmaCore
 import org.kde.plasma.plasmoid
+import "code/items.js" as Items
 
 // The row of items in the panel. Rings come first in the user's order; a
 // hairline separates them from the text-only transfer rates. On a vertical
@@ -28,7 +32,7 @@ GridLayout {
     readonly property bool twoLines: thickness >= Kirigami.Units.gridUnit * 2
 
     function isRing(item) {
-        return item === "cpu" || item === "gpu" || item === "memory";
+        return Items.isRing(item);
     }
 
     function cellAt(index) {
@@ -88,7 +92,8 @@ GridLayout {
 
                 Loader {
                     anchors.centerIn: parent
-                    sourceComponent: strip.isRing(entry.modelData) ? ringContent : rateContent
+                    sourceComponent: Items.isUsage(entry.modelData) ? usageContent
+                                   : strip.isRing(entry.modelData) ? ringContent : rateContent
                     onLoaded: cell.contentItem = item
                 }
 
@@ -106,6 +111,24 @@ GridLayout {
                             target: cell
                             property: "description"
                             value: rings.accessibleDescription
+                        }
+                    }
+                }
+
+                Component {
+                    id: usageContent
+                    UsageCellContent {
+                        id: usage
+                        monitor: strip.monitor
+                        item: entry.modelData
+                        ring: strip.ring
+                        textShown: entry.textShown
+                        twoLines: strip.twoLines
+
+                        Binding {
+                            target: cell
+                            property: "description"
+                            value: usage.accessibleDescription
                         }
                     }
                 }

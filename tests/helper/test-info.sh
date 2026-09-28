@@ -1,4 +1,7 @@
 #!/bin/sh
+# SPDX-FileCopyrightText: 2026 Emily Hamedian <me@emily.dev>
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 # Runs package/contents/code/ringside-info.sh against small fake sysfs/procfs
 # trees under tests/helper/fixtures/ and checks its JSON (or, for "pm", its
 # plain text) against a recorded expected output.
@@ -17,8 +20,8 @@
 
 set -u
 
-SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-REPO_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)
+SCRIPT_DIR=$(CDPATH="" cd -- "$(dirname -- "$0")" && pwd)
+REPO_ROOT=$(CDPATH="" cd -- "$SCRIPT_DIR/../.." && pwd)
 FIXTURES="$SCRIPT_DIR/fixtures"
 INFO_SH="$REPO_ROOT/package/contents/code/ringside-info.sh"
 WORK=$(mktemp -d)
@@ -62,7 +65,7 @@ for case_dir in "$FIXTURES"/*/; do
     actual="$WORK/$name.out"
 
     (
-        # shellcheck disable=SC1090
+        # shellcheck disable=SC1090,SC1091
         . "$case_dir/env"
         # shellcheck disable=SC2086
         sh "$INFO_SH" $args

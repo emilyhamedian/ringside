@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Emily Hamedian <me@emily.dev>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 .pragma library
 
 // Which GPU the outer ring shows and which the inner one does. Automatic puts
@@ -37,4 +40,16 @@ function swapLabel(kinds) {
 function memoryParts(total, used, application, cache, buffer) {
     const free = Math.max(0, Math.min(total - application - cache - (buffer || 0), total - used));
     return { free: free, cached: total - used - free };
+}
+
+// What the GPU item shows of the two ring readers: a GPU that is asleep drops
+// out, and the one still awake is shown alone, as on a single-GPU machine.
+// With both asleep, or one GPU asleep, the outer one is shown, as "off".
+function gpuView(outer, inner) {
+    const outerAsleep = outer.phase === "asleep";
+    const innerAsleep = inner.present && inner.phase === "asleep";
+    return {
+        primary: inner.present && outerAsleep && !innerAsleep ? inner : outer,
+        dual: inner.present && !outerAsleep && !innerAsleep
+    };
 }

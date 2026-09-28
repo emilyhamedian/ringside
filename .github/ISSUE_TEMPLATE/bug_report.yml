@@ -1,0 +1,71 @@
+name: Bug report
+description: Something in Ringside isn't working right
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Ringside version
+      description: Configure Ringside… → About
+      placeholder: e.g. 0.2.0
+    validations:
+      required: true
+  - type: input
+    id: distro
+    attributes:
+      label: Distribution
+      placeholder: e.g. Fedora 42, Debian 13, Arch
+    validations:
+      required: true
+  - type: input
+    id: plasma
+    attributes:
+      label: Plasma version
+      description: System Settings → About This System
+    validations:
+      required: true
+  - type: input
+    id: qt
+    attributes:
+      label: Qt version
+    validations:
+      required: true
+  - type: dropdown
+    id: layout
+    attributes:
+      label: Layout
+      options:
+        - Inline
+        - Standalone
+    validations:
+      required: true
+  - type: textarea
+    id: items
+    attributes:
+      label: Which items show, and in what order
+      placeholder: e.g. CPU, GPU, memory, network, Claude
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened
+      description: What you expected instead, and the steps to see it again.
+    validations:
+      required: true
+  - type: textarea
+    id: static-report
+    attributes:
+      label: Static hardware report
+      description: >-
+        For a CPU, GPU, memory, network or disk problem, run the widget's helper
+        and paste the output. It carries no personal data except a filesystem
+        UUID and the default network interface's name, which on Debian and
+        Ubuntu can hold a USB adapter's MAC address (enx…, wlx…). This command
+        drops both:
+        `sh ~/.local/share/plasma/plasmoids/dev.emily.ringside/contents/code/ringside-info.sh static | jq 'del(.root.uuid, .defaultInterface)'`
+        (installed system-wide instead? use `/usr/share/plasma/plasmoids/dev.emily.ringside/contents/code/ringside-info.sh`).
+        Without `jq`, delete the `"uuid":"..."` and `"defaultInterface":"..."` fields from the pasted output by hand.
+      render: json
+    validations:
+      required: false

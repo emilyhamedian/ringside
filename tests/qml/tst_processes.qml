@@ -1,9 +1,84 @@
+// SPDX-FileCopyrightText: 2026 Emily Hamedian <me@emily.dev>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 import QtQuick
 import QtTest
 import "../../package/contents/ui/code/processes.js" as Processes
+import "../../package/contents/ui/popups"
 
 TestCase {
     name: "Processes"
+
+    // A bare qml runtime has no KI18n; the list's caption finds this on the root.
+    function i18nc(context, text) { return text; }
+
+    Component {
+        id: liveList
+        ProcessList {
+            key: "memory"
+            threads: 1
+        }
+    }
+
+    // The attribute lists below are cut down from what each libksysguard's
+    // process model offers. From 6.3 the list asks for "memory" and nothing
+    // it is picked from.
+    function test_attributesAskForMemoryWhereItIsOffered() {
+        var available = ["pid", "vmSize", "vmRSS", "vmURSS", "vmShared", "vmPSS", "memory", "name", "usage"];
+        compare(Processes.attributes(available), ["name", "usage", "memory"]);
+    }
+
+    // 6.0 offers PSS and private memory, 6.2 resident memory as well.
+    function test_attributesFallBackToWhatMemoryIsPickedFrom() {
+        compare(Processes.attributes(["pid", "vmSize", "vmURSS", "vmShared", "vmPSS", "name", "usage"]),
+                ["name", "usage", "vmPSS", "vmURSS"]);
+        compare(Processes.attributes(["pid", "vmSize", "vmRSS", "vmURSS", "vmShared", "vmPSS", "name", "usage"]),
+                ["name", "usage", "vmPSS", "vmURSS", "vmRSS"]);
+    }
+
+    function test_attributesAskForNothingUnoffered() {
+        compare(Processes.attributes(["usage"]), ["usage"]);
+        compare(Processes.attributes([]), []);
+    }
+
+    // Values go with the attribute in their column, wherever that is.
+    function test_readingMatchesValuesToColumns() {
+        var result = Processes.reading(["usage", "memory", "name"], [12.5, 2048, "kwin_x11"]);
+        compare(result.name, "kwin_x11");
+        compare(result.usage, 12.5);
+        compare(result.memory, 2048 * 1024);
+    }
+
+    // Before 6.3, memory is the first of PSS, private and resident memory
+    // with a value, as "memory" is from 6.3. Private memory can come out
+    // negative on 6.0, where it is resident less shared.
+    function test_readingPicksMemoryAsLibksysguard63Does() {
+        var columns = ["name", "usage", "vmPSS", "vmURSS", "vmRSS"];
+        compare(Processes.reading(columns, ["a", 0, 300, 200, 400]).memory, 300 * 1024);
+        compare(Processes.reading(columns, ["a", 0, 0, 200, 400]).memory, 200 * 1024);
+        compare(Processes.reading(columns, ["a", 0, 0, -16, 400]).memory, 400 * 1024);
+        compare(Processes.reading(columns, ["a", 0, 0, 0, 0]).memory, 0);
+    }
+
+    function test_readingWithoutAMemoryColumn() {
+        var result = Processes.reading(["name", "usage"], ["a", 3]);
+        compare(result.name, "a");
+        compare(result.usage, 3);
+        compare(result.memory, 0);
+    }
+
+    // The real list against libksysguard's process model, which sees at least
+    // this test runner. Reading a column the model doesn't have warns about an
+    // invalid QModelIndex for every process and leaves the memory list empty,
+    // as it did on Plasma 6.0 to 6.2.
+    function test_listReadsTheProcessModel() {
+        failOnWarning(/QModelIndex/);
+        var list = createTemporaryObject(liveList, this);
+        verify(list);
+        tryVerify(() => list.rows.length > 0, 5000);
+        verify(list.rows[0].name.length > 0);
+        verify(list.rows[0].memory > 0);
+    }
 
     function test_topGroupsRowsSharingAName() {
         var rows = [

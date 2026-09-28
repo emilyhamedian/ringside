@@ -1,4 +1,7 @@
 #!/bin/sh
+# SPDX-FileCopyrightText: 2026 Emily Hamedian <me@emily.dev>
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 # Stands in for ringside-info.sh in tst_monitor.qml: a laptop with a
 # discrete GPU that stays asleep, so the test never reads real hardware.
 case ${1:-} in

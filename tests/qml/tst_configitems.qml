@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Emily Hamedian <me@emily.dev>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls as QQC2
@@ -41,6 +44,16 @@ Item {
         }
     }
 
+    // A bare page, for tests that only read cfg_ values, page.hints or
+    // control state and don't need the Rectangle's theming.
+    Component {
+        id: plain
+        ConfigItems {
+            width: root.width
+            height: root.height
+        }
+    }
+
     TestCase {
         name: "ConfigItems"
 
@@ -66,13 +79,27 @@ Item {
             waitForRendering(f);
             return f;
         }
+        function openPage(properties) {
+            const p = createTemporaryObject(plain, root, properties);
+            verify(p);
+            waitForRendering(p);
+            return p;
+        }
+        function checkbox(page, name) {
+            return find(page, i => i.text === name && i.checkState !== undefined);
+        }
+        function accessible(page, name) {
+            return find(page, i => i.Accessible && i.Accessible.name === name);
+        }
 
         function test_edges_and_tooltips() {
             const page = make().page;
             verify(!button(page, "Move CPU up").enabled);
             verify(button(page, "Move CPU down").enabled);
-            verify(button(page, "Move Disk up").enabled);
-            verify(!button(page, "Move Disk down").enabled);
+            // Claude and Codex trail the list by default, so Codex is now
+            // the last row rather than Disk.
+            verify(button(page, "Move Codex up").enabled);
+            verify(!button(page, "Move Codex down").enabled);
             const up = button(page, "Move GPU up");
             compare(up.QQC2.ToolTip.text, "Move GPU up");
             compare(up.icon.name, "go-up");
@@ -86,28 +113,30 @@ Item {
             up.forceActiveFocus(Qt.TabFocusReason);
             verify(up.visualFocus);
             keyClick(Qt.Key_Space);
-            compare(page.cfg_itemOrder, ["gpu", "cpu", "memory", "network", "disk"]);
+            compare(page.cfg_itemOrder, ["gpu", "cpu", "memory", "network", "disk", "claude", "codex"]);
             tryVerify(() => !up.enabled);
             verify(down.activeFocus, "focus moved to Move GPU down");
             verify(down.visualFocus, "keyboard focus stays visible");
             keyClick(Qt.Key_Space);
-            compare(page.cfg_itemOrder, ["cpu", "gpu", "memory", "network", "disk"]);
+            compare(page.cfg_itemOrder, ["cpu", "gpu", "memory", "network", "disk", "claude", "codex"]);
             verify(down.activeFocus, "focus stays on the pressed button");
             tryVerify(() => up.enabled);
             keyClick(Qt.Key_Space);
-            compare(page.cfg_itemOrder, ["cpu", "memory", "gpu", "network", "disk"]);
+            compare(page.cfg_itemOrder, ["cpu", "memory", "gpu", "network", "disk", "claude", "codex"]);
             verify(down.activeFocus);
         }
 
+        // Claude and Codex trail every stored order, so they are the pair
+        // that now sits at the bottom of the list.
         function test_keyboard_down_to_bottom() {
             const page = make().page;
-            const down = button(page, "Move Network down");
-            const up = button(page, "Move Network up");
+            const down = button(page, "Move Claude down");
+            const up = button(page, "Move Claude up");
             down.forceActiveFocus(Qt.TabFocusReason);
             keyClick(Qt.Key_Space);
-            compare(page.cfg_itemOrder, ["cpu", "gpu", "memory", "disk", "network"]);
+            compare(page.cfg_itemOrder, ["cpu", "gpu", "memory", "network", "disk", "codex", "claude"]);
             tryVerify(() => !down.enabled);
-            verify(up.activeFocus, "focus moved to Move Network up");
+            verify(up.activeFocus, "focus moved to Move Claude up");
         }
 
         function test_mouse() {
@@ -115,9 +144,9 @@ Item {
             const up = button(page, "Move Memory up");
             const pt = up.mapToItem(null, up.width / 2, up.height / 2);
             mouseClick(up);
-            compare(page.cfg_itemOrder, ["cpu", "memory", "gpu", "network", "disk"]);
+            compare(page.cfg_itemOrder, ["cpu", "memory", "gpu", "network", "disk", "claude", "codex"]);
             mouseClick(button(page, "Move Memory up"));
-            compare(page.cfg_itemOrder, ["memory", "cpu", "gpu", "network", "disk"]);
+            compare(page.cfg_itemOrder, ["memory", "cpu", "gpu", "network", "disk", "claude", "codex"]);
             verify(!up.enabled);
         }
 
@@ -136,6 +165,94 @@ Item {
             }
             verify(seen.includes("Move GPU up"));
             verify(!seen.includes("Move CPU up (disabled)"));
+        }
+
+        // Claude and Codex are opt-in: a 0.1-era config, with or without a
+        // hidden list, never had a chance to list them in the stored order,
+        // so both start unchecked. Loading the page must not write anything
+        // back on its own.
+        function test_aiRowsUnchecked_data() {
+            return [
+                { tag: "noStoredLists", order: ["cpu", "gpu", "memory", "network", "disk"], hidden: [] },
+                { tag: "withStoredHidden", order: ["cpu", "gpu", "memory", "network", "disk"], hidden: ["disk"] }
+            ];
+        }
+        function test_aiRowsUnchecked(data) {
+            const page = openPage({ cfg_itemOrder: data.order, cfg_hiddenItems: data.hidden });
+            verify(!checkbox(page, "Claude").checked, "Claude starts unchecked");
+            verify(!checkbox(page, "Codex").checked, "Codex starts unchecked");
+            compare(page.cfg_itemOrder, data.order, "loading writes nothing back");
+            compare(page.cfg_hiddenItems, data.hidden, "loading writes nothing back");
+        }
+
+        function test_aiRowOnWhenOrderListsIt() {
+            const page = openPage({ cfg_itemOrder: ["cpu", "claude", "gpu", "memory", "network", "disk"], cfg_hiddenItems: [] });
+            verify(checkbox(page, "Claude").checked, "the stored order lists Claude");
+            verify(!checkbox(page, "Codex").checked, "the stored order doesn't list Codex");
+        }
+
+        // Whichever list the page writes, it writes both together: the order
+        // always lists every known item, so writing it alone would switch a
+        // still-unchecked AI item on the moment it appeared there.
+        function test_checkingClaudeWritesOrderAndHiddenNormalised() {
+            const page = openPage({ cfg_itemOrder: ["cpu", "gpu", "memory", "network", "disk"], cfg_hiddenItems: [] });
+            mouseClick(checkbox(page, "Claude"));
+            compare(page.cfg_itemOrder, ["cpu", "gpu", "memory", "network", "disk", "claude", "codex"]);
+            compare(page.cfg_hiddenItems, ["codex"]);
+        }
+
+        function test_movingCpuDoesNotSwitchAiOn() {
+            const page = openPage({ cfg_itemOrder: ["cpu", "gpu", "memory", "network", "disk"], cfg_hiddenItems: [] });
+            mouseClick(button(page, "Move CPU down"));
+            compare(page.cfg_itemOrder, ["gpu", "cpu", "memory", "network", "disk", "claude", "codex"]);
+            compare(page.cfg_hiddenItems, ["claude", "codex"], "moving never switches an opted-out AI item on");
+        }
+
+        // The hint column reads Plasmoid.configuration.usageStatus; tests
+        // substitute it directly, since there's no live Plasmoid to fake.
+        function test_hints_data() {
+            return [
+                { tag: "helperError", status: { helperError: "python3 not found" },
+                  claude: "python3 not found", codex: "python3 not found" },
+                { tag: "ok", status: { claude: { status: "ok" }, codex: { status: "ok" } },
+                  claude: "Signed in", codex: "Signed in" },
+                { tag: "signedOut", status: { claude: { status: "signed_out" }, codex: { status: "signed_out" } },
+                  claude: "Not signed in: run claude in a terminal", codex: "Not signed in: run codex in a terminal" },
+                { tag: "error", status: { claude: { status: "error", message: "timed out" } },
+                  claude: "timed out", codex: "Shows while Codex is signed in" },
+                { tag: "rateLimited", status: { codex: { status: "rate_limited", message: "try again in a minute" } },
+                  claude: "Shows while Claude Code is signed in", codex: "try again in a minute" },
+                { tag: "noStatusYet", status: {},
+                  claude: "Shows while Claude Code is signed in", codex: "Shows while Codex is signed in" }
+            ];
+        }
+        function test_hints(data) {
+            const page = openPage({ usageStatus: data.status });
+            compare(page.hints.claude, data.claude);
+            compare(page.hints.codex, data.codex);
+        }
+
+        function test_layoutAndVisibilityCombosEnableDisable_data() {
+            return [
+                { tag: "inline", layout: 0, enabled: false },
+                { tag: "standalone", layout: 1, enabled: true }
+            ];
+        }
+        function test_layoutAndVisibilityCombosEnableDisable(data) {
+            const page = openPage({ cfg_layout: data.layout });
+            compare(accessible(page, "Fold").enabled, data.enabled);
+        }
+
+        function test_ringControlsDisabledInStandalone_data() {
+            return [
+                { tag: "inline", layout: 0, enabled: true },
+                { tag: "standalone", layout: 1, enabled: false }
+            ];
+        }
+        function test_ringControlsDisabledInStandalone(data) {
+            const page = openPage({ cfg_itemOrder: ["cpu", "gpu", "memory", "network", "disk"], cfg_layout: data.layout });
+            compare(accessible(page, "Ring size").enabled, data.enabled);
+            compare(accessible(page, "What CPU shows").enabled, data.enabled);
         }
     }
 }

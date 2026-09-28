@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Emily Hamedian <me@emily.dev>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 import QtQuick
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
@@ -18,6 +21,8 @@ RowLayout {
     property string value: ""
     property string unit: ""
     property bool degree: false
+    // "C" or "F": popups spell the temperature unit out.
+    property string degreeUnit: ""
     property color valueColor: Kirigami.Theme.textColor
     property string caption: ""
     default property alias trailing: trailingSlot.data
@@ -37,7 +42,8 @@ RowLayout {
         strokeWidth: 4
         value: header.ringValue
         text: Number.isFinite(header.ringValue) ? Format.percent(header.ringValue) + "%" : "–"
-        textScale: 0.29
+        // "100%" needs a little more room than "62%".
+        textScale: text.length > 3 ? 0.25 : 0.29
     }
 
     ColumnLayout {
@@ -76,6 +82,7 @@ RowLayout {
             value: header.value
             unit: header.unit
             degree: header.degree
+            degreeUnit: header.degreeUnit
             color: header.valueColor
             pointSize: Kirigami.Theme.defaultFont.pointSize * 1.7
         }

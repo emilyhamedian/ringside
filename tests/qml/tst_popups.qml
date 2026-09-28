@@ -1,5 +1,9 @@
+// SPDX-FileCopyrightText: 2026 Emily Hamedian <me@emily.dev>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 import QtQuick
 import QtTest
+import org.kde.kirigami as Kirigami
 
 // Every popup against FakeMonitor in the states the gallery shows, loaded the
 // way main.qml loads them. qmllint can't type the duck-typed monitor, so a
@@ -27,6 +31,13 @@ Item {
     FakeMonitor {
         id: hot
         cpuTemperature: 92
+    }
+
+    // Enough threads for the per-thread bars to take a second row.
+    FakeMonitor {
+        id: manyThreads
+        cpuCores: 64
+        cpuThreads: 128
     }
 
     FakeMonitor {
@@ -101,6 +112,7 @@ Item {
             return [
                 { tag: "cpu", popup: "CpuPopup", monitor: normal },
                 { tag: "cpuHot", popup: "CpuPopup", monitor: hot },
+                { tag: "cpuManyThreads", popup: "CpuPopup", monitor: manyThreads },
                 { tag: "gpu", popup: "GpuPopup", monitor: normal },
                 { tag: "gpuAsleep", popup: "GpuPopup", monitor: asleep },
                 { tag: "gpuResting", popup: "GpuPopup", monitor: resting },
@@ -121,6 +133,100 @@ Item {
             waitForRendering(loader.item);
             verify(loader.item.implicitWidth > 0);
             verify(loader.item.implicitHeight > 0);
+        }
+
+        function load(popup, monitor) {
+            const loader = createTemporaryObject(host, root);
+            loader.setSource(Qt.resolvedUrl("../../package/contents/ui/popups/" + popup + ".qml"), { monitor: monitor });
+            waitForRendering(loader.item);
+            return loader.item;
+        }
+
+        function texts(item) {
+            const found = [];
+            const collect = i => {
+                if (i.visible && typeof i.text === "string" && i.text !== "") {
+                    found.push(i.text);
+                }
+                i.children.forEach(collect);
+            };
+            collect(item);
+            return found;
+        }
+
+        // A sleeping GPU is one line under the awake one, not a section.
+        function test_aSleepingGpuIsOneLine() {
+            const found = texts(load("GpuPopup", asleep));
+            verify(found.includes("AMD Radeon RX 7700S · off"), JSON.stringify(found));
+            verify(!found.some(t => t.indexOf("Powered down") >= 0), JSON.stringify(found));
+        }
+
+        function gauges(item) {
+            const found = [];
+            const collect = i => {
+                if (i.outerTone !== undefined) {
+                    found.push(i);
+                }
+                i.children.forEach(collect);
+            };
+            collect(item);
+            return found;
+        }
+
+        // The outer of a gauge's two arcs, the one a popup's ring draws.
+        function outerArc(gauge) {
+            const arcs = [];
+            const pending = [gauge];
+            while (pending.length > 0) {
+                const item = pending.shift();
+                if (item.playReset !== undefined && item.animating !== undefined) {
+                    arcs.push(item);
+                }
+                pending.push(...Array.from(item.children));
+            }
+            compare(arcs.length, 2);
+            return arcs[0].radius > arcs[1].radius ? arcs[0] : arcs[1];
+        }
+
+        // The header ring, and the GPU popup's ring per GPU, take the level
+        // colours at 75 % and 90 % of their own reading, in the arc they draw.
+        function test_popupRingsTakeTheLevelColours_data() {
+            return [{ tag: "74", value: 74, tone: "text" }, { tag: "75", value: 75, tone: "neutral" },
+                    { tag: "89", value: 89, tone: "neutral" }, { tag: "90", value: 90, tone: "negative" }];
+        }
+
+        function test_popupRingsTakeTheLevelColours(data) {
+            const expected = data.tone === "negative" ? Kirigami.Theme.negativeTextColor
+                           : data.tone === "neutral" ? Kirigami.Theme.neutralTextColor : Kirigami.Theme.textColor;
+            normal.cpuUsage = data.value;
+            normal.gpuOuter.usage = data.value;
+            const cpu = gauges(load("CpuPopup", normal));
+            verify(cpu.length > 0);
+            compare(cpu[0].outerTone, expected);
+            compare(outerArc(cpu[0]).color, expected, "the header ring as drawn");
+            const gpu = gauges(load("GpuPopup", normal)).filter(g => g.value === data.value);
+            verify(gpu.length > 0, "the discrete GPU's ring");
+            gpu.forEach(g => {
+                compare(g.outerTone, expected);
+                compare(outerArc(g).color, expected, "the discrete GPU's ring as drawn");
+            });
+            normal.cpuUsage = 23;
+            normal.gpuOuter.usage = Qt.binding(() => normal.gpuOuter.live ? 12 : normal.gpuOuter.resting ? 0 : NaN);
+        }
+
+        function test_popupsSpellTheTemperatureUnit_data() {
+            return [{ tag: "celsius", fahrenheit: false, unit: "°C" }, { tag: "fahrenheit", fahrenheit: true, unit: "°F" }];
+        }
+
+        function test_popupsSpellTheTemperatureUnit(data) {
+            normal.fahrenheit = data.fahrenheit;
+            for (const popup of ["CpuPopup", "GpuPopup"]) {
+                const found = texts(load(popup, normal));
+                verify(found.includes(data.unit), popup + " " + JSON.stringify(found));
+            }
+            const disk = texts(load("NetworkPopup", normal));
+            verify(disk.some(t => t.endsWith(" " + data.unit)), JSON.stringify(disk));
+            normal.fahrenheit = false;
         }
     }
 }

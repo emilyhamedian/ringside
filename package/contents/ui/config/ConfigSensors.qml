@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Emily Hamedian <me@emily.dev>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Layouts
@@ -24,6 +27,8 @@ KCM.SimpleKCM {
     property string cfg_diskDevice
     property string cfg_diskVolume
     property string cfg_diskTemperatureSensor
+    property string cfg_claudeInnerLimit
+    property string cfg_codexInnerLimit
     // Read straight from the configuration: declaring cfg_detectedHardware
     // would make Apply write back the report the page opened with.
     readonly property var hardware: {
@@ -34,13 +39,91 @@ KCM.SimpleKCM {
             return {};
         }
     }
+    // Same idea, for the per-model limits the widget has reported so far.
+    // Not readonly, unlike hardware above: there is no live Plasmoid to fake
+    // outside a real applet, so tests substitute a fixed value here instead.
+    property var knownLimits: {
+        try {
+            const report = JSON.parse(Plasmoid.configuration.knownLimits || "{}");
+            return report && typeof report === "object" ? report : {};
+        } catch (err) {
+            return {};
+        }
+    }
+    // Array.from rather than Array.isArray: a value crossing from outside
+    // the QML/JS engine (the settings dialog's own config binding, or a
+    // test's initial property) arrives as a Qt sequence, not a JS Array.
+    readonly property bool claudeHasLimits: Array.from(knownLimits.claude || []).length > 0 || cfg_claudeInnerLimit !== ""
+    readonly property bool codexHasLimits: Array.from(knownLimits.codex || []).length > 0 || cfg_codexInnerLimit !== ""
+
+    // Automatic, none, then each limit reported for this provider so far. A
+    // limit that was picked but is no longer reported still shows, as "…
+    // (not reported)", so choosing it back off is possible.
+    function limitChoices(id) {
+        const list = Array.from(knownLimits[id] || []);
+        return [
+            { text: i18nc("@item:inlistbox automatic per-model limit", "Automatic"), value: "" },
+            { text: i18nc("@item:inlistbox no per-model limit on the inner ring", "None"), value: "none" }
+        ].concat(list.filter(limit => limit && typeof limit.id === "string" && limit.id).map(limit => ({
+            text: limit.reported === false
+                ? i18nc("@item:inlistbox %1 is a model's limit name", "%1 (not reported)", limit.label)
+                : String(limit.label),
+            value: limit.id
+        })));
+    }
     readonly property var gpus: Array.isArray(hardware.gpus)
         ? hardware.gpus.filter(g => g && typeof g.id === "string" && g.id) : []
     readonly property string cpuSensorLabel: hardware.cpu && hardware.cpu.tempLabel ? String(hardware.cpu.tempLabel) : ""
     readonly property string rootDisk: hardware.root && hardware.root.disk ? String(hardware.root.disk) : ""
 
+    // The sensors a picker can use, as { id, name, groupName } rows: the
+    // ksystemstats id and the tree's names for the sensor and its group, ""
+    // where the tree gives none. collect() reads them from the tree into
+    // fromTree. Not readonly, like knownLimits: tests substitute fixed rows,
+    // so they don't depend on this machine's sensors.
+    property var listed: fromTree
+    property var fromTree: []
+
     // What the sensor tree offers so far, as { text, value } lists.
-    property var found: ({ temperatures: [], interfaces: [], devices: [], volumes: [] })
+    readonly property var found: {
+        const temperatures = [];
+        const interfaces = [];
+        const disks = [];
+        for (const row of Array.from(listed)) {
+            const [kind, group, sensor] = row.id.split("/");
+            if (group === "all") {
+                continue;
+            }
+            const groupName = row.groupName || group;
+            if (kind === "lmsensors") {
+                // The tree appends the unit, "Composite (°C)"; every entry here is a temperature.
+                const name = (row.name || sensor).replace(/\s*\([^()]*\)$/, "");
+                temperatures.push({ text: groupName + " · " + name, value: row.id });
+            } else if (kind === "network") {
+                interfaces.push({ text: groupName === group ? group
+                                      : i18nc("@item:inlistbox network interface: name (interface)", "%1 (%2)", groupName, group),
+                                  value: group });
+            } else {
+                // Block devices report I/O only; volumes (UUID-named) also report free space.
+                let disk = disks.find(d => d.value === group);
+                if (!disk) {
+                    disk = { name: groupName, value: group, volume: false };
+                    disks.push(disk);
+                }
+                disk.volume = disk.volume || sensor === "free";
+            }
+        }
+        return {
+            temperatures: temperatures,
+            interfaces: interfaces,
+            devices: disks.filter(d => !d.volume).map(d => ({
+                text: d.name.includes(d.value) ? d.name
+                    : i18nc("@item:inlistbox disk: name (device)", "%1 (%2)", d.name, d.value),
+                value: d.value
+            })),
+            volumes: disks.filter(d => d.volume).map(d => ({ text: d.name, value: d.value }))
+        };
+    }
 
     function gpuName(gpu) {
         return Format.gpuModel(gpu.name, "", gpu.pciName, gpu.vendor) || gpu.id;
@@ -56,45 +139,24 @@ KCM.SimpleKCM {
     }
 
     function collect() {
-        const temperatures = [];
-        const interfaces = [];
-        const disks = [];
+        const rows = [];
         for (let i = 0; i < matches.count; ++i) {
             const index = matches.index(i, 0);
-            const id = String(matches.data(index, Sensors.SensorTreeModel.SensorId));
-            const [kind, group, sensor] = id.split("/");
-            if (group === "all") {
-                continue;
-            }
-            const groupName = String(tree.data(flat.mapToSource(matches.mapToSource(index)).parent, Qt.DisplayRole) || group);
-            if (kind === "lmsensors") {
-                // The tree appends the unit, "Composite (°C)"; every entry here is a temperature.
-                const name = String(matches.data(index, Qt.DisplayRole) || sensor).replace(/\s*\([^()]*\)$/, "");
-                temperatures.push({ text: groupName + " · " + name, value: id });
-            } else if (kind === "network") {
-                interfaces.push({ text: groupName === group ? group
-                                      : i18nc("@item:inlistbox network interface: name (interface)", "%1 (%2)", groupName, group),
-                                  value: group });
-            } else {
-                // Block devices report I/O only; volumes (UUID-named) also report free space.
-                let disk = disks.find(d => d.value === group);
-                if (!disk) {
-                    disk = { name: groupName, value: group, volume: false };
-                    disks.push(disk);
-                }
-                disk.volume = disk.volume || sensor === "free";
-            }
+            rows.push({
+                id: String(matches.data(index, Sensors.SensorTreeModel.SensorId)),
+                name: String(matches.data(index, Qt.DisplayRole) || ""),
+                groupName: String(tree.data(flat.mapToSource(matches.mapToSource(index)).parent, Qt.DisplayRole) || "")
+            });
         }
-        found = {
-            temperatures: temperatures,
-            interfaces: interfaces,
-            devices: disks.filter(d => !d.volume).map(d => ({
-                text: d.name.includes(d.value) ? d.name
-                    : i18nc("@item:inlistbox disk: name (device)", "%1 (%2)", d.name, d.value),
-                value: d.value
-            })),
-            volumes: disks.filter(d => d.volume).map(d => ({ text: d.name, value: d.value }))
-        };
+        fromTree = rows;
+    }
+
+    // The sensor ids the pickers are built from: temperatures, and one id
+    // per network interface and per disk or volume. Branch rows have no id,
+    // and "[Group]" rows carry a regex instead of one.
+    function offered(id) {
+        return !/[\\()*]/.test(id)
+            && /^(lmsensors\/[^\/]+\/temp\d+|network\/[^\/]+\/download|disk\/[^\/]+\/(read|free))$/.test(id);
     }
 
     Sensors.SensorTreeModel {
@@ -108,12 +170,8 @@ KCM.SimpleKCM {
             id: flat
             model: tree
         }
-        filterRowCallback: (row, parent) => {
-            const id = String(flat.data(flat.index(row, 0, parent), Sensors.SensorTreeModel.SensorId));
-            // Branch rows have no id, and "[Group]" rows carry a regex instead of one.
-            return !/[\\()*]/.test(id)
-                && /^(lmsensors\/[^\/]+\/temp\d+|network\/[^\/]+\/download|disk\/[^\/]+\/(read|free))$/.test(id);
-        }
+        filterRowCallback: (row, parent) => page.offered(String(flat.data(flat.index(row, 0, parent),
+                                                                         Sensors.SensorTreeModel.SensorId)))
         onCountChanged: Qt.callLater(page.collect)
         onDataChanged: Qt.callLater(page.collect)
     }
@@ -253,6 +311,35 @@ KCM.SimpleKCM {
                 { text: i18nc("@item:inlistbox no disk temperature", "None"), value: "none" }
             ].concat(page.found.temperatures)
             onPicked: value => page.cfg_diskTemperatureSensor = value
+        }
+
+        Kirigami.Separator {
+            Kirigami.FormData.label: i18nc("@title:group", "Claude and Codex")
+            Kirigami.FormData.isSection: true
+            visible: page.claudeHasLimits || page.codexHasLimits
+        }
+
+        Picker {
+            visible: page.claudeHasLimits
+            Kirigami.FormData.label: i18nc("@label:listbox", "Claude inner ring:")
+            Accessible.name: i18nc("@label:listbox", "Claude inner ring")
+            current: page.cfg_claudeInnerLimit
+            choices: page.limitChoices("claude")
+            onPicked: value => page.cfg_claudeInnerLimit = value
+        }
+
+        Picker {
+            visible: page.codexHasLimits
+            Kirigami.FormData.label: i18nc("@label:listbox", "Codex inner ring:")
+            Accessible.name: i18nc("@label:listbox", "Codex inner ring")
+            current: page.cfg_codexInnerLimit
+            choices: page.limitChoices("codex")
+            onPicked: value => page.cfg_codexInnerLimit = value
+        }
+
+        Note {
+            visible: page.claudeHasLimits || page.codexHasLimits
+            text: i18nc("@info", "Automatic shows the per-model limit when your plan has just one. With more than one, pick it here.")
         }
     }
 }

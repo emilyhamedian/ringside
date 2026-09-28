@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Emily Hamedian <me@emily.dev>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 pragma ComponentBehavior: Bound
 import QtQuick
 import org.kde.ksysguard.sensors as Sensors
@@ -5,6 +8,7 @@ import org.kde.plasma.plasma5support as P5Support
 import "code/format.js" as Format
 import "code/hardware.js" as Hardware
 import "code/history.js" as History
+import "code/items.js" as Items
 
 // Every reading the panel and the popups show, and the only place the widget
 // subscribes to ksystemstats. Each sensor id has exactly one Sensor here:
@@ -31,6 +35,16 @@ Item {
     // The hardware helper; the tests swap in a stub.
     property string helperPath: decodeURIComponent(Qt.resolvedUrl("../code/ringside-info.sh").toString()
                                                    .replace(/^file:\/\//, ""))
+
+    // The items switched on, and whether any of them reads ksystemstats: a
+    // widget showing only Claude and Codex subscribes nothing.
+    readonly property var enabledItems: Items.enabled(config.itemOrder, config.hiddenItems)
+    readonly property bool systemShown: enabledItems.some(k => Items.SYSTEM.includes(k))
+
+    // Claude and Codex readings; see UsageData.qml.
+    readonly property alias usage: usageData
+    // The Claude and Codex helper; the tests swap in a stub.
+    property alias usageHelperPath: usageData.helperPath
 
     // Asked for by the popups' footers.
     signal systemMonitorRequested()
@@ -80,8 +94,8 @@ Item {
     property var memoryHistory: []
 
     // GPUs: one reader per GPU (see GpuReader.qml); the rings point at two.
-    // A hidden GPU item reads nothing, so hiding it leaves the GPU alone.
-    readonly property bool gpuShown: !config.hiddenItems.includes("gpu")
+    // A hidden GPU item has no readers, so hiding it leaves the GPU alone.
+    readonly property bool gpuShown: enabledItems.includes("gpu")
     // Milliseconds since this widget started, counted by its own timer: the
     // GPU gate must not follow wall-clock steps. A late timer only makes it
     // wait longer, which never wakes a GPU.
@@ -190,8 +204,11 @@ Item {
         return (info && readers().find(r => r.info.id === info.id)) || noGpu;
     }
 
+    // Only readers that lead their GPU, or have yet to learn who does, ask:
+    // two widgets showing one GPU would otherwise poll it twice.
     function pollPower() {
-        const bdfs = readers().filter(r => r.kind === "discrete").map(r => r.info.bdf);
+        const bdfs = readers().filter(r => r.kind === "discrete" && (r.leading || r.leader === null))
+            .map(r => r.info.bdf);
         // On a machine too busy to answer within the interval, don't pile up runs.
         if (bdfs.length > 0 && powerStates.connectedSources.length === 0) {
             // The start time rides along in a shell comment: it makes each run a
@@ -230,7 +247,7 @@ Item {
 
     Timer {
         interval: monitor.interval
-        running: true
+        running: monitor.systemShown
         repeat: true
         onTriggered: monitor.sample()
     }
@@ -254,6 +271,7 @@ Item {
 
     component Reader: Sensors.Sensor {
         updateRateLimit: monitor.interval
+        enabled: monitor.systemShown
     }
 
     Reader { id: cpuUsageSensor; sensorId: "cpu/all/usage" }
@@ -310,11 +328,11 @@ Item {
         model: monitor.diskTemperatureSensorId ? [monitor.diskTemperatureSensorId] : []
     }
 
-    // One reader per GPU. The helper's report arrives once, so readers and
-    // their sensor ids stay put for the session.
+    // One reader per GPU while the GPU item is on. The helper's report
+    // arrives once, so readers and their sensor ids stay put until then.
     Instantiator {
         id: gpuReaders
-        model: monitor.hardware.gpus || []
+        model: monitor.gpuShown ? monitor.hardware.gpus || [] : []
         delegate: GpuReader {
             required property var modelData
             info: modelData
@@ -332,6 +350,12 @@ Item {
     // The empty ring.
     GpuReader {
         id: noGpu
+    }
+
+    UsageData {
+        id: usageData
+        config: monitor.config
+        providers: monitor.enabledItems.filter(Items.isUsage)
     }
 
     // Static facts, read once. The report also goes into the configuration,

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Emily Hamedian <me@emily.dev>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 import QtQuick
 import QtTest
 import "../../package/contents/ui"
@@ -55,6 +58,12 @@ TestCase {
             property string diskVolume: ""
             property string diskTemperatureSensor: ""
             property string detectedHardware: ""
+            property int layout: 0
+            property int usageRefreshMinutes: 5
+            property string claudeInnerLimit: ""
+            property string codexInnerLimit: ""
+            property string knownLimits: ""
+            property string usageStatus: ""
         }
     }
 
@@ -65,11 +74,30 @@ TestCase {
 
     property var config: null
     property var monitor: null
+    property var monitors: []
+
+    // A monitor with its own config. Monitors go before their configs, which
+    // UsageData reads until it is gone.
+    function makeMonitor(properties) {
+        const m = createTemporaryObject(monitorComponent, testCase,
+                                        Object.assign({ config: createTemporaryObject(configComponent, testCase),
+                                                        helperPath: stub }, properties));
+        monitors.push(m);
+        return m;
+    }
+
+    function cleanup() {
+        for (const m of monitors) {
+            m?.destroy();
+        }
+        monitors = [];
+        wait(0);
+    }
 
     function init() {
         failOnWarning(/TypeError|ReferenceError|SyntaxError|is not a function|Unable to assign|Cannot assign|Binding loop/);
         config = createTemporaryObject(configComponent, testCase);
-        monitor = createTemporaryObject(monitorComponent, testCase, { config: config, helperPath: stub });
+        monitor = makeMonitor({ config: config });
         tryVerify(() => monitor.hardware.cpu !== undefined, 10000, "the stub's report arrives");
     }
 
@@ -109,25 +137,50 @@ TestCase {
         verify(!monitor.readers()[0].onRing);
     }
 
-    // Hiding the GPU item leaves the GPUs alone: nothing is subscribed.
+    // Hiding the GPU item leaves the GPUs alone: there are no readers.
     function test_aHiddenGpuItemReadsNothing() {
         config.hiddenItems = ["disk", "gpu"];
-        for (const r of monitor.readers()) {
-            verify(!r.onRing, r.info.id);
-            verify(!r.nameSensor.enabled, r.info.id);
-            monitor.clockMs += 1000;
-            r.tick(monitor.clockMs);
-            verify(enabledSensors(r).every(e => !e), r.info.id);
-        }
+        compare(monitor.readers().length, 0);
+        verify(!monitor.gpuOuter.present);
         config.hiddenItems = ["disk"];
         verify(monitor.readers().some(r => r.onRing));
+    }
+
+    // A widget of only Claude and Codex, as on a Standalone panel beside an
+    // Inline one, reads no sensors and runs no GPU clock.
+    function test_aUsageOnlyWidgetSubscribesNothing() {
+        const usageOnly = createTemporaryObject(configComponent, testCase, {
+            itemOrder: ["claude", "codex", "cpu", "gpu", "memory", "network", "disk"],
+            hiddenItems: ["cpu", "gpu", "memory", "network", "disk"]
+        });
+        const other = makeMonitor({ config: usageOnly, usageHelperPath: dataPath("fake-usage-signed-out.py") });
+        tryVerify(() => other.hardware.cpu !== undefined, 10000);
+        verify(!other.systemShown);
+        compare(other.usage.providers, ["claude", "codex"]);
+        compare(other.readers().length, 0);
+        const sensors = sensorsOf(other);
+        verify(sensors.length > 5);
+        verify(sensors.every(s => !s.enabled), sensors.filter(s => s.enabled).map(s => s.sensorId).join());
+        tryVerify(() => other.usage.entry("claude") !== null, 10000, "the stub's report arrives");
+        verify(!other.usage.claudePresent);
+    }
+
+    // Two widgets showing one GPU poll its power state once between them.
+    function test_onlyTheLeaderPollsPowerStates() {
+        const second = makeMonitor({});
+        tryVerify(() => second.hardware.cpu !== undefined, 10000);
+        tryVerify(() => monitor.gpuOuter.leading !== second.gpuOuter.leading, 5000, "exactly one leads");
+        const follower = monitor.gpuOuter.leading ? second : monitor;
+        verify(follower.readers().filter(r => r.kind === "discrete").every(r => !r.leading && r.leader !== null));
+        const before = follower.gpuOuter.pmReadAt;
+        wait(2500);
+        compare(follower.gpuOuter.pmReadAt, before);
     }
 
     // Two widgets in one plasmashell: one reader per GPU subscribes, and the
     // other widget shows its readings.
     function test_twoWidgetsShareOneSubscriptionPerGpu() {
-        const second = createTemporaryObject(monitorComponent, testCase,
-                                             { config: createTemporaryObject(configComponent, testCase), helperPath: stub });
+        const second = makeMonitor({});
         tryVerify(() => second.hardware.cpu !== undefined, 10000);
         const mine = monitor.gpuInner;
         const theirs = second.gpuInner;
@@ -144,9 +197,7 @@ TestCase {
     // The helper prints "BDF  auto" when runtime_status can't be read: the
     // state is unknown, so the GPU is left asleep.
     function test_anUnreadableStateKeepsTheGpuAsleep() {
-        const other = createTemporaryObject(monitorComponent, testCase,
-                                            { config: createTemporaryObject(configComponent, testCase),
-                                              helperPath: dataPath("fake-info-unreadable.sh") });
+        const other = makeMonitor({ helperPath: dataPath("fake-info-unreadable.sh") });
         tryVerify(() => other.hardware.cpu !== undefined, 10000);
         monitor.destroy();
         wait(0);
@@ -163,6 +214,24 @@ TestCase {
         tryVerify(() => monitor.memoryTotal > 0, 10000);
         tryVerify(() => Number.isFinite(monitor.memoryFree) && Number.isFinite(monitor.memoryCached), 10000);
         // The arithmetic is tested in tst_hardware.qml; this checks the sensors reach it.
+    }
+
+    // Every Sensor the monitor holds directly or through its reader sets.
+    function sensorsOf(m) {
+        const found = [];
+        for (const child of m.data) {
+            if (child.sensorId !== undefined) {
+                found.push(child);
+            } else if (child.objectAt !== undefined && child.count !== undefined) {
+                for (let i = 0; i < child.count; ++i) {
+                    const o = child.objectAt(i);
+                    if (o && o.sensorId !== undefined) {
+                        found.push(o);
+                    }
+                }
+            }
+        }
+        return found;
     }
 
     function diskReadersOf(m) {

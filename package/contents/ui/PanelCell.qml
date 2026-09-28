@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Emily Hamedian <me@emily.dev>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 import QtQuick
 import org.kde.kirigami as Kirigami
 
@@ -17,12 +20,13 @@ MouseArea {
                                   : item === "gpu" ? i18nc("@info:tooltip", "Graphics")
                                   : item === "memory" ? i18nc("@info:tooltip", "Memory")
                                   : item === "network" ? i18nc("@info:tooltip", "Network")
-                                  : i18nc("@info:tooltip", "Disk activity")
+                                  : item === "disk" ? i18nc("@info:tooltip", "Disk activity")
+                                  : item === "claude" ? i18nc("@info:tooltip the Claude Code weekly limits", "Claude")
+                                  : i18nc("@info:tooltip the Codex weekly limits", "Codex")
 
     signal activated()
 
-    implicitWidth: (contentItem ? contentItem.implicitWidth : 0) + 2 * (vertical ? Kirigami.Units.smallSpacing
-                                                                                 : Math.round(Kirigami.Units.largeSpacing * 1.5))
+    implicitWidth: (contentItem ? contentItem.implicitWidth : 0) + 2 * Kirigami.Units.smallSpacing
     implicitHeight: (contentItem ? contentItem.implicitHeight : 0) + 2 * Kirigami.Units.smallSpacing
     hoverEnabled: true
     activeFocusOnTab: true

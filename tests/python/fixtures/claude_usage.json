@@ -1,0 +1,12 @@
+{
+    "seven_day": {"utilization": 62, "resets_at": "2026-09-04T16:00:00.000000+00:00"},
+    "cinder_cove": null,
+    "limits": [
+        {"kind": "session", "percent": 41, "resets_at": "2026-09-02T02:00:00.000000+00:00", "scope": null},
+        {"kind": "weekly_all", "percent": 62, "resets_at": "2026-09-04T16:00:00.000000+00:00", "scope": null},
+        {"kind": "weekly_scoped", "percent": 78, "resets_at": "2026-09-04T16:00:00.000000+00:00",
+         "scope": {"model": {"id": null, "display_name": "Fable"}, "surface": null}},
+        {"kind": "weekly_scoped", "percent": 9, "resets_at": "2026-09-04T16:00:00.000000+00:00",
+         "scope": {"model": {"id": null, "display_name": "Opus"}, "surface": null}}
+    ]
+}

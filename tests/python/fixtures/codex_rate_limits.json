@@ -1,0 +1,19 @@
+{
+    "rateLimits": {
+        "limitName": null,
+        "primary": {"usedPercent": 34, "windowDurationMins": 10080, "resetsAt": 1788926677},
+        "secondary": null
+    },
+    "rateLimitsByLimitId": {
+        "codex": {
+            "limitName": null,
+            "primary": {"usedPercent": 34, "windowDurationMins": 10080, "resetsAt": 1788926677},
+            "secondary": null
+        },
+        "codex_bengalfox": {
+            "limitName": "GPT-5.3-Codex-Spark",
+            "primary": {"usedPercent": 12, "windowDurationMins": 300, "resetsAt": 1788339877},
+            "secondary": {"usedPercent": 5, "windowDurationMins": 10080, "resetsAt": 1788926677}
+        }
+    }
+}
