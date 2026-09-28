@@ -6,6 +6,8 @@ follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-28
+
 ### Added
 
 - Claude Code and Codex weekly-limit items (opt-in), moved over from the
@@ -58,5 +60,6 @@ follows [Semantic Versioning](https://semver.org/).
   and one reader per GPU is shared across widgets so a second Ringside
   doesn't keep it awake.
 
-[Unreleased]: https://github.com/emilyhamedian/ringside/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/emilyhamedian/ringside/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/emilyhamedian/ringside/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/emilyhamedian/ringside/releases/tag/v0.1.0
