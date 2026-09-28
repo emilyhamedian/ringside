@@ -89,18 +89,22 @@ fi
 
 echo
 echo "== APIs newer than Plasma 6.0, Qt 6.6 and KF 6.0 =="
-# The suites can only run on current Plasma, so they never see an older one.
+# CI's floor job runs only the tests that load on Plasma 6.0, and only the
+# paths they reach, so this check stands in for the rest.
 # Kirigami.Theme.fixedWidthFont arrived in KF 6.14 and FontMetrics'
-# capitalHeight in Qt 6.9, so each needs a fallback; Qt's JavaScript engine
-# has no Array.prototype.flatMap.
-newer=$(grep -rnE 'fixedWidthFont\.|capitalHeight[^?]*$|\.flatMap\(' package/contents/ui tests/qml |
-    grep -vE '^[^:]+:[0-9]+:[[:space:]]*//')
-if [ -n "$newer" ]; then
-    fail "use of an API newer than the supported floor, without a fallback:"
-    printf '%s\n' "$newer" >&2
-else
-    echo "none"
-fi
+# capitalHeight in Qt 6.9, and before then each reads as undefined, so each
+# needs its fallback straight after it on the same line:
+# fixedWidthFont?.family ?? "monospace", and capitalHeight ?? something.
+# Qt's JavaScript engine has no Array.prototype.flatMap. Whole-line comments
+# don't count. grep exits 2 on an error, such as having no -P.
+newer=$(grep -rnP '^(?!\s*//).*(fixedWidthFont(?!\?\.family\s*\?\?\s*"monospace")|capitalHeight(?!\s*\?\?)|\.flatMap\()' \
+    package/contents/ui tests/qml)
+case $? in
+    0) fail "use of an API newer than the supported floor, without a fallback:"
+       printf '%s\n' "$newer" >&2 ;;
+    1) echo "none" ;;
+    *) fail "grep -P failed, so the check for newer APIs did not run" ;;
+esac
 
 echo
 echo "== QtTest suites ($QMLTESTRUNNER) =="

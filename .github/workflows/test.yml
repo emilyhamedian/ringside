@@ -47,3 +47,35 @@ jobs:
         with:
           name: ringside-gallery
           path: ringside-gallery.png
+
+  floor:
+    runs-on: ubuntu-latest
+    # The supported floor, Plasma 6.0 with Qt 6.6 and KF 6.0, is Fedora 40
+    # as released. Qt 6.6 reports binding loops that Qt 6.11 doesn't, so
+    # only this job catches a regression of the fixes for them. Its libplasma
+    # ships no importable org.kde.plasma.plasmoid module, so
+    # scripts/test-floor.sh runs the tests that don't need it.
+    container: fedora:40
+    steps:
+      # Fedora 40 is end of life and its release repository lives in the
+      # archive. That repository alone is enabled, so everything installed
+      # here is at its release version.
+      - name: Install Qt 6.6, the Plasma 6.0 QML modules and the test tools
+        run: >-
+          dnf -y -q install --setopt=install_weak_deps=False --repo=fedora
+          --setopt=fedora.metalink=
+          --setopt=fedora.baseurl=https://archives.fedoraproject.org/pub/archive/fedora/linux/releases/40/Everything/x86_64/os/
+          diffutils qt6-qtdeclarative-devel libplasma kf6-kirigami kf6-ksvg
+          kf6-kcmutils kf6-kitemmodels kf6-qqc2-desktop-style libksysguard
+          ksystemstats plasma5support plasma-workspace plasma-breeze
+          plasma-integration breeze-icon-theme google-noto-sans-fonts
+          python3 jq dbus-daemon
+
+      - name: Show the versions under test
+        run: rpm -q qt6-qtdeclarative kf6-kirigami libplasma libksysguard python3
+
+      - uses: actions/checkout@v7
+
+      # D-Bus starts ksystemstats when the tests ask for it.
+      - name: Run the tests that load on Plasma 6.0
+        run: dbus-run-session -- sh scripts/test-floor.sh

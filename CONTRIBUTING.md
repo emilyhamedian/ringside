@@ -3,9 +3,10 @@
 ## Checks
 
 ```bash
-sh scripts/test.sh      # qmllint, the QML tests, the helpers' tests, shellcheck, reuse lint
-sh scripts/gallery.sh   # renders every view to /tmp/ringside-gallery.png
-sh scripts/pictures.sh  # renders the README's pictures in docs/ from sample readings
+sh scripts/test.sh        # qmllint, the QML tests, the helpers' tests, shellcheck, reuse lint
+sh scripts/test-floor.sh  # the tests that load on Plasma 6.0, which CI runs on Fedora 40
+sh scripts/gallery.sh     # renders every view to /tmp/ringside-gallery.png
+sh scripts/pictures.sh    # renders the README's pictures in docs/ from sample readings
 ```
 
 They need a Plasma 6.5 or later desktop (older libplasma ships no importable
@@ -14,7 +15,8 @@ They need a Plasma 6.5 or later desktop (older libplasma ships no importable
 `QMLTESTRUNNER`, `QML`), the Plasma and libksysguard QML modules, and
 Python 3.11+. `scripts/test.sh` also runs `shellcheck` and `reuse lint` when
 they're installed, and prints a note when it skips one. `scripts/pictures.sh`
-also needs Python's Pillow.
+also needs Python's Pillow. `scripts/test-floor.sh` runs from Plasma 6.0 on:
+it counts a test that fails for want of `org.kde.plasma.plasmoid` as skipped.
 
 ## Branches
 
