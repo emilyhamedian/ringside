@@ -2,14 +2,17 @@
 set -u
 
 # Runs the whole check suite: qmllint over the QML, the QtTest suites under
-# tests/qml/, and the hardware-helper shell tests. Needs the Qt 6 qmllint and
-# qmltestrunner, so run it on a Plasma host, not in a bare container. They are
-# looked for in /usr/lib/qt6/bin, /usr/lib64/qt6/bin and then PATH, and must
-# prove to be Qt 6 builds; set QMLLINT and QMLTESTRUNNER to use others.
+# tests/qml/, the hardware helper's shell tests, the usage helper's Python
+# tests, and shellcheck and reuse lint where they are installed (always in
+# CI). Needs the Qt 6 qmllint and qmltestrunner and the Plasma QML modules,
+# so run it on a Plasma 6.5 or later host: older libplasma builds ship no
+# importable org.kde.plasma.plasmoid module. The tools are looked for in
+# /usr/lib/qt6/bin, /usr/lib64/qt6/bin and then PATH, and must prove to be
+# Qt 6 builds; set QMLLINT and QMLTESTRUNNER to use others.
 #
 # Usage: sh scripts/test.sh
 
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/.." || exit 1
 
 # Without a terminal, Qt sends its log output to the journal.
 export QT_FORCE_STDERR_LOGGING=1
@@ -111,6 +114,35 @@ fi
 echo
 echo "== tests/helper/test-info.sh =="
 sh tests/helper/test-info.sh || failed=1
+
+echo
+echo "== tests/python (Python helper) =="
+# The helper has to run on Python 3.11, whatever this machine has.
+PYTHONDONTWRITEBYTECODE=1 python3 -c 'import ast, sys; ast.parse(open(sys.argv[1]).read(), feature_version=(3, 11))' \
+    package/contents/code/usage.py || fail "usage.py needs a newer Python than 3.11"
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests/python || failed=1
+
+echo
+echo "== shellcheck =="
+sh_files=$(find package/contents/code scripts tests \( -name '*.sh' -o -name '*.bash' \) | sort)
+if command -v shellcheck >/dev/null 2>&1; then
+    # shellcheck disable=SC2086
+    shellcheck $sh_files || failed=1
+elif [ -n "${CI:-}" ]; then
+    fail "shellcheck not installed, and CI is set"
+else
+    echo "scripts/test.sh: shellcheck not installed, skipping"
+fi
+
+echo
+echo "== reuse lint =="
+if command -v reuse >/dev/null 2>&1; then
+    reuse lint || failed=1
+elif [ -n "${CI:-}" ]; then
+    fail "reuse not installed, and CI is set"
+else
+    echo "scripts/test.sh: reuse not installed, skipping"
+fi
 
 echo
 if [ "$failed" -eq 0 ]; then

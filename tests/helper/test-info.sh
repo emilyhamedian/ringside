@@ -17,8 +17,8 @@
 
 set -u
 
-SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-REPO_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)
+SCRIPT_DIR=$(CDPATH="" cd -- "$(dirname -- "$0")" && pwd)
+REPO_ROOT=$(CDPATH="" cd -- "$SCRIPT_DIR/../.." && pwd)
 FIXTURES="$SCRIPT_DIR/fixtures"
 INFO_SH="$REPO_ROOT/package/contents/code/ringside-info.sh"
 WORK=$(mktemp -d)

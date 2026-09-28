@@ -1,0 +1,39 @@
+# Changelog
+
+All notable changes to Ringside are documented here. The format follows
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
+follows [Semantic Versioning](https://semver.org/).
+
+## [Unreleased]
+
+### Added
+
+- Claude Code and Codex weekly-limit items (opt-in), moved over from the
+  Usage Rings widget, which Ringside now replaces: a popup showing every
+  limit and a graph of the week so far.
+- A Standalone layout: the same items as large dials in a panel of their
+  own, which folds behind maximized windows, also from Usage Rings.
+- Rings turn amber at 75% and red at 90% of their own percentage.
+
+### Changed
+
+- Items sit closer together in the panel.
+- A sleeping discrete GPU drops out of the panel until it wakes, as on a
+  single-GPU machine.
+- Popups spell out °C or °F instead of a bare degree sign.
+
+## [0.1.0] - 2026-09-27
+
+### Added
+
+- Initial release: CPU, GPU, memory, network and disk as rings and rate
+  readouts in the panel, each opening a popup with history graphs,
+  per-thread load, top processes, VRAM, clocks, power, swap, memory
+  pressure and disk activity.
+- Settings pages for update interval, temperature units and thresholds,
+  network rate units, panel items and their order, and per-sensor choices
+  (CPU temperature source, which GPU goes on which ring, network interface,
+  disk and volume).
+- A laptop's discrete GPU is read only while something else has woken it,
+  and one reader per GPU is shared across widgets so a second Ringside
+  doesn't keep it awake.
