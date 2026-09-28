@@ -225,7 +225,9 @@ Item {
             compare(usage.entry("codex").lastError, "HTTP Error 429: Too Many Requests");
             verify(usage.degraded("claude") && usage.degraded("codex"));
             verify(usage.claudePresent && usage.codexPresent, "a failed poll keeps the items");
-            verify(timers().some(t => t.running && t.interval === 3600000 && !t.repeat), "retries after retryAfter");
+            // The helper holds a refused provider back itself; the widget
+            // never polls sooner than its interval.
+            compare(timers().filter(t => t.running).map(t => t.interval), [5 * 60000]);
             compare(JSON.parse(config.usageStatus).claude,
                     { status: "error", message: "HTTP Error 500: Internal Server Error" });
             compare(JSON.parse(config.usageStatus).codex.status, "rate_limited");
@@ -577,7 +579,7 @@ Item {
         function test_innerLimit() {
             const popup = load("claude");
             const shown = root.texts(popup);
-            for (const text of ["Claude", "Claude Code", "2d 21h", "until reset", "All models", "Opus", "62%", "78%",
+            for (const text of ["Claude", "Weekly limits", "2d 21h", "until reset", "All models", "Opus", "62%", "78%",
                                 "— All models", "- - Opus"]) {
                 verify(shown.includes(text), text + " in " + JSON.stringify(shown));
             }
@@ -590,7 +592,7 @@ Item {
 
         function test_codex() {
             const shown = root.texts(load("codex"));
-            verify(shown.includes("Codex") && shown.includes("Codex CLI") && shown.includes("5d 4h"), JSON.stringify(shown));
+            verify(shown.includes("Codex") && shown.includes("Weekly limits") && shown.includes("5d 4h"), JSON.stringify(shown));
             verify(!shown.some(t => t.startsWith("- - ")), "no dashed series without an inner ring");
         }
 

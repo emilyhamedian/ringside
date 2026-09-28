@@ -94,6 +94,8 @@ CACHE_FILE = CACHE_DIR / "usage.json"
 HISTORY_FILE = CACHE_DIR / "usage-history.json"
 LOCK_FILE = CACHE_DIR / "usage.lock"
 CACHE_TTL = 5 * 60
+# The longest a refusal holds a provider back, whatever Retry-After says.
+HOLD_MAX = 24 * 3600
 # A week of polls five minutes apart is 2016 points; flat stretches collapse,
 # so this is only reached by a series that changes on nearly every poll.
 HISTORY_POINTS = 2100
@@ -503,12 +505,24 @@ def fresh(entry, now):
             and 0 <= now - entry.get("fetchedAt", 0) < CACHE_TTL)
 
 
-def collect(fetchers, now=None):
-    """Poll each provider unless its last good reading is still fresh.
+def held(entry, now):
+    """Seconds left of a provider's hold after it refused a poll, or 0."""
+    if not isinstance(entry, dict) or entry.get("status") != "rate_limited":
+        return 0
+    try:
+        return max(0, min(int(entry.get("heldUntil", 0)) - now, HOLD_MAX))
+    except (TypeError, ValueError):
+        return 0
 
-    Only successful readings are cached: a failure is worth retrying on the
-    next run, and a rate-limit reply must not be replayed as if it were new.
-    The cache is shared with runs that ask for other providers, so their
+
+def collect(fetchers, now=None):
+    """Poll each provider unless its last good reading is still fresh, or it
+    asked to be left alone for a while.
+
+    Successful readings are cached, and so is a rate-limit reply's hold, so
+    no run from any widget asks again before Retry-After has passed. Other
+    failures are worth retrying on the next run and aren't kept. The cache is
+    shared with runs that ask for other providers, so their
     entries stay as they were. The lock covers everything from reading the
     cache to writing it and the history, so a run that waited for another
     finds its reading fresh; the time is taken once the lock is held, since
@@ -523,10 +537,18 @@ def collect(fetchers, now=None):
             if fresh(cache.get(name), now):
                 providers[name] = cache[name]
                 continue
+            wait = held(cache.get(name), now)
+            if wait:
+                providers[name] = {"status": "rate_limited", "retryAfter": wait,
+                                   "message": str(RateLimited(wait))}
+                continue
             report = poll(fetch)
             if report["status"] == "ok":
                 report["fetchedAt"] = now
                 cache[name] = report
+            elif report["status"] == "rate_limited":
+                cache[name] = {"status": "rate_limited",
+                               "heldUntil": now + min(report["retryAfter"], HOLD_MAX)}
             else:
                 cache.pop(name, None)
             providers[name] = polled[name] = report

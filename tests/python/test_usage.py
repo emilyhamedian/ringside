@@ -428,11 +428,32 @@ class ReadingCache(Isolated):
         self.assertEqual(result["weekly"]["percent"], 2)
         self.assertEqual(self.cached()["codex"]["fetchedAt"], 1300)
 
-    def test_failures_are_reported_but_not_cached(self):
-        fetch = mock.Mock(side_effect=usage.RateLimited(30))
+    def test_errors_are_reported_but_not_cached(self):
+        fetch = mock.Mock(side_effect=RuntimeError("HTTP 500 from api.anthropic.com"))
         self.assertEqual(self.collect(1000, codex=fetch)["codex"],
-                         {"status": "rate_limited", "retryAfter": 30, "message": "rate limited, retrying in 30 s"})
+                         {"status": "error", "message": "HTTP 500 from api.anthropic.com"})
         self.assertEqual(self.cached(), {})
+
+    # A refusal holds the provider back for every run until Retry-After has
+    # passed, and only that provider.
+    def test_a_rate_limit_holds_until_retry_after(self):
+        refused = mock.Mock(side_effect=usage.RateLimited(600))
+        self.assertEqual(self.collect(1000, codex=refused)["codex"],
+                         {"status": "rate_limited", "retryAfter": 600, "message": "rate limited, retrying in 600 s"})
+        again = mock.Mock(return_value=reading(3, 5))
+        self.assertEqual(self.collect(1400, codex=again)["codex"],
+                         {"status": "rate_limited", "retryAfter": 200, "message": "rate limited, retrying in 200 s"})
+        again.assert_not_called()
+        other = mock.Mock(return_value=reading(7, 5))
+        self.assertEqual(self.collect(1400, claude=other)["claude"]["status"], "ok")
+        self.assertEqual(self.collect(1600, codex=again)["codex"]["status"], "ok")
+        again.assert_called_once()
+
+    def test_a_hold_never_lasts_more_than_a_day(self):
+        self.collect(1000, codex=mock.Mock(side_effect=usage.RateLimited(10 ** 9)))
+        self.assertEqual(self.collect(1000, codex=mock.Mock())["codex"]["retryAfter"], usage.HOLD_MAX)
+        self.assertEqual(self.collect(1000 + usage.HOLD_MAX, codex=mock.Mock(return_value=reading(1, 5)))["codex"]["status"],
+                         "ok")
 
     def test_corrupt_cache_is_ignored(self):
         self.write_cache({})

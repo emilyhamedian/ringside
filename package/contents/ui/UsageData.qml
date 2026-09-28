@@ -118,11 +118,6 @@ Item {
             } else if (was) {
                 merged[id] = Object.assign({}, was, { lastError: next.message ?? next.status, lastErrorAt: at });
             }
-            // Never sooner than a minute, whatever the reply asks.
-            if (next.status === "rate_limited" && next.retryAfter > 0) {
-                retry.interval = Math.max(60, next.retryAfter) * 1000;
-                retry.restart();
-            }
         }
         const events = Reset.detect(entries, merged, at);
         if (Object.keys(events).length > 0) {
@@ -219,12 +214,6 @@ Item {
         running: usage.command !== ""
         repeat: true
         triggeredOnStart: true
-        onTriggered: usage.refresh()
-    }
-
-    // Asked for by a rate-limited answer's retryAfter.
-    Timer {
-        id: retry
         onTriggered: usage.refresh()
     }
 }
