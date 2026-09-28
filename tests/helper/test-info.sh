@@ -65,7 +65,7 @@ for case_dir in "$FIXTURES"/*/; do
     actual="$WORK/$name.out"
 
     (
-        # shellcheck disable=SC1090
+        # shellcheck disable=SC1090,SC1091
         . "$case_dir/env"
         # shellcheck disable=SC2086
         sh "$INFO_SH" $args

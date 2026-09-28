@@ -1,0 +1,48 @@
+name: Tests
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # The QtTest suites import org.kde.plasma.plasmoid, which libplasma
+      # ships as a QML module from 6.5 on, so the checks run on Fedora 44
+      # (Plasma 6.7, Qt 6.11). It runs under docker rather than as a job
+      # container: the Sensors settings test needs ksystemstats to list a
+      # network interface, and ksystemstats skips virtual ones. A job
+      # container only gets a veth, and GitHub won't pass it --network host.
+      - name: Start Fedora
+        run: >-
+          docker run -d --name fedora --network host -e CI=1
+          -v "$GITHUB_WORKSPACE:/src" -v "$RUNNER_TEMP:/out" -w /src
+          fedora:44 sleep infinity
+
+      - name: Install Qt 6, the Plasma 6 QML modules and the check tools
+        run: >-
+          docker exec fedora dnf -y -q install --setopt=install_weak_deps=False
+          git diffutils qt6-qtdeclarative-devel libplasma kf6-kirigami kf6-ksvg
+          kf6-kcmutils kf6-kitemmodels kf6-qqc2-desktop-style libksysguard
+          ksystemstats plasma5support plasma-workspace plasma-breeze
+          plasma-integration breeze-icon-theme google-noto-sans-fonts
+          python3 ShellCheck reuse jq dbus-daemon
+
+      # D-Bus starts ksystemstats when the Sensors tests ask for it.
+      - name: Run the check suite
+        run: docker exec fedora dbus-run-session -- sh scripts/test.sh
+
+      - name: Render the gallery
+        run: docker exec fedora dbus-run-session -- sh scripts/gallery.sh /out/ringside-gallery.png
+
+      - name: Upload the gallery
+        uses: actions/upload-artifact@v7
+        with:
+          name: ringside-gallery
+          path: ${{ runner.temp }}/ringside-gallery.png
