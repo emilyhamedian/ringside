@@ -168,7 +168,10 @@ PlasmoidItem {
 
         property int savedStatus: PlasmaCore.Types.PassiveStatus
 
-        visualParent: root.openCell
+        // Plasma places the popup's window even while it is hidden, and warns
+        // when there is no visual parent, so the applet stands in while no
+        // cell is open.
+        visualParent: root.openCell ?? root
         hideOnWindowDeactivate: true
         popupDirection: switch (Plasmoid.location) {
             case PlasmaCore.Types.TopEdge: return Qt.BottomEdge;
