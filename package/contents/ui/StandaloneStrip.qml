@@ -206,19 +206,27 @@ Item {
         visible: strip.expansionProgress > 0
         opacity: strip.contentOpacity
         // The dials keep their open layout and slide toward the tab while
-        // scaling uniformly, so circles stay circles.
-        x: (strip.vertical ? 0 : strip.endPadding - strip.dialPadding) * strip.expansionProgress
-           + (strip.compactCenterX - width / 2) * (1 - strip.expansionProgress)
-        y: (strip.vertical ? strip.endPadding - strip.dialPadding : 0) * strip.expansionProgress
-           + (strip.compactCenterY - height / 2) * (1 - strip.expansionProgress)
+        // scaling uniformly, so circles stay circles. The slide is a
+        // transform because Qt before 6.7.3 re-measures a layout as soon as
+        // it moves, and its new size, passed on to the strip's, loops back
+        // into the position being set.
+        x: strip.vertical ? 0 : strip.endPadding - strip.dialPadding
+        y: strip.vertical ? strip.endPadding - strip.dialPadding : 0
         width: strip.vertical ? strip.width : implicitWidth
         height: strip.vertical ? implicitHeight : strip.height
-        transform: Scale {
-            origin.x: dialGrid.width / 2
-            origin.y: dialGrid.height / 2
-            xScale: strip.contentScale
-            yScale: strip.contentScale
-        }
+        transform: [
+            Scale {
+                origin.x: dialGrid.width / 2
+                origin.y: dialGrid.height / 2
+                xScale: strip.contentScale
+                yScale: strip.contentScale
+            },
+            // After the scale, so the slide itself is not scaled.
+            Translate {
+                x: (strip.compactCenterX - dialGrid.width / 2 - dialGrid.x) * (1 - strip.expansionProgress)
+                y: (strip.compactCenterY - dialGrid.height / 2 - dialGrid.y) * (1 - strip.expansionProgress)
+            }
+        ]
         columns: strip.vertical ? 1 : -1
         rowSpacing: strip.gap - 2 * strip.dialPadding
         columnSpacing: rowSpacing
