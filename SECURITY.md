@@ -21,6 +21,8 @@ Mainly the two helpers Ringside runs:
   udev's database and ksystemstats, and send nothing.
 - The Claude item sends your Claude Code login only to Anthropic
   (`api.anthropic.com`, and `platform.claude.com` to renew an expired
-  token).
+  token). Each check's result, even an error or a sign-out, is kept for
+  five minutes and shared by every Ringside widget; when Anthropic asks for
+  a longer wait, Ringside waits that long, up to a day.
 - The Codex item talks only to `codex app-server`, running locally, which
   contacts OpenAI with the Codex CLI's own login.

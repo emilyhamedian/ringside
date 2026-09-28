@@ -33,14 +33,15 @@ too. Colours follow your Plasma theme.
 
 Download `ringside.plasmoid` from the
 [latest release](https://github.com/emilyhamedian/ringside/releases/latest),
-then either choose *Add Widgets → Get New Widgets → Install Widget From Local
-File…* or run:
+then either open *Add or Manage Widgets…*, choose *Get New… → Install Widget
+From Local File…* and pick the file, or run:
 
 ```bash
 kpackagetool6 --type Plasma/Applet --install ringside.plasmoid
 ```
 
-Then add **Ringside** to a panel from *Add Widgets*.
+Then add **Ringside** to a panel from *Add or Manage Widgets…*. Before Plasma
+6.2 these read *Add Widgets…* and *Get New Widgets…*.
 
 To update, download the new file and run:
 
@@ -90,10 +91,12 @@ under *Panel Items* says why.
 
 - **Claude** needs [Claude Code](https://docs.claude.com/en/docs/claude-code)
   signed in with a Claude subscription. Ringside reads its login from
-  `~/.claude/.credentials.json` and asks Anthropic's usage service at most once
-  every five minutes, and less often when asked to wait. When the login has
-  expired it renews it the way Claude Code does and saves it back, so Claude
-  Code stays signed in.
+  `~/.claude/.credentials.json` and asks Anthropic's usage service for the
+  limits. Each check's result, even an error or a sign-out, is kept for five
+  minutes and shared by every Ringside widget; when Anthropic asks it to wait
+  longer, it waits that long, up to a day. When the login has expired it
+  renews it the way Claude Code does and saves it back, so Claude Code stays
+  signed in.
 - **Codex** needs the [Codex CLI](https://github.com/openai/codex) signed in.
   Ringside runs `codex app-server` to ask for the limits.
 

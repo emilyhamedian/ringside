@@ -22,6 +22,22 @@ follows [Semantic Versioning](https://semver.org/).
   single-GPU machine.
 - Popups spell out °C or °F instead of a bare degree sign.
 
+### Fixed
+
+- Readouts use a fixed-width font on KDE Frameworks older than 6.14, such as
+  Debian 13's and Fedora 40's, instead of logging script errors and falling
+  back to the default font.
+- The CPU popup no longer logs a binding loop on Qt 6.6.
+- Ringside no longer logs "Exposed with no visual parent" warnings.
+- An open popup stays on its item when another item comes or goes, and
+  closes when its own item goes.
+- The Memory popup lists its top processes on Plasma 6.0 to 6.2, and there
+  the CPU and Memory popups no longer log a warning for every process.
+- The Claude helper carried over from Usage Rings is hardened against
+  losing or leaking the Claude Code login: it checks that it can save a
+  renewed login before renewing it, never overwrites one Claude Code renewed
+  meanwhile, and keeps request details out of the widget.
+
 ## [0.1.0] - 2026-09-27
 
 ### Added
