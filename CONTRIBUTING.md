@@ -9,14 +9,14 @@ sh scripts/gallery.sh     # renders every view to /tmp/ringside-gallery.png
 sh scripts/pictures.sh    # renders the README's pictures in docs/ from sample readings
 ```
 
-They need a Plasma 6.5 or later desktop (older libplasma ships no importable
-`org.kde.plasma.plasmoid` module): the Qt 6 `qmllint`/`qmltestrunner`/`qml` tools
+Apart from `scripts/test-floor.sh`, they need a Plasma 6.5 or later desktop
+(older libplasma ships no importable `org.kde.plasma.plasmoid` module): the Qt 6 `qmllint`/`qmltestrunner`/`qml` tools
 (looked for in `/usr/lib/qt6/bin` and `/usr/lib64/qt6/bin`, or set `QMLLINT`,
 `QMLTESTRUNNER`, `QML`), the Plasma and libksysguard QML modules, and
 Python 3.11+. `scripts/test.sh` also runs `shellcheck` and `reuse lint` when
 they're installed, and prints a note when it skips one. `scripts/pictures.sh`
-also needs Python's Pillow. `scripts/test-floor.sh` runs from Plasma 6.0 on:
-it counts a test that fails for want of `org.kde.plasma.plasmoid` as skipped.
+also needs Python's Pillow. `scripts/test-floor.sh` runs from Plasma 6.0 on
+and counts a test that fails for want of `org.kde.plasma.plasmoid` as skipped.
 
 ## Branches
 

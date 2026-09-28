@@ -28,7 +28,7 @@ TestCase {
         compare(Processes.attributes(available), ["name", "usage", "memory"]);
     }
 
-    // 6.0 offers PSS and private memory, 6.1 and 6.2 resident memory as well.
+    // 6.0 offers PSS and private memory, 6.2 resident memory as well.
     function test_attributesFallBackToWhatMemoryIsPickedFrom() {
         compare(Processes.attributes(["pid", "vmSize", "vmURSS", "vmShared", "vmPSS", "name", "usage"]),
                 ["name", "usage", "vmPSS", "vmURSS"]);

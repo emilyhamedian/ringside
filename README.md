@@ -170,14 +170,15 @@ and the week's history in `~/.cache/ringside/`.
 ## Development
 
 ```bash
-sh scripts/test.sh      # qmllint, the QML tests, the helpers' tests, shellcheck, reuse lint
-sh scripts/gallery.sh   # renders every view to /tmp/ringside-gallery.png
-sh scripts/pictures.sh  # renders the pictures in docs/ from sample readings
-sh scripts/package.sh   # builds ringside.plasmoid from the last commit
+sh scripts/test.sh        # qmllint, the QML tests, the helpers' tests, shellcheck, reuse lint
+sh scripts/test-floor.sh  # the tests that load on Plasma 6.0
+sh scripts/gallery.sh     # renders every view to /tmp/ringside-gallery.png
+sh scripts/pictures.sh    # renders the pictures in docs/ from sample readings
+sh scripts/package.sh     # builds ringside.plasmoid from the last commit
 ```
 
-These need Plasma 6.5 or later, which ships the QML modules they load. See
-[CONTRIBUTING.md](CONTRIBUTING.md).
+Apart from `test-floor.sh`, these need Plasma 6.5 or later, which ships the
+QML modules they load. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 

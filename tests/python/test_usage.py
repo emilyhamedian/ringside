@@ -658,7 +658,8 @@ class ReadingCache(Isolated):
                 self.assertEqual(self.collect(step + length, codex=again)["codex"]["status"], "ok")
 
     def test_a_hold_never_lasts_more_than_a_day(self):
-        self.collect(1000, codex=mock.Mock(side_effect=usage.RateLimited(10 ** 9)))
+        self.assertEqual(self.collect(1000, codex=mock.Mock(side_effect=usage.RateLimited(10 ** 9)))["codex"]["retryAfter"],
+                         usage.HOLD_MAX)
         self.assertEqual(self.collect(1000, codex=mock.Mock())["codex"]["retryAfter"], usage.HOLD_MAX)
         self.assertEqual(self.collect(1000 + usage.HOLD_MAX, codex=mock.Mock(return_value=reading(1, 5)))["codex"]["status"],
                          "ok")

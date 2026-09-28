@@ -53,6 +53,8 @@ Item {
                   events: { "codex.weekly": { from: 61, early: true } } },
                 { tag: "spending", before: { claude: { weekly: { percent: 40, resetsAt: now + 86400 } } },
                   after: { claude: { weekly: { percent: 46, resetsAt: now + 86400 } } }, events: {} },
+                { tag: "jitter", before: { codex: { weekly: { percent: 34, resetsAt: now + 86400 } } },
+                  after: { codex: { weekly: { percent: 34, resetsAt: now + 86401 } } }, events: {} },
                 // The first reading after a restart.
                 { tag: "first", before: {}, after: { claude: { weekly: { percent: 12, resetsAt: now + week } } }, events: {} },
                 // A failed poll keeps the old reading.
