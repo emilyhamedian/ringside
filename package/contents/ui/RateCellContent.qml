@@ -65,19 +65,17 @@ GridLayout {
         return Format.whole(rounded) + prefix;
     }
 
-    function rateText(reading) {
-        return reading.value === "–" ? i18nc("@info:tooltip no reading", "unavailable")
-                                     : i18nc("@info:tooltip a transfer rate, e.g. 24.8 Mb/s", "%1 %2", reading.value, reading.unit);
-    }
-
     // The rates in words, for screen readers.
-    readonly property string accessibleDescription: network
-        ? i18nc("@info:tooltip network download and upload rates", "Down %1, up %2", rateText(lines[0]), rateText(lines[1]))
-        : i18nc("@info:tooltip disk read and write rates", "Read %1, write %2", rateText(lines[0]), rateText(lines[1]))
+    readonly property string accessibleDescription: words.describe(item)
 
     columns: vertical ? 2 : singleRow ? 6 : 3
     rowSpacing: Math.round(Kirigami.Units.smallSpacing * 0.75)
     columnSpacing: tight ? tightSpacing : looseSpacing
+
+    Words {
+        id: words
+        monitor: rates.monitor
+    }
 
     FontMetrics {
         id: base

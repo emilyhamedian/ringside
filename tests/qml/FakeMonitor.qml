@@ -28,6 +28,9 @@ QtObject {
     signal systemMonitorRequested()
     signal configureRequested()
 
+    // The Claude and Codex readings, as Monitor.usage.
+    property FakeUsage usage: FakeUsage {}
+
     property real cpuUsage: 23
     property real cpuTemperature: 61
     property string cpuTemperatureLabel: "Tctl"

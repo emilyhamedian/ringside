@@ -1,13 +1,13 @@
 pragma ComponentBehavior: Bound
 import QtQuick
-import QtQuick.Shapes
 import org.kde.kirigami as Kirigami
 import "code/format.js" as Format
 
 // A progress ring filling clockwise from twelve o'clock, with an optional
 // thinner, dimmer ring inside it for a second reading: the integrated GPU
-// under the discrete one. NaN draws the track alone. Each ring turns amber
-// from 75 % and red from 90 % of its own reading.
+// under the discrete one, or a model's limit inside a weekly one. NaN draws
+// the track alone. Each ring turns amber from 75 % and red from 90 % of its
+// own reading. Children sit in the middle, over the rings.
 // Assistive technology sees a progress bar from 0 to 100 with the outer
 // reading as its value; the caller gives it a name.
 Item {
@@ -22,9 +22,14 @@ Item {
     // no room to show.
     property int minimumLevel: 0
     property real strokeWidth: Math.max(2, Math.round(width / 10))
+    property real innerStrokeWidth: Math.max(1.5, Math.round(strokeWidth * 2 / 3 * 2) / 2)
+    property real innerRadius: outer.radius - strokeWidth / 2 - innerStrokeWidth / 2 - Math.max(1, strokeWidth / 2)
     // Shown in the middle of a single ring large enough to read it.
     property string text: ""
     property real textScale: 0.33
+    // Breathes, as a Claude or Codex ring does close to its limit.
+    property bool pulsing: false
+    default property alias centre: face.data
 
     readonly property color outerTone: tone(Math.max(Format.level(value), minimumLevel))
     readonly property color innerTone: tone(Format.level(innerValue))
@@ -35,9 +40,25 @@ Item {
              : color;
     }
 
-    readonly property real innerStrokeWidth: Math.max(1.5, Math.round(strokeWidth * 2 / 3 * 2) / 2)
-    readonly property real innerRadius: outer.radius - strokeWidth / 2 - innerStrokeWidth / 2
-                                        - Math.max(1, strokeWidth / 2)
+    function innerColor(level) {
+        return Qt.alpha(tone(level), 0.55 * color.a);
+    }
+
+    function clamped(percent) {
+        return Number.isFinite(percent) ? Math.max(0, Math.min(100, percent)) : 0;
+    }
+
+    // Plays the windows that just started over, each { from, early } or null;
+    // see code/reset.js.
+    function playResets(outerReset, innerReset) {
+        if (outerReset) {
+            outer.playReset(clamped(outerReset.from), tone(Math.max(Format.level(outerReset.from), minimumLevel)),
+                            outerReset.early);
+        }
+        if (innerReset && inner) {
+            innerArc.playReset(clamped(innerReset.from), innerColor(Format.level(innerReset.from)), innerReset.early);
+        }
+    }
 
     // Qt reports these as the progress bar's range.
     readonly property real from: 0
@@ -50,90 +71,50 @@ Item {
     Accessible.description: Number.isFinite(value) ? i18nc("@info:status a percentage", "%1%", Math.round(value))
                                                    : i18nc("@info:status no reading", "unavailable")
 
-    component Arc: Shape {
-        id: arc
-
-        required property real radius
-        required property real stroke
-        required property real percent
-        required property color tone
-        // The track keeps the base colour whatever the level.
-        required property color trackTone
-        required property real trackOpacity
-
+    Item {
+        id: face
         anchors.fill: parent
-        preferredRendererType: Shape.CurveRenderer
 
-        ShapePath {
-            fillColor: "transparent"
-            strokeColor: Qt.alpha(arc.trackTone, arc.trackOpacity * arc.trackTone.a)
-            strokeWidth: arc.stroke
-
-            PathAngleArc {
-                centerX: gauge.width / 2
-                centerY: gauge.height / 2
-                radiusX: arc.radius
-                radiusY: arc.radius
-                startAngle: -90
-                sweepAngle: 360
-            }
+        SequentialAnimation on opacity {
+            running: gauge.pulsing
+            loops: Animation.Infinite
+            alwaysRunToEnd: true
+            NumberAnimation { to: 0.5; duration: 1000; easing.type: Easing.InOutSine }
+            NumberAnimation { to: 1; duration: 1000; easing.type: Easing.InOutSine }
         }
 
-        ShapePath {
-            fillColor: "transparent"
-            // A zero-length arc with round caps would still draw a dot.
-            strokeColor: sweep.sweepAngle >= 1 ? arc.tone : "transparent"
-            strokeWidth: arc.stroke
-            capStyle: ShapePath.RoundCap
-
-            PathAngleArc {
-                id: sweep
-                centerX: gauge.width / 2
-                centerY: gauge.height / 2
-                radiusX: arc.radius
-                radiusY: arc.radius
-                startAngle: -90
-                sweepAngle: Number.isFinite(arc.percent) ? 3.6 * Math.max(0, Math.min(100, arc.percent)) : 0
-
-                Behavior on sweepAngle {
-                    NumberAnimation {
-                        duration: Kirigami.Units.longDuration
-                        easing.type: Easing.OutCubic
-                    }
-                }
-            }
+        RingArc {
+            id: outer
+            anchors.centerIn: parent
+            radius: (Math.min(gauge.width, gauge.height) - gauge.strokeWidth) / 2 - 0.5
+            strokeWidth: gauge.strokeWidth
+            percent: gauge.clamped(gauge.value)
+            color: gauge.outerTone
+            // The track keeps the base colour whatever the level.
+            trackColor: Qt.alpha(gauge.color, 0.16 * gauge.color.a)
         }
-    }
 
-    Arc {
-        id: outer
-        radius: (Math.min(gauge.width, gauge.height) - gauge.strokeWidth) / 2 - 0.5
-        stroke: gauge.strokeWidth
-        percent: gauge.value
-        tone: gauge.outerTone
-        trackTone: gauge.color
-        trackOpacity: 0.16
-    }
+        RingArc {
+            id: innerArc
+            anchors.centerIn: parent
+            visible: gauge.inner
+            radius: gauge.innerRadius
+            strokeWidth: gauge.innerStrokeWidth
+            percent: gauge.clamped(gauge.innerValue)
+            color: gauge.innerColor(Format.level(gauge.innerValue))
+            trackColor: Qt.alpha(gauge.color, 0.22 * 0.55 * gauge.color.a)
+        }
 
-    Arc {
-        visible: gauge.inner
-        radius: gauge.innerRadius
-        stroke: gauge.innerStrokeWidth
-        percent: gauge.innerValue
-        tone: Qt.alpha(gauge.innerTone, 0.55 * gauge.color.a)
-        trackTone: Qt.alpha(gauge.color, 0.55 * gauge.color.a)
-        trackOpacity: 0.22
-    }
-
-    Text {
-        anchors.centerIn: parent
-        visible: gauge.text !== "" && !gauge.inner && gauge.width >= 24
-        text: gauge.text
-        color: gauge.outerTone
-        font.family: Kirigami.Theme.fixedWidthFont.family
-        font.pixelSize: Math.round(gauge.width * gauge.textScale)
-        textFormat: Text.PlainText
-        // The gauge's own description reads it out.
-        Accessible.ignored: true
+        Text {
+            anchors.centerIn: parent
+            visible: gauge.text !== "" && !gauge.inner && gauge.width >= 24
+            text: gauge.text
+            color: gauge.outerTone
+            font.family: Kirigami.Theme.fixedWidthFont.family
+            font.pixelSize: Math.round(gauge.width * gauge.textScale)
+            textFormat: Text.PlainText
+            // The gauge's own description reads it out.
+            Accessible.ignored: true
+        }
     }
 }

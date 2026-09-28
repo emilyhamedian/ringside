@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
 import "code/format.js" as Format
+import "code/hardware.js" as Hardware
 import "code/style.js" as Style
 
 // A panel ring with the item's name over its main reading: the CPU's
@@ -20,11 +21,10 @@ RowLayout {
 
     readonly property var gpuOuter: monitor.gpuOuter
     readonly property var gpuInner: monitor.gpuInner
-    readonly property bool outerAsleep: gpuOuter.phase === "asleep"
-    readonly property bool innerAsleep: gpuInner.present && gpuInner.phase === "asleep"
-    readonly property bool dual: item === "gpu" && gpuInner.present && !outerAsleep && !innerAsleep
+    readonly property var gpuView: Hardware.gpuView(gpuOuter, gpuInner)
+    readonly property bool dual: item === "gpu" && gpuView.dual
     // The GPU the ring shows: the outer one, unless it sleeps and the inner one doesn't.
-    readonly property var primary: gpuInner.present && outerAsleep && !innerAsleep ? gpuInner : gpuOuter
+    readonly property var primary: gpuView.primary
     // Intel GPUs publish no temperature, so theirs is left out.
     readonly property bool outerShown: item !== "gpu" || primary.reportsTemperature || primary.phase === "asleep"
     readonly property bool innerShown: dual && gpuInner.reportsTemperature
@@ -39,57 +39,19 @@ RowLayout {
                                                  : []).filter(Format.temperatureValid))
 
     // The readings in words, for screen readers and the tooltip.
-    readonly property string accessibleDescription: {
-        if (item === "cpu") {
-            return i18nc("@info:tooltip processor usage and temperature", "Usage %1, temperature %2",
-                         percentText(monitor.cpuUsage), temperatureText(monitor.cpuTemperature));
-        }
-        if (item === "memory") {
-            const used = Format.bytes(monitor.memoryUsed);
-            return Number.isFinite(monitor.memoryUsed)
-                ? i18nc("@info:tooltip memory in use; %1 %2 is e.g. 13.4 GiB, %3 a percentage", "%1 %2 in use, %3",
-                        used.value, used.unit, percentText(monitor.memoryPercent))
-                : i18nc("@info:tooltip memory in use", "In use: unavailable");
-        }
-        return dual ? i18nc("@info:tooltip two GPUs, one per line: name, then readings", "%1: %2\n%3: %4",
-                            gpuOuter.name, gpuText(gpuOuter), gpuInner.name, gpuText(gpuInner))
-                    : gpuText(primary);
-    }
+    readonly property string accessibleDescription: words.describe(item)
 
     function heatColor(celsius, normal) {
         const level = monitor.heat(celsius);
         return level === 2 ? Kirigami.Theme.negativeTextColor : level === 1 ? Kirigami.Theme.neutralTextColor : normal;
     }
 
-    function percentText(value) {
-        return Number.isFinite(value) ? i18nc("@info:tooltip a percentage", "%1%", Format.percent(value))
-                                      : i18nc("@info:tooltip no reading", "unavailable");
-    }
-
-    function temperatureText(celsius) {
-        if (!Format.temperatureValid(celsius)) {
-            return i18nc("@info:tooltip no reading", "unavailable");
-        }
-        const text = monitor.fahrenheit
-            ? i18nc("@info:tooltip a temperature", "%1 °F", Format.temperature(celsius, true))
-            : i18nc("@info:tooltip a temperature", "%1 °C", Format.temperature(celsius, false));
-        const level = monitor.heat(celsius);
-        return level === 2 ? i18nc("@info:tooltip a temperature above the red threshold", "%1, hot", text)
-             : level === 1 ? i18nc("@info:tooltip a temperature above the amber threshold", "%1, warm", text)
-             : text;
-    }
-
-    function gpuText(slot) {
-        if (slot.phase === "asleep") {
-            return i18nc("@info:tooltip the GPU is powered down", "Off");
-        }
-        return slot.reportsTemperature
-            ? i18nc("@info:tooltip GPU usage and temperature", "Usage %1, temperature %2",
-                    percentText(slot.usage), temperatureText(slot.temperature))
-            : i18nc("@info:tooltip GPU usage; this GPU has no temperature sensor", "Usage %1", percentText(slot.usage));
-    }
-
     spacing: Kirigami.Units.largeSpacing
+
+    Words {
+        id: words
+        monitor: content.monitor
+    }
 
     RingGauge {
         Layout.preferredWidth: content.ring
