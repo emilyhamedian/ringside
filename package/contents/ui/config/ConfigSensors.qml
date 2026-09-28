@@ -76,8 +76,54 @@ KCM.SimpleKCM {
     readonly property string cpuSensorLabel: hardware.cpu && hardware.cpu.tempLabel ? String(hardware.cpu.tempLabel) : ""
     readonly property string rootDisk: hardware.root && hardware.root.disk ? String(hardware.root.disk) : ""
 
+    // The sensors a picker can use, as { id, name, groupName } rows: the
+    // ksystemstats id and the tree's names for the sensor and its group, ""
+    // where the tree gives none. collect() reads them from the tree into
+    // fromTree. Not readonly, like knownLimits: tests substitute fixed rows,
+    // so they don't depend on this machine's sensors.
+    property var listed: fromTree
+    property var fromTree: []
+
     // What the sensor tree offers so far, as { text, value } lists.
-    property var found: ({ temperatures: [], interfaces: [], devices: [], volumes: [] })
+    readonly property var found: {
+        const temperatures = [];
+        const interfaces = [];
+        const disks = [];
+        for (const row of Array.from(listed)) {
+            const [kind, group, sensor] = row.id.split("/");
+            if (group === "all") {
+                continue;
+            }
+            const groupName = row.groupName || group;
+            if (kind === "lmsensors") {
+                // The tree appends the unit, "Composite (°C)"; every entry here is a temperature.
+                const name = (row.name || sensor).replace(/\s*\([^()]*\)$/, "");
+                temperatures.push({ text: groupName + " · " + name, value: row.id });
+            } else if (kind === "network") {
+                interfaces.push({ text: groupName === group ? group
+                                      : i18nc("@item:inlistbox network interface: name (interface)", "%1 (%2)", groupName, group),
+                                  value: group });
+            } else {
+                // Block devices report I/O only; volumes (UUID-named) also report free space.
+                let disk = disks.find(d => d.value === group);
+                if (!disk) {
+                    disk = { name: groupName, value: group, volume: false };
+                    disks.push(disk);
+                }
+                disk.volume = disk.volume || sensor === "free";
+            }
+        }
+        return {
+            temperatures: temperatures,
+            interfaces: interfaces,
+            devices: disks.filter(d => !d.volume).map(d => ({
+                text: d.name.includes(d.value) ? d.name
+                    : i18nc("@item:inlistbox disk: name (device)", "%1 (%2)", d.name, d.value),
+                value: d.value
+            })),
+            volumes: disks.filter(d => d.volume).map(d => ({ text: d.name, value: d.value }))
+        };
+    }
 
     function gpuName(gpu) {
         return Format.gpuModel(gpu.name, "", gpu.pciName, gpu.vendor) || gpu.id;
@@ -93,45 +139,16 @@ KCM.SimpleKCM {
     }
 
     function collect() {
-        const temperatures = [];
-        const interfaces = [];
-        const disks = [];
+        const rows = [];
         for (let i = 0; i < matches.count; ++i) {
             const index = matches.index(i, 0);
-            const id = String(matches.data(index, Sensors.SensorTreeModel.SensorId));
-            const [kind, group, sensor] = id.split("/");
-            if (group === "all") {
-                continue;
-            }
-            const groupName = String(tree.data(flat.mapToSource(matches.mapToSource(index)).parent, Qt.DisplayRole) || group);
-            if (kind === "lmsensors") {
-                // The tree appends the unit, "Composite (°C)"; every entry here is a temperature.
-                const name = String(matches.data(index, Qt.DisplayRole) || sensor).replace(/\s*\([^()]*\)$/, "");
-                temperatures.push({ text: groupName + " · " + name, value: id });
-            } else if (kind === "network") {
-                interfaces.push({ text: groupName === group ? group
-                                      : i18nc("@item:inlistbox network interface: name (interface)", "%1 (%2)", groupName, group),
-                                  value: group });
-            } else {
-                // Block devices report I/O only; volumes (UUID-named) also report free space.
-                let disk = disks.find(d => d.value === group);
-                if (!disk) {
-                    disk = { name: groupName, value: group, volume: false };
-                    disks.push(disk);
-                }
-                disk.volume = disk.volume || sensor === "free";
-            }
+            rows.push({
+                id: String(matches.data(index, Sensors.SensorTreeModel.SensorId)),
+                name: String(matches.data(index, Qt.DisplayRole) || ""),
+                groupName: String(tree.data(flat.mapToSource(matches.mapToSource(index)).parent, Qt.DisplayRole) || "")
+            });
         }
-        found = {
-            temperatures: temperatures,
-            interfaces: interfaces,
-            devices: disks.filter(d => !d.volume).map(d => ({
-                text: d.name.includes(d.value) ? d.name
-                    : i18nc("@item:inlistbox disk: name (device)", "%1 (%2)", d.name, d.value),
-                value: d.value
-            })),
-            volumes: disks.filter(d => d.volume).map(d => ({ text: d.name, value: d.value }))
-        };
+        fromTree = rows;
     }
 
     Sensors.SensorTreeModel {

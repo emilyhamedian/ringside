@@ -8,9 +8,9 @@ import "../../package/contents/ui/config"
 
 // The three settings pages load with their cfg_ properties set and without a
 // script error. Outside Plasma there is no Plasmoid, so the pages see no
-// hardware report. The Sensors page lists this machine's ksystemstats sensors
-// (without subscribing to any), so for it this is a smoke test that needs a
-// running ksystemstats, as tst_monitor does.
+// hardware report. The Sensors page builds its pickers from a fixed sensor
+// list here rather than from this machine's ksystemstats, whose sensors
+// depend on the hardware, udisks and the network the tests run with.
 
 Item {
     id: root
@@ -60,6 +60,46 @@ Item {
         }
     }
 
+    // What ksystemstats' sensor tree might list, as the Sensors page reads
+    // it: an "all" group to skip, names to fall back from, a temperature's
+    // unit to drop, a network connection named apart from its interface, a
+    // whole disk, and a volume that reports free space.
+    readonly property string volume: "0f3c6a1e-9b2d-4c55-8e7f-3a1b2c4d5e6f"
+    readonly property var listed: [
+        { id: "lmsensors/k10temp-pci-00c3/temp1", name: "Tctl (°C)", groupName: "k10temp-pci-00c3" },
+        { id: "lmsensors/acpitz-acpi-0/temp1", name: "", groupName: "" },
+        { id: "network/all/download", name: "Download Rate", groupName: "All Network Devices" },
+        { id: "network/enp5s0/download", name: "Download Rate", groupName: "enp5s0" },
+        { id: "network/wlp9s0/download", name: "Download Rate", groupName: "Home Wi-Fi" },
+        { id: "disk/all/free", name: "Free Space", groupName: "All Disks" },
+        { id: "disk/all/read", name: "Read Rate", groupName: "All Disks" },
+        { id: "disk/nvme0n1/read", name: "Read Rate", groupName: "1 TB Internal Drive" },
+        { id: "disk/sda/read", name: "Read Rate", groupName: "" },
+        { id: "disk/" + volume + "/free", name: "Free Space", groupName: "Home" },
+        { id: "disk/" + volume + "/read", name: "Read Rate", groupName: "Home" }
+    ]
+    readonly property var found: ({
+        temperatures: [{ text: "k10temp-pci-00c3 · Tctl", value: "lmsensors/k10temp-pci-00c3/temp1" },
+                       { text: "acpitz-acpi-0 · temp1", value: "lmsensors/acpitz-acpi-0/temp1" }],
+        interfaces: [{ text: "enp5s0", value: "enp5s0" }, { text: "Home Wi-Fi (wlp9s0)", value: "wlp9s0" }],
+        devices: [{ text: "1 TB Internal Drive (nvme0n1)", value: "nvme0n1" }, { text: "sda", value: "sda" }],
+        volumes: [{ text: "Home", value: volume }]
+    })
+    // Each picker's values for that list. Without a hardware report the GPU
+    // pickers offer only their fixed choices.
+    readonly property var pickers: [
+        { name: "CPU temperature", setting: "cfg_cpuTemperatureSensor",
+          values: ["", "cpu/all/maximumTemperature", "cpu/all/averageTemperature",
+                   "lmsensors/k10temp-pci-00c3/temp1", "lmsensors/acpitz-acpi-0/temp1"] },
+        { name: "GPU on the outer ring", setting: "cfg_outerGpu", values: ["", "none"] },
+        { name: "GPU on the inner ring", setting: "cfg_innerGpu", values: ["", "none"] },
+        { name: "Network interface", setting: "cfg_networkInterface", values: ["", "enp5s0", "wlp9s0"] },
+        { name: "Disk activity", setting: "cfg_diskDevice", values: ["", "all", "nvme0n1", "sda"] },
+        { name: "Free space on", setting: "cfg_diskVolume", values: ["", volume] },
+        { name: "Disk temperature", setting: "cfg_diskTemperatureSensor",
+          values: ["", "none", "lmsensors/k10temp-pci-00c3/temp1", "lmsensors/acpitz-acpi-0/temp1"] }
+    ]
+
     TestCase {
         name: "Config"
         when: windowShown
@@ -107,22 +147,40 @@ Item {
             make(items, { cfg_ringsOnly: data.ringsOnly });
         }
 
-        // Stored ids that the sensor tree doesn't offer stay listed as they are.
+        // Each picker offers its fixed choices and what the list gives it, and
+        // shows the stored value as selected. Stored ids that the list doesn't
+        // offer stay listed as they are.
         function test_sensors_data() {
             return [
                 { tag: "automatic", stored: {} },
-                { tag: "stored", stored: { cfg_cpuTemperatureSensor: "lmsensors/k10temp-pci-00c3/temp1",
-                                           cfg_outerGpu: "gpu9", cfg_innerGpu: "none",
-                                           cfg_networkInterface: "wlp9s0", cfg_diskDevice: "sdz",
-                                           cfg_diskVolume: "all", cfg_diskTemperatureSensor: "none" } }
+                { tag: "offered", stored: { cfg_cpuTemperatureSensor: "lmsensors/k10temp-pci-00c3/temp1",
+                                            cfg_outerGpu: "none", cfg_innerGpu: "",
+                                            cfg_networkInterface: "wlp9s0", cfg_diskDevice: "sda",
+                                            cfg_diskVolume: root.volume,
+                                            cfg_diskTemperatureSensor: "lmsensors/acpitz-acpi-0/temp1" } },
+                { tag: "notOffered", stored: { cfg_cpuTemperatureSensor: "lmsensors/k10temp-pci-00c3/temp2",
+                                               cfg_outerGpu: "gpu9", cfg_innerGpu: "none",
+                                               cfg_networkInterface: "wlp8s0", cfg_diskDevice: "sdz",
+                                               cfg_diskVolume: "all", cfg_diskTemperatureSensor: "none" } }
             ];
         }
         function test_sensors(data) {
-            const page = make(sensors, data.stored);
-            // collect() runs once ksystemstats answers.
-            tryVerify(() => page.found.interfaces.length + page.found.devices.length + page.found.volumes.length > 0,
-                      10000, "ksystemstats listed no network or disk sensors");
-            waitForRendering(page);
+            const page = make(sensors, Object.assign({ listed: root.listed }, data.stored));
+            compare(page.found, root.found);
+            for (const p of root.pickers) {
+                const stored = data.stored[p.setting] || "";
+                const values = p.values.includes(stored) ? p.values : p.values.concat([stored]);
+                const picker = combo(page, p.name);
+                compare(picker.entries.map(e => e.value), values, p.name);
+                compare(picker.currentIndex, values.indexOf(stored), p.name);
+            }
+        }
+
+        // Outside tests the list is what collect() last read from the tree.
+        function test_sensorsFromTheTree() {
+            const page = make(sensors);
+            page.fromTree = root.listed;
+            compare(page.found, root.found);
         }
 
         // The inner-limit pickers read Plasmoid.configuration.knownLimits;
