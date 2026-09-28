@@ -44,7 +44,7 @@ github.com/emilyhamedian/ringside.
 
 ## Checks
 
-- `sh scripts/test.sh` must pass on a Plasma 6 desktop: qmllint (only
+- `sh scripts/test.sh` must pass on a Plasma 6.5 or later desktop: qmllint (only
   unqualified i18n warnings accepted), the QtTest suites including the de_DE
   and ar_EG runs, the helper fixtures and the Python tests.
   `sh scripts/gallery.sh` renders every state for a visual check.
