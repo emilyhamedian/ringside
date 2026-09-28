@@ -705,6 +705,9 @@ Item {
             const time = new Date(2026, 8, 27, 7, 0).toLocaleTimeString(Qt.locale(), Locale.ShortFormat);
             compare(words.resetDate({ resetsAt: sunday, clockZone: { offset: -4 * 3600, abbreviation: "EDT" } }),
                     Qt.locale().dayName(0, Locale.ShortFormat) + " " + time + " EDT");
+            // Claude reports its reset a second before the hour.
+            compare(words.resetDate({ resetsAt: sunday - 1, clockZone: { offset: -4 * 3600, abbreviation: "EDT" } }),
+                    Qt.locale().dayName(0, Locale.ShortFormat) + " " + time + " EDT");
         }
 
         function test_resetDateInSystemTime() {

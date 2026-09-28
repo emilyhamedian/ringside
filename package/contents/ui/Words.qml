@@ -125,7 +125,9 @@ QtObject {
             return "";
         }
         const zone = window.clockZone;
-        const date = zone ? Format.wallClock(window.resetsAt, zone.offset) : new Date(window.resetsAt * 1000);
+        // To the nearest minute: a reset reported as 10:59:59 reads as 11:00.
+        const at = Math.round(window.resetsAt / 60) * 60;
+        const date = zone ? Format.wallClock(at, zone.offset) : new Date(at * 1000);
         const locale = Qt.locale();
         const day = locale.dayName(date.getDay(), Locale.ShortFormat);
         const time = date.toLocaleTimeString(locale, Locale.ShortFormat);

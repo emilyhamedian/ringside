@@ -33,10 +33,13 @@ follows [Semantic Versioning](https://semver.org/).
   closes when its own item goes.
 - The Memory popup lists its top processes on Plasma 6.0 to 6.2, and there
   the CPU and Memory popups no longer log a warning for every process.
+
+### Security
+
 - The Claude helper carried over from Usage Rings is hardened against
   losing or leaking the Claude Code login: it checks that it can save a
-  renewed login before renewing it, never overwrites one Claude Code renewed
-  meanwhile, and keeps request details out of the widget.
+  renewed login before renewing it, doesn't overwrite one Claude Code
+  renewed meanwhile, and keeps request details out of the widget.
 
 ## [0.1.0] - 2026-09-27
 
