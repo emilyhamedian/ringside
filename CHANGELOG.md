@@ -28,7 +28,8 @@ follows [Semantic Versioning](https://semver.org/).
   Debian 13's and Fedora 40's, instead of logging script errors and falling
   back to the default font.
 - The CPU popup no longer logs a binding loop on Qt 6.6.
-- Ringside no longer logs "Exposed with no visual parent" warnings.
+- Ringside no longer logs "Exposed with no visual parent" warnings, or a
+  locale warning each time a widget starts.
 - An open popup stays on its item when another item comes or goes, and
   closes when its own item goes.
 - The Memory popup lists its top processes on Plasma 6.0 to 6.2, and there
