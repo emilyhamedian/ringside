@@ -4,6 +4,7 @@
 import contextlib
 import email.message
 import email.utils
+import errno
 import fcntl
 import importlib.util
 import io
@@ -316,6 +317,39 @@ class CredentialWriteBack(Isolated):
         self.assertEqual(json.loads(self.path.read_text())["claudeAiOauth"]["refreshToken"], "r1")
         self.assertEqual(os.listdir(self.folder), [".credentials.json"])
 
+    # write(2) takes only part of the data when the disk is nearly full: the
+    # rest must be written, or the write must fail and leave the file whole.
+    def test_short_writes_never_leave_a_truncated_file(self):
+        real_write = os.write
+
+        def filling(whole):
+            """os.write on a disk with room for `whole` writes and half the next."""
+            calls = []
+
+            def write(fd, data):
+                calls.append(fd)
+                if len(calls) > whole + 1:
+                    raise OSError(errno.ENOSPC, "No space left on device")
+                return real_write(fd, data if len(calls) <= whole else data[:len(data) // 2])
+
+            return mock.patch.object(usage.os, "write", write)
+
+        # The probe stops short, so nothing is spent; then the probe fits but
+        # the renewed file stops short.
+        for whole, error, posts in ((0, "can't take a new file", 0), (1, "couldn't be saved", 1)):
+            with self.subTest(whole=whole):
+                self.http.reset_mock()
+                with filling(whole), self.assertRaisesRegex(RuntimeError, error):
+                    usage.claude_access_token()
+                self.assertEqual(self.http.call_count, posts)
+                self.assertEqual(json.loads(self.path.read_text())["claudeAiOauth"]["refreshToken"], "r1")
+                self.assertEqual(os.listdir(self.folder), [".credentials.json"])
+        with mock.patch.object(usage.os, "write", lambda fd, data: real_write(fd, data[:64])):
+            self.assertEqual(usage.claude_access_token(), "new")
+        stored = json.loads(self.path.read_text())
+        self.assertEqual(stored["claudeAiOauth"]["refreshToken"], "r2")
+        self.assertEqual(stored["mcpOAuth"], {"keep": "me"})
+
     # A bind-mounted file, or one in a sticky folder, can't be replaced but
     # can be rewritten.
     def test_a_file_that_cant_be_replaced_is_rewritten_in_place(self):
@@ -559,11 +593,28 @@ class ReadingCache(Isolated):
         self.assertEqual(result["weekly"]["percent"], 2)
         self.assertEqual(self.cached()["codex"]["fetchedAt"], 1300)
 
-    def test_errors_are_reported_but_not_cached(self):
-        fetch = mock.Mock(side_effect=RuntimeError("HTTP 500 from api.anthropic.com"))
-        self.assertEqual(self.collect(1000, codex=fetch)["codex"],
-                         {"status": "error", "message": "HTTP 500 from api.anthropic.com"})
-        self.assertEqual(self.cached(), {})
+    # A failure or a sign-out stands for five minutes like a reading, so a
+    # second widget or a restart doesn't ask again before then.
+    def test_errors_and_sign_outs_are_replayed_for_five_minutes(self):
+        for name, failure, report in (
+                ("claude", RuntimeError("HTTP 500 from api.anthropic.com"),
+                 {"status": "error", "message": "HTTP 500 from api.anthropic.com"}),
+                ("codex", usage.SignedOut(), {"status": "signed_out"})):
+            with self.subTest(report["status"]):
+                self.assertEqual(self.collect(1000, **{name: mock.Mock(side_effect=failure)})[name], report)
+                again = mock.Mock(return_value=reading(3, 5))
+                self.assertEqual(self.collect(1000 + 299, **{name: again})[name], report)
+                again.assert_not_called()
+                self.assertEqual(self.collect(1000 + 300, **{name: again})[name]["status"], "ok")
+                again.assert_called_once()
+
+    # Two widgets, or a widget and a restart, a moment apart.
+    def test_runs_in_quick_succession_after_a_failure_poll_once(self):
+        failed = {"status": "error", "message": "HTTP 500 from api.anthropic.com"}
+        with mock.patch.object(usage, "claude_usage", side_effect=RuntimeError(failed["message"])) as claude:
+            reports = [self.run_main("--providers", "claude")["providers"] for _ in range(2)]
+        claude.assert_called_once()
+        self.assertEqual(reports, [{"claude": failed}] * 2)
 
     # A refusal holds the provider back for every run until Retry-After has
     # passed, and only that provider.
@@ -580,9 +631,31 @@ class ReadingCache(Isolated):
         self.assertEqual(self.collect(1600, codex=again)["codex"]["status"], "ok")
         again.assert_called_once()
 
-    def test_a_hold_is_never_longer_than_asked_after_a_clock_step(self):
-        self.collect(1000, codex=mock.Mock(side_effect=usage.RateLimited(60)))
-        self.assertEqual(self.collect(1000 - 7200, codex=mock.Mock())["codex"]["retryAfter"], 60)
+    def test_a_short_rate_limit_still_holds_for_five_minutes(self):
+        self.assertEqual(self.collect(1000, codex=mock.Mock(side_effect=usage.RateLimited(60)))["codex"],
+                         {"status": "rate_limited", "retryAfter": 300, "message": "rate limited, retrying in 300 s"})
+        again = mock.Mock(return_value=reading(3, 5))
+        self.assertEqual(self.collect(1000 + 299, codex=again)["codex"]["retryAfter"], 1)
+        again.assert_not_called()
+        self.assertEqual(self.collect(1000 + 300, codex=again)["codex"]["status"], "ok")
+
+    # After the clock steps back, a hold ends its own length later, not the
+    # step's length on top.
+    def test_a_hold_ends_on_time_after_a_clock_step(self):
+        step = 1000 - 7200
+        for failure, length, report in (
+                (usage.RateLimited(600), 600,
+                 {"status": "rate_limited", "retryAfter": 600, "message": "rate limited, retrying in 600 s"}),
+                (RuntimeError("down"), 300, {"status": "error", "message": "down"})):
+            with self.subTest(report["status"]):
+                usage.CACHE_FILE.unlink(missing_ok=True)
+                self.collect(1000, codex=mock.Mock(side_effect=failure))
+                again = mock.Mock(return_value=reading(3, 5))
+                self.assertEqual(self.collect(step, codex=again)["codex"], report)
+                self.assertEqual(self.cached()["codex"]["heldUntil"], step + length)
+                self.assertEqual(self.collect(step + length - 1, codex=again)["codex"]["status"], report["status"])
+                again.assert_not_called()
+                self.assertEqual(self.collect(step + length, codex=again)["codex"]["status"], "ok")
 
     def test_a_hold_never_lasts_more_than_a_day(self):
         self.collect(1000, codex=mock.Mock(side_effect=usage.RateLimited(10 ** 9)))
@@ -612,7 +685,8 @@ class ReadingCache(Isolated):
         self.assertEqual(self.cached()["claude"], stale)
         self.assertEqual(self.cached()["codex"]["weekly"]["percent"], 7)
         self.collect(2000, codex=mock.Mock(side_effect=RuntimeError("down")))
-        self.assertEqual(self.cached(), {"claude": stale})
+        self.assertEqual(self.cached(), {"claude": stale, "codex": {
+            "status": "error", "message": "down", "heldUntil": 2300, "holdSeconds": 300}})
 
     def test_a_cached_entry_keeps_the_time_it_was_polled(self):
         polled_at = int(time.time()) - 100
@@ -630,7 +704,7 @@ class ReadingCache(Isolated):
         self.addCleanup(os.close, fd)
         fcntl.flock(fd, fcntl.LOCK_EX)
         fetch = mock.Mock(return_value=reading(1, 5))
-        with mock.patch.object(usage, "LOCK_WAIT", 0.3):
+        with mock.patch.object(usage, "LOCK_WAIT", 0.3), mock.patch.object(usage, "codex_usage", fetch):
             report = self.run_main("--providers", "codex")
         self.assertEqual(report["providers"], {"codex": {"status": "error",
                                                          "message": "another usage check is still running"}})
@@ -649,17 +723,33 @@ class ReadingCache(Isolated):
         self.assertEqual(report["providers"]["claude"],
                          {"status": "error", "message": "another usage check is still running"})
 
+    # ...and a failure it still holds, as a run with the lock would.
+    def test_a_busy_run_replays_a_held_failure(self):
+        usage.collect({"claude": mock.Mock(side_effect=usage.SignedOut())})
+        fd = os.open(usage.LOCK_FILE, os.O_RDWR | os.O_CREAT, 0o600)
+        self.addCleanup(os.close, fd)
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        with mock.patch.object(usage, "LOCK_WAIT", 0.3):
+            report = self.run_main("--providers", "claude,codex")
+        self.assertEqual(report["providers"], {
+            "claude": {"status": "signed_out"},
+            "codex": {"status": "error", "message": "another usage check is still running"}})
+
     def test_malformed_cache_entries_read_as_missing(self):
         window = {"percent": 1, "resetsAt": 5, "windowSeconds": WEEK}
         for entry in ({"status": "ok", "fetchedAt": "soon", "weekly": {}}, {"status": "ok", "fetchedAt": 999},
                       {"status": "ok", "fetchedAt": 999, "weekly": {}, "scoped": [1]},
                       {"status": "ok", "fetchedAt": 999, "weekly": dict(window, resetsAt="soon")},
+                      {"status": "ok", "fetchedAt": 999, "weekly": dict(window, percent=1.5)},
+                      {"status": "ok", "fetchedAt": 999, "weekly": dict(window, windowSeconds=float(WEEK))},
                       {"status": "ok", "fetchedAt": 999, "weekly": window, "scoped": [window]},
-                      {"status": "rate_limited", "heldUntil": "later"}):
+                      {"status": "rate_limited", "heldUntil": "later"},
+                      {"status": "error", "heldUntil": 1100, "holdSeconds": 300}):
             with self.subTest(entry=entry):
                 self.write_cache({"codex": entry})
-                self.assertEqual(self.collect(1000, codex=mock.Mock(return_value=reading(1, 5)))["codex"]["status"],
-                                 "ok")
+                fetch = mock.Mock(return_value=reading(1, 5))
+                self.assertEqual(self.collect(1000, codex=fetch)["codex"]["status"], "ok")
+                fetch.assert_called_once()
 
     def test_the_lock_is_held_while_polling(self):
         held = []

@@ -20,18 +20,21 @@ default. A window is {"percent": 0-100, "resetsAt": <epoch seconds>,
 windows, each a window with an "id" that stays stable across polls and a
 display "label". An ok entry's "fetchedAt" is when it was polled, which a
 cached reading keeps. Status is one of "ok", "signed_out", "rate_limited"
-(with "retryAfter" seconds) or "error", and the last two carry a "message" to
-show. Tokens never reach stdout or stderr.
+(with "retryAfter", the seconds until the provider is polled again) or
+"error", and the last two carry a "message" to show. Tokens never reach
+stdout or stderr.
 
 When Plasma's digital clock shows a zone other than system time, every window
 also carries "clockZone": {"offset": <seconds east of UTC>, "abbreviation":
 "EDT"}, the zone's offset and abbreviation at that window's reset.
 
-Successful readings are kept in $XDG_CACHE_HOME/ringside for five minutes and
-served from there, so reloading the widget does not spend another call on
-Anthropic's tightly rate-limited usage endpoint. A lock held for the whole run
-makes a second widget that starts at the same time wait and then read this
-run's reading instead of polling again.
+Every poll's result, a failure or a sign-out as much as a reading, is kept
+in $XDG_CACHE_HOME/ringside for five minutes and served from there, so no
+widget, reload or restart spends another call on Anthropic's tightly
+rate-limited usage endpoint before then. A rate-limit reply is kept for as
+long as it asked, if that is longer. A lock held for the whole run makes a
+second widget that starts at the same time wait and then read this run's
+result instead of polling again.
 
 The APIs only report the current percentage, so each real poll also adds it to
 the window's history in the same folder. A window's "history" holds the
@@ -44,6 +47,7 @@ run.
 
 import argparse
 import contextlib
+import errno
 import fcntl
 import json
 import math
@@ -366,6 +370,17 @@ def seconds(value):
     return number if math.isfinite(number) and number >= 0 else None
 
 
+def write_all(fd, data):
+    """Write every byte of data or raise. write(2) takes only part of it when
+    the disk is nearly full, and says so only in the count it returns."""
+    view = memoryview(data)
+    while view:
+        written = os.write(fd, view)
+        if not written:
+            raise OSError(errno.ENOSPC, os.strerror(errno.ENOSPC))
+        view = view[written:]
+
+
 def check_writable(path):
     """Fail before a refresh token is spent if the renewed pair couldn't be
     saved: the folder and file must be writable, and the folder must take a
@@ -379,7 +394,7 @@ def check_writable(path):
         try:
             fd, probe = tempfile.mkstemp(dir=folder, prefix=".credentials.", suffix=".probe")
             try:
-                os.write(fd, os.urandom(os.stat(path).st_size + 4096))
+                write_all(fd, os.urandom(os.stat(path).st_size + 4096))
                 os.fsync(fd)
             finally:
                 os.close(fd)
@@ -457,7 +472,7 @@ def store_claude(path, spent, fresh):
         try:
             try:
                 os.fchmod(fd, 0o600)
-                os.write(fd, data)
+                write_all(fd, data)
                 os.fsync(fd)
             finally:
                 os.close(fd)
@@ -685,56 +700,81 @@ def fresh(entry, now):
 
 
 def held(entry, now):
-    """Seconds left of a provider's hold after it refused a poll, or 0. Never
-    more than the refusal asked for, should the clock have stepped back."""
-    if not isinstance(entry, dict) or entry.get("status") != "rate_limited":
+    """Seconds left before a provider whose last poll failed is polled again,
+    or 0. Never more than the hold's own length, should the clock have stepped
+    back. Anything malformed in the cache reads as no hold."""
+    if not (isinstance(entry, dict) and entry.get("status") in ("error", "signed_out", "rate_limited")
+            and type(entry.get("heldUntil")) is int and type(entry.get("holdSeconds")) is int
+            and (entry["status"] != "error" or isinstance(entry.get("message"), str))):
         return 0
-    try:
-        return max(0, min(int(entry["heldUntil"]) - now, int(entry["retryAfter"]), HOLD_MAX))
-    except (KeyError, TypeError, ValueError):
-        return 0
+    return max(0, min(entry["heldUntil"] - now, entry["holdSeconds"], HOLD_MAX))
+
+
+def hold(report, now):
+    """The cache entry that stands in for a failed poll: five minutes, or as
+    long as a rate-limit reply asked if that is longer, up to HOLD_MAX."""
+    length = CACHE_TTL
+    if report["status"] == "rate_limited":
+        length = min(max(CACHE_TTL, report["retryAfter"]), HOLD_MAX)
+    entry = {"status": report["status"], "heldUntil": now + length, "holdSeconds": length}
+    if report["status"] == "error":
+        entry["message"] = report["message"]
+    return entry
+
+
+def replay(entry, wait):
+    """What a held entry reports with wait seconds of its hold left."""
+    if entry["status"] == "rate_limited":
+        return {"status": "rate_limited", "retryAfter": wait, "message": str(RateLimited(wait))}
+    return {key: entry[key] for key in ("status", "message") if key in entry}
 
 
 def collect(fetchers, now=None):
-    """Poll each provider unless its last good reading is still fresh, or it
-    asked to be left alone for a while.
+    """Poll each provider unless its last poll is recent enough to report
+    again.
 
-    Successful readings are cached, and so is a rate-limit reply's hold, so
-    no run from any widget asks again before Retry-After has passed. Other
-    failures are worth retrying on the next run and aren't kept. The cache is
-    shared with runs that ask for other providers, so their
-    entries stay as they were. The lock covers everything from reading the
-    cache to writing it and the history, so a run that waited for another
-    finds its reading fresh; the time is taken once the lock is held, since
-    a reading from a run that started later would otherwise look like one
-    from the future.
+    Every poll's result is cached, so no run from any widget polls a provider
+    twice within CACHE_TTL: a reading is served until it is that old, and a
+    failure or a sign-out is reported again as it was. A rate-limit reply
+    holds the provider back for as long as Retry-After asked, if that is
+    longer, and reports the seconds left. A hold with more left than its own
+    length means the clock stepped back; it is cut to that length so it
+    still ends on time. The cache is shared with runs that ask for other
+    providers, so their entries stay as they were. The lock covers everything
+    from reading the cache to writing it and the history, so a run that
+    waited for another finds its result fresh; the time is taken once the
+    lock is held, since a reading from a run that started later would
+    otherwise look like one from the future.
     """
     with locked():
         now = int(time.time()) if now is None else now
         cache = read_cache()
         providers, polled = {}, {}
+        stepped = False
         for name, fetch in fetchers.items():
-            if fresh(cache.get(name), now):
-                providers[name] = cache[name]
+            entry = cache.get(name)
+            if fresh(entry, now):
+                providers[name] = entry
                 continue
-            wait = held(cache.get(name), now)
+            wait = held(entry, now)
             if wait:
-                providers[name] = {"status": "rate_limited", "retryAfter": wait,
-                                   "message": str(RateLimited(wait))}
+                if entry["heldUntil"] - now > wait:
+                    entry["heldUntil"] = now + wait
+                    stepped = True
+                providers[name] = replay(entry, wait)
                 continue
             report = poll(fetch)
             if report["status"] == "ok":
                 report["fetchedAt"] = now
-                cache[name] = report
-            elif report["status"] == "rate_limited":
-                wait = min(report["retryAfter"], HOLD_MAX)
-                cache[name] = {"status": "rate_limited", "retryAfter": wait, "heldUntil": now + wait}
+                cache[name] = providers[name] = report
             else:
-                cache.pop(name, None)
-            providers[name] = polled[name] = report
+                cache[name] = hold(report, now)
+                providers[name] = replay(cache[name], cache[name]["holdSeconds"])
+            polled[name] = report
         history = read_history()
-        if polled:
+        if polled or stepped:
             write_private(CACHE_FILE, cache)
+        if polled:
             updated = record_history(history, polled, now)
             if updated != history:
                 write_private(HISTORY_FILE, updated)
@@ -825,13 +865,21 @@ def record_history(history, polled, now):
 
 
 def waiting(ids, message):
-    """What a run that couldn't get the lock reports: fresh cached readings,
-    read without the lock since the cache is only ever replaced whole, and
-    the message for the rest."""
+    """What a run that couldn't get the lock reports: what the cache would
+    serve, read without the lock since the cache is only ever replaced whole,
+    and the message for the rest."""
     now = int(time.time())
     cache = read_cache()
-    providers = {name: cache[name] if fresh(cache.get(name), now) else {"status": "error", "message": message}
-                 for name in ids}
+    providers = {}
+    for name in ids:
+        entry = cache.get(name)
+        wait = held(entry, now)
+        if fresh(entry, now):
+            providers[name] = entry
+        elif wait:
+            providers[name] = replay(entry, wait)
+        else:
+            providers[name] = {"status": "error", "message": message}
     attach_history(providers, read_history(), now)
     return providers
 
