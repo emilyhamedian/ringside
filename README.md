@@ -4,8 +4,8 @@
 [![Release](https://img.shields.io/github/v/release/emilyhamedian/ringside)](https://github.com/emilyhamedian/ringside/releases/latest)
 [![License: GPL-3.0-or-later](https://img.shields.io/github/license/emilyhamedian/ringside)](LICENSE)
 
-CPU, GPU, memory, network and disk in a KDE Plasma 6 panel, with Claude Code
-and Codex usage if you want them.
+CPU, GPU, memory, network and disk in a KDE Plasma 6 panel, and your Claude
+and Codex usage limits if you want them.
 
 ![Ringside in a panel: CPU, GPU and memory rings with their temperatures and memory in use, a Claude ring with the time to its weekly reset, then network rates](docs/panel.png)
 
@@ -25,15 +25,16 @@ pressure and disk activity.
 - **Claude** and **Codex**: how much of the weekly limit is used and when it
   resets. Off by default; see below.
 
-Rings turn amber at 75 % and red at 90 %. Temperatures turn amber and red above
-thresholds you set. Colours follow your Plasma theme.
+Rings turn amber at 75% and red at 90%. Temperatures turn amber and red above
+thresholds you set; a ring shown without its text turns with its temperature
+too. Colours follow your Plasma theme.
 
 ## Install
 
 Download `ringside.plasmoid` from the
 [latest release](https://github.com/emilyhamedian/ringside/releases/latest),
 then either choose *Add Widgets → Get New Widgets → Install Widget From Local
-File* or run:
+File…* or run:
 
 ```bash
 kpackagetool6 --type Plasma/Applet --install ringside.plasmoid
@@ -83,20 +84,22 @@ scripts/install.sh
 
 ![The Claude popup: the weekly limit, a per-model limit, and a graph of this week's usage](docs/usage.png)
 
-Turn them on under *Configure Ringside → Panel Items*. Each shows while its
-command-line tool is signed in on this machine:
+Turn them on under *Configure Ringside… → Panel Items*. Each shows while its
+command-line tool is signed in on this machine; if one doesn't appear, its row
+under *Panel Items* says why.
 
 - **Claude** needs [Claude Code](https://docs.claude.com/en/docs/claude-code)
   signed in with a Claude subscription. Ringside reads its login from
   `~/.claude/.credentials.json` and asks Anthropic's usage service at most once
-  every five minutes. When the login has expired it renews it the way Claude
-  Code does and saves it back, so Claude Code stays signed in.
+  every five minutes, and less often when asked to wait. When the login has
+  expired it renews it the way Claude Code does and saves it back, so Claude
+  Code stays signed in.
 - **Codex** needs the [Codex CLI](https://github.com/openai/codex) signed in.
   Ringside runs `codex app-server` to ask for the limits.
 
 The ring shows the weekly limit for all models. If your plan also has a
 per-model weekly limit, the inner ring shows it; choose which under *Sensors*.
-The popup lists every limit, when each resets, and a graph of the week so far,
+The popup lists every weekly limit, when each resets, and a graph of the week so far,
 which fills in as Ringside keeps checking. Reset times follow the time zone of
 Plasma's Digital Clock.
 
@@ -106,15 +109,17 @@ Plasma's Digital Clock.
 
 Ringside can also show its items as large dials in a panel of their own, which
 folds into a small tab while a window is maximized. To set one up on the right
-edge of the screen, with Claude and Codex:
+edge of the screen with Claude and Codex, run this from a clone of the
+repository:
 
 ```bash
 scripts/add-panel.sh
 ```
 
-Or set *Layout* to *Standalone* under *Panel Items* on any Ringside widget.
-Click the tab or the arrow to fold and unfold it; *Panel Items* sets whether
-it folds by itself.
+Or add an empty panel, put Ringside in it, and set *Layout* to *Standalone*
+under *Panel Items*. The dials need the panel to themselves; in a panel shared
+with other widgets, use *Inline*. Click the tab or the arrow to fold and unfold
+it; *Panel Items* sets when it folds by itself.
 
 ![The standalone panel folding into its tab](docs/fold.gif)
 
@@ -133,7 +138,7 @@ keep it awake regardless.
 
 ## Settings
 
-Right-click the widget and choose *Configure Ringside*.
+Right-click the widget and choose *Configure Ringside…*.
 
 - **General**: update interval, how far back the graphs reach, Celsius or
   Fahrenheit, network rates in bits or bytes, temperature thresholds, and how

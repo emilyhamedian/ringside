@@ -318,7 +318,7 @@ KCM.SimpleKCM {
 
         Note {
             visible: page.claudeHasLimits || page.codexHasLimits
-            text: i18nc("@info", "Automatic shows the only limit reported; with several, none until one is picked.")
+            text: i18nc("@info", "Automatic shows the per-model limit when your plan has just one. With more than one, pick it here.")
         }
     }
 }

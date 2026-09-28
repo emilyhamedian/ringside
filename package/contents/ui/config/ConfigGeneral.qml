@@ -161,7 +161,7 @@ KCM.SimpleKCM {
         }
 
         Kirigami.Separator {
-            Kirigami.FormData.label: i18nc("@title:group", "Claude and Codex usage:")
+            Kirigami.FormData.label: i18nc("@title:group", "Claude and Codex")
             Kirigami.FormData.isSection: true
         }
 
@@ -169,6 +169,7 @@ KCM.SimpleKCM {
             Kirigami.FormData.label: i18nc("@label:spinbox", "Check every:")
             from: 5
             to: 60
+            stepSize: 5
             // Stepped only, for the same reason as Update interval above.
             editable: false
             value: page.cfg_usageRefreshMinutes
@@ -177,7 +178,7 @@ KCM.SimpleKCM {
             onValueModified: page.cfg_usageRefreshMinutes = value
         }
         QQC2.Label {
-            text: i18nc("@info", "Applies only while the Claude or Codex item is on. Checks never run more often than every 5 minutes.")
+            text: i18nc("@info", "Applies while the Claude or Codex item is on.")
             textFormat: Text.PlainText
             wrapMode: Text.Wrap
             color: Style.dim(Kirigami.Theme.textColor)

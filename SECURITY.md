@@ -2,15 +2,16 @@
 
 Report a vulnerability privately through GitHub's
 [private vulnerability reporting](https://github.com/emilyhamedian/ringside/security/advisories/new),
-rather than a public issue.
+rather than a public issue. Fixes go into the latest release.
 
 ## Scope
 
 Mainly the two helpers Ringside runs:
 
-- `package/contents/code/usage.py` reads your Claude Code and Codex CLI
-  credentials to poll usage limits, and can refresh the Claude Code token,
-  writing it back the way Claude Code itself does.
+- `package/contents/code/usage.py` reads your Claude Code login to poll its
+  usage limits and can renew it, saving it back the way Claude Code does. For
+  Codex it only checks that `~/.codex/auth.json` exists, then asks the Codex
+  CLI.
 - `package/contents/code/ringside-info.sh` reads `/proc`, `/sys` and udev's
   database as your user.
 
@@ -21,4 +22,5 @@ Mainly the two helpers Ringside runs:
 - The Claude item sends your Claude Code login only to Anthropic
   (`api.anthropic.com`, and `platform.claude.com` to renew an expired
   token).
-- The Codex item talks only to `codex app-server`, running locally.
+- The Codex item talks only to `codex app-server`, running locally, which
+  contacts OpenAI with the Codex CLI's own login.

@@ -240,7 +240,7 @@ Item {
         }
         function test_layoutAndVisibilityCombosEnableDisable(data) {
             const page = openPage({ cfg_layout: data.layout });
-            compare(accessible(page, "When a window is maximized").enabled, data.enabled);
+            compare(accessible(page, "Fold").enabled, data.enabled);
         }
 
         function test_ringControlsDisabledInStandalone_data() {

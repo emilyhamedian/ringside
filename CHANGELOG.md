@@ -37,3 +37,6 @@ follows [Semantic Versioning](https://semver.org/).
 - A laptop's discrete GPU is read only while something else has woken it,
   and one reader per GPU is shared across widgets so a second Ringside
   doesn't keep it awake.
+
+[Unreleased]: https://github.com/emilyhamedian/ringside/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/emilyhamedian/ringside/releases/tag/v0.1.0

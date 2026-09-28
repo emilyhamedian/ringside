@@ -162,20 +162,20 @@ KCM.SimpleKCM {
             }
 
             QQC2.ComboBox {
-                Kirigami.FormData.label: i18nc("@label:listbox", "When a window is maximized:")
+                Kirigami.FormData.label: i18nc("@label:listbox when the standalone panel folds into its tab", "Fold:")
                 enabled: page.cfg_layout === 1
-                model: [i18nc("@item:inlistbox the standalone panel folds away behind a maximized window", "Fold away"),
-                        i18nc("@item:inlistbox the standalone panel stays open over a maximized window", "Stay open"),
-                        i18nc("@item:inlistbox the standalone panel stays folded even without a maximized window", "Always folded")]
+                model: [i18nc("@item:inlistbox the standalone panel folds while a maximized window is shown", "Behind maximized windows"),
+                        i18nc("@item:inlistbox the standalone panel never folds by itself", "Never"),
+                        i18nc("@item:inlistbox the standalone panel stays folded", "Always")]
                 currentIndex: page.cfg_visibilityMode
-                Accessible.name: i18nc("@label:listbox", "When a window is maximized")
+                Accessible.name: i18nc("@label:listbox when the standalone panel folds into its tab", "Fold")
                 onActivated: index => page.cfg_visibilityMode = index
             }
         }
 
         QQC2.Label {
             Layout.fillWidth: true
-            text: i18nc("@info:usagetip", "Drag or use the arrows to reorder · uncheck to hide")
+            text: i18nc("@info:usagetip", "Drag or use the arrows to reorder. Uncheck an item to hide it.")
             textFormat: Text.PlainText
             wrapMode: Text.Wrap
             color: Style.dim(Kirigami.Theme.textColor)
@@ -328,7 +328,7 @@ KCM.SimpleKCM {
         QQC2.Label {
             Layout.fillWidth: true
             visible: page.cfg_layout === 1
-            text: i18nc("@info", "Ring size and the Ring/text choice above apply only to the Inline layout.")
+            text: i18nc("@info", "Ring size and Ring only apply to the Inline layout.")
             textFormat: Text.PlainText
             wrapMode: Text.Wrap
             color: Style.dim(Kirigami.Theme.textColor)

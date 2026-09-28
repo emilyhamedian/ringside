@@ -1,7 +1,6 @@
 version = 1
 
-# Binary and structured-data files that can't carry an SPDX header comment.
-# Source files get their headers added directly (see AGENTS.md).
+# Files that can't carry an SPDX header comment; source files carry their own.
 
 [[annotations]]
 path = "docs/*.png"

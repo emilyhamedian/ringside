@@ -101,7 +101,7 @@ Item {
             Layout.preferredHeight: Math.round(empty.capHeight)
             Layout.topMargin: -Math.round(metrics.ascent - empty.capHeight)
             verticalAlignment: Text.AlignTop
-            text: "—"
+            text: "–"
             color: Kirigami.Theme.textColor
             font: metrics.font
             opacity: 0.35

@@ -54,8 +54,7 @@ PopupPage {
     PopupHeader {
         ringValue: popup.weekly ? popup.weekly.percent : NaN
         title: popup.claude ? i18nc("@title", "Claude") : i18nc("@title", "Codex")
-        subtitle: popup.claude ? i18nc("@info the command-line tool whose limits these are", "Claude Code")
-                               : i18nc("@info the command-line tool whose limits these are", "Codex CLI")
+        subtitle: i18nc("@info under Claude or Codex: what the popup shows", "Weekly limits")
         value: popup.weekly ? words.countdown(popup.weekly.resetsAt, popup.nowMs) || "–" : ""
         valueColor: popup.tone(ringValue)
         caption: i18nc("@info:label under the time left, e.g. 2d 21h until reset", "until reset")

@@ -8,7 +8,7 @@
             }
         ],
         "Category": "System Information",
-        "Description": "CPU, GPU, memory, network and disk, and optionally Claude Code and Codex usage, as rings in the panel",
+        "Description": "CPU, GPU, memory, network and disk in the panel, with optional Claude and Codex usage limits",
         "EnabledByDefault": true,
         "Icon": "utilities-system-monitor",
         "Id": "dev.emily.ringside",
