@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Emily Hamedian <me@emily.dev>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Layouts
@@ -5,27 +8,32 @@ import org.kde.kirigami as Kirigami
 import org.kde.plasma.core as PlasmaCore
 import org.kde.plasma.plasmoid
 import org.kde.plasma.plasma5support as P5Support
+import "code/items.js" as Items
 
 // The items sit straight in the panel (there is no full representation to
 // expand), and each opens its own popup. One AppletPopup serves them all,
-// moved to whichever item was clicked.
+// moved to whichever item was clicked. Two layouts: Inline, a strip that fits
+// any panel, and Standalone, large dials in a panel of their own.
 PlasmoidItem {
     id: root
 
     readonly property bool vertical: Plasmoid.formFactor === PlasmaCore.Types.Vertical
     readonly property real thickness: Plasmoid.formFactor === PlasmaCore.Types.Horizontal ? height
                                     : vertical ? width : Kirigami.Units.gridUnit * 2.5
-    readonly property var knownItems: ["cpu", "gpu", "memory", "network", "disk"]
-    readonly property var items: {
-        const config = Plasmoid.configuration;
-        const order = config.itemOrder.filter(k => knownItems.includes(k));
-        knownItems.forEach(k => { if (!order.includes(k)) order.push(k); });
-        return order.filter(k => !config.hiddenItems.includes(k) && (k !== "gpu" || monitor.gpuOuter.present));
-    }
+    readonly property bool standalone: Plasmoid.configuration.layout === 1
+    // The items switched on that have something to show: a GPU, a signed-in CLI.
+    readonly property var items: monitor.enabledItems.filter(k => k === "gpu" ? monitor.gpuOuter.present
+                                                               : k === "claude" ? monitor.usage.claudePresent
+                                                               : k === "codex" ? monitor.usage.codexPresent
+                                                               : true)
+    readonly property var view: standalone ? standaloneView.item : strip
 
     // The clicked item's name and cell; the popup follows the cell.
     property string openItem: ""
+    // Cleared when the cell goes away, say when its item is switched off,
+    // and the popup goes with it.
     property Item openCell: null
+    onOpenCellChanged: if (!openCell) popup.visible = false
 
     function toggle(item, cell) {
         if (popup.visible && openItem === item) {
@@ -35,8 +43,9 @@ PlasmoidItem {
         openItem = item;
         openCell = cell;
         popupContent.setSource(Qt.resolvedUrl("popups/" + ({ cpu: "CpuPopup", gpu: "GpuPopup", memory: "MemoryPopup",
-                                                             network: "NetworkPopup", disk: "NetworkPopup" })[item] + ".qml"),
-                               { monitor: monitor });
+                                                             network: "NetworkPopup", disk: "NetworkPopup",
+                                                             claude: "UsagePopup", codex: "UsagePopup" })[item] + ".qml"),
+                               Items.isUsage(item) ? { monitor: monitor, item: item } : { monitor: monitor });
         popup.visible = true;
     }
 
@@ -47,21 +56,24 @@ PlasmoidItem {
 
     preferredRepresentation: fullRepresentation
 
-    // With every item hidden the applet keeps a square the panel's thickness,
-    // for the icon below.
-    Layout.minimumWidth: vertical ? 0 : items.length > 0 ? strip.implicitWidth : thickness
+    // Inline, with every item hidden the applet keeps a square the panel's
+    // thickness, for the icon below. Standalone sizes itself.
+    Layout.minimumWidth: standalone ? (view?.layoutMinimumWidth ?? 0)
+                       : vertical ? 0 : items.length > 0 ? strip.implicitWidth : thickness
     Layout.preferredWidth: Layout.minimumWidth
-    Layout.maximumWidth: vertical ? Infinity : Layout.minimumWidth
-    Layout.minimumHeight: vertical ? (items.length > 0 ? strip.implicitHeight : thickness) : 0
+    Layout.maximumWidth: standalone || vertical ? Infinity : Layout.minimumWidth
+    Layout.minimumHeight: standalone ? (view?.layoutMinimumHeight ?? 0)
+                        : vertical ? (items.length > 0 ? strip.implicitHeight : thickness) : 0
     Layout.preferredHeight: Layout.minimumHeight
-    Layout.maximumHeight: vertical ? Layout.minimumHeight : Infinity
-    Layout.fillWidth: vertical
-    Layout.fillHeight: !vertical
+    Layout.maximumHeight: standalone || !vertical ? Infinity : Layout.minimumHeight
+    Layout.fillWidth: standalone ? (view?.layoutFillWidth ?? false) : vertical
+    Layout.fillHeight: standalone ? (view?.layoutFillHeight ?? false) : !vertical
 
     Plasmoid.contextualActions: [
         PlasmaCore.Action {
             text: i18nc("@action", "Open System Monitor…")
             icon.name: "utilities-system-monitor"
+            visible: monitor.systemShown
             onTriggered: root.openSystemMonitor()
         }
     ]
@@ -80,11 +92,12 @@ PlasmoidItem {
     Strip {
         id: strip
         anchors.centerIn: parent
+        enabled: !root.standalone
         // Cells take the panel's full thickness, so their hover and pressed
         // backgrounds line up with the rest of the panel.
         width: root.vertical ? parent.width : implicitWidth
         height: Plasmoid.formFactor === PlasmaCore.Types.Horizontal ? parent.height : implicitHeight
-        visible: root.items.length > 0
+        visible: !root.standalone && root.items.length > 0
         monitor: monitor
         items: root.items
         vertical: root.vertical
@@ -95,10 +108,25 @@ PlasmoidItem {
         onActivated: (item, cell) => root.toggle(item, cell)
     }
 
+    Loader {
+        id: standaloneView
+        anchors.fill: parent
+        active: root.standalone
+        sourceComponent: Standalone {
+            monitor: monitor
+            items: root.items
+            enabledItems: monitor.enabledItems
+            openItem: popup.visible ? root.openItem : ""
+            onActivated: (item, cell) => root.toggle(item, cell)
+            // The popup's item is about to fold away.
+            onCollapsedChanged: if (collapsed) popup.visible = false
+        }
+    }
+
     // With every item hidden, something still has to be there to right-click.
     Kirigami.Icon {
         anchors.fill: parent
-        visible: root.items.length === 0
+        visible: !root.standalone && root.items.length === 0
         source: Plasmoid.icon
         active: mouse.containsMouse
         MouseArea {
@@ -190,7 +218,7 @@ PlasmoidItem {
         target: Plasmoid
 
         function onActivated() {
-            const cell = strip.cellAt(0);
+            const cell = root.view?.cellAt(0) ?? null;
             if (cell) {
                 root.toggle(root.items[0], cell);
             }

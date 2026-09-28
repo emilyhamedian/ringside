@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Emily Hamedian <me@emily.dev>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Layouts
@@ -372,6 +375,16 @@ Rectangle {
                 label: "GPU · NVIDIA and Intel"
                 GpuPopup { monitor: intel }
             }
+        }
+
+        // Claude and Codex, inline and in their popups.
+        UsageGallery {
+            monitor: normal
+        }
+
+        // The Standalone layout: dials on each edge, and folding.
+        StandaloneGallery {
+            monitor: normal
         }
 
         // Breeze Light's colours, for the contrast of dim text on a light scheme.
