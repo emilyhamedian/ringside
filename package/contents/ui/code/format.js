@@ -34,6 +34,12 @@ function temperature(celsius, fahrenheit) {
     return whole(fahrenheit ? celsius * 9 / 5 + 32 : celsius);
 }
 
+// A ring's alert level from its own percentage: 0 below 75, 1 (amber) from
+// 75, 2 (red) from 90. No reading is level 0.
+function level(percent) {
+    return !usable(percent) ? 0 : percent >= 90 ? 2 : percent >= 75 ? 1 : 0;
+}
+
 // 0 below the first threshold, 1 from warm, 2 from hot.
 function heat(celsius, warm, hot) {
     if (!temperatureValid(celsius)) {

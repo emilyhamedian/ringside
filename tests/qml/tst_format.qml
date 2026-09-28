@@ -15,6 +15,20 @@ TestCase {
         return text.replace(/[0-9.]/g, c => c === "." ? locale.decimalPoint : String.fromCodePoint(zero + Number(c)));
     }
 
+    function test_level_data() {
+        return [
+            { tag: "nan", value: NaN, expected: 0 },
+            { tag: "74.9", value: 74.9, expected: 0 },
+            { tag: "75", value: 75, expected: 1 },
+            { tag: "89.9", value: 89.9, expected: 1 },
+            { tag: "90", value: 90, expected: 2 },
+            { tag: "100", value: 100, expected: 2 }
+        ];
+    }
+    function test_level(data) {
+        compare(Format.level(data.value), data.expected);
+    }
+
     function test_decimal_followsTheLocale() {
         compare(Format.decimal(3.66, 2), (3.66).toLocaleString(Qt.locale(), "f", 2));
         compare(Format.decimal(3.66, 2), local("3.66"));

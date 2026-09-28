@@ -90,8 +90,6 @@ Item {
                 () => { monitor.cpuTemperature = NaN; },
                 () => { monitor.fahrenheit = true; monitor.cpuTemperature = 38; },
                 () => { monitor.cpuTemperature = 140; },
-                () => { monitor.gpuOuter.phase = "asleep"; },
-                () => { monitor.gpuOuter.phase = "live"; monitor.gpuInner.phase = "asleep"; },
             ];
             for (let i = 0; i < changes.length; ++i) {
                 compare(widthAfter(strip, changes[i]), width, "change " + i);
@@ -116,21 +114,61 @@ Item {
             }
         }
 
-        function test_innerAsleepSaysOff() {
-            monitor.gpuInner.kind = "discrete";
-            monitor.gpuInner.phase = "asleep";
-            const strip = makeStrip({ items: ["gpu"] });
+        function visibleTexts(item) {
             const texts = [];
-            const collect = item => {
-                if (item.visible && item.text !== undefined && item.text !== "") {
-                    texts.push(item.text);
+            const collect = i => {
+                if (i.visible && i.text !== undefined && i.text !== "") {
+                    texts.push(i.text);
                 }
-                item.children.forEach(collect);
+                i.children.forEach(collect);
             };
-            collect(strip);
-            verify(texts.includes("off"), JSON.stringify(texts));
-            verify(!texts.includes("–"), JSON.stringify(texts));
-            compare(strip.cellAt(0).description.split("\n")[1], "AMD Radeon 780M Graphics: Off");
+            collect(item);
+            return texts;
+        }
+
+        // A sleeping GPU drops out of the panel, whichever ring it is on: the
+        // one still awake shows alone, as on a single-GPU machine.
+        function test_aSleepingGpuDropsOut_data() {
+            return [{ tag: "outer asleep", outer: "asleep", inner: "live", shown: "AMD Radeon 780M Graphics", temp: "41" },
+                    { tag: "inner asleep", outer: "live", inner: "asleep", shown: "AMD Radeon RX 7700S", temp: "48" }];
+        }
+
+        function test_aSleepingGpuDropsOut(data) {
+            monitor.gpuInner.kind = "discrete";
+            monitor.gpuOuter.phase = data.outer;
+            monitor.gpuInner.phase = data.inner;
+            const strip = makeStrip({ items: ["gpu"] });
+            const content = strip.cellAt(0).contentItem;
+            verify(!content.dual);
+            compare(content.primary.name, data.shown);
+            const texts = visibleTexts(strip);
+            verify(texts.includes(data.temp), JSON.stringify(texts));
+            verify(!texts.includes("off"), JSON.stringify(texts));
+            verify(strip.cellAt(0).description.indexOf("\n") < 0, "one GPU described");
+        }
+
+        function test_theOnlyGpuAsleepSaysOff() {
+            monitor.gpuInner.present = false;
+            monitor.gpuOuter.phase = "asleep";
+            const strip = makeStrip({ items: ["gpu"] });
+            verify(visibleTexts(strip).includes("off"));
+            verify(!visibleTexts(strip).includes("off°"));
+        }
+
+        // Rings turn amber from 75 % and red from 90 % of their own reading.
+        function test_ringLevelColours_data() {
+            return [{ tag: "74", usage: 74, tone: "text" }, { tag: "75", usage: 75, tone: "neutral" },
+                    { tag: "89", usage: 89, tone: "neutral" }, { tag: "90", usage: 90, tone: "negative" }];
+        }
+
+        function test_ringLevelColours(data) {
+            monitor.cpuUsage = data.usage;
+            monitor.cpuTemperature = 50;
+            const strip = makeStrip({ items: ["cpu"] });
+            const gauge = strip.cellAt(0).contentItem.children[0];
+            const expected = data.tone === "negative" ? Kirigami.Theme.negativeTextColor
+                           : data.tone === "neutral" ? Kirigami.Theme.neutralTextColor : Kirigami.Theme.textColor;
+            compare(gauge.outerTone, expected);
         }
 
         function test_intelLeavesTemperatureOut() {
@@ -160,7 +198,7 @@ Item {
             compare(area.mainText, "Processor");
             compare(area.subText, "Usage 23%, temperature 95 °C, hot");
             const gauge = cell.contentItem.children[0];
-            compare(gauge.color, root.hotColor);
+            compare(gauge.outerTone, root.hotColor);
             verify(!strip.cellAt(3).parent.active, "rates keep their text");
 
             mouseMove(cell, cell.width / 2, cell.height / 2);

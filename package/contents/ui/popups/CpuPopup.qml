@@ -32,6 +32,7 @@ PopupPage {
         }
         value: Format.temperature(popup.monitor.cpuTemperature, popup.monitor.fahrenheit)
         degree: true
+        degreeUnit: popup.monitor.fahrenheit ? "F" : "C"
         valueColor: {
             const level = popup.monitor.heat(popup.monitor.cpuTemperature);
             return level === 2 ? Kirigami.Theme.negativeTextColor

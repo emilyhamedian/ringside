@@ -2,10 +2,12 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Shapes
 import org.kde.kirigami as Kirigami
+import "code/format.js" as Format
 
 // A progress ring filling clockwise from twelve o'clock, with an optional
 // thinner, dimmer ring inside it for a second reading: the integrated GPU
-// under the discrete one. NaN draws the track alone.
+// under the discrete one. NaN draws the track alone. Each ring turns amber
+// from 75 % and red from 90 % of its own reading.
 // Assistive technology sees a progress bar from 0 to 100 with the outer
 // reading as its value; the caller gives it a name.
 Item {
@@ -14,11 +16,24 @@ Item {
     property real value: NaN
     property real innerValue: NaN
     property bool inner: false
+    // The colour below the alert levels.
     property color color: Kirigami.Theme.textColor
+    // Raises the outer ring's level, e.g. for a hot temperature the panel has
+    // no room to show.
+    property int minimumLevel: 0
     property real strokeWidth: Math.max(2, Math.round(width / 10))
     // Shown in the middle of a single ring large enough to read it.
     property string text: ""
     property real textScale: 0.33
+
+    readonly property color outerTone: tone(Math.max(Format.level(value), minimumLevel))
+    readonly property color innerTone: tone(Format.level(innerValue))
+
+    function tone(level) {
+        return level === 2 ? Kirigami.Theme.negativeTextColor
+             : level === 1 ? Kirigami.Theme.neutralTextColor
+             : color;
+    }
 
     readonly property real innerStrokeWidth: Math.max(1.5, Math.round(strokeWidth * 2 / 3 * 2) / 2)
     readonly property real innerRadius: outer.radius - strokeWidth / 2 - innerStrokeWidth / 2
@@ -42,6 +57,8 @@ Item {
         required property real stroke
         required property real percent
         required property color tone
+        // The track keeps the base colour whatever the level.
+        required property color trackTone
         required property real trackOpacity
 
         anchors.fill: parent
@@ -49,7 +66,7 @@ Item {
 
         ShapePath {
             fillColor: "transparent"
-            strokeColor: Qt.alpha(arc.tone, arc.trackOpacity * arc.tone.a)
+            strokeColor: Qt.alpha(arc.trackTone, arc.trackOpacity * arc.trackTone.a)
             strokeWidth: arc.stroke
 
             PathAngleArc {
@@ -93,7 +110,8 @@ Item {
         radius: (Math.min(gauge.width, gauge.height) - gauge.strokeWidth) / 2 - 0.5
         stroke: gauge.strokeWidth
         percent: gauge.value
-        tone: gauge.color
+        tone: gauge.outerTone
+        trackTone: gauge.color
         trackOpacity: 0.16
     }
 
@@ -102,7 +120,8 @@ Item {
         radius: gauge.innerRadius
         stroke: gauge.innerStrokeWidth
         percent: gauge.innerValue
-        tone: Qt.alpha(gauge.color, 0.55)
+        tone: Qt.alpha(gauge.innerTone, 0.55 * gauge.color.a)
+        trackTone: Qt.alpha(gauge.color, 0.55 * gauge.color.a)
         trackOpacity: 0.22
     }
 
@@ -110,7 +129,7 @@ Item {
         anchors.centerIn: parent
         visible: gauge.text !== "" && !gauge.inner && gauge.width >= 24
         text: gauge.text
-        color: gauge.color
+        color: gauge.outerTone
         font.family: Kirigami.Theme.fixedWidthFont.family
         font.pixelSize: Math.round(gauge.width * gauge.textScale)
         textFormat: Text.PlainText

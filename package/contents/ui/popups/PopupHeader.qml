@@ -18,6 +18,8 @@ RowLayout {
     property string value: ""
     property string unit: ""
     property bool degree: false
+    // "C" or "F": popups spell the temperature unit out.
+    property string degreeUnit: ""
     property color valueColor: Kirigami.Theme.textColor
     property string caption: ""
     default property alias trailing: trailingSlot.data
@@ -76,6 +78,7 @@ RowLayout {
             value: header.value
             unit: header.unit
             degree: header.degree
+            degreeUnit: header.degreeUnit
             color: header.valueColor
             pointSize: Kirigami.Theme.defaultFont.pointSize * 1.7
         }

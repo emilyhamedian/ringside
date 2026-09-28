@@ -192,7 +192,9 @@ PopupPage {
 
             Note {
                 visible: popup.diskTemperatureShown
-                text: Format.temperature(popup.diskTemperature, popup.monitor.fahrenheit) + "°"
+                text: popup.monitor.fahrenheit
+                      ? i18nc("@info a temperature", "%1 °F", Format.temperature(popup.diskTemperature, true))
+                      : i18nc("@info a temperature", "%1 °C", Format.temperature(popup.diskTemperature, false))
                 color: {
                     const level = popup.monitor.heat(popup.diskTemperature);
                     return level === 2 ? Kirigami.Theme.negativeTextColor

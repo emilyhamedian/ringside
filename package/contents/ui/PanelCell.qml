@@ -21,8 +21,7 @@ MouseArea {
 
     signal activated()
 
-    implicitWidth: (contentItem ? contentItem.implicitWidth : 0) + 2 * (vertical ? Kirigami.Units.smallSpacing
-                                                                                 : Math.round(Kirigami.Units.largeSpacing * 1.5))
+    implicitWidth: (contentItem ? contentItem.implicitWidth : 0) + 2 * Kirigami.Units.smallSpacing
     implicitHeight: (contentItem ? contentItem.implicitHeight : 0) + 2 * Kirigami.Units.smallSpacing
     hoverEnabled: true
     activeFocusOnTab: true

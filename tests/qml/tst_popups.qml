@@ -122,5 +122,46 @@ Item {
             verify(loader.item.implicitWidth > 0);
             verify(loader.item.implicitHeight > 0);
         }
+
+        function load(popup, monitor) {
+            const loader = createTemporaryObject(host, root);
+            loader.setSource(Qt.resolvedUrl("../../package/contents/ui/popups/" + popup + ".qml"), { monitor: monitor });
+            waitForRendering(loader.item);
+            return loader.item;
+        }
+
+        function texts(item) {
+            const found = [];
+            const collect = i => {
+                if (i.visible && typeof i.text === "string" && i.text !== "") {
+                    found.push(i.text);
+                }
+                i.children.forEach(collect);
+            };
+            collect(item);
+            return found;
+        }
+
+        // A sleeping GPU is one line under the awake one, not a section.
+        function test_aSleepingGpuIsOneLine() {
+            const found = texts(load("GpuPopup", asleep));
+            verify(found.includes("AMD Radeon RX 7700S · off"), JSON.stringify(found));
+            verify(!found.some(t => t.indexOf("Powered down") >= 0), JSON.stringify(found));
+        }
+
+        function test_popupsSpellTheTemperatureUnit_data() {
+            return [{ tag: "celsius", fahrenheit: false, unit: "°C" }, { tag: "fahrenheit", fahrenheit: true, unit: "°F" }];
+        }
+
+        function test_popupsSpellTheTemperatureUnit(data) {
+            normal.fahrenheit = data.fahrenheit;
+            for (const popup of ["CpuPopup", "GpuPopup"]) {
+                const found = texts(load(popup, normal));
+                verify(found.includes(data.unit), popup + " " + JSON.stringify(found));
+            }
+            const disk = texts(load("NetworkPopup", normal));
+            verify(disk.some(t => t.endsWith(" " + data.unit)), JSON.stringify(disk));
+            normal.fahrenheit = false;
+        }
     }
 }
