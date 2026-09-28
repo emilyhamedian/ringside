@@ -3,7 +3,7 @@ import "code/format.js" as Format
 import "code/hardware.js" as Hardware
 
 // Each item's readings in words, for screen readers and tooltips in either
-// layout.
+// layout, and the times the Claude and Codex views show.
 QtObject {
     id: words
 
@@ -36,8 +36,110 @@ QtObject {
         case "disk":
             return i18nc("@info:tooltip disk read and write rates", "Read %1, write %2",
                          rateText(Format.rate(monitor.diskRead, false)), rateText(Format.rate(monitor.diskWrite, false)));
+        case "claude":
+        case "codex":
+            return usageText(item, nowMs ?? Date.now());
         }
         return "";
+    }
+
+    // A Claude or Codex item: its weekly use, the limit on its inner ring,
+    // when the week resets, and a failed last check.
+    function usageText(item, nowMs) {
+        const usage = monitor.usage;
+        const entry = usage.entry(item);
+        if (entry === null) {
+            return usage.helperError || i18nc("@info:tooltip the usage has not been read yet", "Not checked yet");
+        }
+        if (entry.status === "signed_out") {
+            return i18nc("@info:tooltip", "Signed out");
+        }
+        const used = percentText(entry.weekly ? entry.weekly.percent : NaN);
+        const left = duration(entry.weekly ? entry.weekly.resetsAt : null, nowMs);
+        const limit = usage.inner(item);
+        let text;
+        if (limit) {
+            text = left ? i18nc("@info:tooltip weekly share used, a model's own limit, time to the reset, e.g. 62% used, Opus 78%, resets in 2 days 21 hours",
+                                "%1 used, %2 %3, resets in %4", used, limit.label, percentText(limit.percent), left)
+                        : i18nc("@info:tooltip weekly share used and a model's own limit, e.g. 62% used, Opus 78%",
+                                "%1 used, %2 %3", used, limit.label, percentText(limit.percent));
+        } else {
+            text = left ? i18nc("@info:tooltip weekly share used and time to the reset, e.g. 62% used, resets in 2 days 21 hours",
+                                "%1 used, resets in %2", used, left)
+                        : i18nc("@info:tooltip weekly share used, e.g. 62% used", "%1 used", used);
+        }
+        return entry.lastError === undefined ? text
+            : i18nc("@info:tooltip a reading, then when checking it last failed", "%1. Last check failed at %2.",
+                    text, timeOfDay(entry.lastErrorAt, nowMs));
+    }
+
+    // Time to a reset in the panel's letters: "2d 21h", "5h 12m", "12m";
+    // empty once it has passed.
+    function countdown(resetsAt, nowMs) {
+        const left = Format.timeLeft(resetsAt, nowMs);
+        if (left === null) {
+            return "";
+        }
+        return left.days > 0 ? i18nc("@info time left in days and hours, e.g. 2d 21h", "%1d %2h",
+                                     Format.whole(left.days), Format.whole(left.hours))
+             : left.hours > 0 ? i18nc("@info time left in hours and minutes, e.g. 5h 12m", "%1h %2m",
+                                      Format.whole(left.hours), Format.whole(left.minutes))
+             : i18nc("@info time left in minutes, e.g. 12m", "%1m", Format.whole(left.minutes));
+    }
+
+    // The longest countdown() can get, for reserving its room: a week holds
+    // no more than one digit of days.
+    function widestCountdown() {
+        const one = Format.whole(0);
+        const two = one + one;
+        return [i18nc("@info time left in days and hours, e.g. 2d 21h", "%1d %2h", one, two),
+                i18nc("@info time left in hours and minutes, e.g. 5h 12m", "%1h %2m", two, two),
+                i18nc("@info time left in minutes, e.g. 12m", "%1m", two)]
+            .reduce((a, b) => b.length > a.length ? b : a);
+    }
+
+    // Time to a reset spelled out for screen readers: "2 days 21 hours".
+    function duration(resetsAt, nowMs) {
+        const left = Format.timeLeft(resetsAt, nowMs);
+        if (left === null) {
+            return "";
+        }
+        const days = i18ncp("@info:tooltip part of a time left", "%1 day", "%1 days", left.days);
+        const hours = i18ncp("@info:tooltip part of a time left", "%1 hour", "%1 hours", left.hours);
+        const minutes = i18ncp("@info:tooltip part of a time left", "%1 minute", "%1 minutes", left.minutes);
+        const pair = (first, second, secondCount) => secondCount > 0
+            ? i18nc("@info:tooltip a time left in two units, e.g. 2 days 21 hours", "%1 %2", first, second) : first;
+        return left.days > 0 ? pair(days, hours, left.hours)
+             : left.hours > 0 ? pair(hours, minutes, left.minutes)
+             : minutes;
+    }
+
+    // When a window resets, in the user's locale: "Sun 7:00 AM EDT" in the
+    // desktop clock's zone when the helper passes one, else "Sun 7:00 AM" in
+    // system time.
+    function resetDate(window) {
+        if (!window || !Format.usable(window.resetsAt)) {
+            return "";
+        }
+        const zone = window.clockZone;
+        const date = zone ? Format.wallClock(window.resetsAt, zone.offset) : new Date(window.resetsAt * 1000);
+        const locale = Qt.locale();
+        const day = locale.dayName(date.getDay(), Locale.ShortFormat);
+        const time = date.toLocaleTimeString(locale, Locale.ShortFormat);
+        return zone && zone.abbreviation
+            ? i18nc("@info weekday, time and time zone of a reset, e.g. Sun 7:00 AM EDT", "%1 %2 %3", day, time, zone.abbreviation)
+            : i18nc("@info weekday and time of a reset, e.g. Sun 7:00 AM", "%1 %2", day, time);
+    }
+
+    // "4:12 PM" today, the date and time otherwise, in system time.
+    function timeOfDay(epoch, nowMs) {
+        if (!Format.usable(epoch)) {
+            return "";
+        }
+        const when = new Date(epoch * 1000);
+        return when.toDateString() === new Date(nowMs).toDateString()
+            ? when.toLocaleTimeString(Qt.locale(), Locale.ShortFormat)
+            : when.toLocaleString(Qt.locale(), Locale.ShortFormat);
     }
 
     function percentText(value) {

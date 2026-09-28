@@ -19,6 +19,9 @@ Item {
     function i18nc(context, text, ...args) {
         return substitute(text, args);
     }
+    function i18ncp(context, singular, plural, n, ...args) {
+        return substitute(n === 1 ? singular : plural, [n].concat(args));
+    }
 
     Component {
         id: monitorComponent
@@ -187,6 +190,25 @@ Item {
             compare(strip.cellAt(4).Accessible.description, "Read 12.0 MiB/s, write 3.4 MiB/s");
             monitor.cpuTemperature = NaN;
             compare(strip.cellAt(0).Accessible.description, "Usage 23%, temperature unavailable");
+        }
+
+        // Claude and Codex sit among the rings, named and described like them.
+        function test_usageCells() {
+            const strip = makeStrip({ items: ["cpu", "claude", "codex", "network"] });
+            const claude = strip.cellAt(1);
+            compare(claude.Accessible.name, "Claude");
+            verify(/^62% used, Opus 78%, resets in 2 days 2\d hours$/.test(claude.Accessible.description),
+                   claude.Accessible.description);
+            compare(strip.cellAt(2).Accessible.name, "Codex");
+            verify(/^34% used, resets in 5 days [34] hours$/.test(strip.cellAt(2).Accessible.description),
+                   strip.cellAt(2).Accessible.description);
+            verify(visibleTexts(strip).includes("CLAUDE"), JSON.stringify(visibleTexts(strip)));
+
+            const width = strip.implicitWidth;
+            const entries = JSON.parse(JSON.stringify(monitor.usage.entries));
+            entries.claude.weekly.percent = 100;
+            entries.claude.weekly.resetsAt = monitor.usage.createdAt + 600;
+            compare(widthAfter(strip, () => monitor.usage.entries = entries), width);
         }
 
         function test_hiddenTextShowsTooltipAndHeat() {

@@ -320,4 +320,39 @@ TestCase {
         compare(Format.memoryModules(null), "");
         compare(Format.memoryModules(undefined), "");
     }
+
+    function test_timeLeft_data() {
+        const now = 1000000 * 1000;
+        const at = seconds => now / 1000 + seconds;
+        return [
+            { tag: "daysAndHours", resetsAt: at(2 * 86400 + 21 * 3600 + 12 * 60), expected: { days: 2, hours: 21, minutes: 12 } },
+            { tag: "hoursAndMinutes", resetsAt: at(5 * 3600 + 12 * 60), expected: { days: 0, hours: 5, minutes: 12 } },
+            { tag: "roundsToTheNearestMinute", resetsAt: at(2 * 86400 + 21 * 3600 - 20), expected: { days: 2, hours: 21, minutes: 0 } },
+            { tag: "aWholeWeek", resetsAt: at(7 * 86400), expected: { days: 7, hours: 0, minutes: 0 } },
+            { tag: "underHalfAMinuteIsPassed", resetsAt: at(20), expected: null },
+            { tag: "passed", resetsAt: at(-3600), expected: null },
+            { tag: "noTime", resetsAt: null, expected: null }
+        ].map(row => Object.assign(row, { now: now }));
+    }
+    function test_timeLeft(data) {
+        compare(Format.timeLeft(data.resetsAt, data.now), data.expected);
+    }
+
+    // 11:00 UTC on Sunday 27 September 2026 is 7:00 on the clock in New York
+    // (EDT, -4 h) and 20:00 in Tokyo (+9 h), whatever zone the tests run in.
+    function test_wallClock_data() {
+        const epoch = Date.UTC(2026, 8, 27, 11, 0, 0) / 1000;
+        return [
+            { tag: "west", epoch: epoch, offset: -4 * 3600, day: 0, date: 27, hours: 7, minutes: 0 },
+            { tag: "east", epoch: epoch, offset: 9 * 3600, day: 0, date: 27, hours: 20, minutes: 0 },
+            { tag: "acrossMidnight", epoch: epoch + 14 * 3600, offset: -4 * 3600, day: 0, date: 27, hours: 21, minutes: 0 },
+            { tag: "nextDay", epoch: epoch + 14 * 3600, offset: 9 * 3600, day: 1, date: 28, hours: 10, minutes: 0 },
+            { tag: "halfHourZone", epoch: epoch, offset: 5.5 * 3600, day: 0, date: 27, hours: 16, minutes: 30 }
+        ];
+    }
+    function test_wallClock(data) {
+        const wall = Format.wallClock(data.epoch, data.offset);
+        compare([wall.getDay(), wall.getDate(), wall.getHours(), wall.getMinutes()],
+                [data.day, data.date, data.hours, data.minutes]);
+    }
 }

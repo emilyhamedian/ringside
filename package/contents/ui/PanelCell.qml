@@ -17,7 +17,9 @@ MouseArea {
                                   : item === "gpu" ? i18nc("@info:tooltip", "Graphics")
                                   : item === "memory" ? i18nc("@info:tooltip", "Memory")
                                   : item === "network" ? i18nc("@info:tooltip", "Network")
-                                  : i18nc("@info:tooltip", "Disk activity")
+                                  : item === "disk" ? i18nc("@info:tooltip", "Disk activity")
+                                  : item === "claude" ? i18nc("@info:tooltip the Claude Code weekly limits", "Claude")
+                                  : i18nc("@info:tooltip the Codex weekly limits", "Codex")
 
     signal activated()
 

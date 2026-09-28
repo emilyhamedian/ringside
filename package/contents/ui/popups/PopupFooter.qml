@@ -9,6 +9,8 @@ PlasmaExtras.PlasmoidHeading {
     id: footer
 
     required property var monitor
+    // Claude and Codex have nothing to show in System Monitor.
+    property bool systemMonitorShown: true
 
     position: T.ToolBar.Footer
 
@@ -16,6 +18,7 @@ PlasmaExtras.PlasmoidHeading {
         spacing: Kirigami.Units.smallSpacing
 
         Kirigami.LinkButton {
+            visible: footer.systemMonitorShown
             Layout.leftMargin: Kirigami.Units.largeSpacing
             text: i18nc("@action:button", "Open System Monitor")
             font.underline: false

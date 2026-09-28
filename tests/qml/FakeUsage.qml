@@ -12,18 +12,25 @@ QtObject {
     readonly property int day: 86400
 
     // Entries as the helper reports them (see code/usage.py), after merging.
+    // Each window's history starts when the window did: days of use with
+    // quiet nights between them.
     property var entries: ({
         claude: {
             status: "ok",
             fetchedAt: createdAt,
-            weekly: window(62, 2 * day + 21 * 3600, [[6.9, 0], [6, 9], [5, 20], [4, 31], [3, 44], [2.2, 55], [0, 62]]),
+            weekly: window(62, 2 * day + 21 * 3600, [[4.1, 0], [3.9, 5], [3.7, 11], [3.4, 12], [3, 12], [2.9, 19],
+                                                     [2.7, 26], [2.4, 27], [2, 27], [1.9, 33], [1.7, 41], [1.4, 43],
+                                                     [1, 43], [0.9, 50], [0.6, 57], [0.3, 60], [0, 62]]),
             scoped: [Object.assign({ id: "Opus", label: "Opus" },
-                                   window(78, 2 * day + 21 * 3600, [[6.9, 0], [5, 30], [3, 52], [0, 78]]))]
+                                   window(78, 2 * day + 21 * 3600, [[4.1, 0], [3.9, 7], [3.7, 14], [3.4, 15], [3, 15],
+                                                                    [2.9, 24], [2.7, 33], [2.4, 34], [2, 34], [1.9, 42],
+                                                                    [1.7, 52], [1.4, 55], [1, 55], [0.9, 64], [0.6, 73],
+                                                                    [0.3, 76], [0, 78]]))]
         },
         codex: {
             status: "ok",
             fetchedAt: createdAt,
-            weekly: window(34, 5 * day + 4 * 3600, [[1.8, 0], [1, 14], [0, 34]]),
+            weekly: window(34, 5 * day + 4 * 3600, [[1.8, 0], [1.5, 6], [1.2, 14], [0.9, 15], [0.5, 22], [0.2, 31], [0, 34]]),
             scoped: []
         }
     })
@@ -65,5 +72,8 @@ QtObject {
     function inner(id) {
         const e = entry(id);
         return e ? Limits.pick(e.scoped, innerChoices[id] ?? "") : null;
+    }
+
+    function refresh() {
     }
 }
