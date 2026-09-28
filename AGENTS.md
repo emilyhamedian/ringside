@@ -17,7 +17,7 @@ github.com/emilyhamedian/ringside.
   facts ksystemstats doesn't publish.
 - `tests/` holds the QtTest suites (`tests/qml/tst_*.qml`), the sh helper's
   fixtures (`tests/helper/`) and the Python helper's tests (`tests/python/`).
-- `scripts/`: install, test, gallery, package, add-panel.
+- `scripts/`: install, test, test-floor, gallery, pictures, package, add-panel.
 
 ## Direction
 
