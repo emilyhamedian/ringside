@@ -33,6 +33,13 @@ Item {
         cpuTemperature: 92
     }
 
+    // Enough threads for the per-thread bars to take a second row.
+    FakeMonitor {
+        id: manyThreads
+        cpuCores: 64
+        cpuThreads: 128
+    }
+
     FakeMonitor {
         id: asleep
         gpuOuter.phase: "asleep"
@@ -105,6 +112,7 @@ Item {
             return [
                 { tag: "cpu", popup: "CpuPopup", monitor: normal },
                 { tag: "cpuHot", popup: "CpuPopup", monitor: hot },
+                { tag: "cpuManyThreads", popup: "CpuPopup", monitor: manyThreads },
                 { tag: "gpu", popup: "GpuPopup", monitor: normal },
                 { tag: "gpuAsleep", popup: "GpuPopup", monitor: asleep },
                 { tag: "gpuResting", popup: "GpuPopup", monitor: resting },
