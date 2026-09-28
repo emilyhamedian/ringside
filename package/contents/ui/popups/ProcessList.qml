@@ -25,14 +25,16 @@ ColumnLayout {
     property var rows: sample || []
 
     function refresh() {
+        // The columns are the attributes the model took, in order.
+        const columns = Array.from(model.enabledAttributes);
         const n = model.rowCount();
         const found = [];
         for (let r = 0; r < n; ++r) {
-            found.push({
-                name: model.data(model.index(r, 0), Process.ProcessDataModel.Value),
-                usage: Number(model.data(model.index(r, 1), Process.ProcessDataModel.Value)),
-                memory: Number(model.data(model.index(r, 2), Process.ProcessDataModel.Value)) * 1024
-            });
+            const values = [];
+            for (let c = 0; c < columns.length; ++c) {
+                values.push(model.data(model.index(r, c), Process.ProcessDataModel.Value));
+            }
+            found.push(Processes.reading(columns, values));
         }
         rows = Processes.top(found, key, 3);
     }
@@ -47,8 +49,8 @@ ColumnLayout {
     Process.ProcessDataModel {
         id: model
         enabled: list.sample === null
-        // Resident memory (PSS where readable) arrives in KiB.
-        enabledAttributes: ["name", "usage", "memory"]
+        // Plasma 6.0 to 6.2 lack "memory", so the list asks for what they offer.
+        enabledAttributes: Processes.attributes(model.availableAttributes)
     }
 
     Timer {
