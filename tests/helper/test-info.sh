@@ -1,4 +1,7 @@
 #!/bin/sh
+# SPDX-FileCopyrightText: 2026 Emily Hamedian <me@emily.dev>
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 # Runs package/contents/code/ringside-info.sh against small fake sysfs/procfs
 # trees under tests/helper/fixtures/ and checks its JSON (or, for "pm", its
 # plain text) against a recorded expected output.

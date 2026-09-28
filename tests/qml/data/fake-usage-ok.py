@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Emily Hamedian <me@emily.dev>
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 # Claude at 62 % with an Opus limit at 78 %, Codex at 34 %.
 from fake_usage import DAY, limit, ok, report, window
 

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Emily Hamedian <me@emily.dev>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 .pragma library
 
 // The items a widget can show and which of them are switched on.

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Emily Hamedian <me@emily.dev>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 .pragma library
 
 // Which weekly windows started over between two sets of entries, as

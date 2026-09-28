@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Emily Hamedian <me@emily.dev>
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """Stands in for contents/code/usage.py in tst_usage.qml.
 
 Each fake-usage-*.py script beside this one is a scenario: it calls report()

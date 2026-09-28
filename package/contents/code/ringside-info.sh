@@ -1,4 +1,7 @@
 #!/bin/sh
+# SPDX-FileCopyrightText: 2026 Emily Hamedian <me@emily.dev>
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 # Hardware facts that ksystemstats doesn't publish, for Ringside's QML.
 #
 #   ringside-info.sh static       one JSON object describing the machine

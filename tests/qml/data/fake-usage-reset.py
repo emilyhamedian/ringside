@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Emily Hamedian <me@emily.dev>
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 # Claude's week and its Opus limit started over, and a Sonnet limit appeared;
 # Codex is as in fake-usage-ok.py.
 from fake_usage import DAY, WEEK, limit, ok, report, window

@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2026 Emily Hamedian <me@emily.dev>
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """Report the weekly usage windows of Claude Code and Codex as one JSON object.
 
 Ringside runs this on a timer while a Claude or Codex item is switched on.

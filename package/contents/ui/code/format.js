@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Emily Hamedian <me@emily.dev>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 .pragma library
 
 // Readings come back as { value, unit } so the panel and popups can set the

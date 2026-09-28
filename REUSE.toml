@@ -14,12 +14,18 @@ SPDX-FileCopyrightText = "2026 Emily Hamedian <me@emily.dev>"
 SPDX-License-Identifier = "GPL-3.0-or-later"
 
 [[annotations]]
-path = "package/metadata.json"
+path = ["*.md", ".gitignore", ".editorconfig"]
 SPDX-FileCopyrightText = "2026 Emily Hamedian <me@emily.dev>"
 SPDX-License-Identifier = "GPL-3.0-or-later"
 
 [[annotations]]
-path = "tests/helper/fixtures/**/expected.json"
+path = "package/metadata.json"
+SPDX-FileCopyrightText = "2026 Emily Hamedian <me@emily.dev>"
+SPDX-License-Identifier = "GPL-3.0-or-later"
+
+# The hardware helper's fixtures are the files it reads, byte for byte.
+[[annotations]]
+path = "tests/helper/fixtures/**"
 SPDX-FileCopyrightText = "2026 Emily Hamedian <me@emily.dev>"
 SPDX-License-Identifier = "GPL-3.0-or-later"
 

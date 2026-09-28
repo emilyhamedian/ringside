@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Emily Hamedian <me@emily.dev>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
 .pragma library
 
 // Secondary text (captions, units, legends) is the text colour at reduced
