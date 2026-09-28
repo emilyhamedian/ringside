@@ -38,6 +38,8 @@ QtObject {
         }
     })
     property string helperError: ""
+    // The last check's status per provider, as UsageData keeps them.
+    property var statuses: ({ claude: { status: "ok", message: "" }, codex: { status: "ok", message: "" } })
     // Stands in for claudeInnerLimit and codexInnerLimit.
     property var innerChoices: ({ claude: "", codex: "" })
 

@@ -88,7 +88,7 @@ ColumnLayout {
                 Layout.fillWidth: true
                 text: !row.entry ? " " : row.entry.count > 1 ? row.entry.name + " ×" + row.entry.count : row.entry.name
                 color: Kirigami.Theme.textColor
-                font.family: Kirigami.Theme.fixedWidthFont.family
+                font.family: Kirigami.Theme.fixedWidthFont?.family ?? "monospace" // qmllint disable redundant-optional-chaining
                 font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.92
                 elide: Text.ElideRight
                 textFormat: Text.PlainText
@@ -108,7 +108,7 @@ ColumnLayout {
                     return Format.fixed(row.entry.usage / Math.max(1, list.threads), 1) + "%";
                 }
                 color: Kirigami.Theme.textColor
-                font.family: Kirigami.Theme.fixedWidthFont.family
+                font.family: Kirigami.Theme.fixedWidthFont?.family ?? "monospace" // qmllint disable redundant-optional-chaining
                 font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.92
                 textFormat: Text.PlainText
             }

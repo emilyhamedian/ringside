@@ -88,6 +88,21 @@ else
 fi
 
 echo
+echo "== APIs newer than Plasma 6.0, Qt 6.6 and KF 6.0 =="
+# The suites can only run on current Plasma, so they never see an older one.
+# Kirigami.Theme.fixedWidthFont arrived in KF 6.14 and FontMetrics'
+# capitalHeight in Qt 6.9, so each needs a fallback; Qt's JavaScript engine
+# has no Array.prototype.flatMap.
+newer=$(grep -rnE 'fixedWidthFont\.|capitalHeight[^?]*$|\.flatMap\(' package/contents/ui tests/qml |
+    grep -vE '^[^:]+:[0-9]+:[[:space:]]*//')
+if [ -n "$newer" ]; then
+    fail "use of an API newer than the supported floor, without a fallback:"
+    printf '%s\n' "$newer" >&2
+else
+    echo "none"
+fi
+
+echo
 echo "== QtTest suites ($QMLTESTRUNNER) =="
 # qmltestrunner has no --version: a Qt 6 build states its QtTest version
 # when it runs a test, and a Qt 5 one can't load the unversioned imports.

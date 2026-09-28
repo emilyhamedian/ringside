@@ -1302,6 +1302,10 @@ Item {
                   want: "Run claude in a terminal to sign in." },
                 { tag: "codex signed out", error: "", enabled: ["codex"],
                   want: "Run codex in a terminal to sign in." },
+                { tag: "first check failed", error: "", enabled: ["claude", "codex"],
+                  statuses: { claude: { status: "signed_out", message: "" },
+                              codex: { status: "error", message: "codex CLI not found" } },
+                  want: "codex CLI not found" },
                 { tag: "no GPU", error: "", enabled: ["gpu"],
                   want: "Choose items under Configure Ringside → Panel Items." },
                 { tag: "nothing on", error: "", enabled: [],
@@ -1311,6 +1315,9 @@ Item {
 
         function test_emptyRingWording(data) {
             monitor.usage.helperError = data.error;
+            if (data.statuses) {
+                monitor.usage.statuses = data.statuses;
+            }
             makeStrip({ items: [], enabledItems: data.enabled });
             const empty = emptyRing();
             compare(empty.visible, true);

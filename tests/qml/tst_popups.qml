@@ -3,6 +3,7 @@
 
 import QtQuick
 import QtTest
+import org.kde.kirigami as Kirigami
 
 // Every popup against FakeMonitor in the states the gallery shows, loaded the
 // way main.qml loads them. qmllint can't type the duck-typed monitor, so a
@@ -150,6 +151,40 @@ Item {
             const found = texts(load("GpuPopup", asleep));
             verify(found.includes("AMD Radeon RX 7700S · off"), JSON.stringify(found));
             verify(!found.some(t => t.indexOf("Powered down") >= 0), JSON.stringify(found));
+        }
+
+        function gauges(item) {
+            const found = [];
+            const collect = i => {
+                if (i.outerTone !== undefined) {
+                    found.push(i);
+                }
+                i.children.forEach(collect);
+            };
+            collect(item);
+            return found;
+        }
+
+        // The header ring, and the GPU popup's ring per GPU, take the level
+        // colours at 75 % and 90 % of their own reading.
+        function test_popupRingsTakeTheLevelColours_data() {
+            return [{ tag: "74", value: 74, tone: "text" }, { tag: "75", value: 75, tone: "neutral" },
+                    { tag: "89", value: 89, tone: "neutral" }, { tag: "90", value: 90, tone: "negative" }];
+        }
+
+        function test_popupRingsTakeTheLevelColours(data) {
+            const expected = data.tone === "negative" ? Kirigami.Theme.negativeTextColor
+                           : data.tone === "neutral" ? Kirigami.Theme.neutralTextColor : Kirigami.Theme.textColor;
+            normal.cpuUsage = data.value;
+            normal.gpuOuter.usage = data.value;
+            const cpu = gauges(load("CpuPopup", normal));
+            verify(cpu.length > 0);
+            compare(cpu[0].outerTone, expected);
+            const gpu = gauges(load("GpuPopup", normal)).filter(g => g.value === data.value);
+            verify(gpu.length > 0, "the discrete GPU's ring");
+            gpu.forEach(g => compare(g.outerTone, expected));
+            normal.cpuUsage = 23;
+            normal.gpuOuter.usage = Qt.binding(() => normal.gpuOuter.live ? 12 : normal.gpuOuter.resting ? 0 : NaN);
         }
 
         function test_popupsSpellTheTemperatureUnit_data() {

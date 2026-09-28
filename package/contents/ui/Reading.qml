@@ -53,11 +53,13 @@ Item {
         text: reading.widest === "" ? "" : reading.degree ? reading.degreeText : reading.widestUnit
     }
 
+    // Kirigami.Theme.fixedWidthFont arrived in KF 6.14; before that the
+    // fontconfig alias stands in, here and wherever digits are set.
     Text {
         id: number
         text: reading.value
         color: reading.color
-        font.family: Kirigami.Theme.fixedWidthFont.family
+        font.family: Kirigami.Theme.fixedWidthFont?.family ?? "monospace" // qmllint disable redundant-optional-chaining
         font.pointSize: reading.pointSize
         textFormat: Text.PlainText
     }
@@ -72,7 +74,7 @@ Item {
         // The degree sign sits high in the sans face; nudge it up a little more.
         y: number.baselineOffset - baselineOffset - (raised ? number.implicitHeight * 0.1 : 0)
         color: raised ? reading.color : reading.unitColor
-        font.family: reading.degree ? Kirigami.Theme.defaultFont.family : Kirigami.Theme.fixedWidthFont.family
+        font.family: reading.degree ? Kirigami.Theme.defaultFont.family : (Kirigami.Theme.fixedWidthFont?.family ?? "monospace") // qmllint disable redundant-optional-chaining
         font.pointSize: reading.pointSize * (raised ? 0.7 : reading.unitScale)
         textFormat: Text.PlainText
     }

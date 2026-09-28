@@ -82,7 +82,7 @@ GridLayout {
 
     FontMetrics {
         id: base
-        font.family: Kirigami.Theme.fixedWidthFont.family
+        font.family: Kirigami.Theme.fixedWidthFont?.family ?? "monospace" // qmllint disable redundant-optional-chaining
         font.pointSize: rates.basePointSize
     }
 
@@ -107,7 +107,7 @@ GridLayout {
     // Room for the widest value and unit at the size drawn.
     TextMetrics {
         id: valueRoom
-        font.family: Kirigami.Theme.fixedWidthFont.family
+        font.family: Kirigami.Theme.fixedWidthFont?.family ?? "monospace" // qmllint disable redundant-optional-chaining
         font.pointSize: rates.pointSize
         text: !rates.vertical ? "0000" : rates.whole ? "000M" : "0000M"
     }
@@ -147,7 +147,7 @@ GridLayout {
                 visible: !rates.network
                 text: marker.index === 1 ? rates.writeLetter : rates.readLetter
                 color: rates.markColor
-                font.family: Kirigami.Theme.fixedWidthFont.family
+                font.family: Kirigami.Theme.fixedWidthFont?.family ?? "monospace" // qmllint disable redundant-optional-chaining
                 font.pointSize: rates.pointSize
                 textFormat: Text.PlainText
             }

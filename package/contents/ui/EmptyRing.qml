@@ -19,10 +19,18 @@ Item {
     property string helperError: ""
     // The items switched on, none of which has anything to show.
     property var enabledItems: []
+    // UsageData's last status per provider: a first check that failed says why.
+    property var statuses: ({})
 
     readonly property bool claude: enabledItems.includes("claude")
     readonly property bool codex: enabledItems.includes("codex")
+    readonly property string failure: {
+        const failed = ["claude", "codex"].filter(id => enabledItems.includes(id)).map(id => statuses[id])
+            .find(s => s && (s.status === "error" || s.status === "rate_limited") && s.message);
+        return failed ? failed.message : "";
+    }
     readonly property string reason: helperError !== "" ? helperError
+        : failure !== "" ? failure
         : claude && codex ? i18nc("@info:tooltip", "Run claude or codex in a terminal to sign in.")
         : claude || codex ? i18nc("@info:tooltip %1 is a command, claude or codex", "Run %1 in a terminal to sign in.",
                                   claude ? "claude" : "codex")

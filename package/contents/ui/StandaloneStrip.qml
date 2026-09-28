@@ -277,6 +277,7 @@ Item {
             interactive: !strip.collapsed && !strip.transitioning
             location: strip.location
             helperError: strip.monitor.usage.helperError
+            statuses: strip.monitor.usage.statuses
             enabledItems: strip.enabledItems
         }
     }

@@ -357,7 +357,7 @@ KCM.SimpleKCM {
                 QQC2.Label {
                     text: i18nc("@label ring diameter in pixels", "%1 px", size.value)
                     textFormat: Text.PlainText
-                    font.family: Kirigami.Theme.fixedWidthFont.family
+                    font.family: Kirigami.Theme.fixedWidthFont?.family ?? "monospace" // qmllint disable redundant-optional-chaining
                 }
             }
             QQC2.Label {

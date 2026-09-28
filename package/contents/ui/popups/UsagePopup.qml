@@ -136,9 +136,9 @@ PopupPage {
                     }
 
                     Text {
-                        text: Format.percent(row.modelData.percent) + "%"
+                        text: i18nc("@info a percentage", "%1%", Format.percent(row.modelData.percent))
                         color: popup.tone(row.modelData.percent)
-                        font.family: Kirigami.Theme.fixedWidthFont.family
+                        font.family: Kirigami.Theme.fixedWidthFont?.family ?? "monospace" // qmllint disable redundant-optional-chaining
                         textFormat: Text.PlainText
                     }
                 }
@@ -173,8 +173,8 @@ PopupPage {
             caption: i18nc("@title:group the current weekly window", "This week")
             detail: {
                 const date = words.resetDate(popup.weekly);
-                return date ? "· " + i18nc("@title:group when the week starts over, e.g. resets Sun 7:00 AM EDT",
-                                           "resets %1", date) : "";
+                return date ? i18nc("@title:group after THIS WEEK: when the week starts over, e.g. · resets Sun 7:00 AM EDT",
+                                    "· resets %1", date) : "";
             }
 
             WeekGraph {

@@ -113,7 +113,7 @@ Item {
             visible: gauge.text !== "" && !gauge.inner && gauge.width >= 24
             text: gauge.text
             color: gauge.outerTone
-            font.family: Kirigami.Theme.fixedWidthFont.family
+            font.family: Kirigami.Theme.fixedWidthFont?.family ?? "monospace" // qmllint disable redundant-optional-chaining
             font.pixelSize: Math.round(gauge.width * gauge.textScale)
             textFormat: Text.PlainText
             // The gauge's own description reads it out.

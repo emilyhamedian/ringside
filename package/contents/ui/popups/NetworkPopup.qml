@@ -20,7 +20,7 @@ PopupPage {
     component Note: Caption {}
 
     component RateText: Text {
-        font.family: Kirigami.Theme.fixedWidthFont.family
+        font.family: Kirigami.Theme.fixedWidthFont?.family ?? "monospace" // qmllint disable redundant-optional-chaining
         font.pointSize: Kirigami.Theme.defaultFont.pointSize
         textFormat: Text.PlainText
     }

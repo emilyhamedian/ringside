@@ -33,7 +33,23 @@ PlasmoidItem {
     // Cleared when the cell goes away, say when its item is switched off,
     // and the popup goes with it.
     property Item openCell: null
-    onOpenCellChanged: if (!openCell) popup.visible = false
+    onOpenCellChanged: if (!openCell && popup.visible) Qt.callLater(reattach)
+
+    // A cell goes when its item does, and also when another item comes or
+    // goes, since the strip rebuilds every cell then. The popup moves to the
+    // new cell for its item, or closes if there is none.
+    function reattach() {
+        if (openCell || !popup.visible) {
+            return;
+        }
+        const index = items.indexOf(openItem);
+        const cell = index >= 0 && !(view?.collapsed ?? false) ? view?.cellAt(index) ?? null : null;
+        if (cell) {
+            openCell = cell;
+        } else {
+            popup.visible = false;
+        }
+    }
 
     function toggle(item, cell) {
         if (popup.visible && openItem === item) {
@@ -218,7 +234,8 @@ PlasmoidItem {
         target: Plasmoid
 
         function onActivated() {
-            const cell = root.view?.cellAt(0) ?? null;
+            // A folded strip has nothing on screen to open a popup on.
+            const cell = root.view?.collapsed ? null : root.view?.cellAt(0) ?? null;
             if (cell) {
                 root.toggle(root.items[0], cell);
             }
