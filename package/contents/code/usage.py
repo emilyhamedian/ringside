@@ -49,12 +49,12 @@ import json
 import math
 import os
 import re
+import selectors
 import shutil
 import signal
 import subprocess
 import sys
 import tempfile
-import threading
 import time
 import urllib.error
 import urllib.request
@@ -94,6 +94,8 @@ CACHE_FILE = CACHE_DIR / "usage.json"
 HISTORY_FILE = CACHE_DIR / "usage-history.json"
 LOCK_FILE = CACHE_DIR / "usage.lock"
 CACHE_TTL = 5 * 60
+# How long a run waits for another to finish before giving up.
+LOCK_WAIT = 60
 # The longest a refusal holds a provider back, whatever Retry-After says.
 HOLD_MAX = 24 * 3600
 # A week of polls five minutes apart is 2016 points; flat stretches collapse,
@@ -109,6 +111,11 @@ CLOCK_PLUGIN = "org.kde.plasma.digitalclock"
 
 class SignedOut(Exception):
     pass
+
+
+class Busy(RuntimeError):
+    def __init__(self):
+        super().__init__("another usage check is still running")
 
 
 class RateLimited(Exception):
@@ -135,26 +142,18 @@ def codex_rate_limits(binary):
     The server keeps running until told otherwise, so the response is read
     line by line and the server is stopped once the answer with id 2 arrives
     or the deadline passes. It runs in its own session so that stopping it
-    also ends whatever it started there, which would otherwise hold stdout
-    open past the deadline. A process a wrapper hands to a container runtime
-    is outside that session and survives the kill.
+    also ends whatever it started there. A process started outside that
+    session, such as one a wrapper hands to a container runtime, can keep
+    stdout open after the kill, so reading stops at the deadline regardless.
     """
     proc = subprocess.Popen(
         [binary, "app-server", "--stdio"],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,
-        text=True,
         start_new_session=True,
     )
-    timed_out = threading.Event()
-
-    def expire():
-        timed_out.set()
-        stop_session(proc)
-
-    killer = threading.Timer(CODEX_TIMEOUT, expire)
-    killer.start()
+    deadline = time.monotonic() + CODEX_TIMEOUT
     try:
         for message in (
             {"id": 1, "method": "initialize",
@@ -163,24 +162,44 @@ def codex_rate_limits(binary):
             {"method": "initialized"},
             {"id": 2, "method": "account/rateLimits/read"},
         ):
-            proc.stdin.write(json.dumps(message) + "\n")
+            proc.stdin.write((json.dumps(message) + "\n").encode())
         proc.stdin.flush()
-        for line in proc.stdout:
+        for line in lines_until(proc.stdout, deadline):
             try:
                 reply = json.loads(line)
             except ValueError:
                 continue
-            if reply.get("id") == 2:
+            if isinstance(reply, dict) and reply.get("id") == 2:
                 if "error" in reply:
-                    raise RuntimeError(reply["error"].get("message", "app-server error"))
+                    raise RuntimeError(str((reply["error"] or {}).get("message") or "app-server error"))
                 return reply["result"]
-        if timed_out.is_set():
+        if time.monotonic() >= deadline:
             raise RuntimeError(f"no answer from codex app-server in {CODEX_TIMEOUT} s")
         raise RuntimeError("app-server closed without answering")
     finally:
-        killer.cancel()
         stop_session(proc)
-        proc.wait()
+        proc.stdout.close()
+        with contextlib.suppress(subprocess.TimeoutExpired):
+            proc.wait(timeout=5)
+
+
+def lines_until(stream, deadline):
+    """The lines of a pipe as they arrive, until it closes or the deadline
+    (on time.monotonic()) passes."""
+    fd = stream.fileno()
+    pending = b""
+    with selectors.DefaultSelector() as selector:
+        selector.register(fd, selectors.EVENT_READ)
+        while True:
+            left = deadline - time.monotonic()
+            if left <= 0 or not selector.select(left):
+                return
+            chunk = os.read(fd, 65536)
+            if not chunk:
+                return
+            *lines, pending = (pending + chunk).split(b"\n")
+            for line in lines:
+                yield line.decode("utf-8", "replace")
 
 
 def stop_session(proc):
@@ -296,14 +315,90 @@ def http_json(url, headers, body=None):
         # service not known"; strerror is the readable part.
         reason = getattr(err.reason, "strerror", None) or err.reason
         raise RuntimeError(f"can't reach {host}: {reason}") from err
+    except OSError as err:
+        raise RuntimeError(f"can't reach {host}: {err.strerror or 'timed out'}") from err
+    except ValueError as err:
+        raise RuntimeError(f"unreadable reply from {host}") from err
+
+
+def usable(token):
+    """A token that can go into a header as it is. One with whitespace or
+    control characters would make http.client fail with the token in the
+    error message, so it counts as no token at all."""
+    return (isinstance(token, str) and token != "" and token.isascii() and token.isprintable()
+            and not any(c.isspace() for c in token))
+
+
+def read_oauth(path):
+    """The claudeAiOauth record and the file's bytes. A record without a
+    usable access token means signed out."""
+    try:
+        raw = path.read_bytes()
+        data = json.loads(raw)
+    except FileNotFoundError:
+        raise SignedOut() from None
+    except (OSError, ValueError):
+        raise RuntimeError("Claude Code's credentials can't be read") from None
+    oauth = data.get("claudeAiOauth") if isinstance(data, dict) else None
+    if not isinstance(oauth, dict) or not usable(oauth.get("accessToken")):
+        raise SignedOut()
+    return oauth, raw
+
+
+def generation(oauth):
+    return oauth.get("accessToken"), oauth.get("refreshToken"), oauth.get("expiresAt")
+
+
+def expired(oauth):
+    try:
+        return float(oauth.get("expiresAt") or 0) / 1000 - time.time() <= CLAUDE_EXPIRY_MARGIN
+    except (TypeError, ValueError, OverflowError):
+        return True
+
+
+def seconds(value):
+    """A non-negative number of seconds from a reply field, or None."""
+    try:
+        number = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return number if math.isfinite(number) and number >= 0 else None
+
+
+def check_writable(path):
+    """Fail before a refresh token is spent if the renewed pair couldn't be
+    saved: the folder and file must be writable, the file must not be
+    mounted on its own (it couldn't be replaced), and the folder must take a
+    file of about the same size."""
+    folder = path.parent
+    reason = None
+    if not os.access(folder, os.W_OK | os.X_OK) or not os.access(path, os.W_OK):
+        reason = "the credentials file or its folder is not writable"
+    elif os.stat(path).st_dev != os.stat(folder).st_dev:
+        reason = "the credentials file is mounted on its own and can't be replaced"
+    else:
+        try:
+            fd, probe = tempfile.mkstemp(dir=folder, prefix=".credentials.", suffix=".probe")
+            try:
+                os.write(fd, b"\0" * (os.stat(path).st_size + 4096))
+                os.fsync(fd)
+            finally:
+                os.close(fd)
+                os.unlink(probe)
+        except OSError as err:
+            reason = f"the credentials folder can't take a new file ({err.strerror})"
+    if reason:
+        raise RuntimeError(f"{reason}; leaving the expired login for Claude Code to renew")
 
 
 def refresh_claude(oauth):
-    """Exchange the refresh token the way the CLI does and return the new record.
+    """Exchange the refresh token the way the CLI does and return the fields
+    that change.
 
-    The old refresh token is spent once the POST succeeds, so any reply with
-    an access token is kept. Without expires_in the new access token counts
-    as expired at once, so the next poll refreshes again.
+    The old refresh token is spent once the POST succeeds, so after it
+    nothing may fail but the write itself: every field of the reply is read
+    leniently. Without expires_in the new access token counts as expired at
+    once, so the next poll renews it again.
     """
     reply = http_json(
         CLAUDE_TOKEN_URL,
@@ -311,65 +406,96 @@ def refresh_claude(oauth):
         {"grant_type": "refresh_token",
          "refresh_token": oauth["refreshToken"],
          "client_id": oauth.get("clientId") or CLAUDE_CLIENT_ID,
-         "scope": " ".join(oauth.get("scopes") or [])},
+         "scope": " ".join(s for s in (oauth.get("scopes") or []) if isinstance(s, str))},
     )
+    if not isinstance(reply, dict) or not usable(reply.get("access_token")):
+        raise RuntimeError("the token refresh returned no usable access token")
     now_ms = int(time.time() * 1000)
-    fresh = dict(oauth)
-    fresh["accessToken"] = reply["access_token"]
-    fresh["refreshToken"] = reply.get("refresh_token") or oauth["refreshToken"]
-    fresh["expiresAt"] = now_ms + int(reply.get("expires_in") or 0) * 1000
-    if reply.get("refresh_token_expires_in"):
-        fresh["refreshTokenExpiresAt"] = now_ms + int(reply["refresh_token_expires_in"]) * 1000
-    if reply.get("scope"):
+    fresh = {"accessToken": reply["access_token"],
+             "refreshToken": reply["refresh_token"] if usable(reply.get("refresh_token")) else oauth["refreshToken"],
+             "expiresAt": now_ms + int((seconds(reply.get("expires_in")) or 0) * 1000)}
+    refresh_left = seconds(reply.get("refresh_token_expires_in"))
+    if refresh_left:
+        fresh["refreshTokenExpiresAt"] = now_ms + int(refresh_left * 1000)
+    if isinstance(reply.get("scope"), str) and reply["scope"].strip():
         fresh["scopes"] = reply["scope"].split()
     return fresh
 
 
-def store_claude(path, used_refresh_token, fresh):
-    """Write refreshed tokens back unless the CLI rotated them first.
+def store_claude(path, spent, fresh):
+    """Write a renewed pair back unless something else renewed first.
 
-    Refresh tokens are single use, so whoever refreshed last owns the valid
-    pair. The file is re-read and only replaced when it still holds the token
-    this run consumed; other keys in the file are kept as they were. A
-    symlinked file is written through to its target and the link kept.
+    Refresh tokens are single use, so whoever renewed last owns the valid
+    pair. The file is re-read and only replaced while it still holds the
+    token this run spent, and the bytes are compared again just before the
+    replace; other keys in the file and in the record are kept. A reader
+    that catches another writer mid-way waits and tries again. The folder is
+    synced after the replace, so a crash can't bring the spent token back.
     """
-    path = path.resolve()
-    current = read_json(path)
-    stored = current.get("claudeAiOauth") or {}
-    if stored.get("refreshToken") != used_refresh_token:
-        return False
-    current["claudeAiOauth"] = fresh
-    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".credentials.", suffix=".tmp")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            json.dump(current, fh)
-            fh.flush()
-            os.fsync(fh.fileno())
-        os.chmod(tmp, 0o600)
-        os.replace(tmp, path)
-    except BaseException:
-        os.unlink(tmp)
-        raise
-    return True
+    for attempt in range(5):
+        if attempt:
+            time.sleep(0.2)
+        try:
+            raw = path.read_bytes()
+            current = json.loads(raw)
+        except (OSError, ValueError):
+            continue
+        stored = current.get("claudeAiOauth") if isinstance(current, dict) else None
+        if not isinstance(stored, dict) or stored.get("refreshToken") != spent:
+            return False
+        current["claudeAiOauth"] = {**stored, **fresh}
+        fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".credentials.", suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                os.fchmod(fh.fileno(), 0o600)
+                json.dump(current, fh)
+                fh.flush()
+                os.fsync(fh.fileno())
+            if path.read_bytes() != raw:
+                continue
+            os.replace(tmp, path)
+            folder = os.open(path.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+            try:
+                os.fsync(folder)
+            finally:
+                os.close(folder)
+            return True
+        except OSError as err:
+            raise RuntimeError(f"the renewed login couldn't be saved ({err.strerror})") from None
+        finally:
+            if os.path.exists(tmp):
+                os.unlink(tmp)
+    raise RuntimeError("Claude Code's credentials kept changing; the renewed login wasn't saved")
 
 
 def claude_access_token():
-    if not CLAUDE_CREDENTIALS.exists():
+    path = CLAUDE_CREDENTIALS
+    if not path.exists():
         raise SignedOut()
-    oauth = read_json(CLAUDE_CREDENTIALS).get("claudeAiOauth")
-    if not oauth or not oauth.get("accessToken"):
-        raise SignedOut()
-    expires_at = oauth.get("expiresAt") or 0
-    if expires_at / 1000 - time.time() > CLAUDE_EXPIRY_MARGIN:
+    path = path.resolve()
+    oauth, _ = read_oauth(path)
+    if not expired(oauth):
         return oauth["accessToken"]
-    if not oauth.get("refreshToken"):
+    if not usable(oauth.get("refreshToken")):
         raise SignedOut()
     # Spending the CLI's single-use refresh token without saving the new pair
-    # would sign Claude Code out, so check the write can happen first.
-    if not os.access(CLAUDE_CREDENTIALS.resolve().parent, os.W_OK | os.X_OK):
-        raise RuntimeError("credentials folder is not writable; leaving the expired token for Claude Code to refresh")
-    fresh = refresh_claude(oauth)
-    store_claude(CLAUDE_CREDENTIALS, oauth["refreshToken"], fresh)
+    # would sign Claude Code out, so check the write can happen first, then
+    # read the file once more in case the CLI renewed it meanwhile.
+    check_writable(path)
+    current, _ = read_oauth(path)
+    if generation(current) != generation(oauth):
+        if not expired(current):
+            return current["accessToken"]
+        if not usable(current.get("refreshToken")):
+            raise SignedOut()
+    try:
+        fresh = refresh_claude(current)
+    except Exception:
+        latest, _ = read_oauth(path)
+        if generation(latest) != generation(current) and not expired(latest):
+            return latest["accessToken"]
+        raise
+    store_claude(path, current["refreshToken"], fresh)
     return fresh["accessToken"]
 
 
@@ -455,15 +581,20 @@ def poll(fetch):
         return {"status": "signed_out"}
     except RateLimited as err:
         return {"status": "rate_limited", "retryAfter": err.retry_after, "message": str(err)}
+    except RuntimeError as err:
+        return {"status": "error", "message": str(err) or "error"}
     except Exception as err:  # noqa: BLE001 - every failure becomes a status
-        return {"status": "error", "message": str(err) or err.__class__.__name__}
+        # Anything else could carry request details, a token among them, so
+        # only its type is reported.
+        return {"status": "error", "message": f"unexpected {err.__class__.__name__}"}
     report["status"] = "ok"
     return report
 
 
 @contextlib.contextmanager
 def locked():
-    """Hold usage.lock until the block ends.
+    """Hold usage.lock until the block ends, waiting up to LOCK_WAIT seconds
+    for another run to finish.
 
     Python opens the descriptor non-inheritable, so a process the Codex CLI
     leaves behind cannot keep holding the lock after this run exits.
@@ -471,7 +602,15 @@ def locked():
     CACHE_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
     fd = os.open(LOCK_FILE, os.O_RDWR | os.O_CREAT, 0o600)
     try:
-        fcntl.flock(fd, fcntl.LOCK_EX)
+        deadline = time.monotonic() + LOCK_WAIT
+        while True:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    raise Busy() from None
+                time.sleep(0.2)
         yield
     finally:
         os.close(fd)
@@ -501,8 +640,12 @@ def read_cache():
 
 
 def fresh(entry, now):
+    """A cached reading young enough to report again. Anything malformed in
+    the cache reads as no reading."""
     return (isinstance(entry, dict) and entry.get("status") == "ok"
-            and 0 <= now - entry.get("fetchedAt", 0) < CACHE_TTL)
+            and type(entry.get("fetchedAt")) is int and 0 <= now - entry["fetchedAt"] < CACHE_TTL
+            and isinstance(entry.get("weekly"), dict) and isinstance(entry.get("scoped", []), list)
+            and all(isinstance(w, dict) for w in entry.get("scoped", [])))
 
 
 def held(entry, now):
@@ -629,14 +772,13 @@ def extend_series(series, window, now):
 def record_history(history, polled, now):
     """The history with this run's real polls added.
 
-    A signed-out provider loses its series, and a provider loses those of
-    limits it no longer reports. A failed poll leaves the series as they were.
+    A provider loses the series of limits it no longer reports. A failed
+    poll, or one that finds the CLI signed out, leaves them as they were:
+    the week's span drops what no longer belongs to it.
     """
     updated = dict(history)
     for name, entry in polled.items():
-        if entry["status"] == "signed_out":
-            updated.pop(name, None)
-        elif entry["status"] == "ok":
+        if entry["status"] == "ok":
             old = history.get(name) or {"weekly": [], "scoped": {}}
             updated[name] = {
                 "weekly": extend_series(old["weekly"], entry["weekly"], now),
@@ -753,7 +895,10 @@ def main(argv=None):
                 window.setdefault("history", [])
     else:
         fetchers = {"claude": claude_usage, "codex": codex_usage}
-        providers = collect({name: fetchers[name] for name in ids})
+        try:
+            providers = collect({name: fetchers[name] for name in ids})
+        except Busy as err:
+            providers = {name: {"status": "error", "message": str(err)} for name in ids}
         report = {"fetchedAt": int(time.time()), "providers": providers}
     # Read on every run, cached or not, so a change of clock zone shows by the
     # next poll; the cache itself never holds it.

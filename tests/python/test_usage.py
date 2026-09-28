@@ -252,6 +252,90 @@ class CredentialWriteBack(Isolated):
         self.assertEqual(tokens, ["a2", "a3", "a3"])
         self.assertEqual([call.args[2]["refresh_token"] for call in self.http.call_args_list], ["r1", "r2"])
 
+    # After the refresh POST the old token is spent: whatever the reply looks
+    # like, the new pair must reach the file.
+    def test_odd_lifetimes_still_save_the_new_pair(self):
+        for lifetime in ("3600.0", "soon", None, -5, float("nan")):
+            with self.subTest(lifetime=lifetime):
+                self.setUp()
+                self.http.return_value = {"access_token": "new", "refresh_token": "r2", "expires_in": lifetime,
+                                          "refresh_token_expires_in": lifetime, "scope": ["not", "a", "string"]}
+                self.assertEqual(usage.claude_access_token(), "new")
+                self.assertEqual(json.loads(self.path.read_text())["claudeAiOauth"]["refreshToken"], "r2")
+                self.doCleanups()
+
+    def test_a_file_caught_mid_write_is_read_again(self):
+        real = Path.read_bytes
+        reads = []
+
+        def read_bytes(path):
+            reads.append(path)
+            return b'{"claudeAiOauth": {"acc' if len(reads) == 1 else real(path)
+
+        with mock.patch.object(Path, "read_bytes", read_bytes):
+            self.assertTrue(usage.store_claude(self.path, "r1", self.fresh))
+        self.assertEqual(json.loads(self.path.read_text())["claudeAiOauth"]["refreshToken"], "r2")
+
+    def test_a_write_racing_the_replace_is_not_overwritten(self):
+        real = Path.read_bytes
+        reads = []
+
+        def read_bytes(path):
+            reads.append(path)
+            if len(reads) == 2:
+                # Claude Code renews between this run's read and its replace.
+                path.write_text(json.dumps({"claudeAiOauth": {"accessToken": "cli", "refreshToken": "r9"}}))
+            return real(path)
+
+        with mock.patch.object(Path, "read_bytes", read_bytes):
+            self.assertFalse(usage.store_claude(self.path, "r1", self.fresh))
+        self.assertEqual(json.loads(self.path.read_text())["claudeAiOauth"]["refreshToken"], "r9")
+        self.assertEqual(os.listdir(self.folder), [".credentials.json"])
+
+    def test_record_fields_the_refresh_doesnt_touch_are_kept(self):
+        data = json.loads(self.path.read_text())
+        data["claudeAiOauth"]["subscriptionType"] = "max"
+        self.path.write_text(json.dumps(data))
+        usage.claude_access_token()
+        self.assertEqual(json.loads(self.path.read_text())["claudeAiOauth"]["subscriptionType"], "max")
+
+    # Each of these would lose the renewed pair after the POST, so the check
+    # before it must catch them and spend nothing.
+    def test_a_file_that_couldnt_be_replaced_spends_no_refresh_token(self):
+        real_access, real_stat, real_write = os.access, os.stat, os.write
+        cases = {
+            "read-only or immutable file": mock.patch.object(
+                usage.os, "access", lambda p, mode: False if Path(p) == self.path.resolve() else real_access(p, mode)),
+            "file mounted on its own": mock.patch.object(
+                usage.os, "stat", lambda p, *a, **k: (os.stat_result((*real_stat(p)[:2], 999, *real_stat(p)[3:]))
+                                                      if Path(p) == self.path.resolve() else real_stat(p, *a, **k))),
+            "full disk": mock.patch.object(
+                usage.os, "write", lambda fd, data: (_ for _ in ()).throw(OSError(28, "No space left on device"))),
+        }
+        for name, patch in cases.items():
+            with self.subTest(name), patch, self.assertRaises(RuntimeError):
+                usage.claude_access_token()
+            self.http.assert_not_called()
+        self.assertEqual(json.loads(self.path.read_text())["claudeAiOauth"]["refreshToken"], "r1")
+        self.assertEqual(os.listdir(self.folder), [".credentials.json"])
+
+    def test_after_a_failed_refresh_a_login_renewed_meanwhile_is_used(self):
+        def renewed_elsewhere(*args):
+            self.path.write_text(json.dumps({"claudeAiOauth": {
+                "accessToken": "cli", "refreshToken": "r9", "expiresAt": (time.time() + 3600) * 1000}}))
+            raise RuntimeError("HTTP 400 from platform.claude.com")
+
+        self.http.side_effect = renewed_elsewhere
+        self.assertEqual(usage.claude_access_token(), "cli")
+
+    def test_a_token_that_would_break_a_header_counts_as_signed_out(self):
+        secret = "sk-ant-oat01-SECRETVALUE"
+        self.path.write_text(json.dumps({"claudeAiOauth": {
+            "accessToken": secret + "\n", "refreshToken": "r1", "expiresAt": (time.time() + 3600) * 1000}}))
+        report = usage.poll(usage.claude_usage)
+        self.assertEqual(report, {"status": "signed_out"})
+        self.http.assert_not_called()
+
     def test_symlinked_file_is_written_through_to_its_target(self):
         target = self.folder / "dotfiles" / ".credentials.json"
         target.parent.mkdir()
@@ -378,6 +462,16 @@ for line in sys.stdin:
             usage.codex_rate_limits(binary)
         self.assertLess(time.monotonic() - start, 10)
 
+    # A process the server starts in a session of its own survives the kill
+    # and keeps stdout open; the deadline still holds.
+    def test_deadline_holds_when_a_survivor_keeps_stdout_open(self):
+        binary = self.server("#!/bin/sh\nsetsid sleep 8 &\nexit 0\n")
+        start = time.monotonic()
+        with mock.patch.object(usage, "CODEX_TIMEOUT", 1), \
+                self.assertRaisesRegex(RuntimeError, r"^no answer from codex app-server in 1 s$"):
+            usage.codex_rate_limits(binary)
+        self.assertLess(time.monotonic() - start, 4)
+
     def test_early_close_is_not_a_timeout(self):
         binary = self.server("#!/bin/sh\nexec >&-\nsleep 30\n")
         with self.assertRaisesRegex(RuntimeError, "^app-server closed without answering$"):
@@ -385,6 +479,12 @@ for line in sys.stdin:
 
 
 class Polling(Isolated):
+    # Only the helper's own messages are passed on: anything else could carry
+    # a request's details, a token among them.
+    def test_unexpected_errors_report_only_their_type(self):
+        self.assertEqual(usage.poll(mock.Mock(side_effect=ValueError("Invalid header value b'Bearer secret'"))),
+                         {"status": "error", "message": "unexpected ValueError"})
+
     def test_statuses_come_from_exceptions(self):
         self.assertEqual(usage.poll(lambda: {"weekly": {}}), {"weekly": {}, "status": "ok"})
         self.assertEqual(usage.poll(mock.Mock(side_effect=usage.SignedOut())),
@@ -487,6 +587,28 @@ class ReadingCache(Isolated):
         claude.assert_not_called()
         self.assertEqual(report["providers"]["claude"]["fetchedAt"], polled_at)
         self.assertGreaterEqual(report["fetchedAt"], polled_at + 100)
+
+    # A run stuck holding the lock mustn't stall every widget for good.
+    def test_a_run_gives_up_on_a_lock_held_too_long(self):
+        usage.CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        fd = os.open(usage.LOCK_FILE, os.O_RDWR | os.O_CREAT, 0o600)
+        self.addCleanup(os.close, fd)
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        fetch = mock.Mock(return_value=reading(1, 5))
+        with mock.patch.object(usage, "LOCK_WAIT", 0.3):
+            report = self.run_main("--providers", "codex")
+        self.assertEqual(report["providers"], {"codex": {"status": "error",
+                                                         "message": "another usage check is still running"}})
+        fetch.assert_not_called()
+
+    def test_malformed_cache_entries_read_as_missing(self):
+        for entry in ({"status": "ok", "fetchedAt": "soon", "weekly": {}}, {"status": "ok", "fetchedAt": 999},
+                      {"status": "ok", "fetchedAt": 999, "weekly": {}, "scoped": [1]},
+                      {"status": "rate_limited", "heldUntil": "later"}):
+            with self.subTest(entry=entry):
+                self.write_cache({"codex": entry})
+                self.assertEqual(self.collect(1000, codex=mock.Mock(return_value=reading(1, 5)))["codex"]["status"],
+                                 "ok")
 
     def test_the_lock_is_held_while_polling(self):
         held = []
@@ -661,14 +783,17 @@ class History(Isolated):
         self.assertEqual(weekly, seeded[1:] + [[self.NOW, 3]])
         self.assertEqual(report["weekly"]["history"], weekly)
 
-    def test_signed_out_providers_and_unreported_limits_lose_their_series(self):
+    # A spurious sign-out (a 401 from the token endpoint, say) mustn't cost
+    # the week's graph.
+    def test_unreported_limits_lose_their_series_and_signed_out_keeps_it(self):
         series = [[self.NOW - 60, 1]]
         self.seed({"claude": {"weekly": series, "scoped": {"Opus": series, "Retired": series}},
                    "codex": {"weekly": series, "scoped": {}}})
         usage.collect({"claude": lambda: reading(1, self.RESET, Opus=1),
                        "codex": mock.Mock(side_effect=usage.SignedOut())}, self.NOW)
         self.assertEqual(self.stored(), {"claude": {"weekly": series + [[self.NOW, 1]],
-                                                    "scoped": {"Opus": series + [[self.NOW, 1]]}}})
+                                                    "scoped": {"Opus": series + [[self.NOW, 1]]}},
+                                         "codex": {"weekly": series, "scoped": {}}})
 
     def test_failed_and_unrequested_providers_keep_their_series(self):
         series = {"weekly": [[self.NOW - 60, 1]], "scoped": {"codex_bengalfox": [[self.NOW - 60, 2]]}}
