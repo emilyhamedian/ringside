@@ -94,8 +94,9 @@ CACHE_FILE = CACHE_DIR / "usage.json"
 HISTORY_FILE = CACHE_DIR / "usage-history.json"
 LOCK_FILE = CACHE_DIR / "usage.lock"
 CACHE_TTL = 5 * 60
-# How long a run waits for another to finish before giving up.
-LOCK_WAIT = 60
+# How long a run waits for another to finish before giving up; one run
+# takes at most about 50 s (Codex, then a token refresh and a poll).
+LOCK_WAIT = 90
 # The longest a refusal holds a provider back, whatever Retry-After says.
 HOLD_MAX = 24 * 3600
 # A week of polls five minutes apart is 2016 points; flat stretches collapse,
@@ -367,20 +368,18 @@ def seconds(value):
 
 def check_writable(path):
     """Fail before a refresh token is spent if the renewed pair couldn't be
-    saved: the folder and file must be writable, the file must not be
-    mounted on its own (it couldn't be replaced), and the folder must take a
-    file of about the same size."""
+    saved: the folder and file must be writable, and the folder must take a
+    file of about the same size. Random bytes, since zeros take no room on a
+    compressing file system."""
     folder = path.parent
     reason = None
     if not os.access(folder, os.W_OK | os.X_OK) or not os.access(path, os.W_OK):
         reason = "the credentials file or its folder is not writable"
-    elif os.stat(path).st_dev != os.stat(folder).st_dev:
-        reason = "the credentials file is mounted on its own and can't be replaced"
     else:
         try:
             fd, probe = tempfile.mkstemp(dir=folder, prefix=".credentials.", suffix=".probe")
             try:
-                os.write(fd, b"\0" * (os.stat(path).st_size + 4096))
+                os.write(fd, os.urandom(os.stat(path).st_size + 4096))
                 os.fsync(fd)
             finally:
                 os.close(fd)
@@ -408,11 +407,16 @@ def refresh_claude(oauth):
          "client_id": oauth.get("clientId") or CLAUDE_CLIENT_ID,
          "scope": " ".join(s for s in (oauth.get("scopes") or []) if isinstance(s, str))},
     )
-    if not isinstance(reply, dict) or not usable(reply.get("access_token")):
-        raise RuntimeError("the token refresh returned no usable access token")
+    if not isinstance(reply, dict):
+        reply = {}
+    refresh = reply["refresh_token"] if usable(reply.get("refresh_token")) else oauth["refreshToken"]
+    if not usable(reply.get("access_token")):
+        # The old refresh token may be spent, so keep the new one; the stale
+        # access token stays, expired, and the next poll renews again.
+        return {"refreshToken": refresh, "expiresAt": 0}
     now_ms = int(time.time() * 1000)
     fresh = {"accessToken": reply["access_token"],
-             "refreshToken": reply["refresh_token"] if usable(reply.get("refresh_token")) else oauth["refreshToken"],
+             "refreshToken": refresh,
              "expiresAt": now_ms + int((seconds(reply.get("expires_in")) or 0) * 1000)}
     refresh_left = seconds(reply.get("refresh_token_expires_in"))
     if refresh_left:
@@ -428,9 +432,12 @@ def store_claude(path, spent, fresh):
     Refresh tokens are single use, so whoever renewed last owns the valid
     pair. The file is re-read and only replaced while it still holds the
     token this run spent, and the bytes are compared again just before the
-    replace; other keys in the file and in the record are kept. A reader
-    that catches another writer mid-way waits and tries again. The folder is
-    synced after the replace, so a crash can't bring the spent token back.
+    write; other keys in the file and in the record are kept. A reader that
+    catches another writer mid-way waits and tries again. The new file
+    replaces the old in one step, and the folder is synced after, so a crash
+    can't bring the spent token back. A file that can't be replaced (bind
+    mounted, or in a sticky folder) is rewritten in place instead, and if
+    that fails too the new file is left beside it rather than lost.
     """
     for attempt in range(5):
         if attempt:
@@ -444,26 +451,46 @@ def store_claude(path, spent, fresh):
         if not isinstance(stored, dict) or stored.get("refreshToken") != spent:
             return False
         current["claudeAiOauth"] = {**stored, **fresh}
+        data = json.dumps(current).encode()
         fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".credentials.", suffix=".tmp")
+        kept = False
         try:
-            with os.fdopen(fd, "w", encoding="utf-8") as fh:
-                os.fchmod(fh.fileno(), 0o600)
-                json.dump(current, fh)
-                fh.flush()
-                os.fsync(fh.fileno())
+            try:
+                os.fchmod(fd, 0o600)
+                os.write(fd, data)
+                os.fsync(fd)
+            finally:
+                os.close(fd)
             if path.read_bytes() != raw:
                 continue
-            os.replace(tmp, path)
-            folder = os.open(path.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
             try:
-                os.fsync(folder)
-            finally:
-                os.close(folder)
-            return True
+                os.replace(tmp, path)
+                folder = os.open(path.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+                try:
+                    os.fsync(folder)
+                finally:
+                    os.close(folder)
+                return True
+            except OSError:
+                pass
+            try:
+                with open(path, "r+b") as fh:
+                    if fh.read() != raw:
+                        continue
+                    fh.seek(0)
+                    fh.write(data)
+                    fh.truncate()
+                    fh.flush()
+                    os.fsync(fh.fileno())
+                return True
+            except OSError as err:
+                kept = True
+                raise RuntimeError(f"the renewed login couldn't be saved ({err.strerror}); "
+                                   f"it is in {os.path.basename(tmp)} beside the credentials file") from None
         except OSError as err:
             raise RuntimeError(f"the renewed login couldn't be saved ({err.strerror})") from None
         finally:
-            if os.path.exists(tmp):
+            if not kept and os.path.exists(tmp):
                 os.unlink(tmp)
     raise RuntimeError("Claude Code's credentials kept changing; the renewed login wasn't saved")
 
@@ -496,6 +523,8 @@ def claude_access_token():
             return latest["accessToken"]
         raise
     store_claude(path, current["refreshToken"], fresh)
+    if "accessToken" not in fresh:
+        raise RuntimeError("the token refresh returned no usable access token")
     return fresh["accessToken"]
 
 
@@ -639,22 +668,30 @@ def read_cache():
     return data if isinstance(data, dict) else {}
 
 
+def well_formed(window, scoped=False):
+    return (isinstance(window, dict) and type(window.get("percent")) is int
+            and (window.get("resetsAt") is None or type(window.get("resetsAt")) is int)
+            and type(window.get("windowSeconds", 0)) is int
+            and (not scoped or isinstance(window.get("id"), str)))
+
+
 def fresh(entry, now):
     """A cached reading young enough to report again. Anything malformed in
     the cache reads as no reading."""
     return (isinstance(entry, dict) and entry.get("status") == "ok"
             and type(entry.get("fetchedAt")) is int and 0 <= now - entry["fetchedAt"] < CACHE_TTL
-            and isinstance(entry.get("weekly"), dict) and isinstance(entry.get("scoped", []), list)
-            and all(isinstance(w, dict) for w in entry.get("scoped", [])))
+            and well_formed(entry.get("weekly")) and isinstance(entry.get("scoped", []), list)
+            and all(well_formed(w, scoped=True) for w in entry.get("scoped", [])))
 
 
 def held(entry, now):
-    """Seconds left of a provider's hold after it refused a poll, or 0."""
+    """Seconds left of a provider's hold after it refused a poll, or 0. Never
+    more than the refusal asked for, should the clock have stepped back."""
     if not isinstance(entry, dict) or entry.get("status") != "rate_limited":
         return 0
     try:
-        return max(0, min(int(entry.get("heldUntil", 0)) - now, HOLD_MAX))
-    except (TypeError, ValueError):
+        return max(0, min(int(entry["heldUntil"]) - now, int(entry["retryAfter"]), HOLD_MAX))
+    except (KeyError, TypeError, ValueError):
         return 0
 
 
@@ -690,8 +727,8 @@ def collect(fetchers, now=None):
                 report["fetchedAt"] = now
                 cache[name] = report
             elif report["status"] == "rate_limited":
-                cache[name] = {"status": "rate_limited",
-                               "heldUntil": now + min(report["retryAfter"], HOLD_MAX)}
+                wait = min(report["retryAfter"], HOLD_MAX)
+                cache[name] = {"status": "rate_limited", "retryAfter": wait, "heldUntil": now + wait}
             else:
                 cache.pop(name, None)
             providers[name] = polled[name] = report
@@ -785,6 +822,18 @@ def record_history(history, polled, now):
                 "scoped": {window["id"]: extend_series(old["scoped"].get(window["id"], []), window, now)
                            for window in entry["scoped"]}}
     return updated
+
+
+def waiting(ids, message):
+    """What a run that couldn't get the lock reports: fresh cached readings,
+    read without the lock since the cache is only ever replaced whole, and
+    the message for the rest."""
+    now = int(time.time())
+    cache = read_cache()
+    providers = {name: cache[name] if fresh(cache.get(name), now) else {"status": "error", "message": message}
+                 for name in ids}
+    attach_history(providers, read_history(), now)
+    return providers
 
 
 def attach_history(providers, history, now):
@@ -898,7 +947,7 @@ def main(argv=None):
         try:
             providers = collect({name: fetchers[name] for name in ids})
         except Busy as err:
-            providers = {name: {"status": "error", "message": str(err)} for name in ids}
+            providers = waiting(ids, str(err))
         report = {"fetchedAt": int(time.time()), "providers": providers}
     # Read on every run, cached or not, so a change of clock zone shows by the
     # next poll; the cache itself never holds it.

@@ -302,13 +302,10 @@ class CredentialWriteBack(Isolated):
     # Each of these would lose the renewed pair after the POST, so the check
     # before it must catch them and spend nothing.
     def test_a_file_that_couldnt_be_replaced_spends_no_refresh_token(self):
-        real_access, real_stat, real_write = os.access, os.stat, os.write
+        real_access = os.access
         cases = {
             "read-only or immutable file": mock.patch.object(
                 usage.os, "access", lambda p, mode: False if Path(p) == self.path.resolve() else real_access(p, mode)),
-            "file mounted on its own": mock.patch.object(
-                usage.os, "stat", lambda p, *a, **k: (os.stat_result((*real_stat(p)[:2], 999, *real_stat(p)[3:]))
-                                                      if Path(p) == self.path.resolve() else real_stat(p, *a, **k))),
             "full disk": mock.patch.object(
                 usage.os, "write", lambda fd, data: (_ for _ in ()).throw(OSError(28, "No space left on device"))),
         }
@@ -318,6 +315,40 @@ class CredentialWriteBack(Isolated):
             self.http.assert_not_called()
         self.assertEqual(json.loads(self.path.read_text())["claudeAiOauth"]["refreshToken"], "r1")
         self.assertEqual(os.listdir(self.folder), [".credentials.json"])
+
+    # A bind-mounted file, or one in a sticky folder, can't be replaced but
+    # can be rewritten.
+    def test_a_file_that_cant_be_replaced_is_rewritten_in_place(self):
+        with mock.patch.object(usage.os, "replace", side_effect=OSError(16, "Device or resource busy")):
+            self.assertEqual(usage.claude_access_token(), "new")
+        stored = json.loads(self.path.read_text())
+        self.assertEqual(stored["claudeAiOauth"]["refreshToken"], "r2")
+        self.assertEqual(stored["mcpOAuth"], {"keep": "me"})
+        self.assertEqual(os.listdir(self.folder), [".credentials.json"])
+
+    def test_when_nothing_can_be_written_the_new_pair_is_kept_beside_it(self):
+        real_open = open
+
+        def refuse_rewrite(file, mode="r", *args, **kwargs):
+            if mode == "r+b":
+                raise PermissionError(1, "Operation not permitted")
+            return real_open(file, mode, *args, **kwargs)
+
+        with mock.patch.object(usage.os, "replace", side_effect=OSError(16, "Device or resource busy")), \
+                mock.patch("builtins.open", refuse_rewrite), \
+                self.assertRaisesRegex(RuntimeError, r"it is in \.credentials\.\w+\.tmp beside"):
+            usage.claude_access_token()
+        kept = [name for name in os.listdir(self.folder) if name.endswith(".tmp")]
+        self.assertEqual(len(kept), 1)
+        self.assertEqual(json.loads((self.folder / kept[0]).read_text())["claudeAiOauth"]["refreshToken"], "r2")
+        self.assertEqual(stat.S_IMODE((self.folder / kept[0]).stat().st_mode), 0o600)
+
+    def test_a_reply_without_a_usable_access_token_keeps_its_refresh_token(self):
+        self.http.return_value = {"access_token": "A2 x", "refresh_token": "r2", "expires_in": 3600}
+        with self.assertRaisesRegex(RuntimeError, "no usable access token"):
+            usage.claude_access_token()
+        record = json.loads(self.path.read_text())["claudeAiOauth"]
+        self.assertEqual((record["accessToken"], record["refreshToken"], record["expiresAt"]), ("old", "r2", 0))
 
     def test_after_a_failed_refresh_a_login_renewed_meanwhile_is_used(self):
         def renewed_elsewhere(*args):
@@ -549,6 +580,10 @@ class ReadingCache(Isolated):
         self.assertEqual(self.collect(1600, codex=again)["codex"]["status"], "ok")
         again.assert_called_once()
 
+    def test_a_hold_is_never_longer_than_asked_after_a_clock_step(self):
+        self.collect(1000, codex=mock.Mock(side_effect=usage.RateLimited(60)))
+        self.assertEqual(self.collect(1000 - 7200, codex=mock.Mock())["codex"]["retryAfter"], 60)
+
     def test_a_hold_never_lasts_more_than_a_day(self):
         self.collect(1000, codex=mock.Mock(side_effect=usage.RateLimited(10 ** 9)))
         self.assertEqual(self.collect(1000, codex=mock.Mock())["codex"]["retryAfter"], usage.HOLD_MAX)
@@ -601,9 +636,25 @@ class ReadingCache(Isolated):
                                                          "message": "another usage check is still running"}})
         fetch.assert_not_called()
 
+    # A run that can't get the lock still reports what the cache holds.
+    def test_a_busy_run_reports_fresh_readings_from_the_cache(self):
+        self.write_cache({"codex": dict(reading(4, int(time.time()) + 3600), status="ok", fetchedAt=int(time.time()))})
+        fd = os.open(usage.LOCK_FILE, os.O_RDWR | os.O_CREAT, 0o600)
+        self.addCleanup(os.close, fd)
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        with mock.patch.object(usage, "LOCK_WAIT", 0.3):
+            report = self.run_main("--providers", "claude,codex")
+        self.assertEqual(report["providers"]["codex"]["weekly"]["percent"], 4)
+        self.assertEqual(report["providers"]["codex"]["weekly"]["history"], [])
+        self.assertEqual(report["providers"]["claude"],
+                         {"status": "error", "message": "another usage check is still running"})
+
     def test_malformed_cache_entries_read_as_missing(self):
+        window = {"percent": 1, "resetsAt": 5, "windowSeconds": WEEK}
         for entry in ({"status": "ok", "fetchedAt": "soon", "weekly": {}}, {"status": "ok", "fetchedAt": 999},
                       {"status": "ok", "fetchedAt": 999, "weekly": {}, "scoped": [1]},
+                      {"status": "ok", "fetchedAt": 999, "weekly": dict(window, resetsAt="soon")},
+                      {"status": "ok", "fetchedAt": 999, "weekly": window, "scoped": [window]},
                       {"status": "rate_limited", "heldUntil": "later"}):
             with self.subTest(entry=entry):
                 self.write_cache({"codex": entry})
