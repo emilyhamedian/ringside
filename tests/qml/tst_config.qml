@@ -176,6 +176,25 @@ Item {
             }
         }
 
+        // What the page takes from the sensor tree.
+        function test_offeredSensors_data() {
+            return [
+                { tag: "temperature", id: "lmsensors/k10temp-pci-00c3/temp1", offered: true },
+                { tag: "interface", id: "network/wlp9s0/download", offered: true },
+                { tag: "disk", id: "disk/nvme0n1/read", offered: true },
+                { tag: "volume", id: "disk/9f4c789d-fcf0-40f6-bdd0-93f41f399609/free", offered: true },
+                { tag: "otherReading", id: "network/wlp9s0/upload", offered: false },
+                { tag: "fan", id: "lmsensors/nct6798-isa-0290/fan1", offered: false },
+                { tag: "cpu", id: "cpu/all/usage", offered: false },
+                { tag: "branch", id: "", offered: false },
+                { tag: "group", id: "network/(?!all).*/download", offered: false },
+                { tag: "nested", id: "disk/nvme0n1/extra/read", offered: false }
+            ];
+        }
+        function test_offeredSensors(data) {
+            compare(make(sensors).offered(data.id), data.offered);
+        }
+
         // Outside tests the list is what collect() last read from the tree.
         function test_sensorsFromTheTree() {
             const page = make(sensors);

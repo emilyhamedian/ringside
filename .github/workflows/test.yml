@@ -28,6 +28,11 @@ jobs:
 
       - uses: actions/checkout@v7
 
+      # The checkout belongs to the runner's user, not the container's, and
+      # reuse lint only lists tracked files through a git it trusts.
+      - name: Trust the checkout
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
       # D-Bus starts ksystemstats when the tests ask for it.
       - name: Run the check suite
         run: dbus-run-session -- sh scripts/test.sh

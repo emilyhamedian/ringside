@@ -207,7 +207,7 @@ Item {
         opacity: strip.contentOpacity
         // The dials keep their open layout and slide toward the tab while
         // scaling uniformly, so circles stay circles. The slide is a
-        // transform because Qt before 6.7.3 re-measures a layout as soon as
+        // transform because Qt 6.6 and 6.7.0 re-measure a layout as soon as
         // it moves, and its new size, passed on to the strip's, loops back
         // into the position being set.
         x: strip.vertical ? 0 : strip.endPadding - strip.dialPadding

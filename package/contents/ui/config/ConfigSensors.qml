@@ -151,6 +151,14 @@ KCM.SimpleKCM {
         fromTree = rows;
     }
 
+    // The sensor ids the pickers are built from: temperatures, and one id
+    // per network interface and per disk or volume. Branch rows have no id,
+    // and "[Group]" rows carry a regex instead of one.
+    function offered(id) {
+        return !/[\\()*]/.test(id)
+            && /^(lmsensors\/[^\/]+\/temp\d+|network\/[^\/]+\/download|disk\/[^\/]+\/(read|free))$/.test(id);
+    }
+
     Sensors.SensorTreeModel {
         id: tree
     }
@@ -162,12 +170,8 @@ KCM.SimpleKCM {
             id: flat
             model: tree
         }
-        filterRowCallback: (row, parent) => {
-            const id = String(flat.data(flat.index(row, 0, parent), Sensors.SensorTreeModel.SensorId));
-            // Branch rows have no id, and "[Group]" rows carry a regex instead of one.
-            return !/[\\()*]/.test(id)
-                && /^(lmsensors\/[^\/]+\/temp\d+|network\/[^\/]+\/download|disk\/[^\/]+\/(read|free))$/.test(id);
-        }
+        filterRowCallback: (row, parent) => page.offered(String(flat.data(flat.index(row, 0, parent),
+                                                                         Sensors.SensorTreeModel.SensorId)))
         onCountChanged: Qt.callLater(page.collect)
         onDataChanged: Qt.callLater(page.collect)
     }
