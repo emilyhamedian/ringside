@@ -209,12 +209,27 @@ Item {
     function pollPower() {
         const bdfs = readers().filter(r => r.kind === "discrete" && (r.leading || r.leader === null))
             .map(r => r.info.bdf);
-        // On a machine too busy to answer within the interval, don't pile up runs.
-        if (bdfs.length > 0 && powerStates.connectedSources.length === 0) {
-            // The start time rides along in a shell comment: it makes each run a
-            // new source, and tells the gate how old the answer is.
-            powerStates.connectSource(helper.command("pm " + bdfs.join(" ")) + " #" + clockMs);
+        if (bdfs.length > 0) {
+            // Two turns flush previously queued source notifications even
+            // when a callLater tick is already waiting.
+            Qt.callLater(monitor.deferPowerPoll, helper.command("pm " + bdfs.join(" ")));
         }
+    }
+
+    function deferPowerPoll(command) {
+        Qt.callLater(monitor.startPowerPoll, command);
+    }
+
+    function startPowerPoll(command) {
+        // Wait for removal as well as completion: reconnecting sooner can
+        // return the executable engine's cached answer without running it.
+        if (powerStates.pendingSource !== "") {
+            return;
+        }
+        powerStates.pendingSource = command;
+        powerStates.requestedAt = clockMs;
+        powerStates.freshRequest = false;
+        powerStates.connectSource(command);
     }
 
     function sample() {
@@ -410,9 +425,31 @@ Item {
     P5Support.DataSource {
         id: powerStates
         engine: "executable"
+        property string pendingSource: ""
+        property real requestedAt: -1
+        property bool freshRequest: false
+
+        onSourceAdded: source => {
+            if (source === powerStates.pendingSource) {
+                powerStates.freshRequest = true;
+            }
+        }
+        onSourceRemoved: source => {
+            if (source === powerStates.pendingSource) {
+                // The engine emits this signal before erasing the source.
+                Qt.callLater(() => {
+                    if (powerStates.pendingSource === source) {
+                        powerStates.pendingSource = "";
+                    }
+                });
+            }
+        }
         onNewData: (source, data) => {
             disconnectSource(source);
-            const readAt = Number(source.slice(source.lastIndexOf("#") + 1));
+            if (source !== powerStates.pendingSource || !powerStates.freshRequest) {
+                return;
+            }
+            const readAt = powerStates.requestedAt;
             const states = {};
             // Fields are separated by exactly one space and may be empty.
             for (const line of String(data.stdout || "").split("\n")) {

@@ -3,6 +3,7 @@
 
 import QtQuick
 import QtTest
+import org.kde.plasma.plasma5support as P5Support
 import "../../package/contents/ui"
 
 // Monitor with a stub helper (data/fake-info.sh): its bindings evaluate
@@ -70,6 +71,15 @@ TestCase {
     Component {
         id: monitorComponent
         Monitor {}
+    }
+
+    Component {
+        id: sourceHolderComponent
+        P5Support.DataSource {
+            engine: "executable"
+            property int deliveries: 0
+            onNewData: deliveries++
+        }
     }
 
     property var config: null
@@ -175,6 +185,161 @@ TestCase {
         const before = follower.gpuOuter.pmReadAt;
         wait(2500);
         compare(follower.gpuOuter.pmReadAt, before);
+    }
+
+    function powerStatesOf(m) {
+        return Array.from(m.data).find(child => child.pendingSource !== undefined);
+    }
+
+    function stopTimers(m) {
+        for (const child of m.data) {
+            if (child.running !== undefined && child.repeat !== undefined) {
+                child.running = false;
+            }
+        }
+    }
+
+    function settledPowerStates(m) {
+        stopTimers(m);
+        const power = powerStatesOf(m);
+        verify(power !== undefined, "the monitor owns a power DataSource");
+        tryVerify(() => m.gpuOuter.pmReadAt >= 0, 10000, "the initial PM reading arrives");
+        tryCompare(power, "pendingSource", "", 10000);
+        return power;
+    }
+
+    // QQmlPropertyMap retains cleared keys: checking the actual maps catches
+    // source names accumulating even after connectedSources becomes empty.
+    function test_repeatedPowerPollsKeepTheDataSourceMapsBounded() {
+        const power = settledPowerStates(monitor);
+        const dataKeys = Object.keys(power.data).sort();
+        const modelKeys = Object.keys(power.models).sort();
+        verify(dataKeys.some(key => key.indexOf(" pm ") >= 0), "a PM source reached the data map");
+        verify(modelKeys.some(key => key.indexOf(" pm ") >= 0), "a PM source reached the models map");
+        for (let i = 1; i <= 64; ++i) {
+            const started = i * 2000;
+            monitor.clockMs = started;
+            monitor.pollPower();
+            tryCompare(monitor.gpuOuter, "pmReadAt", started, 10000);
+            tryCompare(power, "pendingSource", "", 10000);
+            compare(power.connectedSources.length, 0);
+            compare(Object.keys(power.data).sort(), dataKeys, "data keys after poll " + i);
+            compare(Object.keys(power.models).sort(), modelKeys, "model keys after poll " + i);
+        }
+    }
+
+    function test_aSlowPowerPollKeepsItsStartTimeAndSkipsOverlaps() {
+        monitor.destroy();
+        wait(0);
+        const slow = makeMonitor({ helperPath: dataPath("fake-info-slow-pm.sh") });
+        tryVerify(() => slow.hardware.cpu !== undefined, 10000);
+        const power = settledPowerStates(slow);
+        const before = slow.gpuOuter.pmReadAt;
+        slow.clockMs = 5000;
+        slow.pollPower();
+        tryVerify(() => power.pendingSource !== "", 1000);
+        const source = power.pendingSource;
+        verify(source.length > 0);
+        compare(power.requestedAt, 5000);
+        wait(50);
+        compare(slow.gpuOuter.pmReadAt, before, "the delayed helper has not answered");
+        slow.clockMs = 9000;
+        slow.pollPower();
+        compare(power.pendingSource, source);
+        compare(power.requestedAt, 5000);
+        tryCompare(slow.gpuOuter, "pmReadAt", 5000, 10000);
+        tryCompare(power, "pendingSource", "", 10000);
+        compare(slow.clockMs, 9000);
+        slow.clockMs = 10000;
+        slow.pollPower();
+        tryCompare(slow.gpuOuter, "pmReadAt", 10000, 10000);
+        tryCompare(power, "pendingSource", "", 10000);
+    }
+
+    // Holding the first leader's source keeps its cached result in the real
+    // executable engine while a new leader connects to the same command.
+    function test_aCachedPreviousLeaderCannotStampAFreshPowerReading() {
+        monitor.destroy();
+        wait(0);
+        const path = dataPath("fake-info-slow-pm.sh");
+        const first = makeMonitor({ helperPath: path });
+        tryVerify(() => first.hardware.cpu !== undefined, 10000);
+        const firstPower = settledPowerStates(first);
+        const holder = createTemporaryObject(sourceHolderComponent, testCase);
+        first.clockMs = 6000;
+        first.pollPower();
+        tryVerify(() => firstPower.pendingSource !== "", 1000);
+        const source = firstPower.pendingSource;
+        verify(source.length > 0);
+        holder.connectSource(source);
+        tryCompare(first.gpuOuter, "pmReadAt", 6000, 10000);
+        tryVerify(() => holder.deliveries > 0, 10000);
+        compare(firstPower.connectedSources.length, 0);
+        compare(firstPower.pendingSource, source, "the holder has kept the source alive");
+        first.destroy();
+        wait(0);
+
+        const next = makeMonitor({ helperPath: path });
+        tryVerify(() => next.hardware.cpu !== undefined, 10000);
+        stopTimers(next);
+        const power = powerStatesOf(next);
+        verify(power !== undefined);
+        tryCompare(power, "pendingSource", source, 10000);
+        compare(next.gpuOuter.pmReadAt, -1, "the old leader's cached data is not a fresh poll");
+        compare(power.connectedSources.length, 0);
+        compare(power.freshRequest, false);
+        const cachedRequestAt = power.requestedAt;
+        next.clockMs = 10000;
+        next.pollPower();
+        compare(power.requestedAt, cachedRequestAt);
+        compare(power.pendingSource, source);
+        compare(next.gpuOuter.pmReadAt, -1);
+
+        holder.disconnectSource(source);
+        tryCompare(power, "pendingSource", "", 10000);
+        next.clockMs = 12000;
+        next.pollPower();
+        tryCompare(next.gpuOuter, "pmReadAt", 12000, 10000);
+        tryCompare(power, "pendingSource", "", 10000);
+        compare(next.gpuOuter.pmStatus, "suspended");
+    }
+
+    // sourceAdded is queued. An older process started in this event-loop
+    // turn must not make a later connection claim its result as fresh.
+    function test_anUnfinishedExternalPowerRequestCannotBeStampedFresh() {
+        monitor.destroy();
+        wait(0);
+        const slow = makeMonitor({ helperPath: dataPath("fake-info-slow-pm.sh") });
+        tryVerify(() => slow.hardware.cpu !== undefined, 10000);
+        const power = settledPowerStates(slow);
+        const source = Object.keys(power.data).find(key => key.indexOf(" pm ") >= 0);
+        verify(source !== undefined);
+        const before = slow.gpuOuter.pmReadAt;
+        const holder = createTemporaryObject(sourceHolderComponent, testCase);
+        // Qt's shared callLater tick is already posted before sourceAdded.
+        Qt.callLater(() => {});
+        holder.connectSource(source);
+        slow.clockMs = 9000;
+        slow.pollPower();
+        tryCompare(power, "pendingSource", source, 1000);
+        compare(power.requestedAt, 9000);
+        compare(power.freshRequest, false);
+        compare(holder.deliveries, 0, "the older helper is still running");
+        tryVerify(() => holder.deliveries > 0, 10000);
+        compare(slow.gpuOuter.pmReadAt, before);
+        compare(power.connectedSources.length, 0);
+        slow.clockMs = 14000;
+        slow.pollPower();
+        wait(0);
+        compare(power.requestedAt, 9000);
+        compare(power.pendingSource, source);
+        compare(slow.gpuOuter.pmReadAt, before);
+        holder.disconnectSource(source);
+        tryCompare(power, "pendingSource", "", 10000);
+        slow.clockMs = 16000;
+        slow.pollPower();
+        tryCompare(slow.gpuOuter, "pmReadAt", 16000, 10000);
+        tryCompare(power, "pendingSource", "", 10000);
     }
 
     // Two widgets in one plasmashell: one reader per GPU subscribes, and the

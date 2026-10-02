@@ -6,6 +6,12 @@ follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- 2026-10-01: GPU power polling reuses command names instead of accumulating
+  QML properties that make Plasma progressively slower during long sessions.
+  Cached replies are discarded and slow replies retain their request time.
+
 ## [0.2.0] - 2026-09-28
 
 ### Added
