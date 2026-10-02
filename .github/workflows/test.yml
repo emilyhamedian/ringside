@@ -58,13 +58,14 @@ jobs:
     container: fedora:40
     steps:
       # Fedora 40 is end of life and its release repository lives in the
-      # archive. That repository alone is enabled, so everything installed
-      # here is at its release version.
+      # archive on Fedora's download server. That repository alone is enabled,
+      # so everything installed here is at its release version. Keep DNF's
+      # diagnostics visible if downloading the archive fails.
       - name: Install Qt 6.6, the Plasma 6.0 QML modules and the test tools
         run: >-
-          dnf -y -q install --setopt=install_weak_deps=False --repo=fedora
+          dnf -y install --setopt=install_weak_deps=False --repo=fedora
           --setopt=fedora.metalink=
-          --setopt=fedora.baseurl=https://archives.fedoraproject.org/pub/archive/fedora/linux/releases/40/Everything/x86_64/os/
+          --setopt=fedora.baseurl=https://dl.fedoraproject.org/pub/archive/fedora/linux/releases/40/Everything/x86_64/os/
           diffutils qt6-qtdeclarative-devel libplasma kf6-kirigami kf6-ksvg
           kf6-kcmutils kf6-kitemmodels kf6-qqc2-desktop-style libksysguard
           ksystemstats plasma5support plasma-workspace plasma-breeze

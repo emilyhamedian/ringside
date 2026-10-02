@@ -24,6 +24,10 @@ Work on a branch. Nothing lands on `main` without the owner's go-ahead, and
 it lands as one squashed commit; `main` is what people install from and what
 releases are tagged on.
 
+When bumping the widget version in `package/metadata.json`, update `VERSION`
+in `package/contents/code/usage.py` too. The helper sends it in its HTTP
+User-Agent, and the Python tests check that the versions agree.
+
 ## Style
 
 - Numbers go through `code/format.js` (locale digits, binary units);

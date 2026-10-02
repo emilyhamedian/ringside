@@ -8,6 +8,9 @@ follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- 2026-10-02: The Plasma 6.0 CI job uses Fedora's download server for its
+  archived packages and retains download diagnostics. The usage helper's
+  reported version matches the widget's 0.2.1 version.
 - 2026-10-01: GPU power polling reuses command names instead of accumulating
   QML properties that make Plasma progressively slower during long sessions.
   Cached replies are discarded and slow replies retain their request time.
