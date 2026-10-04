@@ -11,7 +11,8 @@ import "code/style.js" as Style
 // Two transfer rates in the panel: down and up for the network, read and
 // write for the disk. Stacked on the rows a ring's two readings use, so they
 // line up across the panel, or side by side on a thin panel. The columns
-// keep room for their widest text, so the panel doesn't shift as rates change.
+// keep the room for their widest text, and only that, so the panel doesn't
+// shift as rates change, even where a digit's ink overhangs its advance.
 GridLayout {
     id: rates
 
@@ -145,7 +146,7 @@ GridLayout {
             Layout.row: rates.singleRow ? 0 : index
             Layout.column: rates.singleRow ? index * 3 + 1 : 1
             Layout.alignment: Qt.AlignRight
-            Layout.minimumWidth: rates.valueRoom
+            Layout.preferredWidth: rates.valueRoom
             Layout.preferredHeight: rates.rowHeight
             horizontalAlignment: Text.AlignRight
             text: rates.vertical ? rates.verticalText(rates.lines[index]) : rates.lines[index].value
@@ -163,7 +164,7 @@ GridLayout {
 
             Layout.row: rates.singleRow ? 0 : index
             Layout.column: rates.singleRow ? index * 3 + 2 : 2
-            Layout.minimumWidth: rates.unitRoom
+            Layout.preferredWidth: rates.unitRoom
             Layout.preferredHeight: rates.rowHeight
             text: rates.lines[index].unit
             color: Style.dim(Kirigami.Theme.textColor)

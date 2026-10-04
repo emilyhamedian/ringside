@@ -30,9 +30,14 @@ GridLayout {
 
     // Rings fill the panel inside the cell's hover wash (PanelCell.inset
     // across a horizontal panel, a margin either side across a vertical one),
-    // up to a size that still sits well beside two lines of text.
-    readonly property real ring: Math.max(16, Math.min(Math.round(Kirigami.Units.gridUnit * 2.5),
-        thickness - 2 * (vertical ? Kirigami.Units.smallSpacing : Math.round(Kirigami.Units.smallSpacing / 2))))
+    // up to a size that still sits well beside two lines of text. A ring held
+    // at that size, or at the smallest, keeps the panel's parity, so its
+    // readings centre on the same whole pixel as the rates beside them.
+    readonly property real ring: {
+        const inset = vertical ? Kirigami.Units.smallSpacing : Math.round(Kirigami.Units.smallSpacing / 2);
+        const size = Math.max(16, Math.min(Math.round(Kirigami.Units.gridUnit * 2.5), thickness - 2 * inset));
+        return Number.isInteger(size) && Number.isInteger(thickness) && (thickness - size) % 2 !== 0 ? size - 1 : size;
+    }
     // Two lines need room for both; otherwise they share one.
     readonly property bool twoLines: thickness >= Kirigami.Units.gridUnit * 2
 

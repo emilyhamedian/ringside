@@ -620,10 +620,11 @@ Item {
                        dial.item + " face " + across + "px across a " + minimum + "px strip");
             }
             if (data.vertical) {
-                // A 52px ring with 8px either side, or the widest face if a
-                // readout is wider than that.
+                // The widest face, a 52px ring or a readout, with 8px either
+                // side.
                 const widest = Math.max(...shownDials().map(dial => face(dial).width));
-                compare(minimum, Math.max(68, Math.ceil(widest)));
+                compare(minimum, Math.ceil(widest) + 16);
+                verify(minimum >= 68, "a ring keeps 8px either side, got " + minimum);
             } else {
                 verify(minimum >= 72, "the ring, its gap and two lines, got " + minimum);
             }
@@ -1700,6 +1701,22 @@ Item {
         function test_levelColours_data() {
             return [{ tag: "74", percent: 74, tone: "text" }, { tag: "75", percent: 75, tone: "neutral" },
                     { tag: "89", percent: 89, tone: "neutral" }, { tag: "90", percent: 90, tone: "negative" }];
+        }
+
+        // A dial's readings are set as the inline strip's are: the theme's
+        // sans with figures of one width, the ring's own reading heavier.
+        function test_readoutFace() {
+            makeStrip({ items: ["cpu", "claude"], enabledItems: ["cpu", "claude"] });
+            for (const item of ["cpu", "claude"]) {
+                const [first, , second] = readoutParts(dialFor(item));
+                for (const line of [first, second]) {
+                    compare(line.font.family, Kirigami.Theme.defaultFont.family, item);
+                    verify(line.font.family !== (Kirigami.Theme.fixedWidthFont?.family ?? "monospace"), item + " is not monospace"); // qmllint disable redundant-optional-chaining
+                    compare(line.font.features.tnum, 1, item + " has figures of one width");
+                }
+                compare(first.font.weight, Font.DemiBold, item);
+                compare(second.font.weight, Font.Normal, item);
+            }
         }
 
         function test_levelColours(data) {
