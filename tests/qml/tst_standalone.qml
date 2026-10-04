@@ -961,6 +961,28 @@ Item {
             verify(b.y + button.height <= strip.height + 0.5);
         }
 
+        // Moving a panel between a side edge and the top or bottom refits the
+        // dials: across the strip they span its thickness, along it they take
+        // their own length. The strip is wider than its dials, as a panel
+        // usually is, which is what made the old binding loop on Qt 6.6.
+        function test_orientationChangeRefitsTheDials() {
+            makeStrip({ items: ["cpu", "claude"], enabledItems: ["cpu", "claude"] });
+            for (const vertical of [true, false, true]) {
+                strip.vertical = vertical;
+                strip.width = vertical ? strip.minimumThickness + 30 : 600;
+                strip.height = vertical ? 600 : strip.minimumThickness + 30;
+                waitForRendering(strip);
+                const g = grid();
+                if (vertical) {
+                    compare(g.width, strip.width, "spans a vertical strip");
+                    compare(g.height, g.implicitHeight, "as long as its dials");
+                } else {
+                    compare(g.height, strip.height, "spans a horizontal strip");
+                    compare(g.width, g.implicitWidth, "as long as its dials");
+                }
+            }
+        }
+
         function test_hoverRevealsWithoutResizing() {
             createPanelScene(PlasmaCore.Types.RightEdge);
             const width = scene.panel.thickness;

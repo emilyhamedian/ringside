@@ -204,23 +204,6 @@ Item {
     readonly property real compactCenterY: vertical ? height / 2
         : (edgeAtEnd ? height - compactThickness / 2 : compactThickness / 2)
 
-    // Across the strip the dials span its thickness; along it they take
-    // their own length. That length is left to follow the grid's implicit
-    // size rather than bound to it: when the orientation changes, a binding
-    // writes the old implicit size, and Qt 6.6 re-measures the grid during
-    // the write and reports a binding loop.
-    function fitDials() {
-        if (vertical) {
-            dialGrid.width = Qt.binding(() => strip.width);
-            dialGrid.height = undefined;
-        } else {
-            dialGrid.width = undefined;
-            dialGrid.height = Qt.binding(() => strip.height);
-        }
-    }
-    onVerticalChanged: fitDials()
-    Component.onCompleted: fitDials()
-
     GridLayout {
         id: dialGrid
         objectName: "dials"
@@ -246,6 +229,13 @@ Item {
                 y: (strip.compactCenterY - dialGrid.height / 2 - dialGrid.y) * (1 - strip.expansionProgress)
             }
         ]
+        // Across the strip the dials span its thickness; along it they take
+        // their own length. Undefined leaves that length to follow the
+        // grid's implicit size: binding it to that size writes the old one
+        // when the orientation changes, and Qt 6.6 re-measures the grid
+        // during the write and reports a binding loop.
+        width: strip.vertical ? strip.width : undefined
+        height: strip.vertical ? undefined : strip.height
         columns: strip.vertical ? 1 : -1
         rowSpacing: strip.gap - 2 * strip.dialPadding
         columnSpacing: rowSpacing
