@@ -52,15 +52,17 @@ Item {
         color: Kirigami.Theme.textColor
     }
 
-    // Placed rather than anchored: a centred anchor on Qt 6.6 can keep the
-    // old position when the width changes.
+    // Spans the ring, padded in to the chord, and centred by its own
+    // alignment: positioning a narrower label left it a pixel off centre on
+    // Qt 6.6.
     Text {
         id: label
-        x: Math.round((name.width - width) / 2)
-        y: Math.round((name.height - height) / 2)
+        anchors.fill: parent
+        leftPadding: (name.width - name.chord) / 2
+        rightPadding: leftPadding
         visible: !name.usage
-        width: name.chord
         horizontalAlignment: Text.AlignHCenter
+        verticalAlignment: Text.AlignVCenter
         text: name.item === "cpu" ? i18nc("@label short for processor", "CPU")
             : name.item === "gpu" ? i18nc("@label short for graphics card", "GPU")
             : i18nc("@label short for memory", "MEM")
