@@ -422,6 +422,14 @@ Item {
                 compare(mark(name).visible, data.shown);
                 verify(!label(name).visible);
             }
+            if (data.shown && data.text) {
+                // The label spans the ring and is padded in evenly to the
+                // round middle's chord, so its text centres on the ring.
+                compare(label(name).width, g.width);
+                compare(label(name).leftPadding, label(name).rightPadding);
+                verify(label(name).paintedWidth <= label(name).width - 2 * label(name).leftPadding + 0.5,
+                       "drawn within the chord");
+            }
             if (data.shown) {
                 const shownItem = data.text ? label(name) : mark(name);
                 const middle = shownItem.mapToItem(g, shownItem.width / 2, shownItem.height / 2);
