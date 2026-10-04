@@ -26,7 +26,8 @@ follows [Semantic Versioning](https://semver.org/).
 - Standalone dials show the same two lines under the ring. Claude and Codex
   show the time to the reset there instead of the per-model limit, which
   stays on the inner ring. A horizontal Standalone panel grows to fit the
-  second line.
+  second line, and a vertical one keeps room either side of its widest
+  dial, so readings in a larger font aren't clipped at its edges.
 
 ### Removed
 
@@ -46,6 +47,8 @@ follows [Semantic Versioning](https://semver.org/).
   staying white on a light panel.
 - Removing a widget no longer can log a script error from its GPU power
   polling.
+- Moving a Standalone panel between a side edge and the top or bottom no
+  longer logs a binding loop on Plasma 6.0.
 
 ## [0.2.0] - 2026-09-28
 
