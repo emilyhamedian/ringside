@@ -5,15 +5,15 @@
 set -u
 
 # Runs the tests that can run on the supported floor, Plasma 6.0 with Qt 6.6
-# and KF 6.0, where scripts/test.sh can't: the QtTest suites under
-# tests/qml/, tst_format in German and Egyptian Arabic, the hardware helper's
-# shell tests and the usage helper's Python tests. Qt 6.6 reports binding
-# loops that later Qt doesn't, and the suites fail on them. libplasma ships
-# an importable org.kde.plasma.plasmoid module only from 6.5 on, so a failing
-# test that was told that module is not installed counts as skipped; any
-# other failure fails the run. CI runs this on Fedora 40 as released.
-# qmltestrunner is looked for in /usr/lib/qt6/bin, /usr/lib64/qt6/bin and
-# then PATH; set QMLTESTRUNNER to use another.
+# and KF 6.0, where scripts/test.sh can't: the QtTest suites under tests/qml/,
+# tst_format and tst_cells in German and Egyptian Arabic, the hardware
+# helper's shell tests and the usage helper's Python tests. Qt 6.6 reports
+# binding loops that later Qt doesn't, and the suites fail on them. libplasma
+# ships an importable org.kde.plasma.plasmoid module only from 6.5 on, so a
+# failing test that was told that module is not installed counts as skipped;
+# any other failure fails the run. CI runs this on Fedora 40 as released.
+# qmltestrunner is looked for in /usr/lib/qt6/bin, /usr/lib64/qt6/bin and then
+# PATH; set QMLTESTRUNNER to use another.
 #
 # Usage: sh scripts/test-floor.sh
 
@@ -62,9 +62,11 @@ for f in tests/qml/tst_*.qml; do
 done
 # See scripts/test.sh.
 for lang in de_DE ar_EG; do
-    echo "-- tests/qml/tst_format.qml ($lang) --"
-    LANG=$lang.UTF-8 LC_ALL=$lang.UTF-8 "$QMLTESTRUNNER" -platform offscreen \
-        -input tests/qml/tst_format.qml || failed=1
+    for f in tests/qml/tst_format.qml tests/qml/tst_cells.qml; do
+        echo "-- $f ($lang) --"
+        LANG=$lang.UTF-8 LC_ALL=$lang.UTF-8 "$QMLTESTRUNNER" -platform offscreen \
+            -input "$f" || failed=1
+    done
 done
 
 echo

@@ -7,6 +7,7 @@ import QtQuick.Layouts
 import org.kde.plasma.core as PlasmaCore
 import org.kde.kirigami as Kirigami
 import "code/format.js" as Format
+import "code/items.js" as Items
 
 // The Standalone layout without the applet around it: a single row or column
 // of large dials that folds into a small tab. Standalone.qml feeds it the
@@ -96,49 +97,50 @@ Item {
     // Everything below is measured at the system font size, independently of
     // the panel's geometry: deriving it from the scaled dials would loop
     // between the panel's minimum thickness and the dials' scale.
-    FontMetrics {
-        id: baseMetrics
-        font.pointSize: Kirigami.Theme.smallFont.pointSize
-        font.weight: Font.DemiBold
+    ReadoutFont {
+        id: base
+        pointSize: Kirigami.Theme.smallFont.pointSize
     }
-    TextMetrics {
-        id: capMetrics
-        font: baseMetrics.font
-        text: "H"
+    Words {
+        id: words
+        monitor: strip.monitor
     }
-    // Each readout part's width, per item, for the widest text it can show:
-    // a percentage, the separator with room either side, and a temperature,
-    // memory in use or an inner limit; for the rates a marker column and a
-    // value column. Reading the line height ties this to the theme font once
-    // it has loaded, as FontMetrics' methods alone would not.
+    // Each readout line's width, per item, for the widest text it can show:
+    // the ring's own reading, then a temperature, memory in use or the time to
+    // a reset; for the rates a marker column and a value column. room() reads
+    // the line height, which ties this to the theme font once it has loaded,
+    // as FontMetrics' methods alone would not.
     readonly property var partWidths: {
-        const lineHeight = baseMetrics.height;
-        const width = text => Math.ceil(baseMetrics.advanceWidth(text));
-        const percent = width(i18nc("@info:status a percentage", "%1%", Format.percent(100)));
-        const separator = width("·") + 6;
-        const temperature = width(Format.whole(100) + "°");
-        const amount = width(Format.whole(1000) + "M");
-        const letters = Math.max(width(i18nc("@label short for disk reads", "R")),
-                                 width(i18nc("@label short for disk writes", "W")));
+        const lines = item => {
+            const widest = words.widestReadout(item);
+            return [base.room(base.strong, widest[0]), base.room(base.plain, widest[1])];
+        };
+        const amount = base.room(base.plain, [Format.whole(1000) + "M"]);
         return {
-            cpu: [percent, separator, temperature],
-            gpu: [Math.max(percent, width(i18nc("@info:status the GPU is powered down", "off"))),
-                  separator, temperature],
-            memory: [percent, separator, amount],
-            claude: [percent, separator, percent],
-            codex: [percent, separator, percent],
-            network: [Math.round(lineHeight * 0.62) * 0.8 + 4, amount],
-            disk: [letters + 4, amount]
+            cpu: lines("cpu"),
+            gpu: lines("gpu"),
+            memory: lines("memory"),
+            claude: lines("claude"),
+            codex: lines("codex"),
+            network: [Math.round(base.plain.height * 0.62) * 0.8 + 4, amount],
+            disk: [base.room(base.plain, [i18nc("@label short for disk reads", "R"),
+                                          i18nc("@label short for disk writes", "W")]) + 4, amount]
         };
     }
     // The widest dial among the items switched on, so neither readings nor an
-    // item coming and going rescale the others.
+    // item coming and going rescale the others. A ring's lines stack; a
+    // rate's columns sit side by side.
     readonly property real baseDialWidth: Math.max(52, ...Array.from(items).concat(Array.from(enabledItems))
         .filter(item => partWidths[item] !== undefined)
-        .map(item => partWidths[item].reduce((sum, part) => sum + part, 0)))
-    // capitalHeight needs Qt 6.9; see StandaloneDial.
-    readonly property real baseCapHeight: baseMetrics.capitalHeight ?? capMetrics.tightBoundingRect.height // qmllint disable missing-property
-    readonly property real minimumThickness: vertical ? baseDialWidth : Math.max(72, 60 + Math.ceil(baseCapHeight))
+        .map(item => Items.isRing(item) ? Math.max(...partWidths[item])
+                                        : partWidths[item][0] + partWidths[item][1]))
+    // Across a vertical panel, the ring keeps 8 px either side, the padding a
+    // dial keeps along the strip. Across a horizontal one: the ring, the gap
+    // under it, both lines down to the second one's baseline, and a pixel
+    // either side for the scaled fonts' rounding. Whole pixels, and fixed
+    // while the panel folds, so it changes thickness once each way.
+    readonly property real minimumThickness: vertical ? Math.max(68, Math.ceil(baseDialWidth))
+        : 60 + Math.ceil(base.lineHeight + base.plain.ascent - base.strong.ascent + base.capHeight) + 2
     // The content thickness with the panel fully open, so the folded tab
     // cannot rescale the dials while it is the only thing on screen.
     property real expandedThickness: contentThickness
