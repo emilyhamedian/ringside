@@ -437,8 +437,9 @@ Item {
         onSourceRemoved: source => {
             if (source === powerStates.pendingSource) {
                 // The engine emits this signal before erasing the source.
+                // The widget may be gone by the time this runs.
                 Qt.callLater(() => {
-                    if (powerStates.pendingSource === source) {
+                    if (powerStates?.pendingSource === source) {
                         powerStates.pendingSource = "";
                     }
                 });
