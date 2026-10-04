@@ -52,11 +52,14 @@ Item {
         color: Kirigami.Theme.textColor
     }
 
+    // Placed rather than anchored: a centred anchor on Qt 6.6 can keep the
+    // old position when the width changes.
     Text {
         id: label
-        anchors.centerIn: parent
+        x: Math.round((name.width - width) / 2)
+        y: Math.round((name.height - height) / 2)
         visible: !name.usage
-        width: Math.floor(name.chord)
+        width: name.chord
         horizontalAlignment: Text.AlignHCenter
         text: name.item === "cpu" ? i18nc("@label short for processor", "CPU")
             : name.item === "gpu" ? i18nc("@label short for graphics card", "GPU")

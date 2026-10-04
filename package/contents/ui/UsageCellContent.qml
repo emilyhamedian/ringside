@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import QtQuick
-import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
 
 // A Claude or Codex item in the panel: the weekly limit as a ring with the
@@ -11,7 +10,7 @@ import org.kde.kirigami as Kirigami
 // resets. The ring and its percentage turn amber or red with the weekly
 // reading, and the ring breathes from 90 % until the limit is hit. A failed
 // check dims the item and keeps its last reading.
-RowLayout {
+Item {
     id: content
 
     required property var monitor
@@ -30,7 +29,11 @@ RowLayout {
     // The readings in words, for screen readers and the tooltip.
     readonly property string accessibleDescription: words.describe(item, nowMs)
 
-    spacing: Kirigami.Units.largeSpacing
+    // As tall as the ring, which the cell centres; the readings centre on it
+    // in whole pixels, as the cell centres the rates, so their rows line up
+    // even where the two lines are taller than the ring.
+    implicitWidth: gauge.width + (readout.visible ? Kirigami.Units.largeSpacing + readout.implicitWidth : 0)
+    implicitHeight: ring
     opacity: usage.degraded(item) ? 0.55 : 1
 
     Words {
@@ -59,8 +62,9 @@ RowLayout {
 
     RingGauge {
         id: gauge
-        Layout.preferredWidth: content.ring
-        Layout.preferredHeight: content.ring
+        anchors.left: parent.left
+        width: content.ring
+        height: content.ring
         value: content.weekly ? content.weekly.percent : NaN
         inner: content.innerLimit !== null
         innerValue: content.innerLimit ? content.innerLimit.percent : NaN
@@ -78,6 +82,10 @@ RowLayout {
     }
 
     Readout {
+        id: readout
+        anchors.left: gauge.right
+        anchors.leftMargin: Kirigami.Units.largeSpacing
+        y: Math.round((content.height - height) / 2)
         visible: content.textShown
         lines: words.readout(content.item, content.nowMs)
         widest: words.widestReadout(content.item)

@@ -8,8 +8,8 @@ import "code/format.js" as Format
 // The face the panel's readings are set in, in both layouts: the theme's sans,
 // heavier for a ring's own reading, with figures of one width so a number
 // keeps its place as it changes. Text draws at half points while metrics
-// measure at any size, so the size is rounded here, and the same fonts both
-// measure and draw.
+// measure at any size, so the size is rounded down to one here, and the same
+// fonts both measure and draw.
 QtObject {
     id: face
 
@@ -17,7 +17,7 @@ QtObject {
     // and a vertical panel's rates set their own.
     readonly property real panelPointSize: Kirigami.Theme.defaultFont.pointSize * 0.9
     property real pointSize: panelPointSize
-    readonly property real drawnSize: Math.max(1, Math.round(pointSize * 2) / 2)
+    readonly property real drawnSize: Math.max(1, Math.floor(pointSize * 2 + 1e-6) / 2)
 
     readonly property FontMetrics strong: FontMetrics {
         font.family: Kirigami.Theme.defaultFont.family

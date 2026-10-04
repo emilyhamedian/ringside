@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import QtQuick
-import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
 import "code/format.js" as Format
 import "code/hardware.js" as Hardware
@@ -13,7 +12,7 @@ import "code/hardware.js" as Hardware
 // temperature from its own; with the text hidden, a hot temperature raises
 // the ring instead. A GPU that is asleep drops out, and the one still awake
 // is shown as the only ring, as on a single-GPU machine.
-RowLayout {
+Item {
     id: content
 
     required property var monitor
@@ -35,7 +34,11 @@ RowLayout {
     // The readings in words, for screen readers and the tooltip.
     readonly property string accessibleDescription: words.describe(item)
 
-    spacing: Kirigami.Units.largeSpacing
+    // As tall as the ring, which the cell centres; the readings centre on it
+    // in whole pixels, as the cell centres the rates, so their rows line up
+    // even where the two lines are taller than the ring.
+    implicitWidth: gauge.width + (readout.visible ? Kirigami.Units.largeSpacing + readout.implicitWidth : 0)
+    implicitHeight: ring
 
     Words {
         id: words
@@ -44,8 +47,9 @@ RowLayout {
 
     RingGauge {
         id: gauge
-        Layout.preferredWidth: content.ring
-        Layout.preferredHeight: content.ring
+        anchors.left: parent.left
+        width: content.ring
+        height: content.ring
         inner: content.dual
         value: content.item === "cpu" ? content.monitor.cpuUsage
              : content.item === "memory" ? content.monitor.memoryPercent : content.primary.usage
@@ -64,6 +68,10 @@ RowLayout {
     }
 
     Readout {
+        id: readout
+        anchors.left: gauge.right
+        anchors.leftMargin: Kirigami.Units.largeSpacing
+        y: Math.round((content.height - height) / 2)
         visible: content.textShown
         lines: words.readout(content.item)
         widest: words.widestReadout(content.item)

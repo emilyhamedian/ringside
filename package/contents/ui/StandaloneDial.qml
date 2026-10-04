@@ -110,7 +110,7 @@ PanelCell {
             Item {
                 objectName: "readout"
                 Layout.alignment: Qt.AlignHCenter
-                Layout.preferredWidth: readout.implicitWidth
+                Layout.preferredWidth: Math.max(...dial.parts) * dial.sizeFactor
                 Layout.preferredHeight: Math.round(readingFont.lineHeight + readingFont.plain.ascent)
                 Layout.topMargin: -Math.round(readingFont.strong.ascent - readingFont.capHeight)
 

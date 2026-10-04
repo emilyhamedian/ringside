@@ -298,8 +298,8 @@ Item {
         // Rings fill the panel inside the wash, which leaves half a small
         // spacing above and below across a horizontal panel; along a vertical
         // one a small spacing either side. They stop at two and a half grid
-        // units, and the stroke is about a thirteenth of the ring in half
-        // pixels.
+        // units, a pixel less where that would leave the panel's parity, and
+        // the stroke is about a thirteenth of the ring in half pixels.
         function test_ringFollowsThickness_data() {
             return [18, 22, 30, 36, 38, 46, 60, 100].map(t => ({ tag: "horizontal " + t, vertical: false, thickness: t }))
                 .concat([34, 38, 46, 60].map(t => ({ tag: "vertical " + t, vertical: true, thickness: t })));
@@ -312,16 +312,18 @@ Item {
                 : makePanel(data.thickness, { items: items });
             const inset = data.vertical ? Kirigami.Units.smallSpacing : Math.round(Kirigami.Units.smallSpacing / 2);
             const cap = Math.round(Kirigami.Units.gridUnit * 2.5);
-            const ring = Math.max(16, Math.min(cap, data.thickness - 2 * inset));
+            const size = Math.max(16, Math.min(cap, data.thickness - 2 * inset));
+            const ring = (data.thickness - size) % 2 !== 0 ? size - 1 : size;
             compare(strip.ring, ring);
+            compare((data.thickness - strip.ring) % 2, 0, "the ring keeps the panel's parity");
             if (!data.vertical && data.thickness === 38) {
                 compare(strip.ring, 34, "a 38 px panel");
             }
             if (data.thickness >= 60) {
-                compare(strip.ring, cap, "capped");
+                compare(strip.ring, (data.thickness - cap) % 2 !== 0 ? cap - 1 : cap, "capped");
             }
             if (data.thickness - 2 * inset < 16) {
-                compare(strip.ring, 16, "never smaller");
+                compare(strip.ring, data.thickness % 2 !== 0 ? 15 : 16, "never smaller");
             }
             for (let i = 0; i < root.ringItems.length; ++i) {
                 const gauge = gaugeAt(i);
@@ -333,8 +335,10 @@ Item {
         }
 
         // The ring sits inside the hover wash, centred on it.
+        // 37: two lines taller than the ring; 50 and 52: a ring held at its
+        // largest size.
         function test_ringFitsTheWash_data() {
-            return [22, 30, 38, 46, 60].map(t => ({ tag: String(t), thickness: t }));
+            return [22, 30, 37, 38, 46, 50, 52, 60].map(t => ({ tag: String(t), thickness: t }));
         }
 
         function test_ringFitsTheWash(data) {
@@ -385,14 +389,17 @@ Item {
 
         // A ring's lines share the rates' rows, so the panel reads as two
         // lines of text across, or one on a thin panel.
+        // Odd and even panels, two lines taller than the ring (37), and rings
+        // held at their largest size (50 to 53).
         function test_rowsAlignWithRates_data() {
-            return [{ tag: "two lines", thickness: 38 }, { tag: "thin", thickness: 30 }];
+            return [30, 31, 36, 37, 38, 39, 46, 50, 51, 52, 53]
+                .map(t => ({ tag: (t >= Kirigami.Units.gridUnit * 2 ? "two lines " : "thin ") + t, thickness: t }));
         }
 
         function test_rowsAlignWithRates(data) {
             const items = ["cpu", "gpu", "memory", "claude", "network", "disk"];
             const strip = makePanel(data.thickness, { items: items });
-            compare(strip.twoLines, data.thickness === 38);
+            compare(strip.twoLines, data.thickness >= Kirigami.Units.gridUnit * 2);
             for (const rateIndex of [4, 5]) {
                 const rows = rateRows(rateIndex);
                 if (!strip.twoLines) {

@@ -134,12 +134,14 @@ Item {
         .filter(item => partWidths[item] !== undefined)
         .map(item => Items.isRing(item) ? Math.max(...partWidths[item])
                                         : partWidths[item][0] + partWidths[item][1]))
-    // Across a vertical panel, the ring keeps 8 px either side, the padding a
-    // dial keeps along the strip. Across a horizontal one: the ring, the gap
-    // under it, both lines down to the second one's baseline, and a pixel
-    // either side for the scaled fonts' rounding. Whole pixels, and fixed
-    // while the panel folds, so it changes thickness once each way.
-    readonly property real minimumThickness: vertical ? Math.max(68, Math.ceil(baseDialWidth))
+    // Across a vertical panel, the widest dial keeps 8 px either side, the
+    // padding a dial keeps along the strip; text drawn larger can come out a
+    // little wider than its room scaled, and spills into it. Across a
+    // horizontal one: the ring, the gap under it, both lines down to the
+    // second one's baseline, and a pixel either side for the scaled fonts'
+    // rounding. Whole pixels, and fixed while the panel folds, so it changes
+    // thickness once each way.
+    readonly property real minimumThickness: vertical ? Math.ceil(baseDialWidth) + 16
         : 60 + Math.ceil(base.lineHeight + base.plain.ascent - base.strong.ascent + base.capHeight) + 2
     // The content thickness with the panel fully open, so the folded tab
     // cannot rescale the dials while it is the only thing on screen.
