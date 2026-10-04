@@ -177,8 +177,8 @@ sh scripts/pictures.sh    # renders the pictures in docs/ from sample readings
 sh scripts/package.sh     # builds ringside.plasmoid from the last commit
 ```
 
-Apart from `test-floor.sh`, these need Plasma 6.5 or later, which ships the
-QML modules they load. See [CONTRIBUTING.md](CONTRIBUTING.md).
+The full tests, gallery and pictures need Plasma 6.5 or later, which ships
+the QML modules they load. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 

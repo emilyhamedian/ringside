@@ -7,17 +7,78 @@ on:
 permissions:
   contents: read
 
+# Separate event groups keep a feature push from cancelling its PR merge test.
+# Every other ref gets its own run id, so queued main/release/tag runs survive too.
+concurrency:
+  group: >-
+    ${{ github.workflow }}-${{ github.event_name }}-${{
+      ((github.event_name == 'push' && github.ref_type == 'branch') ||
+       (github.event_name == 'pull_request' && github.base_ref == github.event.repository.default_branch)) &&
+      (github.head_ref || github.ref_name) != github.event.repository.default_branch &&
+      (startsWith(github.head_ref || github.ref_name, 'codex/') ||
+       startsWith(github.head_ref || github.ref_name, 'fix/') ||
+       startsWith(github.head_ref || github.ref_name, 'feat/') ||
+       startsWith(github.head_ref || github.ref_name, 'feature/') ||
+       startsWith(github.head_ref || github.ref_name, 'docs/') ||
+       startsWith(github.head_ref || github.ref_name, 'ci/')) && github.ref || github.run_id }}
+  cancel-in-progress: &development >-
+    ${{
+      ((github.event_name == 'push' && github.ref_type == 'branch') ||
+       (github.event_name == 'pull_request' && github.base_ref == github.event.repository.default_branch)) &&
+      (github.head_ref || github.ref_name) != github.event.repository.default_branch &&
+      (startsWith(github.head_ref || github.ref_name, 'codex/') ||
+       startsWith(github.head_ref || github.ref_name, 'fix/') ||
+       startsWith(github.head_ref || github.ref_name, 'feat/') ||
+       startsWith(github.head_ref || github.ref_name, 'feature/') ||
+       startsWith(github.head_ref || github.ref_name, 'docs/') ||
+       startsWith(github.head_ref || github.ref_name, 'ci/')) }}
+
 jobs:
-  test:
+  coverage:
+    # Main/release/tag/unknown refs go straight to full tests without this cost.
+    if: *development
     runs-on: ubuntu-latest
+    # Only classification reads PR metadata; the Fedora jobs keep contents: read.
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
+    outputs:
+      mode: ${{ steps.coverage.outputs.mode }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Test CI coverage rules
+        run: python3 -m unittest discover -s .github/scripts -p 'test_*.py'
+
+      - name: Choose coverage for ${{ github.sha }}
+        id: coverage
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/scripts/ci_coverage.py
+
+  test:
+    needs: coverage
+    # A classification failure falls back to full testing.
+    if: ${{ !cancelled() && (needs.coverage.result != 'success' || needs.coverage.outputs.mode != 'covered') }}
+    runs-on: ubuntu-latest
+    env:
+      CI_COVERAGE: ${{ needs.coverage.result == 'success' && needs.coverage.outputs.mode == 'docs' && 'docs' || 'full' }}
     # The QtTest suites import org.kde.plasma.plasmoid, which libplasma
     # ships as a QML module from 6.5 on, so the checks run on Fedora 44
     # (Plasma 6.7, Qt 6.11).
     container: fedora:44
     steps:
-      # Before the checkout, which needs git to clone rather than download
-      # the files without .git.
+      - name: Install the docs license tools
+        if: env.CI_COVERAGE == 'docs'
+        run: >-
+          dnf -y -q install --setopt=install_weak_deps=False git python3 reuse
+
+      # Git preserves tracked-file information for REUSE lint.
       - name: Install Qt 6, the Plasma 6 QML modules and the check tools
+        if: env.CI_COVERAGE == 'full'
         run: >-
           dnf -y -q install --setopt=install_weak_deps=False
           git diffutils qt6-qtdeclarative-devel libplasma kf6-kirigami kf6-ksvg
@@ -33,23 +94,38 @@ jobs:
       - name: Trust the checkout
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
+      - name: Check docs licensing
+        if: env.CI_COVERAGE == 'docs'
+        run: reuse lint
+
+      - name: Test CI coverage rules
+        if: env.CI_COVERAGE == 'full'
+        run: python3 -m unittest discover -s .github/scripts -p 'test_*.py'
+
       # D-Bus starts ksystemstats when the tests ask for it.
       - name: Run the check suite
+        if: env.CI_COVERAGE == 'full'
         run: dbus-run-session -- sh scripts/test.sh
 
       # Into the workspace, which this step and the upload both see at the
       # same path inside the container.
       - name: Render the gallery
+        if: env.CI_COVERAGE == 'full'
         run: dbus-run-session -- sh scripts/gallery.sh ringside-gallery.png
 
       - name: Upload the gallery
+        if: env.CI_COVERAGE == 'full'
         uses: actions/upload-artifact@v7
         with:
           name: ringside-gallery
           path: ringside-gallery.png
 
   floor:
+    needs: coverage
+    if: ${{ !cancelled() && (needs.coverage.result != 'success' || needs.coverage.outputs.mode != 'covered') }}
     runs-on: ubuntu-latest
+    env:
+      CI_COVERAGE: ${{ needs.coverage.result == 'success' && needs.coverage.outputs.mode == 'docs' && 'docs' || 'full' }}
     # The supported floor, Plasma 6.0 with Qt 6.6 and KF 6.0, is Fedora 40
     # as released. Qt 6.6 reports binding loops that Qt 6.11 doesn't, so
     # only this job catches a regression of the fixes for them. Its libplasma
@@ -57,11 +133,17 @@ jobs:
     # scripts/test-floor.sh runs the tests that don't need it.
     container: fedora:40
     steps:
+      # Keep the floor check present for docs-only PRs; licensing runs in test.
+      - name: Docs-only floor gate
+        if: env.CI_COVERAGE == 'docs'
+        run: echo 'Docs-only change; no Plasma APIs changed.'
+
       # Fedora 40 is end of life and its release repository lives in the
       # archive on Fedora's download server. That repository alone is enabled,
       # so everything installed here is at its release version. Keep DNF's
       # diagnostics visible if downloading the archive fails.
       - name: Install Qt 6.6, the Plasma 6.0 QML modules and the test tools
+        if: env.CI_COVERAGE == 'full'
         run: >-
           dnf -y install --setopt=install_weak_deps=False --repo=fedora
           --setopt=fedora.metalink=
@@ -73,10 +155,13 @@ jobs:
           python3 jq dbus-daemon
 
       - name: Show the versions under test
+        if: env.CI_COVERAGE == 'full'
         run: rpm -q qt6-qtdeclarative kf6-kirigami libplasma libksysguard python3
 
       - uses: actions/checkout@v7
+        if: env.CI_COVERAGE == 'full'
 
       # D-Bus starts ksystemstats when the tests ask for it.
       - name: Run the tests that load on Plasma 6.0
+        if: env.CI_COVERAGE == 'full'
         run: dbus-run-session -- sh scripts/test-floor.sh
