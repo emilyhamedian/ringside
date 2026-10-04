@@ -6,13 +6,13 @@ import QtQuick
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
 import org.kde.plasma.core as PlasmaCore
-import org.kde.plasma.plasmoid
 import "code/items.js" as Items
 
-// The row of items in the panel. Rings come first in the user's order; a
-// hairline separates them from the text-only transfer rates. On a vertical
-// panel the items stack and show their rings alone. A ring without its text
-// shows the readings in a tooltip instead.
+// The row of items in the panel, in the user's order: rings with the item's
+// name inside them and their readings beside them, and the transfer rates on
+// the same two lines. On a vertical panel the items stack and show their
+// rings alone. A ring without its text shows the readings in a tooltip
+// instead.
 GridLayout {
     id: strip
 
@@ -20,15 +20,25 @@ GridLayout {
     required property var items
     required property bool vertical
     required property real thickness
-    required property int ringSize
     required property var ringsOnly
     // The item whose popup is open, for its pressed look.
     property string openItem: ""
+    // Plasmoid.location, for the tooltips.
+    property int location: PlasmaCore.Types.Floating
 
     signal activated(string item, Item cell)
 
-    readonly property real ring: Math.max(16, Math.min(ringSize, thickness - 2 * Kirigami.Units.smallSpacing))
-    // Label over value needs room for both lines; otherwise the value sits alone.
+    // Rings fill the panel inside the cell's hover wash (PanelCell.inset
+    // across a horizontal panel, a margin either side across a vertical one),
+    // up to a size that still sits well beside two lines of text. A ring held
+    // at that size, or at the smallest, keeps the panel's parity, so its
+    // readings centre on the same whole pixel as the rates beside them.
+    readonly property real ring: {
+        const inset = vertical ? Kirigami.Units.smallSpacing : Math.round(Kirigami.Units.smallSpacing / 2);
+        const size = Math.max(16, Math.min(Math.round(Kirigami.Units.gridUnit * 2.5), thickness - 2 * inset));
+        return Number.isInteger(size) && Number.isInteger(thickness) && (thickness - size) % 2 !== 0 ? size - 1 : size;
+    }
+    // Two lines need room for both; otherwise they share one.
     readonly property bool twoLines: thickness >= Kirigami.Units.gridUnit * 2
 
     function isRing(item) {
@@ -46,108 +56,91 @@ GridLayout {
     rowSpacing: 0
     columnSpacing: 0
 
-    component Entry: RowLayout {
+    component Entry: PlasmaCore.ToolTipArea {
         id: entry
 
         required property string modelData
-        required property int index
         readonly property alias cell: cell
-        // A hairline where the rings end and the rates begin.
-        readonly property bool separated: index > 0 && strip.isRing(strip.items[index - 1]) !== strip.isRing(modelData)
         readonly property bool textShown: !strip.isRing(modelData) || !strip.vertical && !strip.ringsOnly.includes(modelData)
 
         Layout.fillWidth: strip.vertical
         Layout.fillHeight: !strip.vertical
-        spacing: 0
+        implicitWidth: cell.implicitWidth
+        implicitHeight: cell.implicitHeight
+        active: !entry.textShown && !cell.open
+        mainText: cell.title
+        subText: cell.description
+        textFormat: Text.PlainText
+        location: strip.location
 
-        Rectangle {
-            visible: entry.separated && !strip.vertical
-            Layout.preferredWidth: 1
-            Layout.preferredHeight: Math.round(strip.thickness * 0.4)
-            Layout.leftMargin: 2
-            Layout.rightMargin: 2
-            Layout.alignment: Qt.AlignVCenter
-            color: Qt.alpha(Kirigami.Theme.textColor, 0.14)
-        }
+        PanelCell {
+            id: cell
+            anchors.fill: parent
+            item: entry.modelData
+            open: strip.openItem === entry.modelData
+            vertical: strip.vertical
+            onActivated: strip.activated(entry.modelData, cell)
 
-        PlasmaCore.ToolTipArea {
-            Layout.fillWidth: strip.vertical
-            Layout.fillHeight: !strip.vertical
-            implicitWidth: cell.implicitWidth
-            implicitHeight: cell.implicitHeight
-            active: !entry.textShown && !cell.open
-            mainText: cell.title
-            subText: cell.description
-            textFormat: Text.PlainText
-            // Plasmoid is empty outside a panel, as in the preview gallery.
-            location: Plasmoid.location ?? PlasmaCore.Types.Floating
+            // Centred to whole pixels, rounding as the ring cells' own layout
+            // does, so a ring's readings and the rates land on the same rows.
+            Loader {
+                x: Math.round((parent.width - width) / 2)
+                y: Math.round((parent.height - height) / 2)
+                sourceComponent: Items.isUsage(entry.modelData) ? usageContent
+                               : strip.isRing(entry.modelData) ? ringContent : rateContent
+                onLoaded: cell.contentItem = item
+            }
 
-            PanelCell {
-                id: cell
-                anchors.fill: parent
-                item: entry.modelData
-                open: strip.openItem === entry.modelData
-                vertical: strip.vertical
-                onActivated: strip.activated(entry.modelData, cell)
+            Component {
+                id: ringContent
+                RingCellContent {
+                    id: rings
+                    monitor: strip.monitor
+                    item: entry.modelData
+                    ring: strip.ring
+                    textShown: entry.textShown
+                    twoLines: strip.twoLines
 
-                Loader {
-                    anchors.centerIn: parent
-                    sourceComponent: Items.isUsage(entry.modelData) ? usageContent
-                                   : strip.isRing(entry.modelData) ? ringContent : rateContent
-                    onLoaded: cell.contentItem = item
-                }
-
-                Component {
-                    id: ringContent
-                    RingCellContent {
-                        id: rings
-                        monitor: strip.monitor
-                        item: entry.modelData
-                        ring: strip.ring
-                        textShown: entry.textShown
-                        twoLines: strip.twoLines
-
-                        Binding {
-                            target: cell
-                            property: "description"
-                            value: rings.accessibleDescription
-                        }
+                    Binding {
+                        target: cell
+                        property: "description"
+                        value: rings.accessibleDescription
                     }
                 }
+            }
 
-                Component {
-                    id: usageContent
-                    UsageCellContent {
-                        id: usage
-                        monitor: strip.monitor
-                        item: entry.modelData
-                        ring: strip.ring
-                        textShown: entry.textShown
-                        twoLines: strip.twoLines
+            Component {
+                id: usageContent
+                UsageCellContent {
+                    id: usage
+                    monitor: strip.monitor
+                    item: entry.modelData
+                    ring: strip.ring
+                    textShown: entry.textShown
+                    twoLines: strip.twoLines
 
-                        Binding {
-                            target: cell
-                            property: "description"
-                            value: usage.accessibleDescription
-                        }
+                    Binding {
+                        target: cell
+                        property: "description"
+                        value: usage.accessibleDescription
                     }
                 }
+            }
 
-                Component {
-                    id: rateContent
-                    RateCellContent {
-                        id: rates
-                        monitor: strip.monitor
-                        item: entry.modelData
-                        vertical: strip.vertical
-                        singleRow: !strip.vertical && !strip.twoLines
-                        availableWidth: strip.vertical ? cell.width - 2 * Kirigami.Units.smallSpacing : Infinity
+            Component {
+                id: rateContent
+                RateCellContent {
+                    id: rates
+                    monitor: strip.monitor
+                    item: entry.modelData
+                    vertical: strip.vertical
+                    singleRow: !strip.vertical && !strip.twoLines
+                    availableWidth: strip.vertical ? cell.width - 2 * Kirigami.Units.smallSpacing : Infinity
 
-                        Binding {
-                            target: cell
-                            property: "description"
-                            value: rates.accessibleDescription
-                        }
+                    Binding {
+                        target: cell
+                        property: "description"
+                        value: rates.accessibleDescription
                     }
                 }
             }

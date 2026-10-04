@@ -29,29 +29,12 @@ Item {
     property real unitScale: 1
     property color color: Kirigami.Theme.textColor
     property color unitColor: Style.dim(color)
-    // The widest number and unit the reading can show. Their room is kept
-    // while the value is narrower, so the panel doesn't shift as it changes;
-    // a temperature keeps room for its degree sign. Empty keeps nothing.
-    property string widest: ""
-    property string widestUnit: ""
-    readonly property real numberWidth: Math.max(number.implicitWidth, Math.ceil(widestNumber.advanceWidth))
-    readonly property real suffixWidth: Math.max(suffix.visible ? suffix.implicitWidth : 0, Math.ceil(widestSuffix.advanceWidth))
+    readonly property real numberWidth: number.implicitWidth
+    readonly property real suffixWidth: suffix.visible ? suffix.implicitWidth : 0
     baselineOffset: number.baselineOffset
 
     implicitWidth: numberWidth + (suffixWidth > 0 ? suffix.anchors.leftMargin + suffixWidth : 0)
     implicitHeight: number.implicitHeight
-
-    TextMetrics {
-        id: widestNumber
-        font: number.font
-        text: reading.widest
-    }
-
-    TextMetrics {
-        id: widestSuffix
-        font: suffix.font
-        text: reading.widest === "" ? "" : reading.degree ? reading.degreeText : reading.widestUnit
-    }
 
     // Kirigami.Theme.fixedWidthFont arrived in KF 6.14; before that the
     // fontconfig alias stands in, here and wherever digits are set.

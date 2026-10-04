@@ -8,7 +8,6 @@ import org.kde.kirigami as Kirigami
 import org.kde.ksvg as KSvg
 import "../../package/contents/ui"
 import "../../package/contents/ui/popups"
-import "../../package/contents/ui/code/items.js" as Items
 import "../../package/contents/ui/code/style.js" as Style
 
 // A section of Gallery.qml: Claude and Codex in the panel beside two system
@@ -126,8 +125,8 @@ ColumnLayout {
         textFormat: Text.PlainText
     }
 
-    // Cells as the strip lays them out, on a stretch of panel whose
-    // thickness the outline marks.
+    // The strip on a stretch of panel whose thickness the outline marks.
+    // Breeze's panel keeps 4 px of margin either side of an applet.
     component Panel: ColumnLayout {
         id: panel
 
@@ -135,8 +134,6 @@ ColumnLayout {
         required property real thickness
         property var monitor: section.monitor
         property var items: ["cpu", "memory", "claude", "codex"]
-        readonly property real ring: Math.max(16, Math.min(30, thickness - 2 * Kirigami.Units.smallSpacing))
-        readonly property bool twoLines: thickness >= Kirigami.Units.gridUnit * 2
 
         spacing: Kirigami.Units.smallSpacing
 
@@ -147,55 +144,18 @@ ColumnLayout {
         Rectangle {
             color: "transparent"
             border.color: Qt.alpha(Kirigami.Theme.textColor, 0.12)
-            Layout.preferredWidth: row.implicitWidth + 4 * Kirigami.Units.gridUnit
+            Layout.preferredWidth: strip.implicitWidth + 4 * Kirigami.Units.gridUnit
             Layout.preferredHeight: panel.thickness
 
-            RowLayout {
-                id: row
+            Strip {
+                id: strip
                 anchors.centerIn: parent
-                height: parent.height
-                spacing: 0
-
-                Repeater {
-                    model: panel.items
-
-                    delegate: PanelCell {
-                        id: cell
-
-                        required property string modelData
-
-                        Layout.fillHeight: true
-                        item: modelData
-
-                        Loader {
-                            anchors.centerIn: parent
-                            sourceComponent: Items.isUsage(cell.modelData) ? usageContent : ringContent
-                            onLoaded: cell.contentItem = item
-                        }
-
-                        Component {
-                            id: usageContent
-                            UsageCellContent {
-                                monitor: panel.monitor
-                                item: cell.modelData
-                                ring: panel.ring
-                                textShown: true
-                                twoLines: panel.twoLines
-                            }
-                        }
-
-                        Component {
-                            id: ringContent
-                            RingCellContent {
-                                monitor: panel.monitor
-                                item: cell.modelData
-                                ring: panel.ring
-                                textShown: true
-                                twoLines: panel.twoLines
-                            }
-                        }
-                    }
-                }
+                height: panel.thickness - 8
+                monitor: panel.monitor
+                items: panel.items
+                vertical: false
+                thickness: panel.thickness - 8
+                ringsOnly: []
             }
         }
     }

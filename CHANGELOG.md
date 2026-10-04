@@ -6,14 +6,49 @@ follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-10-04
+
+### Changed
+
+- Each ring carries its item's name inside it: CPU, GPU and MEM, or the
+  Claude or Codex mark. Beside it, the ring's percentage sits over its
+  temperature, the memory in use or the time to the weekly reset, in the
+  theme's own font with figures of even width.
+- Rings fill the panel's thickness, with a lighter stroke, and the hover
+  highlight leaves a thinner margin above and below.
+- A ring's percentage turns amber and red with the ring; the time to a reset
+  stays dim.
+- Network and disk rates sit on the same two lines as the rings' readings,
+  with no divider before them. On a thin panel the readings share one line,
+  "23% · 61°".
+- The inner ring's GPU, normally the integrated one, keeps its usage on the
+  ring; its temperature moves from the panel to the GPU popup.
+- Standalone dials show the same two lines under the ring. Claude and Codex
+  show the time to the reset there instead of the per-model limit, which
+  stays on the inner ring. A horizontal Standalone panel grows to fit the
+  second line, and a vertical one keeps room either side of its widest
+  dial, so readings in a larger font aren't clipped at its edges.
+
+### Removed
+
+- The Ring size setting: rings follow the panel's thickness.
+
 ### Fixed
 
-- 2026-10-02: The Plasma 6.0 CI job uses Fedora's download server for its
-  archived packages and retains download diagnostics. The usage helper's
-  reported version matches the widget's 0.2.1 version.
-- 2026-10-01: GPU power polling reuses command names instead of accumulating
-  QML properties that make Plasma progressively slower during long sessions.
+- GPU power polling reuses command names instead of accumulating QML
+  properties that make Plasma progressively slower during long sessions.
   Cached replies are discarded and slow replies retain their request time.
+- The Plasma 6.0 CI job uses Fedora's download server for its archived
+  packages and retains download diagnostics. The usage helper reports the
+  widget's version.
+- A Standalone dial's time to a reset is current as soon as the panel
+  unfolds.
+- The Claude and Codex marks follow the theme's text colour instead of
+  staying white on a light panel.
+- Removing a widget no longer can log a script error from its GPU power
+  polling.
+- Moving a Standalone panel between a side edge and the top or bottom no
+  longer logs a binding loop on Plasma 6.0.
 
 ## [0.2.0] - 2026-09-28
 
@@ -69,6 +104,7 @@ follows [Semantic Versioning](https://semver.org/).
   and one reader per GPU is shared across widgets so a second Ringside
   doesn't keep it awake.
 
-[Unreleased]: https://github.com/emilyhamedian/ringside/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/emilyhamedian/ringside/compare/v0.2.2...HEAD
+[0.2.2]: https://github.com/emilyhamedian/ringside/compare/v0.2.0...v0.2.2
 [0.2.0]: https://github.com/emilyhamedian/ringside/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/emilyhamedian/ringside/releases/tag/v0.1.0

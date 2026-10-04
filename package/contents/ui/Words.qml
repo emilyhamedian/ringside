@@ -6,7 +6,8 @@ import "code/format.js" as Format
 import "code/hardware.js" as Hardware
 
 // Each item's readings in words, for screen readers and tooltips in either
-// layout, and the times the Claude and Codex views show.
+// layout, the short readings beside or under a ring, and the times the
+// Claude and Codex views show.
 QtObject {
     id: words
 
@@ -44,6 +45,56 @@ QtObject {
             return usageText(item, nowMs ?? Date.now());
         }
         return "";
+    }
+
+    // The two short readings by a ring, in either layout: the ring's own
+    // percentage, or "off" for the only GPU while it sleeps, then its
+    // temperature, the memory in use or the time to the weekly reset; empty
+    // where there is none, as for Intel GPUs, which publish no temperature.
+    // `level` and `heat` choose their colours (see Readout). The integrated
+    // GPU's temperature stays in the words and the popup.
+    function readout(item, nowMs) {
+        const percent = value => Number.isFinite(value) ? i18nc("@info:status a percentage", "%1%", Format.percent(value)) : "–";
+        const temperature = celsius => Format.temperatureValid(celsius)
+            ? Format.temperature(celsius, monitor.fahrenheit) + "°" : "–";
+        switch (item) {
+        case "cpu":
+            return { first: percent(monitor.cpuUsage), level: Format.level(monitor.cpuUsage),
+                     second: temperature(monitor.cpuTemperature), heat: monitor.heat(monitor.cpuTemperature) };
+        case "gpu": {
+            const gpu = Hardware.gpuView(monitor.gpuOuter, monitor.gpuInner).primary;
+            if (gpu.phase === "asleep") {
+                return { first: i18nc("@info:status the GPU is powered down", "off"), off: true, second: "" };
+            }
+            return { first: percent(gpu.usage), level: Format.level(gpu.usage),
+                     second: gpu.reportsTemperature ? temperature(gpu.temperature) : "",
+                     heat: gpu.reportsTemperature ? monitor.heat(gpu.temperature) : 0 };
+        }
+        case "memory": {
+            const used = Format.bytes(monitor.memoryUsed);
+            return { first: percent(monitor.memoryPercent), level: Format.level(monitor.memoryPercent),
+                     second: used.value + used.unit.charAt(0) };
+        }
+        }
+        const entry = monitor.usage.entry(item);
+        const weekly = entry && entry.weekly ? entry.weekly : null;
+        return { first: percent(weekly ? weekly.percent : NaN), level: Format.level(weekly ? weekly.percent : NaN),
+                 second: countdown(weekly ? weekly.resetsAt : null, nowMs ?? Date.now()) || "–" };
+    }
+
+    // The widest texts each line of readout() can show, for the room it keeps.
+    function widestReadout(item) {
+        const percent = i18nc("@info:status a percentage", "%1%", Format.percent(100));
+        const temperature = Format.whole(100) + "°";
+        switch (item) {
+        case "cpu":
+            return [[percent], [temperature]];
+        case "gpu":
+            return [[percent, i18nc("@info:status the GPU is powered down", "off")], [temperature]];
+        case "memory":
+            return [[percent], [Format.whole(1000) + "M"]];
+        }
+        return [[percent], [widestCountdown()]];
     }
 
     // A Claude or Codex item: its weekly use, the limit on its inner ring,

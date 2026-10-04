@@ -19,7 +19,6 @@ KCM.SimpleKCM {
     property var cfg_itemOrder: []
     property var cfg_hiddenItems: []
     property var cfg_ringsOnly: []
-    property int cfg_ringSize
     property int cfg_layout
     property int cfg_visibilityMode
 
@@ -32,7 +31,7 @@ KCM.SimpleKCM {
         claude: i18nc("@item panel item", "Claude"),
         codex: i18nc("@item panel item", "Codex")
     })
-    // A vertical panel shows rings without their text, whatever the setting.
+    // A vertical panel shows rings without their readings, whatever the setting.
     readonly property bool vertical: Plasmoid.formFactor === PlasmaCore.Types.Vertical
 
     // What the widget found on this machine, for the hints. Read from the live
@@ -318,7 +317,7 @@ KCM.SimpleKCM {
         QQC2.Label {
             Layout.fillWidth: true
             visible: page.vertical
-            text: i18nc("@info", "This panel is vertical, so the rings show without their text.")
+            text: i18nc("@info", "This panel is vertical, so the rings show without their readings.")
             textFormat: Text.PlainText
             wrapMode: Text.Wrap
             color: Style.dim(Kirigami.Theme.textColor)
@@ -328,44 +327,11 @@ KCM.SimpleKCM {
         QQC2.Label {
             Layout.fillWidth: true
             visible: page.cfg_layout === 1
-            text: i18nc("@info", "Ring size and Ring only apply to the Inline layout.")
+            text: i18nc("@info", "Ring only applies to the Inline layout.")
             textFormat: Text.PlainText
             wrapMode: Text.Wrap
             color: Style.dim(Kirigami.Theme.textColor)
             font.pointSize: Kirigami.Theme.defaultFont.pointSize * 11.5 / 13
-        }
-
-        Kirigami.FormLayout {
-            Layout.fillWidth: true
-            enabled: page.cfg_layout === 0
-
-            RowLayout {
-                Kirigami.FormData.label: i18nc("@label:slider", "Ring size:")
-                spacing: Kirigami.Units.largeSpacing
-
-                QQC2.Slider {
-                    id: size
-                    Layout.preferredWidth: Kirigami.Units.gridUnit * 12
-                    from: 16
-                    to: 64
-                    stepSize: 2
-                    snapMode: QQC2.Slider.SnapAlways
-                    value: page.cfg_ringSize
-                    Accessible.name: i18nc("@label:slider", "Ring size")
-                    onMoved: page.cfg_ringSize = value
-                }
-                QQC2.Label {
-                    text: i18nc("@label ring diameter in pixels", "%1 px", size.value)
-                    textFormat: Text.PlainText
-                    font.family: Kirigami.Theme.fixedWidthFont?.family ?? "monospace" // qmllint disable redundant-optional-chaining
-                }
-            }
-            QQC2.Label {
-                text: i18nc("@info", "Rings shrink to fit a thinner panel.")
-                textFormat: Text.PlainText
-                color: Style.dim(Kirigami.Theme.textColor)
-                font.pointSize: Kirigami.Theme.defaultFont.pointSize * 11.5 / 13
-            }
         }
     }
 }

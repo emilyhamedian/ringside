@@ -2,17 +2,15 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import QtQuick
-import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
-import "code/format.js" as Format
-import "code/style.js" as Style
 
-// A Claude or Codex item in the panel: the weekly limit as a ring, with the
-// chosen model's limit inside it, and the item's name over the time left
-// until the week resets. The ring and the time turn amber or red with the
-// weekly reading, and the ring breathes from 90 % until the limit is hit.
-// A failed check dims the item and keeps its last reading.
-RowLayout {
+// A Claude or Codex item in the panel: the weekly limit as a ring with the
+// provider's mark inside it and the chosen model's limit as an inner ring,
+// and beside it the weekly percentage over the time left until the week
+// resets. The ring and its percentage turn amber or red with the weekly
+// reading, and the ring breathes from 90 % until the limit is hit. A failed
+// check dims the item and keeps its last reading.
+Item {
     id: content
 
     required property var monitor
@@ -25,14 +23,17 @@ RowLayout {
     readonly property var entry: usage.entry(item)
     readonly property var weekly: entry && entry.weekly ? entry.weekly : null
     readonly property var innerLimit: usage.inner(item)
-    readonly property real valuePointSize: Kirigami.Theme.defaultFont.pointSize * 0.96
     // Stepped by the minute timer below, for the countdown.
     property real nowMs: Date.now()
 
     // The readings in words, for screen readers and the tooltip.
     readonly property string accessibleDescription: words.describe(item, nowMs)
 
-    spacing: Kirigami.Units.largeSpacing
+    // As tall as the ring, which the cell centres; the readings centre on it
+    // in whole pixels, as the cell centres the rates, so their rows line up
+    // even where the two lines are taller than the ring.
+    implicitWidth: gauge.width + (readout.visible ? Kirigami.Units.largeSpacing + readout.implicitWidth : 0)
+    implicitHeight: ring
     opacity: usage.degraded(item) ? 0.55 : 1
 
     Words {
@@ -61,36 +62,33 @@ RowLayout {
 
     RingGauge {
         id: gauge
-        Layout.preferredWidth: content.ring
-        Layout.preferredHeight: content.ring
+        anchors.left: parent.left
+        width: content.ring
+        height: content.ring
         value: content.weekly ? content.weekly.percent : NaN
         inner: content.innerLimit !== null
         innerValue: content.innerLimit ? content.innerLimit.percent : NaN
-        text: Format.percent(value)
         pulsing: value >= 90 && value < 100
         // The cell's description covers it.
         Accessible.ignored: true
+
+        RingName {
+            item: content.item
+            room: gauge.centreWidth
+            // Readings on one line, on a thin panel, go unnamed as the
+            // rings there are too small to name them all.
+            active: content.twoLines || !content.textShown
+        }
     }
 
-    ColumnLayout {
+    Readout {
+        id: readout
+        anchors.left: gauge.right
+        anchors.leftMargin: Kirigami.Units.largeSpacing
+        y: Math.round((content.height - height) / 2)
         visible: content.textShown
-        spacing: Math.round(Kirigami.Units.smallSpacing * 0.75)
-
-        Text {
-            visible: content.twoLines
-            text: content.item === "claude" ? i18nc("@label the Claude Code item, in capitals like CPU", "CLAUDE")
-                                            : i18nc("@label the Codex item, in capitals like CPU", "CODEX")
-            color: Style.dim(Kirigami.Theme.textColor)
-            font.pointSize: Kirigami.Theme.smallFont.pointSize * 0.95
-            font.letterSpacing: Kirigami.Theme.smallFont.pointSize * 0.08
-            textFormat: Text.PlainText
-        }
-
-        Reading {
-            value: words.countdown(content.weekly ? content.weekly.resetsAt : null, content.nowMs) || "–"
-            widest: words.widestCountdown()
-            color: gauge.outerTone
-            pointSize: content.valuePointSize
-        }
+        lines: words.readout(content.item, content.nowMs)
+        widest: words.widestReadout(content.item)
+        oneLine: !content.twoLines
     }
 }

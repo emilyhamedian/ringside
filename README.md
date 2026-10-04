@@ -7,17 +7,18 @@
 CPU, GPU, memory, network and disk in a KDE Plasma 6 panel, and your Claude
 and Codex usage limits if you want them.
 
-![Ringside in a panel: CPU, GPU and memory rings with their temperatures and memory in use, a Claude ring with the time to its weekly reset, then network rates](docs/panel.png)
+![Ringside in a panel: CPU, GPU and memory rings with their names inside, each with its usage over its temperature or the memory in use, a Claude ring with its weekly usage over the time to its reset, then network rates](docs/panel.png)
 
-Each item is a ring or a pair of rates. Click one for its popup: history
-graphs, per-thread load, top processes, VRAM, clocks, power, swap, memory
-pressure and disk activity.
+Each item is a ring with its name inside and its readings beside it, or a
+pair of rates. Click one for its popup: history graphs, per-thread load, top
+processes, VRAM, clocks, power, swap, memory pressure and disk activity.
 
 ![The CPU, GPU, memory and network popups](docs/popups.png)
 
 - **CPU**: usage and temperature.
 - **GPU**: a discrete GPU on the outer ring and an integrated one on the inner
-  ring, with their temperatures. With one GPU there is one ring.
+  ring, with the outer one's temperature; the popup shows both. With one GPU
+  there is one ring.
 - **Memory**: usage and the amount in use.
 - **Network**: download and upload rates.
 - **Disk**: read and write rates. Off by default; the network popup shows disk
@@ -25,9 +26,9 @@ pressure and disk activity.
 - **Claude** and **Codex**: how much of the weekly limit is used and when it
   resets. Off by default; see below.
 
-Rings turn amber at 75% and red at 90%. Temperatures turn amber and red above
-thresholds you set; a ring shown without its text turns with its temperature
-too. Colours follow your Plasma theme.
+Rings and their percentages turn amber at 75% and red at 90%. Temperatures
+turn amber and red above thresholds you set; a ring shown without its text
+turns with its temperature too. Colours follow your Plasma theme.
 
 ## Install
 
@@ -146,8 +147,8 @@ Right-click the widget and choose *Configure Ringside…*.
 - **General**: update interval, how far back the graphs reach, Celsius or
   Fahrenheit, network rates in bits or bytes, temperature thresholds, and how
   often Claude and Codex are checked.
-- **Panel Items**: the layout, which items show and in what order, rings with
-  or without their text, ring size.
+- **Panel Items**: the layout, which items show and in what order, and rings
+  with or without their text. Rings grow and shrink with the panel.
 - **Sensors**: the CPU temperature source, which GPU goes on which ring, the
   network interface, the disk and volume, the disk temperature sensor, and the
   Claude and Codex inner rings.

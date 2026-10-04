@@ -24,7 +24,9 @@ Item {
     // Raises the outer ring's level, e.g. for a hot temperature the panel has
     // no room to show.
     property int minimumLevel: 0
-    property real strokeWidth: Math.max(2, Math.round(width / 10))
+    // About a thirteenth of the ring, in half pixels, for the panel's rings;
+    // the popups and the Standalone dials set their own.
+    property real strokeWidth: Math.max(2, Math.round(width / 6.5) / 2)
     property real innerStrokeWidth: Math.max(1.5, Math.round(strokeWidth * 2 / 3 * 2) / 2)
     property real innerRadius: outer.radius - strokeWidth / 2 - innerStrokeWidth / 2 - Math.max(1, strokeWidth / 2)
     // Shown in the middle of a single ring large enough to read it.
@@ -34,6 +36,10 @@ Item {
     property bool pulsing: false
     default property alias centre: face.data
 
+    // The clear width in the middle, a pixel in from the innermost ring, for
+    // a name or mark there.
+    readonly property real centreWidth: Math.max(0, 2 * ((inner ? innerRadius - innerStrokeWidth / 2
+                                                                : outer.radius - strokeWidth / 2) - 1))
     readonly property color outerTone: tone(Math.max(Format.level(value), minimumLevel))
     readonly property color innerTone: tone(Format.level(innerValue))
 

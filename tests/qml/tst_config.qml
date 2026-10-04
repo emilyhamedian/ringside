@@ -50,7 +50,6 @@ Item {
             height: root.height
             cfg_itemOrder: ["cpu", "gpu", "memory", "network", "disk"]
             cfg_hiddenItems: ["disk"]
-            cfg_ringSize: 30
         }
     }
 

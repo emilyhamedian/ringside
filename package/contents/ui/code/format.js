@@ -4,8 +4,8 @@
 .pragma library
 
 // Readings come back as { value, unit } so the panel and popups can set the
-// number in the monospace face and the unit dimmer beside it. Anything that
-// isn't a usable number formats as an en dash.
+// unit dimmer beside the number. Anything that isn't a usable number formats
+// as an en dash.
 
 const DASH = "–";
 

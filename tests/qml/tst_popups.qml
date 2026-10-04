@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import QtQuick
+import QtQuick.Layouts
 import QtTest
 import org.kde.kirigami as Kirigami
 
@@ -212,6 +213,72 @@ Item {
             });
             normal.cpuUsage = 23;
             normal.gpuOuter.usage = Qt.binding(() => normal.gpuOuter.live ? 12 : normal.gpuOuter.resting ? 0 : NaN);
+        }
+
+        // The Text in the middle of a gauge that draws its percentage.
+        function centreText(gauge) {
+            const pending = [gauge];
+            while (pending.length > 0) {
+                const item = pending.shift();
+                if (item !== gauge && item.text === gauge.text && item.font !== undefined) {
+                    return item;
+                }
+                pending.push(...Array.from(item.children));
+            }
+            return null;
+        }
+
+        // Every name a panel ring might draw inside a gauge, in text or as a
+        // RingName.
+        function names(gauge) {
+            const found = [];
+            const pending = [gauge];
+            while (pending.length > 0) {
+                const item = pending.shift();
+                if (item.room !== undefined && item.item !== undefined) {
+                    found.push("RingName " + item.item);
+                }
+                if (["CPU", "GPU", "MEM"].includes(item.text) && item.visible) {
+                    found.push(item.text);
+                }
+                pending.push(...Array.from(item.children));
+            }
+            return found;
+        }
+
+        // Panel rings lost their percentage to a name; the popups' larger
+        // rings keep it, with their own strokes, and name nothing inside.
+        function test_popupRingsKeepTheirPercentage() {
+            const cpu = gauges(load("CpuPopup", normal));
+            compare(cpu.length, 1, "the header ring");
+            compare(cpu[0].text, "23%");
+            compare(cpu[0].strokeWidth, 4);
+            const cpuText = centreText(cpu[0]);
+            verify(cpuText, "the header ring's centre text");
+            verify(cpuText.visible, "the header ring shows its percentage");
+            compare(cpuText.text, "23%");
+            compare(names(cpu[0]), []);
+            // At 52 px the panel's default stroke is also 4; a larger ring
+            // tells an explicit stroke from the default.
+            cpu[0].Layout.preferredWidth = 80;
+            tryCompare(cpu[0], "width", 80);
+            compare(cpu[0].strokeWidth, 4, "the header ring's stroke at any size");
+
+            // The GPU popup's header hides its ring.
+            const gpu = gauges(load("GpuPopup", normal)).filter(g => g.visible);
+            compare(gpu.map(g => g.value), [12, 3], "a ring per GPU");
+            gpu.forEach(g => {
+                const tag = "the ring at " + g.value + "%";
+                compare(g.text, g.value + "%", tag);
+                compare(g.strokeWidth, 3.5, tag);
+                const text = centreText(g);
+                verify(text, tag);
+                verify(text.visible, tag + " shows its percentage");
+                compare(names(g), [], tag);
+                g.Layout.preferredWidth = 80;
+                tryCompare(g, "width", 80);
+                compare(g.strokeWidth, 3.5, tag + " keeps its stroke at any size");
+            });
         }
 
         function test_popupsSpellTheTemperatureUnit_data() {
