@@ -21,7 +21,8 @@ follows [Semantic Versioning](https://semver.org/).
 - Network and disk rates sit on the same two lines as the rings' readings,
   with no divider before them. On a thin panel the readings share one line,
   "23% · 61°".
-- The integrated GPU's temperature moves from the panel to the GPU popup.
+- The inner ring's GPU, normally the integrated one, keeps its usage on the
+  ring; its temperature moves from the panel to the GPU popup.
 - Standalone dials show the same two lines under the ring. Claude and Codex
   show the time to the reset there instead of the per-model limit, which
   stays on the inner ring. A horizontal Standalone panel grows to fit the
