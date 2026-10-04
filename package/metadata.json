@@ -14,7 +14,7 @@
         "Id": "dev.emily.ringside",
         "License": "GPL-3.0-or-later",
         "Name": "Ringside",
-        "Version": "0.2.1",
+        "Version": "0.2.2",
         "Website": "https://github.com/emilyhamedian/ringside",
         "BugReportUrl": "https://github.com/emilyhamedian/ringside/issues"
     },
