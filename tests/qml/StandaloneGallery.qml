@@ -11,10 +11,11 @@ import "../../package/contents/ui"
 import "../../package/contents/ui/code/style.js" as Style
 
 // A section of Gallery.qml: the Standalone layout open on a right and a
-// bottom panel at two scales, alarmed and empty, squeezed into a thin panel
-// it shares with other widgets, and folding into its tab. Each strip sits
-// on the theme's panel background with Breeze's 4 px either side; the
-// outline marks the panel's extent where the background matches the window.
+// bottom panel at two scales, alarmed, empty and with every reading at its
+// widest, squeezed into a thin panel it shares with other widgets, and
+// folding into its tab. Each strip sits on the theme's panel background with
+// Breeze's 4 px either side; the outline marks the panel's extent where the
+// background matches the window.
 ColumnLayout {
     id: section
 
@@ -32,11 +33,45 @@ ColumnLayout {
         cpuTemperature: 92
         gpuOuter.phase: "asleep"
         usage.entries: ({
-            claude: { status: "ok", weekly: { percent: 93 },
-                      scoped: [{ id: "Opus", label: "Opus", percent: 78 }] },
-            codex: { status: "ok", weekly: { percent: 34 }, scoped: [],
+            claude: { status: "ok", weekly: alarmed.usage.window(93, 4 * 3600 + 12 * 60, []),
+                      scoped: [Object.assign({ id: "Opus", label: "Opus" },
+                                             alarmed.usage.window(78, 4 * 3600 + 12 * 60, []))] },
+            codex: { status: "ok", weekly: alarmed.usage.window(34, 5 * alarmed.usage.day + 4 * 3600, []), scoped: [],
                      lastError: "rate limited", lastErrorAt: 0 }
         })
+    }
+
+    // Each line at the widest it gets, to fill the room the strip keeps:
+    // every byte of memory in use, and Claude spent with a day to go. The
+    // only GPU is asleep.
+    FakeMonitor {
+        id: widest
+        cpuUsage: 100
+        cpuTemperature: 148
+        memoryTotal: 1023 * 1048576
+        memoryUsed: 1023 * 1048576
+        gpuOuter.phase: "asleep"
+        gpuInner.present: false
+        usage.entries: ({
+            claude: { status: "ok", weekly: widest.usage.window(100, 23 * 3600 + 59 * 60, []), scoped: [] }
+        })
+    }
+
+    // A machine whose only GPU is Intel's, which publishes no temperature.
+    FakeMonitor {
+        id: intelOnly
+        cpuModel: "Intel Core i7-1360P"
+        gpuOuter.kind: "integrated"
+        gpuOuter.name: "Intel Iris Xe Graphics"
+        gpuOuter.temperatureLabel: ""
+        gpuOuter.reportsTemperature: false
+        gpuOuter.reportsVram: false
+        gpuOuter.temperature: NaN
+        gpuOuter.vramUsed: NaN
+        gpuOuter.vramTotal: NaN
+        gpuOuter.knownVramTotal: NaN
+        gpuOuter.power: NaN
+        gpuInner.present: false
     }
 
     // A machine whose only GPU is asleep.
@@ -172,6 +207,13 @@ ColumnLayout {
         }
 
         OpenPanel {
+            label: "Right · widest readings"
+            location: PlasmaCore.Types.RightEdge
+            monitor: widest
+            items: ["cpu", "gpu", "memory", "claude"]
+        }
+
+        OpenPanel {
             label: "Right · scale 2"
             location: PlasmaCore.Types.RightEdge
             items: ["gpu", "network", "claude"]
@@ -194,6 +236,13 @@ ColumnLayout {
                 location: PlasmaCore.Types.RightEdge
                 monitor: sleeping
                 items: ["gpu"]
+            }
+
+            OpenPanel {
+                label: "Right · Intel's GPU alone"
+                location: PlasmaCore.Types.RightEdge
+                monitor: intelOnly
+                items: ["cpu", "gpu"]
             }
         }
 
@@ -220,6 +269,13 @@ ColumnLayout {
             location: PlasmaCore.Types.BottomEdge
             items: ["memory", "disk", "codex"]
             sizeFactor: 2
+        }
+
+        OpenPanel {
+            label: "Bottom · widest readings"
+            location: PlasmaCore.Types.BottomEdge
+            monitor: widest
+            items: ["cpu", "gpu", "memory", "claude"]
         }
 
         OpenPanel {

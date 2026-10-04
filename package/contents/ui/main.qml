@@ -118,8 +118,8 @@ PlasmoidItem {
         items: root.items
         vertical: root.vertical
         thickness: root.thickness
-        ringSize: Plasmoid.configuration.ringSize
         ringsOnly: Plasmoid.configuration.ringsOnly
+        location: Plasmoid.location
         openItem: popup.visible ? root.openItem : ""
         onActivated: (item, cell) => root.toggle(item, cell)
     }

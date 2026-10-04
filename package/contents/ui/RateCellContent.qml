@@ -9,7 +9,8 @@ import "code/format.js" as Format
 import "code/style.js" as Style
 
 // Two transfer rates in the panel: down and up for the network, read and
-// write for the disk. Stacked, or side by side on a thin panel. The columns
+// write for the disk. Stacked on the rows a ring's two readings use, so they
+// line up across the panel, or side by side on a thin panel. The columns
 // keep room for their widest text, so the panel doesn't shift as rates change.
 GridLayout {
     id: rates
@@ -36,20 +37,22 @@ GridLayout {
     // drop their decimal ("25M"), then the text shrinks down to a floor.
     // Everything is measured at the base size, never from what is drawn, and
     // rounded up per column as the layout does.
-    readonly property real basePointSize: Kirigami.Theme.smallFont.pointSize * (vertical ? 0.9 : 1.05)
     readonly property real looseSpacing: Math.round(Kirigami.Units.smallSpacing * 1.5)
     readonly property real tightSpacing: Math.round(Kirigami.Units.smallSpacing / 2)
-    readonly property real markerWidth: network ? Math.round(base.height * 0.62) * 0.8 : letterSample.advanceWidth
-    readonly property real decimalWidth: Math.ceil(markerWidth) + Math.ceil(decimalSample.advanceWidth)
-    readonly property real wholeWidth: Math.ceil(markerWidth) + Math.ceil(wholeSample.advanceWidth)
+    readonly property real markerWidth: network ? Math.round(base.plain.height * 0.62) * 0.8
+                                                : base.room(base.plain, [readLetter, writeLetter])
+    readonly property real decimalWidth: Math.ceil(markerWidth) + base.room(base.plain, [Format.whole(1000) + "M"])
+    readonly property real wholeWidth: Math.ceil(markerWidth) + base.room(base.plain, [Format.whole(100) + "M"])
     // Text draws a pixel or two wider than its advance (bearings, rounding).
     readonly property real room: availableWidth - 2
     readonly property bool tight: vertical && decimalWidth + looseSpacing > room
     readonly property bool whole: vertical && decimalWidth + tightSpacing > room
+    // Shrunk in half points, the steps text is drawn in, rounding down so it
+    // still fits.
     readonly property real pointSize: whole
         ? Math.max(Kirigami.Theme.smallFont.pointSize * 0.6,
-                   Math.min(1, (room - tightSpacing - 2) / (wholeWidth - 2)) * basePointSize)
-        : basePointSize
+                   Math.floor(Math.min(1, (room - tightSpacing - 2) / (wholeWidth - 2)) * base.drawnSize * 2) / 2)
+        : base.drawnSize
 
     // "25M" for "24.8M". A byte rate of 1000 to 1023 in one unit rounds to 1
     // of the next, so it keeps to three digits.
@@ -71,8 +74,17 @@ GridLayout {
     // The rates in words, for screen readers.
     readonly property string accessibleDescription: words.describe(item)
 
+    // Room for the widest value and unit at the size drawn.
+    readonly property real valueRoom: drawn.room(drawn.plain, [!vertical ? Format.whole(1000)
+                                                              : whole ? Format.whole(100) + "M" : Format.whole(1000) + "M"])
+    // Units differ in length: b/s and Mb/s, B/s and MiB/s.
+    readonly property real unitRoom: drawn.room(drawn.plain, bits ? ["b/s", "kb/s", "Mb/s", "Gb/s", "Tb/s"]
+                                                                  : ["B/s", "KiB/s", "MiB/s", "GiB/s", "TiB/s", "PiB/s"])
+    // Horizontally each row is a ring's line; a vertical panel spaces its own.
+    readonly property real rowHeight: vertical ? -1 : drawn.lineHeight
+
     columns: vertical ? 2 : singleRow ? 6 : 3
-    rowSpacing: Math.round(Kirigami.Units.smallSpacing * 0.75)
+    rowSpacing: vertical ? Math.round(Kirigami.Units.smallSpacing * 0.75) : 0
     columnSpacing: tight ? tightSpacing : looseSpacing
 
     Words {
@@ -80,43 +92,14 @@ GridLayout {
         monitor: rates.monitor
     }
 
-    FontMetrics {
+    ReadoutFont {
         id: base
-        font.family: Kirigami.Theme.fixedWidthFont?.family ?? "monospace" // qmllint disable redundant-optional-chaining
-        font.pointSize: rates.basePointSize
+        pointSize: rates.vertical ? Kirigami.Theme.smallFont.pointSize * 0.9 : base.panelPointSize
     }
 
-    TextMetrics {
-        id: letterSample
-        font: base.font
-        text: rates.readLetter.length > rates.writeLetter.length ? rates.readLetter : rates.writeLetter
-    }
-
-    TextMetrics {
-        id: decimalSample
-        font: base.font
-        text: "0000M"
-    }
-
-    TextMetrics {
-        id: wholeSample
-        font: base.font
-        text: "000M"
-    }
-
-    // Room for the widest value and unit at the size drawn.
-    TextMetrics {
-        id: valueRoom
-        font.family: Kirigami.Theme.fixedWidthFont?.family ?? "monospace" // qmllint disable redundant-optional-chaining
-        font.pointSize: rates.pointSize
-        text: !rates.vertical ? "0000" : rates.whole ? "000M" : "0000M"
-    }
-
-    TextMetrics {
-        id: unitRoom
-        font: valueRoom.font
-        // Units differ in length: b/s and Mb/s, B/s and MiB/s.
-        text: rates.bits ? "Mb/s" : "MiB/s"
+    ReadoutFont {
+        id: drawn
+        pointSize: rates.pointSize
     }
 
     Repeater {
@@ -131,7 +114,7 @@ GridLayout {
             Layout.column: rates.singleRow ? index * 3 : 0
             Layout.leftMargin: rates.singleRow && index === 1 ? Kirigami.Units.smallSpacing : 0
             implicitWidth: rates.network ? arrow.width : letter.implicitWidth
-            implicitHeight: letter.implicitHeight
+            implicitHeight: rates.vertical ? letter.implicitHeight : rates.rowHeight
 
             Arrow {
                 id: arrow
@@ -147,8 +130,7 @@ GridLayout {
                 visible: !rates.network
                 text: marker.index === 1 ? rates.writeLetter : rates.readLetter
                 color: rates.markColor
-                font.family: Kirigami.Theme.fixedWidthFont?.family ?? "monospace" // qmllint disable redundant-optional-chaining
-                font.pointSize: rates.pointSize
+                font: drawn.plain.font
                 textFormat: Text.PlainText
             }
         }
@@ -163,11 +145,12 @@ GridLayout {
             Layout.row: rates.singleRow ? 0 : index
             Layout.column: rates.singleRow ? index * 3 + 1 : 1
             Layout.alignment: Qt.AlignRight
-            Layout.minimumWidth: Math.ceil(valueRoom.advanceWidth)
+            Layout.minimumWidth: rates.valueRoom
+            Layout.preferredHeight: rates.rowHeight
             horizontalAlignment: Text.AlignRight
             text: rates.vertical ? rates.verticalText(rates.lines[index]) : rates.lines[index].value
             color: Kirigami.Theme.textColor
-            font: valueRoom.font
+            font: drawn.plain.font
             textFormat: Text.PlainText
         }
     }
@@ -180,10 +163,11 @@ GridLayout {
 
             Layout.row: rates.singleRow ? 0 : index
             Layout.column: rates.singleRow ? index * 3 + 2 : 2
-            Layout.minimumWidth: Math.ceil(unitRoom.advanceWidth)
+            Layout.minimumWidth: rates.unitRoom
+            Layout.preferredHeight: rates.rowHeight
             text: rates.lines[index].unit
             color: Style.dim(Kirigami.Theme.textColor)
-            font: valueRoom.font
+            font: drawn.plain.font
             textFormat: Text.PlainText
         }
     }

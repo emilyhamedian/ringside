@@ -50,7 +50,6 @@ TestCase {
             property var itemOrder: ["cpu", "gpu", "memory", "network", "disk"]
             property var hiddenItems: ["disk"]
             property var ringsOnly: []
-            property int ringSize: 30
             property string cpuTemperatureSensor: ""
             property string outerGpu: ""
             property string innerGpu: ""

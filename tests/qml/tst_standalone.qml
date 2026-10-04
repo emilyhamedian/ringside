@@ -8,6 +8,8 @@ import QtTest
 import org.kde.plasma.core as PlasmaCore
 import org.kde.kirigami as Kirigami
 import "../../package/contents/ui"
+import "../../package/contents/ui/code/items.js" as Items
+import "../../package/contents/ui/code/style.js" as Style
 
 // The Standalone strip with FakeMonitor's readings: folding to the tab and
 // back with a fake panel window, the chevron lane, dials on every edge at
@@ -38,7 +40,9 @@ Item {
         id: stripComponent
         StandaloneStrip {
             width: 80
-            height: implicitHeight
+            // Across a horizontal strip, its own size would feed back into the
+            // dials' scale.
+            height: vertical ? implicitHeight : minimumThickness
             vertical: true
             location: PlasmaCore.Types.RightEdge
             items: root.usageItems
@@ -255,7 +259,7 @@ Item {
             return arcs[0].radius < arcs[1].radius ? arcs[0] : arcs[1];
         }
 
-        // Texts of the labels a dial's readout shows, in layout order.
+        // Texts a dial's readout shows, in layout order, without a blank line.
         function shownReadout(dial) {
             const texts = [];
             const pending = [findChild(dial, "readout") ?? face(dial)];
@@ -264,7 +268,7 @@ Item {
                 if (!item.visible) {
                     continue;
                 }
-                if (item.text !== undefined && item.contentWidth !== undefined) {
+                if (item.text !== undefined && item.contentWidth !== undefined && item.text !== "") {
                     texts.push(item.text);
                 }
                 pending.push(...Array.from(item.children));
@@ -272,8 +276,32 @@ Item {
             return texts;
         }
 
+        // The readout's texts in layout order: the ring's own reading, the
+        // dot a thin panel puts between the two, hidden under a dial, and the
+        // second reading.
         function readoutParts(dial) {
-            return Array.from(findChild(dial, "readout").children[0].children);
+            const parts = Array.from(findChild(dial, "readout").children[0].children);
+            compare(parts.map(part => part.objectName), ["first", "", "second"]);
+            compare(parts[1].visible, false, "a dial stacks its lines, without the dot");
+            return parts;
+        }
+
+        // Text keeps its colour in 8 bits a channel, so a translucent one is
+        // compared as drawn.
+        function compareColour(actual, expected, message) {
+            compare(String(actual), String(expected), message);
+        }
+
+        // Where each line of a dial's readout sits in the strip, and the box
+        // around them.
+        function readoutGeometry(dial) {
+            const box = findChild(dial, "readout");
+            const place = item => {
+                const at = item.mapToItem(strip, 0, 0);
+                return [at.x, at.y, item.width, item.height];
+            };
+            const parts = readoutParts(dial);
+            return { item: dial.item, box: place(box), first: place(parts[0]), second: place(parts[2]) };
         }
 
         function revealByKeyboard() {
@@ -552,35 +580,131 @@ Item {
             compare(strip.cellAt(1), null);
         }
 
+        function test_minimumThickness_data() {
+            const cases = [];
+            for (const edge of [{ name: "right", location: PlasmaCore.Types.RightEdge, vertical: true },
+                                { name: "bottom", location: PlasmaCore.Types.BottomEdge, vertical: false }]) {
+                for (const set of [{ name: "usage", items: root.usageItems }, { name: "mixed", items: root.mixedItems }]) {
+                    cases.push({ tag: edge.name + "-" + set.name, location: edge.location, vertical: edge.vertical,
+                                 items: set.items });
+                }
+            }
+            return cases;
+        }
+
+        // The panel's least thickness: whole pixels, room across it for every
+        // face at the base size, the ring's padding on a vertical panel, and
+        // the same while the panel folds and unfolds, so each makes one
+        // native change.
+        function test_minimumThickness(data) {
+            // Bound to this strip, which stays while the panel scene below
+            // takes over `strip`.
+            const flat = makeStrip({ items: data.items, enabledItems: data.items, vertical: data.vertical,
+                                     location: data.location });
+            const minimum = flat.minimumThickness;
+            verify(Number.isInteger(minimum), "whole pixels, got " + minimum);
+            if (data.vertical) {
+                flat.width = minimum;
+                flat.height = Qt.binding(() => flat.implicitHeight);
+            } else {
+                flat.height = minimum;
+                flat.width = Qt.binding(() => flat.implicitWidth);
+            }
+            waitForRendering(strip);
+            compare(strip.sizeFactor, 1);
+            compare(shownDials().map(dial => dial.item), data.items);
+            for (const dial of shownDials()) {
+                const ink = face(dial);
+                const across = data.vertical ? ink.width : ink.height;
+                verify(across > 0 && minimum >= Math.ceil(across),
+                       dial.item + " face " + across + "px across a " + minimum + "px strip");
+            }
+            if (data.vertical) {
+                // A 52px ring with 8px either side, or the widest face if a
+                // readout is wider than that.
+                const widest = Math.max(...shownDials().map(dial => face(dial).width));
+                compare(minimum, Math.max(68, Math.ceil(widest)));
+            } else {
+                verify(minimum >= 72, "the ring, its gap and two lines, got " + minimum);
+            }
+
+            createPanelScene(data.location, { items: data.items });
+            compare(strip.minimumThickness, minimum);
+            const nativeChangesBefore = scene.panel.thicknessChanges;
+            strip.visibilityMode = 2;
+            for (let sample = 0; sample < 100 && strip.expansionProgress > 0; sample++) {
+                wait(5);
+                compare(strip.minimumThickness, minimum, "while folding");
+            }
+            settleExpansion(0);
+            tryCompare(scene.panel, "thickness", 44);
+            compare(strip.minimumThickness, minimum, "folded");
+            strip.visibilityMode = 1;
+            for (let sample = 0; sample < 100 && strip.expansionProgress < 1; sample++) {
+                wait(5);
+                compare(strip.minimumThickness, minimum, "while unfolding");
+            }
+            settleExpansion(1);
+            tryCompare(scene.panel, "thickness", scene.sizing.expandedThickness);
+            compare(strip.minimumThickness, minimum, "unfolded");
+            compare(scene.panel.thicknessChanges - nativeChangesBefore, 2,
+                    "Folding and unfolding must each make one native thickness change");
+        }
+
+        // Every reading at 100 %, with the countdown at its widest, in days,
+        // and unknown. Seconds past the minute keep the rounding clear of the
+        // test's own running time.
         function test_readoutFitsMinimumThickness_data() {
             return [
-                { tag: "ordinary", percent: 62, inner: 78, shown: true },
-                { tag: "full", percent: 100, inner: 100, shown: true },
-                { tag: "ordinary-without-inner", percent: 62, inner: 78, shown: false },
-                { tag: "full-without-inner", percent: 100, inner: 100, shown: false }
+                { tag: "widest-countdown", left: 23 * 3600 + 59 * 60 + 30, countdown: "23h 59m" },
+                { tag: "days", left: 6 * 86400 + 23 * 3600 + 30 * 60, countdown: "6d 23h" },
+                { tag: "no-reset", left: NaN, countdown: "–" }
             ];
         }
 
-        // Every readout fits the strip at its minimum thickness, and choosing
-        // an inner limit or reaching 100 % never changes the reserve.
+        // Every readout fits the strip at its minimum thickness, each ring's
+        // in two lines, and neither 100 % nor a countdown changes the reserve.
         function test_readoutFitsMinimumThickness(data) {
             makeStrip({ items: root.mixedItems, enabledItems: root.mixedItems });
             const reservedThickness = strip.minimumThickness;
-            monitor.usage.innerChoices = { claude: data.shown ? "" : "none", codex: data.shown ? "" : "none" };
-            setEntry("claude", { status: "ok", weekly: { percent: data.percent },
-                                 scoped: [{ id: "Fable", label: "Fable", percent: data.inner }] });
-            setEntry("codex", { status: "ok", weekly: { percent: data.percent },
-                                scoped: [{ id: "codex_spark", label: "Spark", percent: data.inner }] });
-            monitor.cpuUsage = data.percent;
+            const weekly = { percent: 100 };
+            if (Number.isFinite(data.left)) {
+                weekly.resetsAt = monitor.usage.createdAt + data.left;
+            }
+            setEntry("claude", { status: "ok", weekly: weekly,
+                                 scoped: [{ id: "Fable", label: "Fable", percent: 100 }] });
+            setEntry("codex", { status: "ok", weekly: weekly,
+                                scoped: [{ id: "codex_spark", label: "Spark", percent: 100 }] });
+            monitor.cpuUsage = 100;
             monitor.cpuTemperature = 140;
+            monitor.gpuOuter.usage = 100;
+            monitor.gpuOuter.temperature = 140;
             monitor.memoryUsed = 1023 * 1048576;
             monitor.networkDown = 999.9e6 / 8;
             waitForRendering(strip);
             compare(strip.minimumThickness, reservedThickness);
             compare(strip.width, reservedThickness);
+            compare(shownReadout(dialFor("cpu")), ["100%", "140°"]);
+            compare(shownReadout(dialFor("gpu")), ["100%", "140°"]);
+            compare(shownReadout(dialFor("memory")), ["3%", "1023M"]);
             for (const dial of shownDials()) {
+                if (Items.isRing(dial.item)) {
+                    compare(shownReadout(dial).length, 2, dial.item + " shows two lines");
+                }
                 if (dial.usage) {
-                    compare(shownReadout(dial).length, data.shown ? 3 : 1);
+                    compare(shownReadout(dial), ["100%", data.countdown]);
+                }
+                // Each line within the room the strip keeps for it.
+                if (Items.isRing(dial.item)) {
+                    const parts = readoutParts(dial);
+                    for (const line of [0, 1]) {
+                        const text = parts[2 * line];
+                        verify(text.width >= dial.parts[line] - 0.5,
+                               dial.item + " line " + line + " is " + text.width + "px, its room " + dial.parts[line] + "px");
+                        verify(text.contentWidth <= dial.parts[line] + 0.5,
+                               dial.item + " " + text.text + " is " + text.contentWidth + "px, its room "
+                               + dial.parts[line] + "px");
+                    }
                 }
                 const pending = [face(dial)];
                 while (pending.length > 0) {
@@ -602,8 +726,8 @@ Item {
             }
         }
 
-        // As readings change, every dial keeps its size and the separator its
-        // place, so a row of dials never shifts.
+        // As readings change, every dial keeps its size and each readout line
+        // its place, a blank one included, so a row of dials never shifts.
         function test_readoutWidthsHoldAsValuesChange() {
             makeStrip({ items: root.mixedItems, enabledItems: root.mixedItems, vertical: false,
                         location: PlasmaCore.Types.BottomEdge });
@@ -613,69 +737,113 @@ Item {
             const length = strip.implicitWidth;
             const sizes = () => JSON.stringify(shownDials().map(dial => [dial.item, dial.width, dial.height,
                 dial.mapToItem(strip, 0, 0).x]));
-            const separators = () => JSON.stringify(shownDials().filter(dial => findChild(dial, "readout"))
-                .map(dial => readoutParts(dial)[1].mapToItem(strip, 0, 0).x));
+            const lines = () => JSON.stringify(shownDials().filter(dial => findChild(dial, "readout"))
+                .map(dial => readoutGeometry(dial)));
             const before = sizes();
-            const separatorsBefore = separators();
+            const linesBefore = lines();
+            const codex = dialFor("codex");
+            const created = monitor.usage.createdAt;
+            const codexReset = created + 5 * 86400 + 4 * 3600;
+            // Seconds past the minute keep the rounding clear of the test's
+            // own running time.
+            const claudeLeft = left => () => setEntry("claude", { status: "ok",
+                weekly: { percent: 62, resetsAt: created + left }, scoped: [{ id: "Opus", label: "Opus", percent: 78 }] });
+            const codexLeft = left => () => { codex.nowMs = (codexReset - left) * 1000; };
+            // Each change, and what the dial it reaches reads after it.
             const changes = [
-                () => { monitor.cpuUsage = 5; monitor.cpuTemperature = 38; },
-                () => { monitor.cpuUsage = 100; monitor.cpuTemperature = 140; },
-                () => { monitor.fahrenheit = true; },
-                () => { monitor.cpuTemperature = NaN; monitor.cpuUsage = NaN; },
-                () => { monitor.gpuOuter.usage = 100; monitor.gpuOuter.temperature = 99; },
-                () => { monitor.memoryUsed = 1023 * 1048576; },
-                () => { monitor.memoryUsed = 9.6 * monitor.gib; },
-                () => { monitor.networkDown = 0; monitor.networkUp = 1.3e7; },
-                () => { monitor.diskRead = NaN; monitor.diskWrite = 1e9; },
-                () => { setEntry("claude", { status: "ok", weekly: { percent: 100 },
-                                             scoped: [{ id: "Opus", label: "Opus", percent: 100 }] }); },
-                () => { setEntry("codex", { status: "ok", weekly: { percent: 3 } }); },
-                () => { monitor.usage.innerChoices = { claude: "none", codex: "" }; }
+                { run: () => { monitor.cpuUsage = 5; monitor.cpuTemperature = 38; }, dial: "cpu", readout: ["5%", "38°"] },
+                { run: () => { monitor.cpuUsage = 100; monitor.cpuTemperature = 140; }, dial: "cpu", readout: ["100%", "140°"] },
+                { run: () => { monitor.fahrenheit = true; }, dial: "cpu", readout: ["100%", "284°"] },
+                { run: () => { monitor.cpuTemperature = NaN; monitor.cpuUsage = NaN; }, dial: "cpu", readout: ["–", "–"] },
+                { run: () => { monitor.gpuOuter.usage = 100; monitor.gpuOuter.temperature = 99; },
+                  dial: "gpu", readout: ["100%", "210°"] },
+                { run: () => { monitor.memoryUsed = 1023 * 1048576; }, dial: "memory", readout: ["3%", "1023M"] },
+                { run: () => { monitor.memoryUsed = 9.6 * monitor.gib; }, dial: "memory", readout: ["30%", "9.6G"] },
+                { run: () => { monitor.networkDown = 0; monitor.networkUp = 1.3e7; } },
+                { run: () => { monitor.diskRead = NaN; monitor.diskWrite = 1e9; } },
+                { run: () => { setEntry("claude", { status: "ok", weekly: { percent: 100 },
+                                                    scoped: [{ id: "Opus", label: "Opus", percent: 100 }] }); },
+                  dial: "claude", readout: ["100%", "–"] },
+                { run: () => { setEntry("codex", { status: "ok", weekly: { percent: 3 } }); },
+                  dial: "codex", readout: ["3%", "–"] },
+                { run: () => { monitor.usage.innerChoices = { claude: "none", codex: "" }; },
+                  dial: "claude", readout: ["100%", "–"] },
+                { run: () => { monitor.usage.innerChoices = { claude: "", codex: "" }; },
+                  dial: "claude", readout: ["100%", "–"] },
+                // The countdown through its forms, by the reset moving and by
+                // the clock.
+                { run: claudeLeft(2 * 86400 + 21 * 3600 + 30 * 60), dial: "claude", readout: ["62%", "2d 21h"] },
+                { run: claudeLeft(5 * 3600 + 12 * 60 + 30), dial: "claude", readout: ["62%", "5h 12m"] },
+                { run: claudeLeft(12 * 60 + 30), dial: "claude", readout: ["62%", "12m"] },
+                { run: claudeLeft(-60), dial: "claude", readout: ["62%", "–"] },
+                { run: () => { setEntry("codex", { status: "ok", weekly: { percent: 34, resetsAt: codexReset } });
+                               codexLeft(5 * 86400 + 4 * 3600)(); },
+                  dial: "codex", readout: ["34%", "5d 4h"] },
+                { run: codexLeft(2 * 86400 + 21 * 3600), dial: "codex", readout: ["34%", "2d 21h"] },
+                { run: codexLeft(5 * 3600 + 12 * 60), dial: "codex", readout: ["34%", "5h 12m"] },
+                { run: codexLeft(12 * 60), dial: "codex", readout: ["34%", "12m"] },
+                { run: codexLeft(0), dial: "codex", readout: ["34%", "–"] },
+                // A blank second line, for the only GPU asleep and for Intel.
+                { run: () => { monitor.gpuInner.present = false; monitor.gpuOuter.phase = "asleep"; },
+                  dial: "gpu", readout: ["off"] },
+                { run: () => { monitor.gpuOuter.phase = "live"; monitor.gpuOuter.reportsTemperature = false; },
+                  dial: "gpu", readout: ["100%"] }
             ];
             for (let i = 0; i < changes.length; ++i) {
-                changes[i]();
+                changes[i].run();
                 waitForRendering(strip);
+                if (changes[i].dial) {
+                    compare(shownReadout(dialFor(changes[i].dial)), changes[i].readout, "change " + i);
+                }
                 compare(strip.implicitWidth, length, "change " + i);
                 compare(sizes(), before, "change " + i);
+                compare(lines(), linesBefore, "change " + i);
             }
-            monitor.usage.innerChoices = { claude: "", codex: "" };
-            waitForRendering(strip);
-            compare(separators(), separatorsBefore);
         }
 
+        // The inner ring follows the chosen limit; the readout under it keeps
+        // the weekly share and the time to its reset whichever limit shows.
         function test_innerLimitFollowsSettings() {
             const claude = dialFor("claude");
             const codex = dialFor("codex");
             compare(claude.limit.id, "Opus", "The only limit shows by default");
-            compare(shownReadout(claude), ["62%", "·", "78%"]);
+            compare(gauge(claude).inner, true);
+            compare(gauge(claude).innerValue, 78);
+            compare(shownReadout(claude), ["62%", "2d 21h"]);
             compare(codex.limit, null, "No scoped limit, no inner ring");
             compare(gauge(codex).inner, false);
-            compare(shownReadout(codex), ["34%"]);
+            compare(shownReadout(codex), ["34%", "5d 4h"]);
 
             setEntry("codex", { status: "ok", weekly: { percent: 34 },
                                 scoped: [{ id: "codex_spark", label: "GPT-5.3-Codex-Spark", percent: 5 }] });
             compare(codex.limit.id, "codex_spark", "A new limit is picked up");
-            compare(shownReadout(codex), ["34%", "·", "5%"]);
+            compare(gauge(codex).inner, true);
+            compare(gauge(codex).innerValue, 5);
+            compare(shownReadout(codex), ["34%", "–"]);
 
             const fable = { id: "Fable", label: "Fable", percent: 78 };
             const opus = { id: "Opus", label: "Opus", percent: 9 };
             setEntry("claude", { status: "ok", weekly: { percent: 62 }, scoped: [fable, opus] });
             compare(claude.limit, null, "Several and none picked: all models only");
-            compare(shownReadout(claude), ["62%"]);
+            compare(gauge(claude).inner, false);
+            compare(shownReadout(claude), ["62%", "–"]);
             monitor.usage.innerChoices = { claude: "Opus", codex: "" };
             compare(claude.limit.id, "Opus");
             compare(gauge(claude).inner, true);
-            compare(shownReadout(claude), ["62%", "·", "9%"]);
+            compare(gauge(claude).innerValue, 9);
+            compare(shownReadout(claude), ["62%", "–"]);
             monitor.usage.innerChoices = { claude: "none", codex: "" };
             compare(claude.limit, null);
             compare(gauge(claude).inner, false);
+            compare(shownReadout(claude), ["62%", "–"]);
             monitor.usage.innerChoices = { claude: "Opus", codex: "" };
             setEntry("claude", { status: "ok", weekly: { percent: 62 }, scoped: [fable] });
             compare(claude.limit, null, "A picked limit that goes away leaves one circle");
+            compare(gauge(claude).inner, false);
 
             // A reading without a weekly window yet, after a failed first poll.
             setEntry("codex", { status: "error", lastError: "timed out", lastErrorAt: 1 });
-            compare(shownReadout(codex), ["–"]);
+            compare(shownReadout(codex), ["–", "–"]);
             verify(!Number.isFinite(gauge(codex).value));
         }
 
@@ -1327,6 +1495,31 @@ Item {
             verify(area.active);
         }
 
+        // A folded dial's clock stops; unfolding brings its countdown up to
+        // date at once, not up to a minute later.
+        function test_countdownRefreshesAfterUnfolding() {
+            const claude = dialFor("claude");
+            const codex = dialFor("codex");
+            compare(shownReadout(claude), ["62%", "2d 21h"]);
+            compare(shownReadout(codex), ["34%", "5d 4h"]);
+            strip.visibilityMode = 2;
+            settleExpansion(0);
+            compare(claude.visible, false);
+            const hourAgo = Date.now() - 3600 * 1000;
+            claude.nowMs = hourAgo;
+            codex.nowMs = hourAgo;
+            compare(readoutParts(claude)[2].text, "2d 22h", "an hour stale while folded");
+            compare(readoutParts(codex)[2].text, "5d 5h", "an hour stale while folded");
+            strip.visibilityMode = 1;
+            settleExpansion(1);
+            for (const dial of [claude, codex]) {
+                verify(Math.abs(dial.nowMs - Date.now()) < 5000,
+                       dial.item + " clock " + (Date.now() - dial.nowMs) + "ms behind after unfolding");
+            }
+            compare(shownReadout(claude), ["62%", "2d 21h"]);
+            compare(shownReadout(codex), ["34%", "5d 4h"]);
+        }
+
         function test_usageDialNames() {
             const claude = dialFor("claude");
             compare(claude.title, "Claude");
@@ -1375,16 +1568,68 @@ Item {
             compare(handle().visible, true);
         }
 
+        function test_emptyRingKeepsADialsFootprint_data() {
+            const cases = [];
+            for (const scale of [1, 1.5]) {
+                for (const edge of [{ name: "right", location: PlasmaCore.Types.RightEdge, vertical: true },
+                                    { name: "bottom", location: PlasmaCore.Types.BottomEdge, vertical: false }]) {
+                    cases.push({ tag: edge.name + "-" + scale, location: edge.location,
+                                 vertical: edge.vertical, scale: scale });
+                }
+            }
+            return cases;
+        }
+
+        // The stand-in for an empty strip is as tall as a ring dial's face,
+        // ring and both lines, so the panel keeps its size as the last reading
+        // goes and the first one arrives, and it fits across the strip.
+        function test_emptyRingKeepsADialsFootprint(data) {
+            makeStrip({ items: ["claude"], enabledItems: root.usageItems, vertical: data.vertical,
+                        location: data.location });
+            if (data.vertical) {
+                strip.width = strip.minimumThickness * data.scale;
+                strip.height = Qt.binding(() => strip.implicitHeight);
+            } else {
+                strip.height = strip.minimumThickness * data.scale;
+                strip.width = Qt.binding(() => strip.implicitWidth);
+            }
+            waitForRendering(strip);
+            tryCompare(strip, "sizeFactor", data.scale);
+            const dialHeight = dialFor("claude").faceHeight;
+            const length = strip.implicitHeight;
+            strip.items = [];
+            waitForRendering(strip);
+            const empty = emptyRing();
+            compare(empty.visible, true);
+            compare(shownDials().length, 0);
+            verify(Math.abs(empty.implicitHeight - dialHeight) <= 0.5,
+                   "empty ring " + empty.implicitHeight + "px tall, a dial's face " + dialHeight + "px");
+            const at = empty.mapToItem(strip, 0, 0);
+            verify(at.x >= -0.5 && at.x + empty.width <= strip.width + 0.5
+                   && at.y >= -0.5 && at.y + empty.height <= strip.height + 0.5,
+                   "the empty ring stays inside the strip: " + JSON.stringify({ x: at.x, y: at.y, width: empty.width,
+                       height: empty.height, stripWidth: strip.width, stripHeight: strip.height }));
+            if (data.vertical) {
+                verify(Math.abs(strip.implicitHeight - length) <= 0.5,
+                       "the strip's length " + strip.implicitHeight + "px, with a dial " + length + "px");
+            } else {
+                verify(empty.implicitHeight <= strip.minimumThickness * data.scale + 0.5,
+                       "the empty ring " + empty.implicitHeight + "px across a " + strip.minimumThickness * data.scale
+                       + "px strip");
+            }
+        }
+
         // A sleeping GPU drops out of its dial, whichever ring it is on; with
-        // the only GPU asleep the dial says "off" around an empty ring.
+        // the only GPU asleep the dial says "off" around an empty ring. With
+        // both awake the readout is the discrete GPU's alone.
         function test_gpuDialFollowsGpuView_data() {
             return [
                 { tag: "both awake", outer: "live", inner: "live", present: true, dual: true,
-                  readout: ["12%", "·", "48°"], value: 12 },
+                  readout: ["12%", "48°"], value: 12 },
                 { tag: "outer asleep", outer: "asleep", inner: "live", present: true, dual: false,
-                  readout: ["3%", "·", "41°"], value: 3 },
+                  readout: ["3%", "41°"], value: 3 },
                 { tag: "inner asleep", outer: "live", inner: "asleep", present: true, dual: false,
-                  readout: ["12%", "·", "48°"], value: 12 },
+                  readout: ["12%", "48°"], value: 12 },
                 { tag: "only GPU asleep", outer: "asleep", inner: "live", present: false, dual: false,
                   readout: ["off"], value: NaN }
             ];
@@ -1400,8 +1645,10 @@ Item {
             compare(shownReadout(dial), data.readout);
             if (Number.isNaN(data.value)) {
                 verify(Number.isNaN(gauge(dial).value), "an empty ring");
-                const off = readoutParts(dial)[0];
-                verify(off.color.a < 1, "off reads dimmed");
+                const [off, , blank] = readoutParts(dial);
+                compareColour(off.color, Style.dim(Kirigami.Theme.textColor), "off reads dimmed");
+                compare(blank.text, "");
+                compare(blank.height, off.height, "the blank line keeps its place");
             } else {
                 compare(gauge(dial).value, data.value);
             }
@@ -1413,7 +1660,11 @@ Item {
             monitor.gpuOuter.temperature = NaN;
             monitor.gpuInner.present = false;
             makeStrip({ items: ["gpu"], enabledItems: ["gpu"] });
-            compare(shownReadout(dialFor("gpu")), ["12%"]);
+            const dial = dialFor("gpu");
+            compare(shownReadout(dial), ["12%"]);
+            const [first, , second] = readoutParts(dial);
+            compare(second.text, "");
+            compare(second.height, first.height, "the blank line keeps its place");
         }
 
         // Claude and Codex breathe from 90 % until 100 %, and dim while their
@@ -1444,7 +1695,8 @@ Item {
             compare(gauge(dialFor("cpu")).pulsing, false);
         }
 
-        // Readouts follow the ring's level colours; temperatures their heat.
+        // A ring's own reading follows its level colours, as the ring does; a
+        // temperature its heat. A countdown stays dim at every level.
         function test_levelColours_data() {
             return [{ tag: "74", percent: 74, tone: "text" }, { tag: "75", percent: 75, tone: "neutral" },
                     { tag: "89", percent: 89, tone: "neutral" }, { tag: "90", percent: 90, tone: "negative" }];
@@ -1453,20 +1705,26 @@ Item {
         function test_levelColours(data) {
             const expected = data.tone === "negative" ? Kirigami.Theme.negativeTextColor
                            : data.tone === "neutral" ? Kirigami.Theme.neutralTextColor : Kirigami.Theme.textColor;
-            setEntry("claude", { status: "ok", weekly: { percent: data.percent },
+            setEntry("claude", { status: "ok",
+                                 weekly: { percent: data.percent, resetsAt: monitor.usage.createdAt + 2 * 86400 + 21 * 3600 + 30 * 60 },
                                  scoped: [{ id: "Opus", label: "Opus", percent: data.percent }] });
-            const parts = readoutParts(dialFor("claude"));
-            compare(parts[0].color, expected);
-            compare(parts[2].color, expected);
-            compare(parts[2].opacity, data.tone === "negative" ? 1 : 0.55);
+            const [percent, , countdown] = readoutParts(dialFor("claude"));
+            compare(percent.text, data.percent + "%");
+            compare(percent.color, expected);
+            compare(countdown.text, "2d 21h");
+            compareColour(countdown.color, Style.dim(Kirigami.Theme.textColor), "the countdown reads dim");
             compare(gauge(dialFor("claude")).outerTone, expected);
+            compare(gauge(dialFor("claude")).innerTone, expected);
 
             monitor.cpuUsage = data.percent;
             monitor.cpuTemperature = 80;
             makeStrip({ items: ["cpu"], enabledItems: ["cpu"] });
-            const cpu = readoutParts(dialFor("cpu"));
-            compare(cpu[0].color, expected);
-            compare(cpu[2].color, Kirigami.Theme.neutralTextColor, "80 °C reads warm");
+            const [usage, , temperature] = readoutParts(dialFor("cpu"));
+            compare(usage.color, expected);
+            compare(temperature.text, "80°");
+            compare(temperature.color, Kirigami.Theme.neutralTextColor, "80 °C reads warm");
+            monitor.cpuTemperature = 50;
+            compareColour(temperature.color, Style.dim(Kirigami.Theme.textColor), "50 °C reads dim");
         }
 
         function test_rateDials() {

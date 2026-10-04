@@ -124,6 +124,27 @@ Rectangle {
         gpuInner.clock: 1100
     }
 
+    // Every ring past a threshold: hot, warm, full, nearly out.
+    FakeMonitor {
+        id: alert
+        cpuUsage: 95
+        cpuTemperature: 92
+        memoryUsed: 29.4 * alert.gib
+        gpuOuter.usage: 77
+        gpuOuter.temperature: 78
+        usage.entries: ({
+            claude: { status: "ok", weekly: alert.usage.window(95, 4 * 3600 + 12 * 60, []) },
+            codex: { status: "ok", weekly: alert.usage.window(81, 5 * alert.usage.day, []) }
+        })
+    }
+
+    // The only GPU, asleep.
+    FakeMonitor {
+        id: onlyAsleep
+        gpuOuter.phase: "asleep"
+        gpuInner.present: false
+    }
+
     component Note: Text {
         color: Style.dim(Kirigami.Theme.textColor)
         font.pointSize: Kirigami.Theme.smallFont.pointSize
@@ -152,14 +173,15 @@ Rectangle {
             Layout.preferredWidth: strip.implicitWidth + 4 * Kirigami.Units.gridUnit
             Layout.preferredHeight: panel.thickness
 
+            // Breeze's panel keeps 4 px of margin either side of an applet.
             Strip {
                 id: strip
                 anchors.centerIn: parent
+                height: panel.thickness - 8
                 monitor: panel.monitor
-                items: ["cpu", "gpu", "memory", "network", "disk"]
+                items: ["cpu", "gpu", "memory", "claude", "network", "disk"]
                 vertical: false
-                thickness: panel.thickness
-                ringSize: 30
+                thickness: panel.thickness - 8
                 ringsOnly: panel.ringsOnly
             }
         }
@@ -193,10 +215,9 @@ Rectangle {
                 width: side.thickness - 8
                 height: implicitHeight
                 monitor: side.monitor
-                items: ["cpu", "gpu", "memory", "network", "disk"]
+                items: ["cpu", "gpu", "memory", "claude", "codex", "network", "disk"]
                 vertical: true
                 thickness: width
-                ringSize: 30
                 ringsOnly: []
             }
         }
@@ -267,8 +288,35 @@ Rectangle {
         }
 
         Panel {
+            label: "Panel · 44 px"
+            thickness: 44
+        }
+
+        Panel {
+            label: "Panel · 38 px"
+            thickness: 38
+        }
+
+        Panel {
             label: "Panel · 30 px"
             thickness: 30
+        }
+
+        Panel {
+            label: "Panel · 72 px"
+            thickness: 72
+        }
+
+        Panel {
+            label: "Panel · 46 px · alerts"
+            thickness: 46
+            monitor: alert
+        }
+
+        Panel {
+            label: "Panel · 46 px · the only GPU asleep"
+            thickness: 46
+            monitor: onlyAsleep
         }
 
         Panel {
@@ -421,6 +469,12 @@ Rectangle {
                 Panel {
                     label: "Breeze Light · panel · 46 px"
                     thickness: 46
+                }
+
+                Panel {
+                    label: "Breeze Light · panel · 46 px · alerts"
+                    thickness: 46
+                    monitor: alert
                 }
 
                 Panel {

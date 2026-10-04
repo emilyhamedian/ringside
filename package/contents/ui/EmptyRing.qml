@@ -37,8 +37,6 @@ Item {
         : i18nc("@info:tooltip", "Choose items under Configure Ringside → Panel Items.")
 
     readonly property real diameter: 52 * sizeFactor
-    // capitalHeight needs Qt 6.9; the ink of "H" stands in before that.
-    readonly property real capHeight: metrics.capitalHeight ?? capMetrics.tightBoundingRect.height // qmllint disable missing-property
     readonly property color faint: Qt.alpha(Kirigami.Theme.textColor, 0.28)
 
     implicitWidth: column.implicitWidth
@@ -48,15 +46,9 @@ Item {
     Accessible.name: toolTip.mainText
     Accessible.description: reason
 
-    FontMetrics {
-        id: metrics
-        font.pointSize: Kirigami.Theme.smallFont.pointSize * empty.sizeFactor
-        font.weight: Font.DemiBold
-    }
-    TextMetrics {
-        id: capMetrics
-        font: metrics.font
-        text: "H"
+    ReadoutFont {
+        id: readingFont
+        pointSize: Kirigami.Theme.smallFont.pointSize * empty.sizeFactor
     }
 
     ColumnLayout {
@@ -104,14 +96,16 @@ Item {
             }
         }
 
+        // A dial's two lines of readings, the first a dash, so the panel keeps
+        // its footprint (see StandaloneDial's readout).
         Text {
             Layout.alignment: Qt.AlignHCenter
-            Layout.preferredHeight: Math.round(empty.capHeight)
-            Layout.topMargin: -Math.round(metrics.ascent - empty.capHeight)
+            Layout.preferredHeight: Math.round(readingFont.lineHeight + readingFont.plain.ascent)
+            Layout.topMargin: -Math.round(readingFont.strong.ascent - readingFont.capHeight)
             verticalAlignment: Text.AlignTop
             text: "–"
             color: Kirigami.Theme.textColor
-            font: metrics.font
+            font: readingFont.strong.font
             opacity: 0.35
             textFormat: Text.PlainText
         }

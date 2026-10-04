@@ -7,6 +7,7 @@ import org.kde.kirigami as Kirigami
 import "../../package/contents/ui"
 import "../../package/contents/ui/popups"
 import "../../package/contents/ui/code/report.js" as Report
+import "../../package/contents/ui/code/style.js" as Style
 
 // The Claude and Codex items. UsageData runs the stub scenarios in data/
 // (fake-usage-*.py) in place of usage.py, so no credentials are read and no
@@ -91,7 +92,7 @@ Item {
         id: cellComponent
         UsageCellContent {
             item: "claude"
-            ring: 30
+            ring: 34
             textShown: true
             twoLines: true
         }
@@ -412,8 +413,15 @@ Item {
             return c;
         }
 
-        function reading(cell) {
-            return root.find(cell, i => i.widest !== undefined);
+        // A line of the readout beside the ring: "first", the weekly
+        // percentage, or "second", the time to the reset.
+        function line(cell, name) {
+            return root.find(cell, i => i.objectName === name);
+        }
+
+        // The Claude or Codex mark inside the ring.
+        function mark(cell) {
+            return root.find(cell.children[0], i => i.isMask !== undefined);
         }
 
         // Claude at `percent` with no model limit, resetting in `left` seconds.
@@ -423,42 +431,63 @@ Item {
                                         weekly: usage.window(percent, left ?? 2 * usage.day, []), scoped: [] } };
         }
 
-        // The percentage in the ring's middle, as opposed to the gauge's own text property.
-        function centre(cell) {
-            const gauge = cell.children[0];
-            return root.find(gauge, i => i !== gauge && i.text === gauge.text);
+        function test_texts_data() {
+            return [{ tag: "claude", percent: "62%", left: "2d 21h", mark: "/icons/claude.svg" },
+                    { tag: "codex", percent: "34%", left: "5d 4h", mark: "/icons/openai.svg" }];
         }
 
-        function test_texts() {
-            const claude = cell("claude");
-            const shown = root.texts(claude);
-            verify(shown.includes("CLAUDE"), JSON.stringify(shown));
-            verify(shown.includes("2d 21h"), JSON.stringify(shown));
-            verify(!centre(claude).visible, "the inner ring leaves no room for the percentage");
-            const codex = cell("codex");
-            const codexShown = root.texts(codex);
-            verify(codexShown.includes("CODEX") && codexShown.includes("5d 4h"), JSON.stringify(codexShown));
-            verify(centre(codex).visible);
-            compare(centre(codex).text, "34");
+        // The mark names the item in the ring, and the percentage moves out
+        // of it to stand over the time to the reset.
+        function test_texts(data) {
+            const c = cell(data.tag);
+            const gauge = c.children[0];
+            compare(root.texts(c), [data.percent, data.left]);
+            compare(line(c, "first").text, data.percent);
+            compare(line(c, "second").text, data.left);
+            verify(line(c, "second").y >= line(c, "first").y + line(c, "first").height, "the time sits under the percentage");
+            compare(gauge.text, "", "no percentage inside the ring");
+            const m = mark(c);
+            verify(m.visible, "the mark shows");
+            verify(m.source.toString().endsWith(data.mark), m.source);
+            verify(m.width > 0 && m.width <= gauge.centreWidth, m.width + " in " + gauge.centreWidth);
         }
 
+        // A thin panel puts the readings on one line and leaves the ring
+        // unnamed; with the text off, the ring keeps its mark alone.
         function test_oneLineAndRingOnly() {
-            verify(!root.texts(cell("claude", { twoLines: false })).includes("CLAUDE"));
+            const thin = cell("claude", { twoLines: false });
+            compare(root.texts(thin), ["62%", "·", "2d 21h"]);
+            compare(line(thin, "second").y, line(thin, "first").y, "one line");
+            verify(line(thin, "second").x > line(thin, "first").x);
+            verify(!mark(thin).visible, "no mark beside one line");
             const bare = cell("claude", { textShown: false });
-            verify(!root.texts(bare).includes("2d 21h"));
+            compare(root.texts(bare), []);
+            compare(bare.implicitWidth, 34, "the ring alone");
+            verify(mark(bare).visible, "the ring keeps its mark");
             verify(bare.accessibleDescription !== "", "the tooltip still has the words");
         }
 
-        function test_widthHoldsAsTheCountdownRuns() {
+        function test_widthHoldsAsTheCountdownRuns_data() {
+            return [{ tag: "two lines", twoLines: true }, { tag: "one line", twoLines: false }];
+        }
+
+        function test_widthHoldsAsTheCountdownRuns(data) {
             claudeAt(40, 6 * 86400 + 23 * 3600);
-            const c = cell("claude");
+            const c = cell("claude", { twoLines: data.twoLines });
             const width = c.implicitWidth;
-            for (const left of [23 * 3600 + 59 * 60, 10 * 3600 + 10 * 60, 5 * 60, 30, -600]) {
-                claudeAt(40, left);
-                waitForRendering(c);
-                compare(c.implicitWidth, width, "left " + left);
+            for (const percent of [5, 100, NaN]) {
+                for (const left of [23 * 3600 + 59 * 60, 10 * 3600 + 10 * 60, 5 * 60, 30, -600]) {
+                    claudeAt(percent, left);
+                    waitForRendering(c);
+                    compare(c.implicitWidth, width, percent + "% with " + left + " s left");
+                    for (const name of ["first", "second"]) {
+                        verify(line(c, name).contentWidth <= line(c, name).width,
+                               line(c, name).text + " overflows its room at " + percent + "% with " + left + " s left");
+                    }
+                }
             }
-            compare(reading(c).value, "–", "a passed reset shows a dash until the next poll");
+            compare(line(c, "first").text, "–", "no percentage, a dash");
+            compare(line(c, "second").text, "–", "a passed reset shows a dash until the next poll");
         }
 
         function test_levelColours_data() {
@@ -466,13 +495,17 @@ Item {
                     { tag: "89", percent: 89, tone: "neutral" }, { tag: "90", percent: 90, tone: "negative" }];
         }
 
+        // The percentage takes the ring's colour; the time stays dim, so
+        // only the reading that reached a level shows it.
         function test_levelColours(data) {
             claudeAt(data.percent);
             const c = cell("claude");
             const expected = data.tone === "negative" ? Kirigami.Theme.negativeTextColor
                            : data.tone === "neutral" ? Kirigami.Theme.neutralTextColor : Kirigami.Theme.textColor;
             compare(c.children[0].outerTone, expected);
-            compare(reading(c).color, expected, "the time follows the ring");
+            compare(line(c, "first").color, c.children[0].outerTone, "the percentage follows the ring");
+            // Text keeps 8-bit colours, so they compare as drawn.
+            compare(String(line(c, "second").color), String(Style.dim(Kirigami.Theme.textColor)), "the time stays dim");
         }
 
         function test_pulse_data() {
@@ -724,6 +757,123 @@ Item {
             compare(words.timeOfDay(earlier.getTime() / 1000, noon), earlier.toLocaleTimeString(Qt.locale(), Locale.ShortFormat));
             const yesterday = new Date(2026, 8, 26, 9, 15);
             compare(words.timeOfDay(yesterday.getTime() / 1000, noon), yesterday.toLocaleString(Qt.locale(), Locale.ShortFormat));
+        }
+    }
+
+    // The short readings by a ring, for every item, from FakeMonitor's
+    // readings or the ones a row sets. Expectations follow the running
+    // locale's digits, as in UsageWords.
+    TestCase {
+        id: readouts
+        name: "Readout"
+
+        property var monitor: null
+
+        Words {
+            id: readoutWords
+            monitor: readouts.monitor
+        }
+
+        ReadoutFont {
+            id: readoutFace
+        }
+
+        function init() {
+            failOnWarning(/TypeError|ReferenceError|SyntaxError|is not a function|Unable to assign|Cannot assign|Binding loop/);
+            monitor = createTemporaryObject(monitorComponent, readouts);
+        }
+
+        function local(text) {
+            const zero = Qt.locale().zeroDigit.codePointAt(0);
+            return text.replace(/[0-9]/g, c => String.fromCodePoint(zero + Number(c))).replace(".", Qt.locale().decimalPoint);
+        }
+
+        function apply(target, values) {
+            for (const key in values) {
+                target[key] = values[key];
+            }
+        }
+
+        // `set`, `outer` and `inner` override the monitor's and its GPUs'
+        // readings; `weekly` is [percent, seconds left] for the row's item.
+        function test_readout_data() {
+            return [
+                { tag: "cpu", item: "cpu", first: "23%", second: "61°" },
+                { tag: "cpu warm", item: "cpu", set: { cpuUsage: 75, cpuTemperature: 75 },
+                  first: "75%", level: 1, second: "75°", heat: 1 },
+                { tag: "cpu hot", item: "cpu", set: { cpuUsage: 90, cpuTemperature: 90 },
+                  first: "90%", level: 2, second: "90°", heat: 2 },
+                { tag: "cpu in fahrenheit", item: "cpu", set: { fahrenheit: true }, first: "23%", second: "142°" },
+                { tag: "cpu unread", item: "cpu", set: { cpuUsage: NaN, cpuTemperature: NaN }, first: "–", second: "–" },
+                // The integrated GPU's temperature stays in the tooltip.
+                { tag: "two gpus", item: "gpu", first: "12%", second: "48°" },
+                { tag: "gpu hot", item: "gpu", outer: { usage: 95, temperature: 92 },
+                  first: "95%", level: 2, second: "92°", heat: 2 },
+                { tag: "gpu resting", item: "gpu", outer: { phase: "resting" }, inner: { present: false },
+                  first: "0%", second: "48°" },
+                { tag: "intel gpu", item: "gpu", outer: { reportsTemperature: false }, inner: { present: false },
+                  first: "12%", second: "" },
+                { tag: "integrated gpu awake alone", item: "gpu", outer: { phase: "asleep" }, first: "3%", second: "41°" },
+                { tag: "only gpu asleep", item: "gpu", outer: { phase: "asleep" }, inner: { present: false },
+                  first: "off", off: true, second: "" },
+                { tag: "both gpus asleep", item: "gpu", outer: { phase: "asleep" }, inner: { phase: "asleep" },
+                  first: "off", off: true, second: "" },
+                { tag: "memory", item: "memory", first: "42%", second: "13.4G" },
+                { tag: "memory in MiB", item: "memory", set: { memoryUsed: 900 * 1048576 }, first: "3%", second: "900M" },
+                { tag: "memory full", item: "memory", set: { memoryUsed: 29 * 1073741824 },
+                  first: "91%", level: 2, second: "29.0G" },
+                { tag: "memory unread", item: "memory", set: { memoryUsed: NaN }, first: "–", second: "–" },
+                { tag: "claude", item: "claude", first: "62%", second: "2d 21h" },
+                { tag: "codex", item: "codex", first: "34%", second: "5d 4h" },
+                { tag: "claude at its limit", item: "claude", weekly: [90, 3600], first: "90%", level: 2, second: "1h 0m" },
+                { tag: "claude amber", item: "claude", weekly: [75, 12 * 60], first: "75%", level: 1, second: "12m" },
+                { tag: "claude used up", item: "claude", weekly: [100, 2 * 86400], first: "100%", level: 2, second: "2d 0h" },
+                { tag: "reset passed", item: "claude", weekly: [40, -600], first: "40%", second: "–" },
+                { tag: "signed out", item: "claude", entries: { claude: { status: "signed_out" } }, first: "–", second: "–" },
+                { tag: "not checked yet", item: "codex", entries: {}, first: "–", second: "–" }
+            ];
+        }
+
+        // Readout reads a missing level or heat as none, and only a true
+        // `off` as asleep.
+        function test_readout(data) {
+            const usage = monitor.usage;
+            apply(monitor, data.set ?? {});
+            apply(monitor.gpuOuter, data.outer ?? {});
+            apply(monitor.gpuInner, data.inner ?? {});
+            if (data.entries !== undefined) {
+                usage.entries = data.entries;
+            }
+            if (data.weekly !== undefined) {
+                usage.entries = { [data.item]: { status: "ok", fetchedAt: usage.createdAt,
+                                                 weekly: usage.window(data.weekly[0], data.weekly[1], []), scoped: [] } };
+            }
+            const r = readoutWords.readout(data.item, usage.createdAt * 1000);
+            compare({ first: r.first, level: r.level ?? 0, off: r.off === true, second: r.second, heat: r.heat ?? 0 },
+                    { first: local(data.first), level: data.level ?? 0, off: data.off ?? false,
+                      second: local(data.second), heat: data.heat ?? 0 });
+
+            // Each line fits the room its widest text keeps.
+            const widest = readoutWords.widestReadout(data.item);
+            const firstRoom = readoutFace.room(readoutFace.strong, widest[0]);
+            const secondRoom = readoutFace.room(readoutFace.plain, widest[1]);
+            verify(firstRoom > 0 && secondRoom > 0, "measured");
+            verify(readoutFace.room(readoutFace.strong, [r.first]) <= firstRoom, r.first + " in " + JSON.stringify(widest[0]));
+            verify(readoutFace.room(readoutFace.plain, [r.second]) <= secondRoom, r.second + " in " + JSON.stringify(widest[1]));
+        }
+
+        function test_widestReadout_data() {
+            return [
+                { tag: "cpu", item: "cpu", widest: [["100%"], ["100°"]] },
+                { tag: "gpu", item: "gpu", widest: [["100%", "off"], ["100°"]] },
+                { tag: "memory", item: "memory", widest: [["100%"], ["1000M"]] },
+                { tag: "claude", item: "claude", widest: [["100%"], ["00h 00m"]] },
+                { tag: "codex", item: "codex", widest: [["100%"], ["00h 00m"]] }
+            ];
+        }
+
+        function test_widestReadout(data) {
+            compare(readoutWords.widestReadout(data.item), data.widest.map(texts => texts.map(local)));
         }
     }
 

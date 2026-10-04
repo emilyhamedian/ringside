@@ -12,8 +12,9 @@ import "../../package/contents/ui/popups"
 
 // The README's pictures, from fixed sample readings: scripts/pictures.sh
 // runs this, which saves each shot and the fold's frames to the folder given
-// after --out and quits. The week resets at 7:00 AM EDT, far enough ahead
-// that most of it has been used.
+// after --out and quits. In the popups the week resets at 7:00 AM EDT, far
+// enough ahead that most of it has been used; the panel and Standalone
+// pictures count down a fixed time, so they come out the same on every run.
 Rectangle {
     id: pictures
 
@@ -88,6 +89,20 @@ Rectangle {
         })
     }
 
+    // The sample for the panel, Standalone and fold pictures, whose countdowns
+    // would otherwise change with the time of day they are rendered: the
+    // weeks reset 2 days 21 hours and a half from now, which reads "2d 21h".
+    FakeMonitor {
+        id: shown
+        readonly property int left: 2 * 86400 + 21 * 3600 + 30 * 60
+        memoryUsed: 24.6 * gib
+        usage.entries: ({
+            claude: { status: "ok", fetchedAt: shown.usage.createdAt, weekly: shown.usage.window(62, shown.left, []),
+                      scoped: [Object.assign({ id: "Opus", label: "Opus" }, shown.usage.window(78, shown.left, []))] },
+            codex: { status: "ok", fetchedAt: shown.usage.createdAt, weekly: shown.usage.window(34, shown.left, []), scoped: [] }
+        })
+    }
+
     // A popup on the theme's dialog background, as AppletPopup draws it.
     component Dialog: KSvg.FrameSvgItem {
         default property alias page: holder.data
@@ -130,7 +145,7 @@ Rectangle {
                 id: strip
                 anchors.fill: parent
                 anchors.margins: 4
-                monitor: sample
+                monitor: shown
                 items: ["cpu", "claude", "codex"]
                 enabledItems: items
                 vertical: true
@@ -146,7 +161,7 @@ Rectangle {
         StandaloneStrip {
             id: openStrip
             visible: false
-            monitor: sample
+            monitor: shown
             items: strip.items
             enabledItems: items
             width: strip.minimumThickness
@@ -157,6 +172,7 @@ Rectangle {
         id: shots
         spacing: 40
 
+        // A 46 px Breeze panel gives its applets 38 px.
         KSvg.FrameSvgItem {
             objectName: "panel"
             imagePath: "widgets/panel-background"
@@ -166,12 +182,11 @@ Rectangle {
             Strip {
                 id: row
                 anchors.centerIn: parent
-                height: parent.height
-                monitor: sample
+                height: 38
+                monitor: shown
                 items: ["cpu", "gpu", "memory", "claude", "network"]
                 vertical: false
-                thickness: 46
-                ringSize: 30
+                thickness: 38
                 ringsOnly: []
             }
         }
@@ -225,7 +240,7 @@ Rectangle {
                     id: dials
                     anchors.fill: parent
                     anchors.margins: 4
-                    monitor: sample
+                    monitor: shown
                     items: ["cpu", "gpu", "claude", "codex"]
                     enabledItems: items
                     vertical: true

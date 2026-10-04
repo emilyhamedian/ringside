@@ -76,11 +76,6 @@
       <label>Ring items drawn without their text</label>
       <default></default>
     </entry>
-    <entry name="ringSize" type="Int">
-      <default>30</default>
-      <min>16</min>
-      <max>64</max>
-    </entry>
   </group>
 
   <group name="Sensors">
