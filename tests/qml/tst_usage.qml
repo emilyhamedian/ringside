@@ -419,6 +419,16 @@ Item {
             return root.find(cell, i => i.objectName === name);
         }
 
+        // A countdown's styled text as the words it shows: "23h 5m".
+        function plain(text) {
+            return text.replace(/<[^>]*>/g, "").replace(/&#8201;/g, " ").replace(/\u200f/g, "");
+        }
+
+        // The visible texts in `cell`, a countdown as its words.
+        function shown(cell) {
+            return root.texts(cell).map(plain);
+        }
+
         // The Claude or Codex mark inside the ring.
         function mark(cell) {
             return root.find(cell.children[0], i => i.markName !== undefined);
@@ -432,8 +442,8 @@ Item {
         }
 
         function test_texts_data() {
-            return [{ tag: "claude", percent: "52%", left: "2d 21h" },
-                    { tag: "codex", percent: "24%", left: "5d 4h" }];
+            return [{ tag: "claude", percent: "52%", left: "2d" },
+                    { tag: "codex", percent: "24%", left: "5d" }];
         }
 
         // The mark names the item in the ring, and the percentage moves out
@@ -441,9 +451,9 @@ Item {
         function test_texts(data) {
             const c = cell(data.tag);
             const gauge = c.children[0];
-            compare(root.texts(c), [data.percent, data.left]);
+            compare(shown(c), [data.percent, data.left]);
             compare(line(c, "first").text, data.percent);
-            compare(line(c, "second").text, data.left);
+            compare(plain(line(c, "second").text), data.left);
             verify(line(c, "second").y >= line(c, "first").y + line(c, "first").height, "the time sits under the percentage");
             compare(gauge.text, "", "no percentage inside the ring");
             const m = mark(c);
@@ -456,7 +466,7 @@ Item {
         // unnamed; with the text off, the ring keeps its mark alone.
         function test_oneLineAndRingOnly() {
             const thin = cell("claude", { twoLines: false });
-            compare(root.texts(thin), ["52%", "·", "2d 21h"]);
+            compare(shown(thin), ["52%", "·", "2d"]);
             compare(line(thin, "second").y, line(thin, "first").y, "one line");
             verify(line(thin, "second").x > line(thin, "first").x);
             verify(!mark(thin).visible, "no mark beside one line");
@@ -486,7 +496,7 @@ Item {
                                     5 * 60, 30, -600]) {
                     claudeAt(percent, left);
                     waitForRendering(c);
-                    const texts = [line(c, "first").text, line(c, "second").text];
+                    const texts = [line(c, "first").text, plain(line(c, "second").text)];
                     const what = texts.join(" ") + " at " + percent + "% with " + left + " s left";
                     for (const name of ["first", "second"]) {
                         verify(line(c, name).contentWidth <= line(c, name).width, line(c, name).text + " overflows its room: " + what);
@@ -499,7 +509,7 @@ Item {
                     compare(c.implicitWidth, widths[both], what + ": the width " + both + " took before");
                 }
             }
-            verify(rooms[shape("5m")] < rooms[shape("6d 23h")], "fewer characters take less room: " + JSON.stringify(rooms));
+            verify(rooms[shape("5m")] < rooms[shape("23h 59m")], "fewer characters take less room: " + JSON.stringify(rooms));
             compare(line(c, "first").text, "–", "no percentage, a dash");
             compare(line(c, "second").text, "–", "a passed reset shows a dash until the next poll");
         }
@@ -520,6 +530,30 @@ Item {
             compare(line(c, "first").color, c.children[0].outerTone, "the percentage follows the ring");
             // Text keeps 8-bit colours, so they compare as drawn.
             compare(String(line(c, "second").color), String(Style.dim(Kirigami.Theme.textColor)), "the time stays dim");
+        }
+
+        function test_countdownRedAtTheLimit_data() {
+            return [{ tag: "99", percent: 99, left: 2 * 86400, shows: "2d", tone: "dim" },
+                    { tag: "100", percent: 100, left: 2 * 86400, shows: "2d", tone: "negative" },
+                    { tag: "100 last minutes", percent: 100, left: 10 * 60, shows: "10m", tone: "negative" },
+                    { tag: "100 reset passed", percent: 100, left: -600, shows: "–", tone: "dim" }];
+        }
+
+        // At the limit the countdown says how long the lock-out lasts, and
+        // turns red with the percentage, as the popup's does. A reset that
+        // has passed shows a dim dash until the next check. On one line the
+        // dot between them stays dim.
+        function test_countdownRedAtTheLimit(data) {
+            claudeAt(data.percent, data.left);
+            const dim = String(Style.dim(Kirigami.Theme.textColor));
+            for (const twoLines of [true, false]) {
+                const c = cell("claude", { twoLines: twoLines });
+                compare(plain(line(c, "second").text), data.shows);
+                compare(String(line(c, "second").color), data.tone === "dim" ? dim : String(Kirigami.Theme.negativeTextColor));
+                compare(line(c, "first").color, c.children[0].outerTone, "the percentage follows the ring");
+                const dot = root.find(c, i => i.visible && i.text === "·");
+                compare(dot ? String(dot.color) : dim, dim, "the dot");
+            }
         }
 
         function test_pulse_data() {
@@ -605,10 +639,10 @@ Item {
             compare(claude.innerLimit.id, "Fable", "The only limit shows by default");
             compare(claude.children[0].inner, true);
             compare(claude.children[0].innerValue, 78);
-            compare(root.texts(claude), ["52%", "2d 21h"]);
+            compare(shown(claude), ["52%", "2d"]);
             compare(codex.innerLimit, null, "No scoped limit, no inner ring");
             compare(codex.children[0].inner, false);
-            compare(root.texts(codex), ["24%", "5d 4h"]);
+            compare(shown(codex), ["24%", "5d"]);
 
             setEntry("codex", { status: "ok", weekly: { percent: 24 },
                                 scoped: [{ id: "codex_spark", label: "GPT-5.3-Codex-Spark", percent: 5 }] });
@@ -967,11 +1001,14 @@ Item {
                 { tag: "memory full", item: "memory", set: { memoryUsed: 29 * 1073741824 },
                   first: "91%", level: 2, second: "29.0G" },
                 { tag: "memory unread", item: "memory", set: { memoryUsed: NaN }, first: "–", second: "–" },
-                { tag: "claude", item: "claude", first: "52%", second: "2d 21h" },
-                { tag: "codex", item: "codex", first: "24%", second: "5d 4h" },
+                { tag: "claude", item: "claude", first: "52%", second: "2d" },
+                { tag: "codex", item: "codex", first: "24%", second: "5d" },
+                { tag: "claude a day out", item: "claude", weekly: [40, 86400 + 30 * 60], first: "40%", second: "1d" },
+                { tag: "claude last day", item: "claude", weekly: [40, 23 * 3600 + 5 * 60], first: "40%", second: "23h 5m" },
                 { tag: "claude at its limit", item: "claude", weekly: [90, 3600], first: "90%", level: 2, second: "1h 0m" },
                 { tag: "claude amber", item: "claude", weekly: [75, 12 * 60], first: "75%", level: 1, second: "12m" },
-                { tag: "claude used up", item: "claude", weekly: [100, 2 * 86400], first: "100%", level: 2, second: "2d 0h" },
+                { tag: "claude used up", item: "claude", weekly: [100, 2 * 86400], first: "100%", level: 2, second: "2d", heat: 2 },
+                { tag: "used up, reset passed", item: "claude", weekly: [100, -600], first: "100%", level: 2, second: "–" },
                 { tag: "reset passed", item: "claude", weekly: [40, -600], first: "40%", second: "–" },
                 { tag: "signed out", item: "claude", entries: { claude: { status: "signed_out" } }, first: "–", second: "–" },
                 { tag: "not checked yet", item: "codex", entries: {}, first: "–", second: "–" }
@@ -979,7 +1016,7 @@ Item {
         }
 
         // Readout reads a missing level or heat as none, and only a true
-        // `off` as asleep.
+        // `off` as asleep. A countdown's parts spell its second line.
         function test_readout(data) {
             const usage = monitor.usage;
             apply(monitor, data.set ?? {});
@@ -996,6 +1033,9 @@ Item {
             compare({ first: r.first, level: r.level ?? 0, off: r.off === true, second: r.second, heat: r.heat ?? 0 },
                     { first: local(data.first), level: data.level ?? 0, off: data.off ?? false,
                       second: local(data.second), heat: data.heat ?? 0 });
+            if (r.parts) {
+                compare(r.parts.map(p => p.value + p.unit).join(" ") || "–", r.second, "the parts");
+            }
         }
     }
 
