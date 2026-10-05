@@ -28,6 +28,11 @@ PopupPage {
                      "peak %1 %2", r.value, r.unit);
     }
 
+    Words {
+        id: words
+        monitor: popup.monitor
+    }
+
     // Legend and detail text: caption-sized, set as written.
     component Note: Caption {}
 
@@ -89,7 +94,7 @@ PopupPage {
             // Spoken as one, since the arrows say nothing on their own.
             Accessible.role: Accessible.StaticText
             Accessible.name: i18nc("@info accessible name of the network rates, e.g. Down 24.8 Mb/s, up 1.2 Mb/s",
-                                   "Down %1 %2, up %3 %4", down.value, down.unit, up.value, up.unit)
+                                   "Down %1, up %2", words.rateText(down), words.rateText(up))
 
             Arrow {
                 Layout.preferredWidth: Layout.preferredHeight * 0.8
