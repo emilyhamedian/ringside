@@ -853,6 +853,26 @@ Item {
             compare(graph(popup).secondPoints.length, 17);
         }
 
+        // A limit's percentage is set like the other popups' numbers. The
+        // header ring's centre, which says the same, is the panel ring's.
+        function test_percentInSans() {
+            const rows = [];
+            const collect = i => {
+                if (i.outerTone !== undefined) {
+                    return;
+                }
+                if (i.text === "52%" && i.font !== undefined) {
+                    rows.push(i);
+                }
+                i.children.forEach(collect);
+            };
+            collect(load("claude"));
+            compare(rows.length, 1);
+            const percent = rows[0];
+            compare(percent.font.family, Kirigami.Theme.defaultFont.family);
+            compare(percent.font.features.tnum, 1);
+        }
+
         function test_codex() {
             const shown = root.texts(load("codex"));
             verify(shown.includes("Codex") && shown.includes("Weekly limits") && shown.includes("5d 4h"), JSON.stringify(shown));

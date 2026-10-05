@@ -186,7 +186,6 @@ PopupPage {
                     Layout.alignment: Qt.AlignBaseline
                     visible: section.temperatureShown
                     value: Format.temperature(section.slot.temperature, section.monitor.fahrenheit)
-                    degree: true
                     degreeUnit: section.monitor.fahrenheit ? "F" : "C"
                     color: {
                         const level = section.monitor.heat(section.slot.temperature);
@@ -238,7 +237,6 @@ PopupPage {
                                                      : Format.bytes(section.slot.vramUsed, false)
                     value: b.value
                     unit: ofTotal && b.unit ? "/ " + b.total + " " + b.unit : b.unit
-                    unitScale: 0.69
                     pointSize: section.tilePointSize
                 }
             }
@@ -250,7 +248,6 @@ PopupPage {
                     readonly property var f: Format.frequency(section.slot.clock)
                     value: f.value
                     unit: f.unit
-                    unitScale: 0.69
                     pointSize: section.tilePointSize
                 }
             }
@@ -263,7 +260,6 @@ PopupPage {
                     readonly property var w: Format.watts(section.slot.power)
                     value: w.value
                     unit: w.unit
-                    unitScale: 0.69
                     pointSize: section.tilePointSize
                 }
             }

@@ -20,8 +20,7 @@ RowLayout {
     property string subtitle: ""
     property string value: ""
     property string unit: ""
-    property bool degree: false
-    // "C" or "F": popups spell the temperature unit out.
+    // "C" or "F" for a temperature.
     property string degreeUnit: ""
     property color valueColor: Kirigami.Theme.textColor
     property string caption: ""
@@ -81,7 +80,6 @@ RowLayout {
             Layout.alignment: Qt.AlignRight
             value: header.value
             unit: header.unit
-            degree: header.degree
             degreeUnit: header.degreeUnit
             color: header.valueColor
             pointSize: Kirigami.Theme.defaultFont.pointSize * 1.7
@@ -89,7 +87,7 @@ RowLayout {
 
         Text {
             Layout.alignment: Qt.AlignRight
-            // Line the caption up with the digits; the degree sign hangs past them.
+            // Line the caption up with the digits; the unit hangs past them.
             Layout.rightMargin: headline.implicitWidth - headline.numberWidth
             visible: text !== ""
             text: header.caption

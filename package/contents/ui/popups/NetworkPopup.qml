@@ -19,8 +19,10 @@ PopupPage {
     // Legend and detail text: caption-sized, set as written.
     component Note: Caption {}
 
+    // Tabular figures, so the rates keep their width as they change.
     component RateText: Text {
-        font.family: Kirigami.Theme.fixedWidthFont?.family ?? "monospace" // qmllint disable redundant-optional-chaining
+        font.family: Kirigami.Theme.defaultFont.family
+        font.features: ({ "tnum": 1 })
         font.pointSize: Kirigami.Theme.defaultFont.pointSize
         textFormat: Text.PlainText
     }
@@ -37,7 +39,6 @@ PopupPage {
             readonly property var r: Format.rate(tile.rate, false)
             value: r.value
             unit: r.unit
-            unitScale: 0.67
             pointSize: Kirigami.Theme.defaultFont.pointSize * 1.38
         }
 

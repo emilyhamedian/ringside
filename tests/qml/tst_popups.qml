@@ -5,6 +5,7 @@ import QtQuick
 import QtQuick.Layouts
 import QtTest
 import org.kde.kirigami as Kirigami
+import "../../package/contents/ui/code/style.js" as Style
 
 // Every popup against FakeMonitor in the states the gallery shows, loaded the
 // way main.qml loads them. qmllint can't type the duck-typed monitor, so a
@@ -101,6 +102,14 @@ Item {
         Loader {}
     }
 
+    Component {
+        id: mirroredHost
+        Loader {
+            LayoutMirroring.enabled: true
+            LayoutMirroring.childrenInherit: true
+        }
+    }
+
     TestCase {
         name: "Popups"
         when: windowShown
@@ -136,8 +145,8 @@ Item {
             verify(loader.item.implicitHeight > 0);
         }
 
-        function load(popup, monitor) {
-            const loader = createTemporaryObject(host, root);
+        function load(popup, monitor, mirrored) {
+            const loader = createTemporaryObject(mirrored ? mirroredHost : host, root);
             loader.setSource(Qt.resolvedUrl("../../package/contents/ui/popups/" + popup + ".qml"), { monitor: monitor });
             waitForRendering(loader.item);
             return loader.item;
@@ -294,6 +303,166 @@ Item {
             const disk = texts(load("NetworkPopup", normal));
             verify(disk.some(t => t.endsWith(" " + data.unit)), JSON.stringify(disk));
             normal.fahrenheit = false;
+        }
+
+        // Every item under `item` that `test` accepts, outside any gauge when
+        // `skipGauges` is set.
+        function all(item, test, skipGauges) {
+            const found = [];
+            const collect = i => {
+                if (skipGauges && i.outerTone !== undefined) {
+                    return;
+                }
+                if (test(i)) {
+                    found.push(i);
+                }
+                i.children.forEach(collect);
+            };
+            collect(item);
+            return found;
+        }
+
+        function readings(item) {
+            return all(item, i => i.unitSpacing !== undefined && i.accessibleIgnored !== undefined);
+        }
+
+        // A reading's number and unit, the Texts it draws.
+        function parts(reading) {
+            const texts = reading.children.filter(c => typeof c.text === "string");
+            compare(texts.length, 2);
+            return { number: texts[0], suffix: texts[1] };
+        }
+
+        // The temperature unit is as small as the caption under it and sits
+        // against the digits, in the header and in the GPU rows alike.
+        function test_temperatureUnitSizeAndGap_data() {
+            return [{ tag: "celsius", fahrenheit: false, unit: "°C" }, { tag: "fahrenheit", fahrenheit: true, unit: "°F" }];
+        }
+
+        function test_temperatureUnitSizeAndGap(data) {
+            normal.fahrenheit = data.fahrenheit;
+            for (const popup of ["CpuPopup", "GpuPopup"]) {
+                const temperatures = readings(load(popup, normal)).filter(r => r.visible && r.degreeUnit !== "");
+                verify(temperatures.length > 0, popup);
+                temperatures.forEach(r => {
+                    const p = parts(r);
+                    const tag = popup + " " + p.number.text;
+                    compare(p.suffix.text, data.unit, tag);
+                    compare(p.suffix.font.pointSize, Kirigami.Theme.smallFont.pointSize, tag);
+                    const gap = p.suffix.x - (p.number.x + p.number.implicitWidth);
+                    verify(gap >= 0 && gap <= 1.5, tag + " gap " + gap);
+                    compare(r.implicitWidth, p.number.implicitWidth + gap + p.suffix.implicitWidth, tag);
+                    compare(p.suffix.y + p.suffix.baselineOffset, p.number.y + p.number.baselineOffset, tag + " shares the baseline");
+                });
+            }
+            normal.fahrenheit = false;
+        }
+
+        // A missing temperature is a bare dash.
+        function test_missingTemperatureHasNoUnit() {
+            normal.cpuTemperature = NaN;
+            const header = readings(load("CpuPopup", normal)).filter(r => r.degreeUnit !== "");
+            compare(header.length, 1);
+            compare(parts(header[0]).number.text, "–");
+            verify(!parts(header[0]).suffix.visible);
+            compare(header[0].implicitWidth, parts(header[0]).number.implicitWidth);
+            normal.cpuTemperature = 61;
+        }
+
+        // Popup numbers are set in the theme's face with figures of one
+        // width; only process names keep the monospace face.
+        function test_numbersInSans_data() {
+            return [{ tag: "cpu", popup: "CpuPopup" }, { tag: "gpu", popup: "GpuPopup" },
+                    { tag: "memory", popup: "MemoryPopup" }, { tag: "network", popup: "NetworkPopup" }];
+        }
+
+        function test_numbersInSans(data) {
+            const popup = load(data.popup, normal);
+            const found = readings(popup);
+            verify(found.length > 0);
+            found.forEach(r => {
+                const p = parts(r);
+                for (const t of [p.number, p.suffix]) {
+                    compare(t.font.family, Kirigami.Theme.defaultFont.family, r.value + " " + t.text);
+                    compare(t.font.features.tnum, 1, r.value + " " + t.text);
+                }
+            });
+            // Bare numbers outside readings too: the network rates, the
+            // load averages. The header ring's centre is the panel ring's.
+            const numbers = all(popup, i => i.visible && typeof i.text === "string" && /^[0-9.,–]+%?$/.test(i.text) && i.font !== undefined, true);
+            verify(numbers.length > 0);
+            numbers.forEach(t => {
+                compare(t.font.family, Kirigami.Theme.defaultFont.family, t.text);
+                compare(t.font.features.tnum, 1, t.text);
+            });
+        }
+
+        // The load averages read 1, 5, 15 minutes in the layout's direction,
+        // the first large and the others dim, evenly spaced, with no dot that
+        // reads as an Arabic zero.
+        function test_loadAverageOrder_data() {
+            return [{ tag: "plain", mirrored: false }, { tag: "mirrored", mirrored: true }];
+        }
+
+        function test_loadAverageOrder(data) {
+            const popup = load("CpuPopup", normal, data.mirrored);
+            const tile = all(popup, i => i.caption === "Load average")[0];
+            verify(tile);
+            verify(!texts(tile).some(t => t.indexOf("·") >= 0), JSON.stringify(texts(tile)));
+            const first = readings(tile);
+            compare(first.length, 1);
+            compare(first[0].unit, "");
+            const rest = all(tile, i => i.modelData !== undefined && i.modelData.sensorId !== undefined);
+            compare(rest.map(t => t.modelData.sensorId), ["cpu/loadaverages/loadaverage5", "cpu/loadaverages/loadaverage15"]);
+            // The row speaks for all three, spans included. The sensors are
+            // live where ksystemstats runs, so only the form is fixed.
+            const row = first[0].parent;
+            verify(/^\S+ over 1 minute, \S+ over 5 minutes, \S+ over 15 minutes$/.test(row.Accessible.name), row.Accessible.name);
+            verify(first[0].accessibleIgnored);
+            rest.forEach(t => {
+                verify(t.Accessible.ignored);
+                compare(t.font.pointSize, Style.unitPointSize(first[0].pointSize, Kirigami.Theme.smallFont.pointSize));
+                compare(String(t.color), String(Style.dim(Kirigami.Theme.textColor)));
+                compare(t.y + t.baselineOffset, first[0].y + first[0].baselineOffset, "on the reading's baseline");
+            });
+            const x = i => i.mapToItem(tile, 0, 0).x;
+            const order = [first[0], rest[0], rest[1]];
+            if (data.mirrored) {
+                order.reverse();
+            }
+            verify(x(order[0]) < x(order[1]) && x(order[1]) < x(order[2]), order.map(x).join(", "));
+            const gaps = [x(order[1]) - x(order[0]) - order[0].width, x(order[2]) - x(order[1]) - order[1].width];
+            compare(gaps[0], gaps[1], "evenly spaced");
+            verify(gaps[0] > 0);
+        }
+
+        // Process values are readings: a dim, smaller unit, the percent sign
+        // against its number, and the values lined up at the row's end.
+        function test_processValuesAreReadings_data() {
+            return [{ tag: "cpu", popup: "CpuPopup", units: ["%", "%", "%"], values: ["8.4", "3.1", "2.6"] },
+                    { tag: "memory", popup: "MemoryPopup", units: ["GiB", "MiB", "MiB"], values: ["3.9", "620", "410"] }];
+        }
+
+        function test_processValuesAreReadings(data) {
+            for (const mirrored of [false, true]) {
+                const popup = load(data.popup, normal, mirrored);
+                const list = all(popup, i => i.key !== undefined && i.threads !== undefined && i.rows !== undefined)[0];
+                verify(list);
+                compare(list.Layout.bottomMargin, Math.round(Kirigami.Units.largeSpacing * 1.25));
+                const values = readings(list);
+                compare(values.map(r => r.value), data.values);
+                compare(values.map(r => r.unit), data.units);
+                const edge = r => r.mapToItem(list, 0, 0).x + (mirrored ? 0 : r.width);
+                values.forEach(r => {
+                    const p = parts(r);
+                    compare(p.suffix.font.pointSize, Style.unitPointSize(r.pointSize, Kirigami.Theme.smallFont.pointSize), r.value);
+                    compare(String(p.suffix.color), String(Style.dim(Kirigami.Theme.textColor)), "a dim unit");
+                    if (r.unit === "%") {
+                        compare(p.suffix.x, p.number.implicitWidth, "the percent sign against its number");
+                    }
+                    compare(edge(r), edge(values[0]), "lined up");
+                });
+            }
         }
     }
 }
