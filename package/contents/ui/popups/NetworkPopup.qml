@@ -17,7 +17,8 @@ PopupPage {
     readonly property bool diskTemperatureShown: Number.isFinite(diskTemperature)
 
     // What a rate graph's caption says about its top, which is the peak in
-    // view: "peak 24.8 Mb/s", or nothing before the first sample.
+    // view: "peak 24.8 Mb/s", or nothing before the first sample. Under the
+    // graph's floor the top is the floor, and the note still names the peak.
     function peakNote(samples, bits) {
         const top = History.peak(samples);
         if (top === null) {

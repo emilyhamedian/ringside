@@ -10,7 +10,9 @@ import "../code/history.js" as History
 // A history graph: a filled area under the main series and an optional
 // dashed second series (upload under download), with no grid. Percentages
 // run 0 to 100 under the labelled 100 % rule the week graph shares
-// (LimitRule); a rate's top is its peak, which the tile's caption names.
+// (LimitRule). A rate's top is its peak, which the tile's caption names,
+// or the floor its tile sets when the peak is lower (1 Mb/s for the link,
+// 1 MiB/s for a disk), so a near-idle line stays near the bottom.
 Item {
     id: graph
 
