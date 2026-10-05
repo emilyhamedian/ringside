@@ -1677,7 +1677,7 @@ Item {
 
         // Within two hours the line's end shows now; past that a marker does.
         function test_staleMarker_data() {
-            return [{ tag: "fresh", age: 3600, stale: false }, { tag: "stale", age: 3 * 3600, stale: true }];
+            return [{ tag: "fresh", age: 1.5 * 3600, stale: false }, { tag: "stale", age: 2.5 * 3600, stale: true }];
         }
 
         function test_staleMarker(data) {
