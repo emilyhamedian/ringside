@@ -596,17 +596,17 @@ Item {
             const strip = makeStrip({ items: ["cpu", "claude", "codex", "network"] });
             const claude = strip.cellAt(1);
             compare(claude.Accessible.name, "Claude");
-            verify(/^62% used, Opus 78%, resets in 2 days 2\d hours$/.test(claude.Accessible.description),
+            verify(/^52% used, Fable 78%, resets in 2 days 2\d hours$/.test(claude.Accessible.description),
                    claude.Accessible.description);
             compare(strip.cellAt(2).Accessible.name, "Codex");
-            verify(/^34% used, resets in 5 days [34] hours$/.test(strip.cellAt(2).Accessible.description),
+            verify(/^24% used, resets in 5 days [34] hours$/.test(strip.cellAt(2).Accessible.description),
                    strip.cellAt(2).Accessible.description);
             const mark = find(gaugeAt(1), i => i.isMask !== undefined);
             verify(String(mark.source).endsWith("claude.svg"), mark.source);
             verify(mark.visible, "the Claude mark");
             verify(!visibleTexts(strip).includes("CLAUDE"), JSON.stringify(visibleTexts(strip)));
-            compare([line(1, "first").text, line(1, "second").text], ["62%", "2d 21h"]);
-            compare([line(2, "first").text, line(2, "second").text], ["34%", "5d 4h"]);
+            compare([line(1, "first").text, line(1, "second").text], ["52%", "2d 21h"]);
+            compare([line(2, "first").text, line(2, "second").text], ["24%", "5d 4h"]);
 
             const width = strip.implicitWidth;
             const entries = JSON.parse(JSON.stringify(monitor.usage.entries));

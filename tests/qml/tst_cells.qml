@@ -531,7 +531,7 @@ Item {
                 { tag: "only gpu asleep", item: "gpu", outer: asleep, inner: { present: false }, lines: ["off", ""], tones: ["dim", "dim"] },
                 { tag: "intel only", item: "gpu", outer: { reportsTemperature: false, kind: "integrated" }, inner: { present: false },
                   lines: [percent(12), ""], tones: ["text", "dim"] },
-                { tag: "claude", item: "claude", lines: [percent(62), digits(2) + "d " + digits(21) + "h"], tones: ["text", "dim"] },
+                { tag: "claude", item: "claude", lines: [percent(52), digits(2) + "d " + digits(21) + "h"], tones: ["text", "dim"] },
                 { tag: "claude 81 %", item: "claude", week: [81, 2 * day + 21 * 3600], lines: [percent(81), digits(2) + "d " + digits(21) + "h"],
                   tones: ["neutral", "dim"] },
                 { tag: "claude 95 %", item: "claude", week: [95, 5 * 3600 + 12 * 60], lines: [percent(95), digits(5) + "h " + digits(12) + "m"],
@@ -539,7 +539,7 @@ Item {
                 { tag: "claude minutes", item: "claude", week: [40, 12 * 60], lines: [percent(40), digits(12) + "m"], tones: ["text", "dim"] },
                 { tag: "claude reset passed", item: "claude", week: [40, -600], lines: [percent(40), "–"], tones: ["text", "dim"] },
                 { tag: "claude no weekly", item: "claude", week: null, lines: ["–", "–"], tones: ["text", "dim"] },
-                { tag: "codex", item: "codex", lines: [percent(34), digits(5) + "d " + digits(4) + "h"], tones: ["text", "dim"] }
+                { tag: "codex", item: "codex", lines: [percent(24), digits(5) + "d " + digits(4) + "h"], tones: ["text", "dim"] }
             ];
         }
 
@@ -589,7 +589,7 @@ Item {
             return [
                 { tag: "cpu", item: "cpu", texts: [percent(23), "·", degrees(61)] },
                 { tag: "memory", item: "memory", texts: [percent(42), "·", decimal(13.4) + "G"] },
-                { tag: "claude", item: "claude", texts: [percent(62), "·", digits(2) + "d " + digits(21) + "h"] },
+                { tag: "claude", item: "claude", texts: [percent(52), "·", digits(2) + "d " + digits(21) + "h"] },
                 { tag: "gpu asleep", item: "gpu", asleep: true, texts: ["off"] }
             ];
         }
