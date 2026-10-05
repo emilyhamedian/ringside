@@ -81,21 +81,6 @@ QtObject {
                  second: countdown(weekly ? weekly.resetsAt : null, nowMs ?? Date.now()) || "–" };
     }
 
-    // The widest texts each line of readout() can show, for the room it keeps.
-    function widestReadout(item) {
-        const percent = i18nc("@info:status a percentage", "%1%", Format.percent(100));
-        const temperature = Format.whole(100) + "°";
-        switch (item) {
-        case "cpu":
-            return [[percent], [temperature]];
-        case "gpu":
-            return [[percent, i18nc("@info:status the GPU is powered down", "off")], [temperature]];
-        case "memory":
-            return [[percent], [Format.whole(1000) + "M"]];
-        }
-        return [[percent], [widestCountdown()]];
-    }
-
     // A Claude or Codex item: its weekly use, the limit on its inner ring,
     // when the week resets, and a failed last check.
     function usageText(item, nowMs) {
@@ -158,16 +143,6 @@ QtObject {
     // countdownParts() as one text: "5d 18h".
     function spelled(parts) {
         return parts.map(part => part.value + part.unit).join(" ");
-    }
-
-    // The longest countdown() can get, for reserving its room: a week holds
-    // no more than one digit of days.
-    function widestCountdown() {
-        const one = Format.whole(0);
-        const two = one + one;
-        const [days, hours, minutes] = timeParts(one, two, two);
-        return [[days, hours], [hours, minutes], [minutes]].map(spelled)
-            .reduce((a, b) => b.length > a.length ? b : a);
     }
 
     // Time to a reset spelled out for screen readers: "2 days 21 hours".

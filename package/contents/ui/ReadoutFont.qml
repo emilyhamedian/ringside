@@ -47,7 +47,26 @@ QtObject {
         if (!(metrics.height > 0)) {
             return 0;
         }
+        return Math.ceil(Math.max(0, ...texts.map(text => metrics.advanceWidth(widestDigits(metrics, text)) + overrun(metrics, text))));
+    }
+
+    // How far the ink of `text`'s last glyph reaches past its advance, in
+    // whole pixels: a Text counts it in its width, as a "4" or an "f" can
+    // reach a pixel past. A digit counts as the one reaching furthest, so the
+    // room stays put as digits change. The ink is measured unhinted, so this
+    // can be a pixel more than the Text takes, never less.
+    function overrun(metrics, text) {
+        const last = String(text).slice(-1);
+        const glyphs = last !== "" && last.replace(digitPattern, "") === "" ? digits : [last];
+        return Math.max(0, ...glyphs.map(glyph => {
+            const ink = metrics.boundingRect(glyph);
+            return Math.ceil(ink.x + ink.width - metrics.advanceWidth(glyph));
+        }));
+    }
+
+    // `text` with every digit as the widest one in `metrics`.
+    function widestDigits(metrics, text) {
         const widest = digits.reduce((a, b) => metrics.advanceWidth(b) > metrics.advanceWidth(a) ? b : a);
-        return Math.ceil(Math.max(0, ...texts.map(text => metrics.advanceWidth(String(text).replace(digitPattern, widest)))));
+        return String(text).replace(digitPattern, widest);
     }
 }

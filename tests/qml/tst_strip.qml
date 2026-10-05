@@ -8,9 +8,10 @@ import "../../package/contents/ui"
 
 // The panel strip with FakeMonitor's readings: rings follow the panel's
 // thickness inside the hover wash, with the item's name inside them and their
-// readings on the rows the rates use; its width holds while values change, a
-// thin vertical panel's rates fit, mirrored layouts read right to left, and
-// every cell describes its readings in words.
+// readings on the rows the rates use; cells grow at once and shrink after a
+// hold, rates never change its width, a thin vertical panel's rates fit,
+// mirrored layouts read right to left, and every cell describes its readings
+// in words.
 Item {
     id: root
     width: 1200
@@ -239,26 +240,104 @@ Item {
             }
         }
 
-        function test_widthHoldsAsReadingsChange_data() {
-            return [{ tag: "bits", bits: true, thickness: 46 }, { tag: "bytes", bits: false, thickness: 46 },
-                    { tag: "thin bits", bits: true, thickness: 30 }, { tag: "thin bytes", bits: false, thickness: 30 }];
+        // The cells' widths, added up.
+        function cellsWidth() {
+            let sum = 0;
+            for (let i = 0; i < strip.items.length; ++i) {
+                sum += strip.cellAt(i).implicitWidth;
+            }
+            return sum;
         }
 
-        // Each change is checked to show the reading it sets, so the widest
-        // ones are really drawn (100%, 302°, 1023M, "off"), and to fit.
-        function test_widthHoldsAsReadingsChange(data) {
-            monitor.networkBits = data.bits;
-            const strip = makeStrip({ thickness: data.thickness });
-            compare(strip.twoLines, data.thickness >= 46);
-            const size = { width: strip.implicitWidth, height: strip.implicitHeight };
-            checkFits("at first");
-            const changes = [
+        // The cells sit side by side from the strip's start, and the rates'
+        // slack after the last of them.
+        function checkRow(what) {
+            compare(strip.implicitWidth, cellsWidth() + strip.rateSlack, what + ": the cells and the rates' slack");
+            for (let i = 1; i < strip.items.length; ++i) {
+                compare(box(strip.cellAt(i)).x, box(strip.cellAt(i - 1)).right, what + ": " + strip.items[i] + " follows " + strip.items[i - 1]);
+            }
+        }
+
+        function rateChanges() {
+            return [
                 { what: "no traffic", change: () => { monitor.networkDown = 0; monitor.networkUp = 0; } },
                 { what: "slow traffic", change: () => { monitor.networkDown = 60; monitor.networkUp = 20; } },
                 { what: "three digits", change: () => { monitor.networkDown = 130; monitor.networkUp = 300; } },
+                { what: "the widest bits", change: () => { monitor.networkDown = 99.9e6 / 8; monitor.networkUp = 999e3 / 8; } },
                 { what: "fast traffic", change: () => { monitor.networkDown = 1.3e7; monitor.networkUp = 1023; } },
                 { what: "no network", change: () => { monitor.networkDown = NaN; monitor.networkUp = NaN; } },
                 { what: "disk", change: () => { monitor.diskRead = 0; monitor.diskWrite = 1e9; } },
+                { what: "the widest bytes", change: () => { monitor.diskRead = 1023 * 1024 ** 2; monitor.diskWrite = 1023; } },
+                { what: "a quiet disk", change: () => { monitor.diskRead = 0; monitor.diskWrite = 0; } }
+            ];
+        }
+
+        function test_ratesNeverMoveTheTray_data() {
+            const rows = [];
+            for (const [order, items] of [["rates last", ["cpu", "gpu", "memory", "network", "disk"]],
+                                          ["rates between", ["cpu", "network", "gpu", "disk", "memory", "claude"]]]) {
+                for (const bits of [true, false]) {
+                    for (const thickness of [46, 30]) {
+                        rows.push({ tag: order + (bits ? " bits " : " bytes ") + thickness, items: items, bits: bits, thickness: thickness });
+                    }
+                }
+            }
+            return rows;
+        }
+
+        // Rates hug their text, and the room their widest readings need and
+        // don't use now sits after the last item, so however rates change the
+        // strip keeps its width and nothing after it moves. Rates with no
+        // ring after them follow their text at once; rates between rings
+        // hold their width as rings do.
+        function test_ratesNeverMoveTheTray(data) {
+            monitor.networkBits = data.bits;
+            const strip = makePanel(data.thickness, { items: data.items, relayoutWindow: 0 });
+            const width = strip.implicitWidth;
+            const rates = data.items.map((item, i) => i).filter(i => !root.ringItems.includes(data.items[i]));
+            const trailing = i => data.items.slice(i + 1).every(item => !root.ringItems.includes(item));
+            let before = rates.map(i => strip.cellAt(i).implicitWidth);
+            let moved = 0;
+            checkRow("at first");
+            for (const step of rateChanges()) {
+                compare(sizeAfter(strip, step.change).width, width, step.what);
+                checkRow(step.what);
+                checkFits(step.what);
+                rates.forEach((index, n) => {
+                    const cell = strip.cellAt(index);
+                    const tight = cell.contentWidth + 2 * cell.padding;
+                    verify(cell.implicitWidth <= cell.reservedWidth, step.what + ": " + cell.item + " within its reserve");
+                    if (trailing(index)) {
+                        compare(cell.implicitWidth, tight, step.what + ": " + cell.item + " at the end hugs its text");
+                    } else {
+                        compare(cell.implicitWidth, Math.max(tight, before[n]), step.what + ": " + cell.item + " between rings holds");
+                    }
+                    moved += cell.implicitWidth !== before[n] ? 1 : 0;
+                });
+                before = rates.map(i => strip.cellAt(i).implicitWidth);
+            }
+            verify(moved > 0, "the rates changed width");
+
+            // The slack follows the items shown: here as many, one rate fewer.
+            strip.items = data.items.map(item => item === "disk" ? "codex" : item);
+            waitForRendering(strip);
+            checkRow("the disk swapped for Codex");
+        }
+
+        function test_ringsGrowAtOnceAndShrinkAfterTheHold_data() {
+            return [{ tag: "two lines", thickness: 46 }, { tag: "thin", thickness: 30 }];
+        }
+
+        // A ring's cell takes a wider reading's room at once, moving the
+        // items after it, but keeps its width through a narrower one until
+        // that has lasted the settle delay, so a reading that comes and goes
+        // moves the panel once. Each change shows the reading it sets, so the
+        // widest ones are really drawn (100%, 302°, 1023M, "off"), and fits.
+        function test_ringsGrowAtOnceAndShrinkAfterTheHold(data) {
+            const strip = makePanel(data.thickness, { items: ["cpu", "gpu", "memory", "claude", "network", "disk"], relayoutWindow: 0 });
+            const widths = () => strip.items.map((item, i) => strip.cellAt(i).implicitWidth);
+            const tight = i => strip.cellAt(i).contentWidth + 2 * strip.cellAt(i).padding;
+            const changes = [
                 { what: "memory 9.6 GiB", change: () => { monitor.memoryUsed = 9.6 * monitor.gib; }, shows: "9.6G" },
                 { what: "memory 1023 MiB", change: () => { monitor.memoryUsed = 1023 * 1048576; }, shows: "1023M" },
                 { what: "no memory", change: () => { monitor.memoryUsed = NaN; } },
@@ -270,20 +349,76 @@ Item {
                 { what: "11 °C", change: () => { monitor.cpuTemperature = 11; }, shows: "11°" },
                 { what: "88 °C", change: () => { monitor.cpuTemperature = 88; }, shows: "88°" },
                 { what: "no temperature", change: () => { monitor.cpuTemperature = NaN; } },
-                { what: "100 °F", change: () => { monitor.fahrenheit = true; monitor.cpuTemperature = 38; }, shows: "100°" },
+                // A change of units is one of layout: it applies at once.
+                { what: "100 °F", change: () => { monitor.fahrenheit = true; monitor.cpuTemperature = 38; }, shows: "100°", layout: true },
                 { what: "302 °F", change: () => { monitor.cpuTemperature = 149.9; }, shows: "302°" },
                 { what: "GPU 100%", change: () => { monitor.gpuOuter.usage = 100; }, shows: "100%" },
                 { what: "discrete GPU asleep", change: () => { monitor.gpuOuter.phase = "asleep"; }, shows: "3%" },
                 { what: "the only GPU asleep", change: () => { monitor.gpuInner.present = false; }, shows: "off" },
                 { what: "GPU awake", change: () => { monitor.gpuOuter.phase = "live"; }, shows: "100%" },
+                { what: "Claude at its limit", change: () => {
+                    const entries = JSON.parse(JSON.stringify(monitor.usage.entries));
+                    entries.claude.weekly.percent = 100;
+                    entries.claude.weekly.resetsAt = monitor.usage.createdAt + 600;
+                    monitor.usage.entries = entries;
+                }, shows: "10m" }
             ];
+            let before = widths();
+            checkFits("at first");
             for (const step of changes) {
-                compare(sizeAfter(strip, step.change), size, step.what);
+                sizeAfter(strip, step.change);
                 checkFits(step.what);
                 if (step.shows) {
                     verify(visibleTexts(strip).includes(step.shows), step.what + ": " + JSON.stringify(visibleTexts(strip)));
                 }
+                const now = widths();
+                for (let i = 0; i < 4; ++i) {
+                    compare(now[i], step.layout ? tight(i) : Math.max(before[i], tight(i)), step.what + ": " + strip.items[i]);
+                }
+                checkRow(step.what);
+                before = now;
             }
+            verify([0, 1, 2, 3].some(i => before[i] > tight(i)), "some ring holds room it no longer needs");
+
+            // Once narrower readings have lasted the delay, each cell is as
+            // wide as they are. A new delay restarts the waits.
+            strip.settleDelay = 300;
+            for (let i = 0; i < 4; ++i) {
+                tryCompare(strip.cellAt(i), "implicitWidth", tight(i), 3000, strip.items[i] + " settles");
+            }
+            verify(waitForPolish(strip), "laid out");
+            checkRow("settled");
+
+            // A wider reading moves the items after it at once; back to the
+            // narrower one, they wait, then move back.
+            sizeAfter(strip, () => { monitor.fahrenheit = false; monitor.cpuUsage = 5; monitor.cpuTemperature = 50; });
+            const width = strip.implicitWidth;
+            const gpuAt = box(strip.cellAt(1)).x;
+            sizeAfter(strip, () => { monitor.cpuUsage = 5; monitor.cpuTemperature = 100; });
+            const grown = strip.implicitWidth;
+            verify(grown > width, "grows at once: " + grown + " after " + width);
+            verify(box(strip.cellAt(1)).x > gpuAt, "the GPU moves along at once");
+            sizeAfter(strip, () => { monitor.cpuTemperature = 50; });
+            compare(strip.implicitWidth, grown, "holds");
+            const cpu = strip.cellAt(0);
+            compare(box(cpu.contentItem).x, box(cpu).x + cpu.padding, "the room held falls after the content");
+            wait(150);
+            compare(strip.implicitWidth, grown, "still holding");
+            tryCompare(strip, "implicitWidth", width, 3000, "moves back after the delay");
+            compare(box(strip.cellAt(1)).x, gpuAt);
+
+            // A change of layout takes the new widths at once.
+            strip.settleDelay = 60000;
+            sizeAfter(strip, () => { monitor.cpuTemperature = 100; });
+            sizeAfter(strip, () => { monitor.cpuTemperature = 50; });
+            verify(strip.cellAt(0).implicitWidth > tight(0), "the CPU holds");
+            strip.thickness = data.thickness + 1;
+            strip.height = data.thickness + 1;
+            waitForRendering(strip);
+            for (let i = 0; i < 4; ++i) {
+                compare(strip.cellAt(i).implicitWidth, tight(i), strip.items[i] + " in the new layout");
+            }
+            checkRow("a new layout");
         }
 
         function test_verticalRatesFit_data() {
@@ -386,7 +521,8 @@ Item {
                     compare(box(strip.cellAt(i)).x, box(strip.cellAt(i - 1)).right, items[i] + " follows " + items[i - 1]);
                 }
             }
-            compare(strip.implicitWidth, sum);
+            compare(strip.implicitWidth, sum + strip.rateSlack);
+            verify(strip.rateSlack > 0, "the rates keep room for wider readings");
             const rectangles = all(strip, isRectangle);
             compare(rectangles.length, items.length);
             for (const rectangle of rectangles) {
@@ -464,7 +600,7 @@ Item {
             const network = strip.cellAt(5).contentItem;
             const disk = strip.cellAt(6).contentItem;
             compare(visibleTexts(network), network.whole ? ["25M", "1M"] : ["24.8M", "1.2M"]);
-            compare(visibleTexts(disk), disk.whole ? ["R", "W", "12M", "3M"] : ["R", "W", "12.0M", "3.4M"]);
+            compare(visibleTexts(disk), disk.whole ? ["R", "12M", "W", "3M"] : ["R", "12.0M", "W", "3.4M"]);
         }
 
         // Names sit inside the rings beside two lines of readings, and where
@@ -574,17 +710,18 @@ Item {
             compare(strip.cellAt(0).description.split("\n")[1], "AMD Radeon 780M Graphics: Usage 3%");
 
             // Alone in the panel it shows its usage over a blank line, which
-            // keeps its row.
-            const first = box(line(0, "first"));
-            const second = box(line(0, "second"));
+            // keeps its row. The width follows the text.
+            const place = text => { const b = box(text); return [b.x, b.y, b.height]; };
+            const first = place(line(0, "first"));
+            const second = place(line(0, "second"));
             monitor.gpuOuter.phase = "asleep";
             waitForRendering(strip);
             compare(strip.cellAt(0).contentItem.primary.name, "AMD Radeon 780M Graphics");
             compare(line(0, "first").text, "3%");
             compare(line(0, "second").text, "");
             verify(line(0, "second").visible);
-            compare(box(line(0, "first")), first);
-            compare(box(line(0, "second")), second);
+            compare(place(line(0, "first")), first);
+            compare(place(line(0, "second")), second);
             compare(strip.cellAt(0).description, "Usage 3%");
         }
 
@@ -602,7 +739,7 @@ Item {
         // Claude and Codex sit among the rings, marked and described like
         // them: the weekly percentage over the time to the reset.
         function test_usageCells() {
-            const strip = makeStrip({ items: ["cpu", "claude", "codex", "network"] });
+            const strip = makeStrip({ items: ["cpu", "claude", "codex", "network"], relayoutWindow: 0 });
             const claude = strip.cellAt(1);
             compare(claude.Accessible.name, "Claude");
             verify(/^52% used, Fable 78%, resets in 2 days 2\d hours$/.test(claude.Accessible.description),
@@ -625,10 +762,13 @@ Item {
             compare([line(1, "first").text, line(1, "second").text], ["100%", "10m"]);
         }
 
-        // Right to left the strip runs from the right edge, each reading on
-        // the ring's left, hugging it; on one line the ring's own reading
-        // comes first, nearest the ring. A reading is one text, so a number
-        // never parts from its sign.
+        // Right to left the strip runs from the right edge, with the rates'
+        // slack at the left end; each item's content keeps to the cell's
+        // start, each reading on the ring's left, hugging it; on one line the
+        // ring's own reading comes first, nearest the ring. A reading is one
+        // text, so a number never parts from its sign. A rate's arrow or
+        // letter moves to its right, and the number still comes before its
+        // unit.
         function test_mirrored_data() {
             return [{ tag: "two lines", thickness: 38 }, { tag: "thin", thickness: 30 }];
         }
@@ -638,8 +778,12 @@ Item {
             for (let i = 1; i < strip.items.length; ++i) {
                 compare(box(strip.cellAt(i)).right, box(strip.cellAt(i - 1)).x, strip.items[i] + " left of " + strip.items[i - 1]);
             }
+            compare(box(strip.cellAt(0)).right, strip.width, "from the right edge");
+            compare(box(strip.cellAt(strip.items.length - 1)).x, strip.rateSlack, "the slack at the left end");
             for (let i = 0; i < 4; ++i) {
+                const cell = strip.cellAt(i);
                 const gauge = box(gaugeAt(i));
+                compare(gauge.right, box(cell).right - cell.padding, strip.items[i] + "'s ring at the cell's start");
                 const first = line(i, "first");
                 const second = line(i, "second");
                 verify(box(first).right <= gauge.x && box(second).right <= gauge.x, strip.items[i] + "'s readings left of its ring");
@@ -650,6 +794,20 @@ Item {
                     compare(box(first).y, box(second).y, strip.items[i] + " on one line");
                     verify(box(second).right <= box(first).x, strip.items[i] + ": " + second.text + " left of " + first.text);
                 }
+            }
+            for (const index of [4, 5]) {
+                const cell = strip.cellAt(index);
+                const rates = cell.contentItem;
+                compare(box(rates).right, box(cell).right - cell.padding, rates.item + " at the cell's start");
+                rateRows(index).forEach((value, row) => {
+                    const pair = value.parent;
+                    const unit = all(pair, i => i !== value && i.text === rates.lines[row].unit)[0];
+                    const marker = box(pair.parent.children[0]);
+                    const what = rates.item + " row " + row + ": ";
+                    compare(value.effectiveHorizontalAlignment, Text.AlignRight, what + "the value isn't mirrored");
+                    verify(box(value).right <= box(unit).x, what + "the number before its unit");
+                    compare(marker.x - box(pair).right, Kirigami.Units.smallSpacing, what + "the marker to the right");
+                });
             }
             compare([line(0, "first").text, line(0, "second").text], ["23%", "61°"]);
             compare([line(2, "first").text, line(2, "second").text], ["42%", "13.4G"]);

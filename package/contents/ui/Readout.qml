@@ -9,21 +9,32 @@ import "code/style.js" as Style
 // A ring's readings, beside it in the panel: the ring's own reading, heavier
 // and in the ring's colour, over a second one, dimmer: a temperature, memory
 // in use or the time to a reset. On a thin panel they share a line,
-// "23% · 61°". Each line keeps the room for the widest text it can show, and
-// a line with nothing to show keeps its place, so nothing shifts as readings
-// change. Each reading is one text, so mirroring never parts a number from
-// its sign.
+// "23% · 61°". Each line is as wide as its text, with every digit counted as
+// the widest, so the gap after the readings is the same for every ring and a
+// reading moves only when it gains or loses a character. A second line with
+// nothing to show keeps its height; on one line it goes, with its dot. Each
+// reading is one text, so mirroring never parts a number from its sign.
 GridLayout {
     id: readout
 
     // Words.readout(): { first, level, off, second, heat }.
     required property var lines
-    // Words.widestReadout(): the texts each line keeps room for.
-    property var widest: [[], []]
-    // The room each line keeps.
-    readonly property var rooms: [face.room(face.strong, widest[0]), face.room(face.plain, widest[1])]
+    // The room each line takes.
+    readonly property var rooms: [face.room(face.strong, [lines.first]), face.room(face.plain, [lines.second])]
     property bool oneLine: false
     readonly property alias face: face
+    // How far a dim second line, longer than the first, may run past the
+    // readings' width into the gap after them. A coloured one stays inside.
+    readonly property real overhang: oneLine || lines.heat ? 0
+        : Math.min(Kirigami.Units.smallSpacing, Math.round(Math.max(0, rooms[1] - rooms[0]) * 0.4))
+    readonly property real dotRoom: face.room(face.plain, ["·"])
+    // The width the readings take, less the overhang. It comes from the rooms
+    // rather than the layout, which follows them a frame later: until then a
+    // width from both would be one the readings never have, and a cell would
+    // hold on to it.
+    readonly property real textWidth: (!oneLine ? Math.max(rooms[0], rooms[1])
+                                       : rooms[0] + (secondShown ? dotRoom + rooms[1] + 2 * columnSpacing : 0)) - overhang
+    readonly property bool secondShown: !oneLine || lines.second !== ""
 
     columns: oneLine ? 3 : 1
     rowSpacing: 0
@@ -48,13 +59,12 @@ GridLayout {
         textFormat: Text.PlainText
     }
 
-    // Kept, without its dot, beside a blank second reading.
     Text {
-        visible: readout.oneLine
-        Layout.preferredWidth: face.room(face.plain, ["·"])
+        visible: readout.oneLine && readout.secondShown
+        Layout.preferredWidth: readout.dotRoom
         Layout.preferredHeight: face.lineHeight
         horizontalAlignment: Text.AlignHCenter
-        text: readout.lines.second !== "" ? "·" : ""
+        text: "·"
         color: Style.dim(Kirigami.Theme.textColor)
         font: face.plain.font
         textFormat: Text.PlainText
@@ -62,6 +72,7 @@ GridLayout {
 
     Text {
         objectName: "second"
+        visible: readout.secondShown
         Layout.preferredWidth: readout.rooms[1]
         Layout.preferredHeight: face.lineHeight
         Layout.fillWidth: !readout.oneLine

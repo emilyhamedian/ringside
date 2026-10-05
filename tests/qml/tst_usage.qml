@@ -467,25 +467,39 @@ Item {
             verify(bare.accessibleDescription !== "", "the tooltip still has the words");
         }
 
-        function test_widthHoldsAsTheCountdownRuns_data() {
+        function test_countdownRoomFollowsItsText_data() {
             return [{ tag: "two lines", twoLines: true }, { tag: "one line", twoLines: false }];
         }
 
-        function test_widthHoldsAsTheCountdownRuns(data) {
+        // The countdown takes the room of its text, with every digit counted
+        // as the widest: the same characters keep the same room as the
+        // minutes run, fewer take less, and every reading fits its box.
+        function test_countdownRoomFollowsItsText(data) {
+            const shape = text => text.replace(/[0-9٠-٩۰-۹]/g, "0");
             claudeAt(40, 6 * 86400 + 23 * 3600);
             const c = cell("claude", { twoLines: data.twoLines });
-            const width = c.implicitWidth;
+            const readout = root.find(c, i => i.textWidth !== undefined);
+            const rooms = {};
+            const widths = {};
             for (const percent of [5, 100, NaN]) {
-                for (const left of [23 * 3600 + 59 * 60, 10 * 3600 + 10 * 60, 5 * 60, 30, -600]) {
+                for (const left of [6 * 86400 + 23 * 3600, 86400 + 11 * 3600, 23 * 3600 + 59 * 60, 10 * 3600 + 10 * 60,
+                                    5 * 60, 30, -600]) {
                     claudeAt(percent, left);
                     waitForRendering(c);
-                    compare(c.implicitWidth, width, percent + "% with " + left + " s left");
+                    const texts = [line(c, "first").text, line(c, "second").text];
+                    const what = texts.join(" ") + " at " + percent + "% with " + left + " s left";
                     for (const name of ["first", "second"]) {
-                        verify(line(c, name).contentWidth <= line(c, name).width,
-                               line(c, name).text + " overflows its room at " + percent + "% with " + left + " s left");
+                        verify(line(c, name).contentWidth <= line(c, name).width, line(c, name).text + " overflows its room: " + what);
                     }
+                    const second = shape(texts[1]);
+                    rooms[second] = rooms[second] ?? readout.rooms[1];
+                    compare(readout.rooms[1], rooms[second], what + ": the room " + second + " took before");
+                    const both = shape(texts.join(" "));
+                    widths[both] = widths[both] ?? c.implicitWidth;
+                    compare(c.implicitWidth, widths[both], what + ": the width " + both + " took before");
                 }
             }
+            verify(rooms[shape("5m")] < rooms[shape("6d 23h")], "fewer characters take less room: " + JSON.stringify(rooms));
             compare(line(c, "first").text, "–", "no percentage, a dash");
             compare(line(c, "second").text, "–", "a passed reset shows a dash until the next poll");
         }
@@ -807,10 +821,6 @@ Item {
             compare(words.countdown(nowMs / 1000 + data.left, nowMs), local(data.expected));
         }
 
-        function test_widestCountdown() {
-            compare(words.widestCountdown(), local("00h 00m"));
-        }
-
         function test_countdownParts_data() {
             return [
                 { tag: "days", left: 5 * 86400 + 18 * 3600 + 7 * 60, expected: [["5", "d"], ["18", "h"]] },
@@ -912,10 +922,6 @@ Item {
             monitor: readouts.monitor
         }
 
-        ReadoutFont {
-            id: readoutFace
-        }
-
         function init() {
             failOnWarning(/TypeError|ReferenceError|SyntaxError|is not a function|Unable to assign|Cannot assign|Binding loop/);
             monitor = createTemporaryObject(monitorComponent, readouts);
@@ -990,28 +996,6 @@ Item {
             compare({ first: r.first, level: r.level ?? 0, off: r.off === true, second: r.second, heat: r.heat ?? 0 },
                     { first: local(data.first), level: data.level ?? 0, off: data.off ?? false,
                       second: local(data.second), heat: data.heat ?? 0 });
-
-            // Each line fits the room its widest text keeps.
-            const widest = readoutWords.widestReadout(data.item);
-            const firstRoom = readoutFace.room(readoutFace.strong, widest[0]);
-            const secondRoom = readoutFace.room(readoutFace.plain, widest[1]);
-            verify(firstRoom > 0 && secondRoom > 0, "measured");
-            verify(readoutFace.room(readoutFace.strong, [r.first]) <= firstRoom, r.first + " in " + JSON.stringify(widest[0]));
-            verify(readoutFace.room(readoutFace.plain, [r.second]) <= secondRoom, r.second + " in " + JSON.stringify(widest[1]));
-        }
-
-        function test_widestReadout_data() {
-            return [
-                { tag: "cpu", item: "cpu", widest: [["100%"], ["100°"]] },
-                { tag: "gpu", item: "gpu", widest: [["100%", "off"], ["100°"]] },
-                { tag: "memory", item: "memory", widest: [["100%"], ["1000M"]] },
-                { tag: "claude", item: "claude", widest: [["100%"], ["00h 00m"]] },
-                { tag: "codex", item: "codex", widest: [["100%"], ["00h 00m"]] }
-            ];
-        }
-
-        function test_widestReadout(data) {
-            compare(readoutWords.widestReadout(data.item), data.widest.map(texts => texts.map(local)));
         }
     }
 
