@@ -412,7 +412,7 @@ Item {
                     const inkGap = gap + trailingRoom(p.number);
                     verify(inkGap >= 0 && inkGap <= 3, tag + " is " + inkGap + " from the ink");
                     inkGaps[popup].push(inkGap);
-                    compare(r.implicitWidth, p.number.implicitWidth + gap + p.suffix.implicitWidth, tag);
+                    compare(r.implicitWidth, p.number.implicitWidth + r.unitSpacing + p.suffix.implicitWidth, tag);
                     compare(p.suffix.y + p.suffix.baselineOffset, p.number.y + p.number.baselineOffset, tag + " shares the baseline");
                 });
             }
@@ -422,6 +422,33 @@ Item {
             }
             normal.cpuTemperature = 61;
             normal.fahrenheit = false;
+        }
+
+        // Only the degree sign moves toward a narrow last digit: the digits,
+        // the reading's width and the caption under it hold still as the
+        // temperature changes, in the CPU header and in a GPU row.
+        function test_temperatureDigitsHoldStill() {
+            const where = (r, popup) => parts(r).number.mapToItem(popup, 0, 0).x;
+            const cpu = [];
+            const gpu = [];
+            for (const t of [59, 60, 61, 62, 71]) {
+                normal.cpuTemperature = t;
+                normal.gpuOuter.temperature = t;
+                const popup = load("CpuPopup", normal);
+                const header = headerOf(popup);
+                const headline = readings(header).find(r => r.visible && r.degreeUnit !== "");
+                const caption = shownText(header, header.caption);
+                verify(headline && caption);
+                cpu.push([where(headline, popup), headline.implicitWidth, caption.mapToItem(popup, 0, 0).x].join(" "));
+                const gpuPopup = load("GpuPopup", normal);
+                const row = readings(gpuPopup).find(r => r.visible && r.degreeUnit !== "" && r.value === Format.temperature(t, false));
+                verify(row, "the GPU row at " + t);
+                gpu.push([where(row, gpuPopup), row.implicitWidth].join(" "));
+            }
+            normal.cpuTemperature = 61;
+            normal.gpuOuter.temperature = Qt.binding(() => normal.gpuOuter.awake ? 48 : NaN);
+            compare(cpu.filter(s => s !== cpu[0]), [], "the header at 59, 60, 61, 62, 71: " + cpu.join(", "));
+            compare(gpu.filter(s => s !== gpu[0]), [], "the GPU row at 59, 60, 61, 62, 71: " + gpu.join(", "));
         }
 
         // A missing temperature is a bare dash.
