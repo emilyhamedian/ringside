@@ -343,8 +343,9 @@ Item {
                 const found = texts(load(popup, normal));
                 verify(found.includes(data.unit), popup + " " + JSON.stringify(found));
             }
-            const disk = texts(load("NetworkPopup", normal));
-            verify(disk.some(t => t.endsWith(" " + data.unit)), JSON.stringify(disk));
+            // The disk caption sets the unit against the number, as the readings do.
+            const disk = texts(load("NetworkPopup", normal)).filter(t => t.indexOf("°") >= 0);
+            compare(disk, [Format.temperature(normal.diskTemperature, data.fahrenheit) + data.unit]);
             normal.fahrenheit = false;
         }
 
