@@ -18,8 +18,27 @@ MouseArea {
     property Item contentItem: null
     // Its readings in words.
     property string description: ""
+    // Whatever shapes the content other than its readings: whether the text
+    // shows, the panel's thickness, the font, the units, the GPUs chosen, a
+    // signed-out account. When it changes the cell takes its new width at
+    // once.
+    property string layoutKey: ""
+    // Whether the cell keeps its width through a shrink (see shownWidth).
+    // The strip lets the rates at its end go, as their room is kept after
+    // the last item.
+    property bool holdsWidth: true
+    // The width the cell needs for the widest readings it can show, where
+    // that is known; the room it leaves of that is its slack, which the
+    // strip keeps at its end so the cell's changes don't move what follows.
+    property real reservedWidth: 0
+    readonly property real slack: Math.max(0, reservedWidth - implicitWidth)
     // Between the wash and the panel's edges, across a horizontal panel.
     readonly property real inset: vertical ? 0 : Math.round(Kirigami.Units.smallSpacing / 2)
+    // Between the content and the cell's ends. Along a horizontal panel two
+    // cells' padding makes the gap between items, twice the gap between a
+    // ring and its readings, so readings read as the ring's beside them and
+    // not the next one's.
+    readonly property real padding: vertical ? Kirigami.Units.smallSpacing : Kirigami.Units.largeSpacing
     readonly property string title: item === "cpu" ? i18nc("@info:tooltip", "Processor")
                                   : item === "gpu" ? i18nc("@info:tooltip", "Graphics")
                                   : item === "memory" ? i18nc("@info:tooltip", "Memory")
@@ -30,7 +49,22 @@ MouseArea {
 
     signal activated()
 
-    implicitWidth: (contentItem ? contentItem.implicitWidth : 0) + 2 * Kirigami.Units.smallSpacing
+    // Along a horizontal panel the cell is as wide as its content: it grows
+    // at once, but shrinks back only once the content has stayed narrower
+    // for settleDelay, so a reading that keeps crossing between widths, 9 %
+    // and 10 %, moves the items after it once rather than on every update.
+    // Until then the extra room sits after the content. Whole pixels, so a
+    // fraction of one doesn't count as a change.
+    readonly property real contentWidth: contentItem ? Math.ceil(contentItem.implicitWidth) : 0
+    property real settledWidth: 0
+    readonly property real shownWidth: holdsWidth ? Math.max(contentWidth, settledWidth) : contentWidth
+    property int settleDelay: 3 * 60 * 1000
+    // A change of layout reaches the content's width a frame or two later,
+    // once the layouts in it are polished; for this long after one, and
+    // after the cell is made, a narrower content applies at once.
+    property int relayoutWindow: 500
+
+    implicitWidth: (vertical ? (contentItem ? contentItem.implicitWidth : 0) : shownWidth) + 2 * padding
     implicitHeight: (contentItem ? contentItem.implicitHeight : 0) + 2 * (vertical ? Kirigami.Units.smallSpacing : inset)
     hoverEnabled: true
     activeFocusOnTab: true
@@ -42,12 +76,37 @@ MouseArea {
     Accessible.description: description
     Accessible.onPressAction: activated()
 
+    Component.onCompleted: relayout.start()
+    onContentWidthChanged: {
+        if (contentWidth >= settledWidth || relayout.running) {
+            settledWidth = contentWidth;
+            settle.stop();
+        } else if (!settle.running) {
+            settle.start();
+        }
+    }
+    onLayoutKeyChanged: {
+        settledWidth = contentWidth;
+        settle.stop();
+        relayout.restart();
+    }
     onClicked: activated()
     Keys.onPressed: event => {
         if ([Qt.Key_Space, Qt.Key_Enter, Qt.Key_Return, Qt.Key_Select].includes(event.key)) {
             activated();
             event.accepted = true;
         }
+    }
+
+    Timer {
+        id: settle
+        interval: cell.settleDelay
+        onTriggered: cell.settledWidth = cell.contentWidth
+    }
+
+    Timer {
+        id: relayout
+        interval: cell.relayoutWindow
     }
 
     Rectangle {

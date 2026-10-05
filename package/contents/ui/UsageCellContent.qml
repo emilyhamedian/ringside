@@ -31,8 +31,9 @@ Item {
 
     // As tall as the ring, which the cell centres; the readings centre on it
     // in whole pixels, as the cell centres the rates, so their rows line up
-    // even where the two lines are taller than the ring.
-    implicitWidth: gauge.width + (readout.visible ? Kirigami.Units.largeSpacing + readout.implicitWidth : 0)
+    // even where the two lines are taller than the ring. The width leaves
+    // out the readings' overhang, which runs into the cell's padding.
+    implicitWidth: gauge.width + (readout.visible ? Kirigami.Units.largeSpacing + readout.textWidth : 0)
     implicitHeight: ring
     opacity: usage.degraded(item) ? 0.55 : 1
 
@@ -88,7 +89,6 @@ Item {
         y: Math.round((content.height - height) / 2)
         visible: content.textShown
         lines: words.readout(content.item, content.nowMs)
-        widest: words.widestReadout(content.item)
         oneLine: !content.twoLines
     }
 }

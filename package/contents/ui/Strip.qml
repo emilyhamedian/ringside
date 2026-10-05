@@ -25,6 +25,11 @@ GridLayout {
     property string openItem: ""
     // Plasmoid.location, for the tooltips.
     property int location: PlasmaCore.Types.Floating
+    // How long a cell keeps its width after its readings narrow, and how
+    // long after a change of layout it takes its new width at once (see
+    // PanelCell); writable for the tests.
+    property int settleDelay: 3 * 60 * 1000
+    property int relayoutWindow: 500
 
     signal activated(string item, Item cell)
 
@@ -40,6 +45,22 @@ GridLayout {
     }
     // Two lines need room for both; otherwise they share one.
     readonly property bool twoLines: thickness >= Kirigami.Units.gridUnit * 2
+    // The room the rates keep for their widest readings and don't use now,
+    // kept after the last item, so the strip's width, and with it whatever
+    // follows the strip in the panel, doesn't change as rates do. itemAt()
+    // doesn't notify, so this follows the cells the Repeater adds.
+    readonly property real rateSlack: {
+        if (vertical) {
+            return 0;
+        }
+        cells.built;
+        let slack = 0;
+        for (let i = 0; i < cells.count; ++i) {
+            const entry = cells.itemAt(i);
+            slack += entry ? entry.cell.slack : 0; // qmllint disable missing-property
+        }
+        return slack;
+    }
 
     function isRing(item) {
         return Items.isRing(item);
@@ -60,8 +81,12 @@ GridLayout {
         id: entry
 
         required property string modelData
+        required property int index
         readonly property alias cell: cell
         readonly property bool textShown: !strip.isRing(modelData) || !strip.vertical && !strip.ringsOnly.includes(modelData)
+        // Rates with no ring after them: their changes move nothing but the
+        // room kept at the strip's end, so they needn't hold their width.
+        readonly property bool trailingRate: !strip.isRing(modelData) && strip.items.slice(index + 1).every(k => !strip.isRing(k))
 
         Layout.fillWidth: strip.vertical
         Layout.fillHeight: !strip.vertical
@@ -79,12 +104,24 @@ GridLayout {
             item: entry.modelData
             open: strip.openItem === entry.modelData
             vertical: strip.vertical
+            holdsWidth: !entry.trailingRate
+            settleDelay: strip.settleDelay
+            relayoutWindow: strip.relayoutWindow
+            layoutKey: [entry.textShown, strip.vertical, strip.thickness, strip.twoLines,
+                        Kirigami.Theme.defaultFont.family, Kirigami.Theme.defaultFont.pointSize,
+                        strip.monitor.fahrenheit, strip.monitor.networkBits,
+                        strip.monitor.gpuOuter.name, strip.monitor.gpuInner.name,
+                        Items.isUsage(entry.modelData) && strip.monitor.usage.entry(entry.modelData)?.status].join()
             onActivated: strip.activated(entry.modelData, cell)
 
-            // Centred to whole pixels, rounding as the ring cells' own layout
+            // Along a horizontal panel the content keeps to the cell's start,
+            // so room the cell holds on to, and the cell's rounding up to a
+            // whole pixel, fall after it. Along a vertical one it is centred.
+            // Both in whole pixels, rounding as the ring cells' own layout
             // does, so a ring's readings and the rates land on the same rows.
             Loader {
-                x: Math.round((parent.width - width) / 2)
+                x: strip.vertical ? Math.round((parent.width - width) / 2)
+                 : LayoutMirroring.enabled ? Math.round(parent.width - cell.padding - width) : cell.padding
                 y: Math.round((parent.height - height) / 2)
                 sourceComponent: Items.isUsage(entry.modelData) ? usageContent
                                : strip.isRing(entry.modelData) ? ringContent : rateContent
@@ -142,6 +179,12 @@ GridLayout {
                         property: "description"
                         value: rates.accessibleDescription
                     }
+
+                    Binding {
+                        target: cell
+                        property: "reservedWidth"
+                        value: rates.reservedWidth + 2 * cell.padding
+                    }
                 }
             }
         }
@@ -149,7 +192,19 @@ GridLayout {
 
     Repeater {
         id: cells
+
+        // Counts the cells added, for rateSlack.
+        property int built: 0
+
         model: strip.items
         delegate: Entry {}
+        onItemAdded: ++built
+    }
+
+    // The rates' slack, after the last item.
+    Item {
+        visible: !strip.vertical
+        Layout.preferredWidth: strip.rateSlack
+        Layout.fillHeight: true
     }
 }
