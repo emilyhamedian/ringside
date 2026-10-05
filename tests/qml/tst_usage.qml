@@ -567,6 +567,95 @@ Item {
             monitor.usage.resetsDetected({ "claude.scoped.Opus": { from: 95, early: false } });
             verify(arcs(claude).every(a => !a.animating), "no inner ring, nothing to play");
         }
+
+        function setEntry(id, entry) {
+            const entries = Object.assign({}, monitor.usage.entries);
+            entries[id] = entry;
+            monitor.usage.entries = entries;
+        }
+
+        // The weekly arc is the outer of the two, the chosen limit's the inner.
+        function outerArc(cell) {
+            return arcs(cell).reduce((a, b) => a.radius > b.radius ? a : b);
+        }
+
+        function innerArc(cell) {
+            return arcs(cell).reduce((a, b) => a.radius < b.radius ? a : b);
+        }
+
+        // The inner ring follows the chosen limit; the readout beside it keeps
+        // the weekly share and the time to its reset whichever limit shows.
+        function test_innerLimitFollowsSettings() {
+            const claude = cell("claude");
+            const codex = cell("codex");
+            compare(claude.innerLimit.id, "Opus", "The only limit shows by default");
+            compare(claude.children[0].inner, true);
+            compare(claude.children[0].innerValue, 78);
+            compare(root.texts(claude), ["62%", "2d 21h"]);
+            compare(codex.innerLimit, null, "No scoped limit, no inner ring");
+            compare(codex.children[0].inner, false);
+            compare(root.texts(codex), ["34%", "5d 4h"]);
+
+            setEntry("codex", { status: "ok", weekly: { percent: 34 },
+                                scoped: [{ id: "codex_spark", label: "GPT-5.3-Codex-Spark", percent: 5 }] });
+            compare(codex.innerLimit.id, "codex_spark", "A new limit is picked up");
+            compare(codex.children[0].inner, true);
+            compare(codex.children[0].innerValue, 5);
+            compare(root.texts(codex), ["34%", "–"]);
+
+            const fable = { id: "Fable", label: "Fable", percent: 78 };
+            const opus = { id: "Opus", label: "Opus", percent: 9 };
+            setEntry("claude", { status: "ok", weekly: { percent: 62 }, scoped: [fable, opus] });
+            compare(claude.innerLimit, null, "Several and none picked: all models only");
+            compare(claude.children[0].inner, false);
+            compare(root.texts(claude), ["62%", "–"]);
+            monitor.usage.innerChoices = { claude: "Opus", codex: "" };
+            compare(claude.innerLimit.id, "Opus");
+            compare(claude.children[0].inner, true);
+            compare(claude.children[0].innerValue, 9);
+            compare(root.texts(claude), ["62%", "–"]);
+            monitor.usage.innerChoices = { claude: "none", codex: "" };
+            compare(claude.innerLimit, null);
+            compare(claude.children[0].inner, false);
+            compare(root.texts(claude), ["62%", "–"]);
+            monitor.usage.innerChoices = { claude: "Opus", codex: "" };
+            setEntry("claude", { status: "ok", weekly: { percent: 62 }, scoped: [fable] });
+            compare(claude.innerLimit, null, "A picked limit that goes away leaves one circle");
+            compare(claude.children[0].inner, false);
+
+            // A reading without a weekly window yet, after a failed first poll.
+            setEntry("codex", { status: "error", lastError: "timed out", lastErrorAt: 1 });
+            compare(root.texts(codex), ["–", "–"]);
+            verify(!Number.isFinite(codex.children[0].value));
+        }
+
+        function test_resetsReachOnlyTheShownLimit() {
+            const fable = { id: "Fable", label: "Fable", percent: 78 };
+            const opus = { id: "Opus", label: "Opus", percent: 9 };
+            setEntry("claude", { status: "ok", weekly: { percent: 62 }, scoped: [fable, opus] });
+            monitor.usage.innerChoices = { claude: "Fable", codex: "" };
+            const claude = cell("claude");
+            const codex = cell("codex");
+            const inner = innerArc(claude);
+            monitor.usage.resetsDetected({ "claude.scoped.Opus": { from: 92, early: true } });
+            compare(inner.animating, false, "A limit that is not shown plays nothing");
+            monitor.usage.resetsDetected({ "claude.scoped.Fable": { from: 92, early: true } });
+            verify(inner.animating, "The shown limit plays its reset");
+            tryCompare(inner, "animating", false);
+            // Events are handed over once, so changing the pick replays nothing.
+            monitor.usage.innerChoices = { claude: "Opus", codex: "" };
+            monitor.usage.innerChoices = { claude: "Fable", codex: "" };
+            compare(inner.animating, false);
+            compare(inner.head, 78);
+            monitor.usage.innerChoices = { claude: "none", codex: "" };
+            monitor.usage.resetsDetected({ "claude.scoped.Fable": { from: 92, early: true } });
+            compare(inner.animating, false, "No reset plays on a hidden arc");
+            // The weekly arc plays its own, and only on its own item.
+            monitor.usage.resetsDetected({ "codex.weekly": { from: 97, early: false } });
+            verify(outerArc(codex).animating);
+            compare(outerArc(claude).animating, false);
+            tryCompare(outerArc(codex), "animating", false, 5000);
+        }
     }
 
     TestCase {

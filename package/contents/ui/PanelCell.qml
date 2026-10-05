@@ -7,7 +7,7 @@ import org.kde.kirigami as Kirigami
 // One item in the panel: a button that opens its popup, with the panel's
 // hover and pressed looks. Across a horizontal panel the wash leaves a sliver
 // of panel above and below, as Plasma's own panel buttons do; along a
-// vertical one, and in a Standalone dial, it spans the cell.
+// vertical one it spans the cell.
 MouseArea {
     id: cell
 

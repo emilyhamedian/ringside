@@ -25,7 +25,7 @@ Item {
     // no room to show.
     property int minimumLevel: 0
     // About a thirteenth of the ring, in half pixels, for the panel's rings;
-    // the popups and the Standalone dials set their own.
+    // the popups set their own.
     property real strokeWidth: Math.max(2, Math.round(width / 6.5) / 2)
     property real innerStrokeWidth: Math.max(1.5, Math.round(strokeWidth * 2 / 3 * 2) / 2)
     property real innerRadius: outer.radius - strokeWidth / 2 - innerStrokeWidth / 2 - Math.max(1, strokeWidth / 2)

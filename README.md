@@ -107,26 +107,6 @@ The popup lists every weekly limit, when each resets, and a graph of the week so
 which fills in as Ringside keeps checking. Reset times follow the time zone of
 Plasma's Digital Clock.
 
-## Standalone layout
-
-![CPU, GPU, Claude and Codex dials in a panel on the right edge of the screen](docs/standalone.png)
-
-Ringside can also show its items as large dials in a panel of their own, which
-folds into a small tab while a window is maximized. To set one up on the right
-edge of the screen with Claude and Codex, run this from a clone of the
-repository:
-
-```bash
-scripts/add-panel.sh
-```
-
-Or add an empty panel, put Ringside in it, and set *Layout* to *Standalone*
-under *Panel Items*. The dials need the panel to themselves; in a panel shared
-with other widgets, use *Inline*. Click the tab or the arrow to fold and unfold
-it; *Panel Items* sets when it folds by itself.
-
-![The standalone panel folding into its tab](docs/fold.gif)
-
 ## Discrete GPUs on laptops
 
 Reading a GPU's sensors keeps it awake. A laptop's discrete GPU normally
@@ -147,8 +127,8 @@ Right-click the widget and choose *Configure Ringside…*.
 - **General**: update interval, how far back the graphs reach, Celsius or
   Fahrenheit, network rates in bits or bytes, temperature thresholds, and how
   often Claude and Codex are checked.
-- **Panel Items**: the layout, which items show and in what order, and rings
-  with or without their text. Rings grow and shrink with the panel.
+- **Panel Items**: which items show and in what order, and rings with or
+  without their text. Rings grow and shrink with the panel.
 - **Sensors**: the CPU temperature source, which GPU goes on which ring, the
   network interface, the disk and volume, the disk temperature sensor, and the
   Claude and Codex inner rings.

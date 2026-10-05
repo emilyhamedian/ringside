@@ -58,7 +58,6 @@ TestCase {
             property string diskVolume: ""
             property string diskTemperatureSensor: ""
             property string detectedHardware: ""
-            property int layout: 0
             property int usageRefreshMinutes: 5
             property string claudeInnerLimit: ""
             property string codexInnerLimit: ""
@@ -155,8 +154,8 @@ TestCase {
         verify(monitor.readers().some(r => r.onRing));
     }
 
-    // A widget of only Claude and Codex, as on a Standalone panel beside an
-    // Inline one, reads no sensors and runs no GPU clock.
+    // A widget of only Claude and Codex, beside another with the system
+    // items, reads no sensors and runs no GPU clock.
     function test_aUsageOnlyWidgetSubscribesNothing() {
         const usageOnly = createTemporaryObject(configComponent, testCase, {
             itemOrder: ["claude", "codex", "cpu", "gpu", "memory", "network", "disk"],

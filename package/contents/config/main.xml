@@ -55,23 +55,6 @@
     <entry name="hiddenItems" type="StringList">
       <default>disk</default>
     </entry>
-    <entry name="layout" type="Int">
-      <label>0 inline strip, 1 standalone dials</label>
-      <default>0</default>
-      <min>0</min>
-      <max>1</max>
-    </entry>
-    <entry name="visibilityMode" type="Int">
-      <label>Standalone: 0 fold behind maximized windows, 1 always open, 2 always folded</label>
-      <default>0</default>
-      <min>0</min>
-      <max>2</max>
-    </entry>
-    <entry name="panelThickness" type="Int">
-      <label>Standalone: the open thickness of a panel Ringside has to itself</label>
-      <default>0</default>
-      <min>0</min>
-    </entry>
     <entry name="ringsOnly" type="StringList">
       <label>Ring items drawn without their text</label>
       <default></default>

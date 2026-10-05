@@ -21,10 +21,11 @@ class CoverageTests(unittest.TestCase):
         return coverage(name, event, ref, SHA, lambda *_: paths, lambda *_: "b" * 40)
 
     def test_allowlist(self):
-        self.assertEqual(self.mode(["README.md", "docs/panel.png"]), "docs")
+        self.assertEqual(self.mode(["README.md", "docs/panel.png", "docs/popups.png", "docs/usage.png"]), "docs")
         for path in ("AGENTS.md", "CLAUDE.md", "SECURITY.md", ".agents/skills/check/SKILL.md",
                      ".github/workflows/test.yml", "REUSE.toml", "LICENSE",
-                     "docs/new.png", "docs/tool.py", "package/metadata.json", "README.md\ncode.qml"):
+                     "docs/new.png", "docs/tool.py", "docs/standalone.png", "docs/fold.gif",
+                     "package/metadata.json", "README.md\ncode.qml"):
             with self.subTest(path=path):
                 self.assertEqual(self.mode(["README.md", path]), "full")
 
