@@ -421,7 +421,7 @@ Item {
 
         // The Claude or Codex mark inside the ring.
         function mark(cell) {
-            return root.find(cell.children[0], i => i.isMask !== undefined);
+            return root.find(cell.children[0], i => i.markName !== undefined);
         }
 
         // Claude at `percent` with no model limit, resetting in `left` seconds.
@@ -432,8 +432,8 @@ Item {
         }
 
         function test_texts_data() {
-            return [{ tag: "claude", percent: "52%", left: "2d 21h", mark: "/icons/claude.svg" },
-                    { tag: "codex", percent: "24%", left: "5d 4h", mark: "/icons/openai.svg" }];
+            return [{ tag: "claude", percent: "52%", left: "2d 21h" },
+                    { tag: "codex", percent: "24%", left: "5d 4h" }];
         }
 
         // The mark names the item in the ring, and the percentage moves out
@@ -448,7 +448,7 @@ Item {
             compare(gauge.text, "", "no percentage inside the ring");
             const m = mark(c);
             verify(m.visible, "the mark shows");
-            verify(m.source.toString().endsWith(data.mark), m.source);
+            compare(m.markName, data.tag);
             verify(m.width > 0 && m.width <= gauge.centreWidth, m.width + " in " + gauge.centreWidth);
         }
 

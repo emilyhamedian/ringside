@@ -178,6 +178,38 @@ Item {
         ReadoutFont {}
     }
 
+    Component {
+        id: gaugeComponent
+        RingGauge {}
+    }
+
+    // A Claude mark in a middle `room` wide.
+    Component {
+        id: markComponent
+        Item {
+            id: holder
+
+            property real room: 0
+            readonly property alias name: inside
+
+            width: 34
+            height: 34
+
+            RingName {
+                id: inside
+                item: "claude"
+                room: holder.room
+            }
+        }
+    }
+
+    Component {
+        id: figureComponent
+        TextMetrics {
+            text: "0"
+        }
+    }
+
     // Noto Sans has figures of both kinds, so the features show in its widths.
     Component {
         id: probeMetricsComponent
@@ -261,8 +293,9 @@ Item {
             return root.find(name, i => i.fontSizeMode !== undefined);
         }
 
+        // The Claude or Codex mark, loaded for those items alone.
         function mark(name) {
-            return root.find(name, i => i.isMask !== undefined);
+            return root.find(name, i => i.markName !== undefined);
         }
 
         function line(c, which) {
@@ -387,7 +420,7 @@ Item {
 
         function test_nameInsideTheRing_data() {
             const names = [{ item: "cpu", text: "CPU" }, { item: "memory", text: "MEM" }, { item: "gpu", text: "GPU" },
-                           { item: "claude", mark: "claude.svg" }, { item: "codex", mark: "openai.svg" }];
+                           { item: "claude", mark: "claude" }, { item: "codex", mark: "codex" }];
             const rows = [];
             for (const n of names) {
                 rows.push(Object.assign({ tag: n.item + " 34", ring: 34, textShown: true, twoLines: true, shown: true }, n));
@@ -415,24 +448,29 @@ Item {
                 compare(label(name).text, data.text);
                 compare(label(name).visible, data.shown);
                 compare(String(label(name).color), root.tone("dim"));
-                verify(!mark(name).visible);
+                verify(!mark(name), "a system ring loads no mark");
             } else {
-                verify(String(mark(name).source).endsWith(data.mark), String(mark(name).source));
-                verify(mark(name).isMask);
+                compare(mark(name).markName, data.mark);
                 compare(mark(name).visible, data.shown);
                 verify(!label(name).visible);
             }
             if (data.shown && data.text) {
-                // The label spans the ring and is padded in evenly to the
-                // round middle's chord, so its text centres on the ring.
-                compare(label(name).width, g.width);
-                compare(label(name).leftPadding, label(name).rightPadding);
-                verify(label(name).paintedWidth <= label(name).width - 2 * label(name).leftPadding + 0.5,
-                       "drawn within the chord");
+                // The label is laid out across the round middle's chord,
+                // its text centred in it.
+                compare(label(name).width, name.chord);
+                verify(label(name).paintedWidth <= label(name).width + 0.5, "drawn within the chord");
             }
             if (data.shown) {
-                const shownItem = data.text ? label(name) : mark(name);
-                const middle = shownItem.mapToItem(g, shownItem.width / 2, shownItem.height / 2);
+                // The label by its capitals' middle, without the letter
+                // space after its last glyph; the mark by its artwork's
+                // middle, through its scale.
+                // Mapped as a point: Qt 6.6 drops the fraction of an x and y
+                // given apart.
+                const middle = data.text
+                    ? label(name).mapToItem(g, Qt.point(label(name).width / 2 - label(name).font.letterSpacing / 2,
+                                                        label(name).baselineOffset - name.capHeight / 2))
+                    : mark(name).mapToItem(g, Qt.point(mark(name).art.box[0] + mark(name).art.box[2] / 2,
+                                                       mark(name).art.box[1] + mark(name).art.box[2] / 2));
                 verify(Math.abs(middle.x - g.width / 2) <= 0.5 && Math.abs(middle.y - g.height / 2) <= 0.5,
                        "centred: " + middle.x + ", " + middle.y);
             }
@@ -474,7 +512,7 @@ Item {
                     settle();
                     const what = k.item + (k.inner ? " with inner ring" : "") + " at " + factor.toFixed(2) + ": ";
                     if (name.usage) {
-                        const size = mark(name).width;
+                        const size = name.markSize;
                         const fits = size >= Kirigami.Units.iconSizes.small / 2 && size <= g.centreWidth;
                         compare(name.visible, fits, what + "mark " + size + " in " + g.centreWidth);
                         continue;
@@ -494,6 +532,69 @@ Item {
                 }
                 made.splice(made.indexOf(c), 1);
                 c.destroy();
+            }
+        }
+
+        function test_ringsShareTheCentre_data() {
+            const rows = [];
+            for (const size of [33, 34, 45, 52]) {
+                rows.push({ tag: size + " one ring", size: size, inner: false });
+                rows.push({ tag: size + " two rings", size: size, inner: true });
+            }
+            return rows;
+        }
+
+        // Each arc is drawn about the gauge's exact middle, an odd size's
+        // half pixel included, so the two rings sit in each other evenly.
+        function test_ringsShareTheCentre(data) {
+            const g = keep(gaugeComponent.createObject(root, { width: data.size, height: data.size, inner: data.inner,
+                                                               value: 40, innerValue: 20 }));
+            waitForRendering(g);
+            const arcs = root.findAll(g, i => i.animating !== undefined && i.visible);
+            compare(arcs.length, data.inner ? 2 : 1);
+            for (const arc of arcs) {
+                const middle = arc.mapToItem(g, Qt.point(arc.width / 2, arc.height / 2));
+                compare(middle.x, data.size / 2, "across");
+                compare(middle.y, data.size / 2, "down");
+                verify(arc.radius + arc.strokeWidth / 2 <= data.size / 2, "the ring stays in its square");
+            }
+        }
+
+        function test_centrePercentage_data() {
+            const rows = [];
+            for (const size of [33, 34, 50]) {
+                rows.push({ tag: size + " 62%", size: size, text: root.percent(62) });
+                rows.push({ tag: size + " 100%", size: size, text: root.percent(100) });
+            }
+            return rows;
+        }
+
+        // The popups' percentage in the middle of a ring is in the theme's
+        // sans with figures of one width, and its figures, not its line box
+        // or rounded width, sit on the ring's middle.
+        function test_centrePercentage(data) {
+            const g = keep(gaugeComponent.createObject(root, { width: data.size, height: data.size, value: 62,
+                                                               text: data.text, textScale: 0.29 }));
+            waitForRendering(g);
+            const t = root.find(g, i => i !== g && i.text === data.text);
+            verify(t && t.visible, "the percentage shows");
+            compare(t.font.family, Kirigami.Theme.defaultFont.family, "the theme's sans");
+            verify(t.font.family !== root.fixedFamily, "not monospace");
+            compare(t.font.features.tnum, 1, "figures of one width");
+            const figure = keep(figureComponent.createObject(root, { font: t.font }));
+            const middle = t.mapToItem(g, Qt.point(t.width / 2, t.baselineOffset - figure.tightBoundingRect.height / 2));
+            verify(Math.abs(middle.x - data.size / 2) <= 0.01 && Math.abs(middle.y - data.size / 2) <= 0.5,
+                   "centred: " + middle.x + ", " + middle.y + " in " + data.size);
+        }
+
+        // A middle too small for a mark leaves it out rather than sizing it
+        // below nothing.
+        function test_noRoomNoMark() {
+            for (const room of [0, 1, 2, 3]) {
+                const holder = keep(markComponent.createObject(root, { room: room }));
+                waitForRendering(holder);
+                verify(holder.name.markSize >= 0, room + ": " + holder.name.markSize);
+                verify(!holder.name.visible, room + " px holds no mark");
             }
         }
 
