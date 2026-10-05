@@ -34,6 +34,20 @@ RowLayout {
     property var parts: []
     property string accessibleValue: ""
     readonly property bool partsShown: parts.length > 0
+    // How far the caption moves to sit on the subtitle's baseline. The two
+    // columns centre on the row each by its own height, so their second
+    // lines miss by a few pixels; the digits stay level with the title.
+    // Worked out from implicit sizes and applied as a transform, so moving
+    // the caption never lays the row out again.
+    readonly property real captionShift: {
+        if (!subtitleText.visible || !captionText.visible) {
+            return 0;
+        }
+        const subtitleBaseline = (titleText.implicitHeight - subtitleText.implicitHeight) / 2 + subtitleText.baselineOffset;
+        const valueHeight = partsShown ? partsRow.implicitHeight : headline.implicitHeight;
+        const captionBaseline = (valueHeight + valueColumn.spacing - captionText.implicitHeight) / 2 + captionText.baselineOffset;
+        return Math.round(subtitleBaseline - captionBaseline);
+    }
     default property alias trailing: trailingSlot.data
 
     Layout.fillWidth: true
@@ -61,6 +75,7 @@ RowLayout {
         spacing: 0
 
         Kirigami.Heading {
+            id: titleText
             Layout.fillWidth: true
             text: header.title
             level: 3
@@ -71,6 +86,7 @@ RowLayout {
         }
 
         Text {
+            id: subtitleText
             Layout.fillWidth: true
             visible: text !== ""
             text: header.subtitle
@@ -83,6 +99,7 @@ RowLayout {
     }
 
     ColumnLayout {
+        id: valueColumn
         visible: header.value !== "" || header.partsShown
         spacing: Math.round(Kirigami.Units.smallSpacing * 0.75)
 
@@ -101,6 +118,7 @@ RowLayout {
         // rightmost and is read first; each pair stays left to right. The
         // model is a count, so a countdown that steps keeps its Readings.
         Row {
+            id: partsRow
             visible: header.partsShown
             Layout.alignment: Qt.AlignRight
             spacing: Math.round(Kirigami.Theme.defaultFont.pointSize * 1.7 * 0.45)
@@ -124,6 +142,7 @@ RowLayout {
         }
 
         Text {
+            id: captionText
             Layout.alignment: Qt.AlignRight
             // Line the caption up with the digits; the unit hangs past them.
             // The reading stays left to right under RTL, so there the digits
@@ -137,6 +156,7 @@ RowLayout {
             font.pointSize: Kirigami.Theme.smallFont.pointSize * 0.98
             font.letterSpacing: Kirigami.Theme.smallFont.pointSize * 0.08
             textFormat: Text.PlainText
+            transform: Translate { y: header.captionShift }
         }
     }
 

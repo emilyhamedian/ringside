@@ -1050,6 +1050,26 @@ Item {
             verify(gap > fable.y - (all.y + all.height));
         }
 
+        // The countdown's caption shares the subtitle's baseline, plain and
+        // mirrored, and the graph's tile spans the content's edges.
+        function test_captionBaselineAndTileEdges_data() {
+            return [{ tag: "plain", mirrored: false }, { tag: "mirrored", mirrored: true }];
+        }
+
+        function test_captionBaselineAndTileEdges(data) {
+            const popup = load("claude", data.mirrored);
+            const h = header(popup);
+            const subtitle = root.find(h, i => i.visible && i.text === h.subtitle);
+            verify(subtitle);
+            const baseline = t => t.mapToItem(popup, 0, t.baselineOffset).y;
+            fuzzyCompare(baseline(caption(popup)), baseline(subtitle), 1);
+            const edge = Math.round(Kirigami.Units.largeSpacing * 2);
+            const tile = root.find(popup, i => i.visible && i.graphNote !== undefined);
+            const left = tile.mapToItem(popup, 0, 0).x;
+            compare(left, edge);
+            compare(left + tile.width, popup.width - edge);
+        }
+
         // Every model's limit gets a row, whichever the ring shows.
         function test_severalLimits() {
             const usage = monitor.usage;

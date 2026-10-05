@@ -46,10 +46,10 @@ PopupPage {
 
     GridLayout {
         Layout.fillWidth: true
-        Layout.leftMargin: Math.round(Kirigami.Units.largeSpacing * 1.5)
+        Layout.leftMargin: Math.round(Kirigami.Units.largeSpacing * 2)
         Layout.rightMargin: Layout.leftMargin
         Layout.topMargin: Math.round(Kirigami.Units.smallSpacing * 1.5)
-        Layout.bottomMargin: Layout.leftMargin
+        Layout.bottomMargin: Math.round(Kirigami.Units.largeSpacing * 1.5)
         columns: 2
         rowSpacing: Kirigami.Units.largeSpacing
         columnSpacing: Kirigami.Units.largeSpacing
@@ -197,11 +197,7 @@ PopupPage {
         }
     }
 
-    Rectangle {
-        Layout.fillWidth: true
-        Layout.preferredHeight: 1
-        color: Qt.alpha(Kirigami.Theme.textColor, 0.08)
-    }
+    Divider {}
 
     ProcessList {
         key: "usage"

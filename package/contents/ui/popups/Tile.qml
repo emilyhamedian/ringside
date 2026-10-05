@@ -22,12 +22,29 @@ Rectangle {
 
     readonly property real horizontalPadding: Math.round(Kirigami.Units.largeSpacing * 1.5)
     readonly property real verticalPadding: Math.round(Kirigami.Units.largeSpacing * 1.25)
+    // The caption's line box has room for accents over its capitals. Half
+    // of that comes off the top padding, so the capitals sit about as far
+    // from the top as the content's foot from the bottom.
+    readonly property real topTrim: caption.visible ? Math.round((captionMetrics.ascent - capHeight) / 2) : 0
+    // capitalHeight needs Qt 6.9; the ink of "H" stands in before that.
+    readonly property real capHeight: captionMetrics.capitalHeight ?? capSample.tightBoundingRect.height // qmllint disable missing-property
 
     Layout.fillWidth: true
     implicitWidth: column.implicitWidth + 2 * horizontalPadding
-    implicitHeight: column.implicitHeight + 2 * verticalPadding
+    implicitHeight: column.implicitHeight + 2 * verticalPadding - topTrim
     radius: Kirigami.Units.smallSpacing
     color: Qt.alpha(Kirigami.Theme.textColor, 0.05)
+
+    FontMetrics {
+        id: captionMetrics
+        font: caption.font
+    }
+
+    TextMetrics {
+        id: capSample
+        font: caption.font
+        text: "H"
+    }
 
     ColumnLayout {
         id: column
@@ -41,10 +58,11 @@ Rectangle {
         anchors.top: parent.top
         anchors.leftMargin: tile.horizontalPadding
         anchors.rightMargin: tile.horizontalPadding
-        anchors.topMargin: tile.verticalPadding
+        anchors.topMargin: tile.verticalPadding - tile.topTrim
         spacing: Math.round(Kirigami.Units.smallSpacing / 2)
 
         Caption {
+            id: caption
             visible: text !== ""
             label: tile.caption
             detail: {

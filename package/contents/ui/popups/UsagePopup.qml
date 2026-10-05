@@ -250,9 +250,9 @@ PopupPage {
     GridLayout {
         visible: popup.weekly !== null
         Layout.fillWidth: true
-        Layout.leftMargin: Math.round(Kirigami.Units.largeSpacing * 1.5)
+        Layout.leftMargin: Math.round(Kirigami.Units.largeSpacing * 2)
         Layout.rightMargin: Layout.leftMargin
-        Layout.bottomMargin: Layout.leftMargin
+        Layout.bottomMargin: Math.round(Kirigami.Units.largeSpacing * 1.5)
         columns: 1
 
         Tile {
