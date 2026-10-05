@@ -48,9 +48,10 @@ QtObject {
 
     // The two short readings by a ring: the ring's own percentage, or "off"
     // for the only GPU while it sleeps, then its temperature, the memory in
-    // use or the time to the weekly reset; empty where there is none, as for Intel GPUs, which publish no temperature.
-    // `level` and `heat` choose their colours (see Readout). The integrated
-    // GPU's temperature stays in the words and the popup.
+    // use or the time to the weekly reset; empty where there is none, as for
+    // Intel GPUs, which publish no temperature. `level` and `heat` choose
+    // their colours (see Readout). The integrated GPU's temperature stays in
+    // the words and the popup.
     function readout(item, nowMs) {
         const percent = value => Number.isFinite(value) ? i18nc("@info:status a percentage", "%1%", Format.percent(value)) : "–";
         const temperature = celsius => Format.temperatureValid(celsius)

@@ -5,6 +5,6 @@
 # last to their resets at this rate, Fable runs out before its own.
 from fake_usage import DAY, limit, ok, report, window
 
-report(claude=ok(window(52, 2 * DAY + 21 * 3600, [(6, 8), (3, 37), (0, 52)]),
-                 [limit("Fable", "Fable", window(78, 2 * DAY + 21 * 3600, [(5, 30), (0, 78)]))]),
+report(claude=ok(window(52, 2 * DAY + 21 * 3600, [(4, 8), (2, 37), (0, 52)]),
+                 [limit("Fable", "Fable", window(78, 2 * DAY + 21 * 3600, [(4, 30), (0, 78)]))]),
        codex=ok(window(24, 5 * DAY + 4 * 3600, [(1, 10), (0, 24)])))
