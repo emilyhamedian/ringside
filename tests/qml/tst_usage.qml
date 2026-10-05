@@ -951,6 +951,11 @@ Item {
             compare(row.Accessible.name, "2 days 21 hours until reset");
             verify(caption(popup).Accessible.ignored);
             verify(before.every(r => r.accessibleIgnored));
+            before.forEach(r => {
+                const texts = r.children.filter(c => typeof c.text === "string");
+                compare(texts.length, 2);
+                verify(texts.every(t => t.Accessible.ignored), r.value + r.unit + " is not spoken on its own");
+            });
             popup.nowMs += 3600 * 1000;
             const after = countdown(popup);
             compare(after.map(r => r.value + r.unit), ["2d", "20h"]);

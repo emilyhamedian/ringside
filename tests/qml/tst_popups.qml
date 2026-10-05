@@ -567,6 +567,7 @@ Item {
             compare(popup.loadAverageName(NaN, 0.5, NaN),
                     "unavailable over 1 minute, " + Format.load(0.5) + " over 5 minutes, unavailable over 15 minutes");
             verify(first[0].accessibleIgnored);
+            verify(parts(first[0]).number.Accessible.ignored && parts(first[0]).suffix.Accessible.ignored, "not spoken on its own");
             rest.forEach(t => {
                 verify(t.Accessible.ignored);
                 compare(t.font.pointSize, Style.unitPointSize(first[0].pointSize, Kirigami.Theme.smallFont.pointSize));
@@ -949,6 +950,7 @@ Item {
                 compare(r.pointSize, Kirigami.Theme.defaultFont.pointSize * 1.38);
                 verify(r.accessibleIgnored);
                 const p = parts(r);
+                verify(p.number.Accessible.ignored && p.suffix.Accessible.ignored, "not spoken on its own");
                 verify(x(p.number) < x(p.suffix), "the number before its unit");
                 ends.push(x(p.number) + p.number.implicitWidth);
                 starts.push(x(p.suffix));
