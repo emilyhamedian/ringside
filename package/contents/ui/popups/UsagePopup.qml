@@ -148,6 +148,7 @@ PopupPage {
     // A bar per limit when there are several, with the pace sentence under
     // the bar it is about; with one limit, the sentence alone.
     ColumnLayout {
+        id: barsColumn
         visible: popup.weekly !== null && (popup.limits.length > 1 || popup.paceText !== "")
         Layout.fillWidth: true
         Layout.leftMargin: Math.round(Kirigami.Units.largeSpacing * 2)
@@ -252,6 +253,9 @@ PopupPage {
         Layout.fillWidth: true
         Layout.leftMargin: Math.round(Kirigami.Units.largeSpacing * 2)
         Layout.rightMargin: Layout.leftMargin
+        // Straight under the header, as far from it as the other popups'
+        // tiles are; under the bars, their own wider margin keeps it apart.
+        Layout.topMargin: barsColumn.visible ? 0 : Math.round(Kirigami.Units.smallSpacing * 1.5)
         Layout.bottomMargin: Math.round(Kirigami.Units.largeSpacing * 1.5)
         columns: 1
 
