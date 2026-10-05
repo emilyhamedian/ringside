@@ -15,6 +15,9 @@ Rectangle {
     // The time the tile's graph spans, shown after the caption in place of
     // the detail: "USAGE · 60 s", "USAGE · 2 min".
     property int graphSeconds: 0
+    // About the graph's scale, after the span or in the detail's place:
+    // "THROUGHPUT · 60 s · peak 24.8 Mb/s", "READ · peak 18.5 MiB/s".
+    property string graphNote: ""
     default property alias content: body.data
 
     readonly property real horizontalPadding: Math.round(Kirigami.Units.largeSpacing * 1.5)
@@ -45,13 +48,17 @@ Rectangle {
             visible: text !== ""
             label: tile.caption
             detail: {
-                if (tile.graphSeconds <= 0) {
-                    return tile.detail;
+                const notes = [];
+                if (tile.graphSeconds > 0) {
+                    const minutes = Format.spanMinutes(tile.graphSeconds);
+                    notes.push(minutes > 0
+                        ? i18nc("@title:group time a graph spans, as in USAGE · 2 min", "%1 min", minutes)
+                        : i18nc("@title:group time a graph spans, as in USAGE · 60 s", "%1 s", tile.graphSeconds));
                 }
-                const minutes = Format.spanMinutes(tile.graphSeconds);
-                return "· " + (minutes > 0
-                    ? i18nc("@title:group time a graph spans, as in USAGE · 2 min", "%1 min", minutes)
-                    : i18nc("@title:group time a graph spans, as in USAGE · 60 s", "%1 s", tile.graphSeconds));
+                if (tile.graphNote !== "") {
+                    notes.push(tile.graphNote);
+                }
+                return notes.length > 0 ? notes.map(s => "· " + s).join(" ") : tile.detail;
             }
             Layout.fillWidth: true
         }
