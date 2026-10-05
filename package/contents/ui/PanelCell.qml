@@ -109,12 +109,17 @@ MouseArea {
         interval: cell.relayoutWindow
     }
 
+    // Keyboard focus also draws a line round the wash in the theme's focus
+    // colour, so the focused item stands apart from one under a resting
+    // pointer.
     Rectangle {
         anchors.fill: parent
         anchors.topMargin: cell.inset
         anchors.bottomMargin: anchors.topMargin
         radius: Kirigami.Units.smallSpacing
         color: Qt.alpha(Kirigami.Theme.textColor, cell.open ? 0.14 : 0.1)
+        border.width: cell.activeFocus ? 1 : 0
+        border.color: Kirigami.Theme.focusColor
         visible: cell.open || cell.containsMouse || cell.activeFocus
     }
 }
