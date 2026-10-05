@@ -5,6 +5,7 @@ import QtQuick
 import QtQuick.Layouts
 import QtTest
 import org.kde.kirigami as Kirigami
+import "../../package/contents/ui/code/format.js" as Format
 import "../../package/contents/ui/code/style.js" as Style
 
 // Every popup against FakeMonitor in the states the gallery shows, loaded the
@@ -95,6 +96,20 @@ Item {
         swapUsed: 0
         swapTotal: 0
         swapLabel: ""
+    }
+
+    // Just opened: no rate has a sample yet.
+    FakeMonitor {
+        id: fresh
+        networkDownHistory: []
+        networkUpHistory: []
+        diskReadHistory: []
+        diskWriteHistory: []
+    }
+
+    // Measures a Text's ink, which a Text doesn't report.
+    TextMetrics {
+        id: probe
     }
 
     Component {
@@ -463,6 +478,118 @@ Item {
                     compare(edge(r), edge(values[0]), "lined up");
                 });
             }
+        }
+
+        // The nearest of `item` and its ancestors that `test` accepts.
+        function ancestor(item, test) {
+            for (let i = item; i; i = i.parent) {
+                if (test(i)) {
+                    return i;
+                }
+            }
+            return null;
+        }
+
+        function graphs(item) {
+            return all(item, i => i.ceiling !== undefined && i.mainPoints !== undefined);
+        }
+
+        function ruleOf(graph) {
+            return graph.children.filter(c => c.preferEnd !== undefined && c.limitY !== undefined)[0];
+        }
+
+        function ruleLabel(rule) {
+            return rule.children.filter(c => typeof c.text === "string")[0];
+        }
+
+        function tileCaption(graph) {
+            const tile = ancestor(graph, i => i.graphNote !== undefined);
+            return all(tile, i => i.label !== undefined && i.detail !== undefined)[0];
+        }
+
+        // No grid: a percentage graph has its labelled 100 % rule, with a
+        // full smallSpacing over the label, and a rate graph, which has no
+        // natural top, rises to its peak where that rule would be and names
+        // the peak in its caption.
+        function test_graphsHaveARuleOrAPeak_data() {
+            return [{ tag: "cpu", popup: "CpuPopup", ceilings: 1, peaks: 0 },
+                    { tag: "gpu", popup: "GpuPopup", ceilings: 2, peaks: 0 },
+                    { tag: "memory", popup: "MemoryPopup", ceilings: 1, peaks: 0 },
+                    { tag: "network", popup: "NetworkPopup", ceilings: 0, peaks: 3 }];
+        }
+
+        function test_graphsHaveARuleOrAPeak(data) {
+            const found = graphs(load(data.popup, normal)).filter(g => g.visible);
+            compare(found.filter(g => g.ceiling).length, data.ceilings);
+            compare(found.filter(g => !g.ceiling).length, data.peaks);
+            found.forEach(g => {
+                const rule = ruleOf(g);
+                verify(rule, "a LimitRule");
+                compare(g.topY, rule.limitY, "the top is where the rule goes");
+                const lines = all(g, i => i.visible && i.border !== undefined && i.radius !== undefined
+                                          && !ancestor(i, a => a === rule));
+                compare(lines.length, 0, "no grid");
+                const caption = tileCaption(g);
+                if (g.ceiling) {
+                    verify(rule.visible);
+                    const label = ruleLabel(rule);
+                    compare(label.text, "100%");
+                    probe.font = label.font;
+                    probe.text = label.text;
+                    const inkTop = label.y + label.baselineOffset + probe.tightBoundingRect.y;
+                    verify(inkTop >= Kirigami.Units.smallSpacing - 1, "room over the label: " + inkTop);
+                    verify(caption.text.indexOf("peak") < 0, caption.text);
+                } else {
+                    verify(!rule.visible);
+                    const top = g.mainPoints.concat(g.secondPoints).reduce((m, p) => Math.min(m, p.y), Infinity);
+                    fuzzyCompare(top, g.topY, 0.001, "the peak lands where 100 % would");
+                    verify(/ · peak \S+ \S+$/.test(caption.text), caption.text);
+                }
+            });
+        }
+
+        // The disk tiles name their peak in the caption, the way Throughput
+        // does, and nowhere else; before the first sample they say nothing.
+        function test_diskPeaksInTheCaption() {
+            const peak = (samples, bits) => {
+                const r = Format.rate(Math.max(...samples), bits);
+                return "peak " + r.value + " " + r.unit;
+            };
+            const expected = {
+                Throughput: "THROUGHPUT · 60 s · " + peak(normal.networkDownHistory.concat(normal.networkUpHistory), true),
+                Read: "READ · " + peak(normal.diskReadHistory, false),
+                Write: "WRITE · " + peak(normal.diskWriteHistory, false)
+            };
+            const popup = load("NetworkPopup", normal);
+            const found = graphs(popup).map(tileCaption);
+            compare(found.map(c => c.text), [expected.Throughput, expected.Read, expected.Write]);
+            verify(!texts(popup).some(t => t.indexOf("Peak") >= 0), JSON.stringify(texts(popup)));
+
+            const empty = graphs(load("NetworkPopup", fresh)).map(tileCaption);
+            compare(empty.map(c => c.text), ["THROUGHPUT · 60 s", "READ", "WRITE"]);
+        }
+
+        // The rule's label keeps to its end unless a line runs through it
+        // there; preferEnd starts it at the right.
+        function test_ruleLabelEnd_data() {
+            const high = 2;
+            const low = 38;
+            return [{ tag: "empty", preferEnd: false, series: [], atStart: true },
+                    { tag: "emptyPreferEnd", preferEnd: true, series: [], atStart: false },
+                    { tag: "highAtTheStart", preferEnd: false, series: [[{ x: 0, y: high }, { x: 200, y: low }]], atStart: false },
+                    { tag: "highAtTheEnd", preferEnd: true, series: [[{ x: 0, y: low }, { x: 200, y: high }]], atStart: true },
+                    { tag: "highAtBothEnds", preferEnd: true, series: [[{ x: 0, y: high }, { x: 100, y: low }, { x: 200, y: high }]], atStart: false }];
+        }
+
+        function test_ruleLabelEnd(data) {
+            const loader = createTemporaryObject(host, root, { width: 200, height: 40 });
+            loader.setSource(Qt.resolvedUrl("../../package/contents/ui/popups/LimitRule.qml"),
+                             { preferEnd: data.preferEnd, series: data.series });
+            const rule = loader.item;
+            compare(rule.width, 200);
+            compare(rule.atStart, data.atStart);
+            const label = ruleLabel(rule);
+            compare(label.x, data.atStart ? 0 : rule.width - label.implicitWidth);
         }
     }
 }

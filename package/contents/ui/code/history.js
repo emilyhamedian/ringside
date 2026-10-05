@@ -14,27 +14,29 @@ function push(samples, value, length) {
 }
 
 // Points for a graph of `length` slots. The newest sample sits at the right
-// edge, so a history that hasn't filled yet grows in from the right.
-function points(samples, length, width, height, max) {
+// edge, so a history that hasn't filled yet grows in from the right. `max`
+// maps to `top` pixels down and 0 to 0.75 px above the bottom, half a 1.5 px
+// stroke each, so a line along either edge isn't half clipped.
+function points(samples, length, width, height, max, top) {
     const slots = Math.max(2, length);
     const step = width / (slots - 1);
-    const top = max > 0 ? max : 1;
+    const scale = max > 0 ? max : 1;
+    const inset = top ?? 0.75;
     const first = slots - samples.length;
     return samples.map((v, i) => ({
         x: (first + i) * step,
-        y: height - Math.max(0, Math.min(1, v / top)) * height
+        y: inset + (1 - Math.max(0, Math.min(1, v / scale))) * (height - inset - 0.75)
     }));
 }
 
-// Upper bound for graphs without a natural maximum (throughput): the peak
-// in view rounded up to 1, 2 or 5 times a power of ten, and never below floor.
-function niceMax(samples, floor) {
-    const peak = samples.reduce((m, v) => Math.max(m, v), floor);
-    const magnitude = 10 ** Math.floor(Math.log10(peak));
-    for (const f of [1, 2, 5, 10]) {
-        if (peak <= f * magnitude) {
-            return f * magnitude;
+// The newest of the largest samples as { index, value }, or null when there
+// are none.
+function peak(samples) {
+    let best = null;
+    samples.forEach((v, i) => {
+        if (best === null || v >= best.value) {
+            best = { index: i, value: v };
         }
-    }
-    return 10 * magnitude;
+    });
+    return best;
 }

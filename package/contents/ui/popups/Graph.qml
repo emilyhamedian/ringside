@@ -7,8 +7,10 @@ import QtQuick.Shapes
 import org.kde.kirigami as Kirigami
 import "../code/history.js" as History
 
-// A history graph: a faint grid, a filled area under the main series and an
-// optional dashed second series (upload under download).
+// A history graph: a filled area under the main series and an optional
+// dashed second series (upload under download), with no grid. Percentages
+// run 0 to 100 under the labelled 100 % rule the week graph shares
+// (LimitRule); a rate's top is its peak, which the tile's caption names.
 Item {
     id: graph
 
@@ -19,39 +21,27 @@ Item {
     property int length: 60
     // The top of the scale, in the series' own units.
     property real maximum: 100
+    // Whether the top is a fixed 100 % worth a labelled rule.
+    property bool ceiling: true
     property color color: Kirigami.Theme.textColor
     property real fillOpacity: 0.15
 
-    readonly property var mainPoints: History.points(values, length, width, height, maximum)
+    // The top sits where the rule would, with or without it, so a rate's
+    // peak keeps the same room under the caption as 100 % does.
+    readonly property real topY: rule.limitY
+    readonly property var mainPoints: History.points(values, length, width, height, maximum, topY)
         .map(p => Qt.point(p.x, p.y))
-    readonly property var secondPoints: second ? History.points(secondValues, length, width, height, maximum)
+    readonly property var secondPoints: second ? History.points(secondValues, length, width, height, maximum, topY)
         .map(p => Qt.point(p.x, p.y)) : []
 
     implicitHeight: Kirigami.Units.gridUnit * 2.7
     clip: true
 
-    Repeater {
-        model: 5
-        delegate: Rectangle {
-            required property int index
-            x: Math.round(graph.width * (index + 1) / 6)
-            width: 1
-            height: graph.height
-            color: Qt.alpha(Kirigami.Theme.textColor, 0.07)
-        }
-    }
-
-    Repeater {
-        id: rules
-        // Two rules on a full-height graph, one on the small ones.
-        model: graph.height >= Kirigami.Units.gridUnit * 2.2 ? 2 : 1
-        delegate: Rectangle {
-            required property int index
-            y: Math.round(graph.height * (index + 1) / (rules.count + 1))
-            width: graph.width
-            height: 1
-            color: Qt.alpha(Kirigami.Theme.textColor, 0.07)
-        }
+    LimitRule {
+        id: rule
+        anchors.fill: parent
+        visible: graph.ceiling
+        series: [graph.mainPoints, graph.secondPoints]
     }
 
     Shape {

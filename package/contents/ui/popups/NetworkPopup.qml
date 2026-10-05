@@ -16,6 +16,18 @@ PopupPage {
     readonly property real diskTemperature: popup.monitor.diskTemperature
     readonly property bool diskTemperatureShown: Number.isFinite(diskTemperature)
 
+    // What a rate graph's caption says about its top, which is the peak in
+    // view: "peak 24.8 Mb/s", or nothing before the first sample.
+    function peakNote(samples, bits) {
+        const top = History.peak(samples);
+        if (top === null) {
+            return "";
+        }
+        const r = Format.rate(top.value, bits);
+        return i18nc("@title:group after a rate graph's caption: its highest rate, as in THROUGHPUT · 60 s · peak 24.8 Mb/s or READ · peak 18.5 MiB/s",
+                     "peak %1 %2", r.value, r.unit);
+    }
+
     // Legend and detail text: caption-sized, set as written.
     component Note: Caption {}
 
@@ -27,13 +39,16 @@ PopupPage {
         textFormat: Text.PlainText
     }
 
-    // Read or write: the rate over a small line graph of its history.
+    // Read or write: the rate over a small line graph of its history, which
+    // its peak tops. Each DiskRate below names that peak in its caption
+    // through peakNote().
     component DiskRate: Tile {
         id: tile
 
         property real rate: NaN
         property var history: []
         property int length: 60
+        readonly property real peak: History.peak(history)?.value ?? 0
 
         Reading {
             readonly property var r: Format.rate(tile.rate, false)
@@ -48,7 +63,8 @@ PopupPage {
             values: tile.history
             length: tile.length
             // Anything under 1 MiB/s stays near the floor rather than filling the graph.
-            maximum: History.niceMax(tile.history, 1048576)
+            maximum: Math.max(tile.peak, 1048576)
+            ceiling: false
             fillOpacity: 0
         }
     }
@@ -119,18 +135,24 @@ PopupPage {
         uniformCellWidths: true
 
         Tile {
+            id: throughput
+
+            readonly property var history: popup.monitor.networkDownHistory.concat(popup.monitor.networkUpHistory)
+
             Layout.columnSpan: 2
             caption: i18nc("@title:group", "Throughput")
             graphSeconds: popup.monitor.historySeconds
+            graphNote: popup.peakNote(throughput.history, popup.monitor.networkBits)
 
             Graph {
                 Layout.fillWidth: true
+                ceiling: false
                 values: popup.monitor.networkDownHistory
                 second: true
                 secondValues: popup.monitor.networkUpHistory
                 length: popup.monitor.historyLength
                 // 1 Mb/s at least, so an idle link doesn't draw its noise at full height.
-                maximum: History.niceMax(popup.monitor.networkDownHistory.concat(popup.monitor.networkUpHistory), 125000)
+                maximum: Math.max(History.peak(throughput.history)?.value ?? 0, 125000)
             }
 
             RowLayout {
@@ -213,6 +235,7 @@ PopupPage {
 
         DiskRate {
             caption: i18nc("@title:group disk reads", "Read")
+            graphNote: popup.peakNote(popup.monitor.diskReadHistory, false)
             rate: popup.monitor.diskRead
             history: popup.monitor.diskReadHistory
             length: popup.monitor.historyLength
@@ -220,6 +243,7 @@ PopupPage {
 
         DiskRate {
             caption: i18nc("@title:group disk writes", "Write")
+            graphNote: popup.peakNote(popup.monitor.diskWriteHistory, false)
             rate: popup.monitor.diskWrite
             history: popup.monitor.diskWriteHistory
             length: popup.monitor.historyLength

@@ -62,15 +62,17 @@ TestCase {
         compare(result[0], 4);
     }
 
+    // By default the top sits 0.75 px down and zero 0.75 px up, half the
+    // 1.5 px stroke, so a line along either edge draws whole.
     function test_pointsForAFullHistory() {
         var pts = History.points([0, 50, 100], 3, 100, 50, 100);
         compare(pts.length, 3);
         fuzzyCompare(pts[0].x, 0, 0.001);
-        fuzzyCompare(pts[0].y, 50, 0.001);
+        fuzzyCompare(pts[0].y, 49.25, 0.001);
         fuzzyCompare(pts[1].x, 50, 0.001);
         fuzzyCompare(pts[1].y, 25, 0.001);
         fuzzyCompare(pts[2].x, 100, 0.001);
-        fuzzyCompare(pts[2].y, 0, 0.001);
+        fuzzyCompare(pts[2].y, 0.75, 0.001);
     }
 
     // With fewer samples than slots, the newest sample stays pinned to the
@@ -79,7 +81,7 @@ TestCase {
         var pts = History.points([80], 3, 100, 50, 100);
         compare(pts.length, 1);
         fuzzyCompare(pts[0].x, 100, 0.001);
-        fuzzyCompare(pts[0].y, 10, 0.001);
+        fuzzyCompare(pts[0].y, 0.75 + 0.2 * 48.5, 0.001);
     }
 
     function test_pointsForEmptyHistory() {
@@ -89,14 +91,14 @@ TestCase {
 
     function test_pointsClampOutOfRangeValues() {
         var pts = History.points([-10, 150], 2, 10, 20, 100);
-        fuzzyCompare(pts[0].y, 20, 0.001); // below zero clamps to the bottom
-        fuzzyCompare(pts[1].y, 0, 0.001); // above max clamps to the top
+        fuzzyCompare(pts[0].y, 19.25, 0.001); // below zero clamps to the bottom
+        fuzzyCompare(pts[1].y, 0.75, 0.001); // above max clamps to the top
     }
 
     function test_pointsFallBackToUnitMaxWhenMaxIsNotPositive() {
         var pts = History.points([0.5, 1], 2, 10, 10, 0);
         fuzzyCompare(pts[0].y, 5, 0.001);
-        fuzzyCompare(pts[1].y, 0, 0.001);
+        fuzzyCompare(pts[1].y, 0.75, 0.001);
     }
 
     function test_pointsNeverDividesByZeroBelowTwoSlots() {
@@ -106,21 +108,41 @@ TestCase {
         fuzzyCompare(pts[0].y, 5, 0.001);
     }
 
-    function test_niceMaxRoundsUpToOneTwoOrFiveTimesAPowerOfTen_data() {
+    // A graph under a labelled rule puts its maximum on the rule; zero stays
+    // at the bottom whatever the top.
+    function test_pointsTakeATop_data() {
         return [
-            { tag: "roundsUpToFive", samples: [45], floor: 0, expected: 50 },
-            { tag: "roundsUpToTwo", samples: [120], floor: 0, expected: 200 },
-            { tag: "roundsUpToTen", samples: [999], floor: 0, expected: 1000 },
-            { tag: "exactPowerOfTenStaysItself", samples: [1000], floor: 0, expected: 1000 }
+            { tag: "rule", top: 6.5 },
+            { tag: "edge", top: 0 },
+            { tag: "fraction", top: 2.25 }
         ];
     }
-    function test_niceMaxRoundsUpToOneTwoOrFiveTimesAPowerOfTen(data) {
-        compare(History.niceMax(data.samples, data.floor), data.expected);
+    function test_pointsTakeATop(data) {
+        var pts = History.points([0, 50, 100, 150], 4, 30, 40, 100, data.top);
+        fuzzyCompare(pts[0].y, 39.25, 0.001);
+        fuzzyCompare(pts[1].y, data.top + (39.25 - data.top) / 2, 0.001);
+        fuzzyCompare(pts[2].y, data.top, 0.001);
+        fuzzyCompare(pts[3].y, data.top, 0.001);
     }
 
-    function test_niceMaxNeverGoesBelowTheFloor() {
-        compare(History.niceMax([], 10), 10);
-        compare(History.niceMax([1, 2], 50), 50);
-        compare(History.niceMax([-5, 3], 10), 10);
+    // The newest of equal peaks, so the caption follows the line's latest
+    // high point.
+    function test_peakIsTheNewestLargest_data() {
+        return [
+            { tag: "single", samples: [4], index: 0, value: 4 },
+            { tag: "middle", samples: [1, 9, 3], index: 1, value: 9 },
+            { tag: "tieTakesTheNewest", samples: [3, 7, 2, 7, 1], index: 3, value: 7 },
+            { tag: "allZero", samples: [0, 0, 0], index: 2, value: 0 },
+            { tag: "last", samples: [1, 2, 3], index: 2, value: 3 }
+        ];
+    }
+    function test_peakIsTheNewestLargest(data) {
+        var p = History.peak(data.samples);
+        compare(p.index, data.index);
+        compare(p.value, data.value);
+    }
+
+    function test_peakOfNothingIsNull() {
+        compare(History.peak([]), null);
     }
 }
