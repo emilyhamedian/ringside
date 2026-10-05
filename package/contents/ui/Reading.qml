@@ -26,18 +26,20 @@ Item {
     property real pointSize: Kirigami.Theme.defaultFont.pointSize
     property color color: Kirigami.Theme.textColor
     property color unitColor: Style.dim(color)
+    property real unitSpacing: degreeUnit !== "" ? 1 : Style.unitGap(pointSize)
     // Tabular digits are centred in cells of one width, so a narrow last
     // digit such as "1" would leave the degree sign standing apart. The sign
-    // keeps the distance from the last digit's ink that it has after a "0".
-    property real unitSpacing: degreeUnit !== "" ? 1 + trailingRoom(zero) - trailingRoom(lastDigit)
-                                                 : Style.unitGap(pointSize)
+    // keeps the distance from the last digit's ink that it has after a "0",
+    // and only the sign moves: the width stays the one after a "0", so the
+    // digits of a right-aligned reading hold still as they change.
+    readonly property real degreeShift: degreeUnit !== "" ? trailingRoom(zero) - trailingRoom(lastDigit) : 0
     // Set when a parent speaks for several readings at once.
     property bool accessibleIgnored: false
     readonly property real numberWidth: number.implicitWidth
     readonly property real suffixWidth: suffix.visible ? suffix.implicitWidth : 0
     baselineOffset: number.baselineOffset
 
-    implicitWidth: numberWidth + (suffixWidth > 0 ? suffix.anchors.leftMargin + suffixWidth : 0)
+    implicitWidth: numberWidth + (suffixWidth > 0 ? unitSpacing + suffixWidth : 0)
     implicitHeight: number.implicitHeight
 
     function trailingRoom(metrics) {
@@ -72,7 +74,7 @@ Item {
         visible: text !== ""
         text: reading.degreeUnit === "" ? reading.unit : reading.value === "–" ? "" : "°" + reading.degreeUnit
         anchors.left: number.right
-        anchors.leftMargin: reading.unitSpacing
+        anchors.leftMargin: reading.unitSpacing + reading.degreeShift
         y: number.baselineOffset - baselineOffset
         color: reading.unitColor
         font.family: Kirigami.Theme.defaultFont.family
