@@ -3,13 +3,16 @@
 
 import QtQuick
 import org.kde.kirigami as Kirigami
+import "code/pace.js" as Pace
 
 // A Claude or Codex item in the panel: the weekly limit as a ring with the
 // provider's mark inside it and the chosen model's limit as an inner ring,
 // and beside it the weekly percentage over the time left until the week
 // resets. The ring and its percentage turn amber or red with the weekly
-// reading, and the ring breathes from 90 % until the limit is hit. A failed
-// check dims the item and keeps its last reading.
+// reading, and red while the week is on pace to run out before its reset;
+// the inner ring does the same for the model's limit. The ring breathes from
+// 90 % until the limit is hit. A failed check keeps the last reading and
+// marks the ring with a dot.
 Item {
     id: content
 
@@ -23,8 +26,9 @@ Item {
     readonly property var entry: usage.entry(item)
     readonly property var weekly: entry && entry.weekly ? entry.weekly : null
     readonly property var innerLimit: usage.inner(item)
-    // Stepped by the minute timer below, for the countdown.
+    // Stepped by the minute timer below, for the countdown and the pace.
     property real nowMs: Date.now()
+    readonly property var lines: words.readout(item, nowMs)
 
     // The readings in words, for screen readers and the tooltip.
     readonly property string accessibleDescription: words.describe(item, nowMs)
@@ -35,7 +39,6 @@ Item {
     // out the readings' overhang, which runs into the cell's padding.
     implicitWidth: gauge.width + (readout.visible ? Kirigami.Units.largeSpacing + readout.textWidth : 0)
     implicitHeight: ring
-    opacity: usage.degraded(item) ? 0.55 : 1
 
     Words {
         id: words
@@ -69,6 +72,12 @@ Item {
         value: content.weekly ? content.weekly.percent : NaN
         inner: content.innerLimit !== null
         innerValue: content.innerLimit ? content.innerLimit.percent : NaN
+        // The ring takes the level of the percentage beside it, which counts
+        // the week's pace; the inner ring is raised by its own limit's pace.
+        minimumLevel: content.lines.level
+        innerMinimumLevel: content.innerLimit
+            ? Pace.alarm(Pace.ofWindow(content.innerLimit, Pace.pollTime(content.entry, content.nowMs / 1000), content.nowMs / 1000))
+            : 0
         pulsing: value >= 90 && value < 100
         // The cell's description covers it.
         Accessible.ignored: true
@@ -82,13 +91,30 @@ Item {
         }
     }
 
+    // A failed last check: a dot in the gauge's corner above the readings,
+    // outside the circle, ringed in the background colour so it stands apart
+    // from the arc. It stays still while the ring breathes. The cell's
+    // description says when the check failed.
+    Rectangle {
+        anchors.top: gauge.top
+        anchors.right: gauge.right
+        width: Math.max(4, Math.round(content.ring / 6))
+        height: width
+        radius: width / 2
+        visible: content.usage.degraded(content.item)
+        color: Kirigami.Theme.neutralTextColor
+        border.width: 1
+        border.color: Kirigami.Theme.backgroundColor
+        Accessible.ignored: true
+    }
+
     Readout {
         id: readout
         anchors.left: gauge.right
         anchors.leftMargin: Kirigami.Units.largeSpacing
         y: Math.round((content.height - height) / 2)
         visible: content.textShown
-        lines: words.readout(content.item, content.nowMs)
+        lines: content.lines
         oneLine: !content.twoLines
     }
 }
