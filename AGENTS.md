@@ -4,8 +4,7 @@ A KDE Plasma 6 panel widget: CPU, GPU, memory, network and disk, plus optional
 Claude Code and Codex weekly limits, as rings in the panel, each opening a
 popup. Two layouts: Inline (a strip in any panel) and Standalone (large dials
 in a dedicated panel that folds behind maximized windows). Pure QML with two
-helper scripts; plugin id `dev.emily.ringside`; GPL-3.0-or-later; public at
-github.com/emilyhamedian/ringside.
+helper scripts; plugin id `dev.emily.ringside`; GPL-3.0-or-later.
 
 ## Where things are
 
@@ -53,6 +52,7 @@ github.com/emilyhamedian/ringside.
 
 ## Git
 
-See CONTRIBUTING.md for the checks and style. Work on a branch. Nothing lands on `main` without the owner's go-ahead, and
-it lands as one squashed commit: `main` is what people install from. Releases
+See CONTRIBUTING.md for the checks, style and required approval. Work on a
+branch. Each change lands as one squashed commit: `main` is what people
+install from. Releases
 are tagged on `main` and carry `ringside.plasmoid` from `scripts/package.sh`.
