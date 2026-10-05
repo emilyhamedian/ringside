@@ -18,9 +18,14 @@ Item {
     width: 800
     height: 900
 
+    // Set by the long-translations test: every string comes back about a
+    // third longer, as German and the Romance languages often run.
+    property bool pseudo: false
+
     // A bare qml runtime has no KI18n; the views find these on the root.
     function substitute(text, args) {
-        return text.replace(/%(\d+)/g, (m, n) => n <= args.length ? String(args[n - 1]) : m);
+        const s = text.replace(/%(\d+)/g, (m, n) => n <= args.length ? String(args[n - 1]) : m);
+        return pseudo ? s + "ß".repeat(Math.round(s.length * 0.35)) : s;
     }
     function i18n(text, ...args) { return substitute(text, args); }
     function i18nc(context, text, ...args) { return substitute(text, args); }
@@ -89,6 +94,17 @@ Item {
         gpuInner.knownVramTotal: NaN
     }
 
+    // A subtitle longer than the header has room for.
+    FakeMonitor {
+        id: longModel
+        cpuModel: "AMD Ryzen Threadripper PRO 7995WX 96-Cores with a long name"
+    }
+
+    FakeMonitor {
+        id: discreteOnly
+        gpuInner.present: false
+    }
+
     // No pressure stall information and no swap.
     FakeMonitor {
         id: bare
@@ -110,6 +126,10 @@ Item {
     // Measures a Text's ink, which a Text doesn't report.
     TextMetrics {
         id: probe
+    }
+
+    FontMetrics {
+        id: fontProbe
     }
 
     Component {
@@ -612,6 +632,222 @@ Item {
             compare(rule.atStart, data.atStart);
             const label = ruleLabel(rule);
             compare(label.x, data.atStart ? 0 : rule.width - label.implicitWidth);
+        }
+
+        function headerOf(popup) {
+            return all(popup, i => i.partsShown !== undefined)[0];
+        }
+
+        function shownText(item, text) {
+            return all(item, i => i.visible && i.text === text && i.font !== undefined)[0];
+        }
+
+        function baselineY(text, popup) {
+            return text.mapToItem(popup, 0, text.baselineOffset).y;
+        }
+
+        // The header's two columns centre on the ring each by its own height;
+        // the caption still shares the subtitle's baseline.
+        function test_headerBaselines_data() {
+            return [{ tag: "cpu", popup: "CpuPopup", mirrored: false },
+                    { tag: "cpuMirrored", popup: "CpuPopup", mirrored: true },
+                    { tag: "memory", popup: "MemoryPopup", mirrored: false }];
+        }
+
+        function test_headerBaselines(data) {
+            const popup = load(data.popup, normal, data.mirrored);
+            const header = headerOf(popup);
+            const subtitle = shownText(header, header.subtitle);
+            const caption = shownText(header, header.caption);
+            verify(subtitle && caption);
+            fuzzyCompare(baselineY(caption, popup), baselineY(subtitle, popup), 1);
+        }
+
+        // A tile's caption sits half its line's leading closer to the top
+        // than the padding alone would put it, so its capitals are about as
+        // far from the top as the content from the bottom.
+        function test_tilePadding_data() {
+            return [{ tag: "cpu", popup: "CpuPopup" }, { tag: "gpu", popup: "GpuPopup" },
+                    { tag: "memory", popup: "MemoryPopup" }, { tag: "network", popup: "NetworkPopup" }];
+        }
+
+        function test_tilePadding(data) {
+            const tiles = all(load(data.popup, normal), i => i.visible && i.graphNote !== undefined);
+            verify(tiles.length > 0);
+            tiles.forEach(tile => {
+                const caption = all(tile, i => i.label !== undefined && i.detail !== undefined)[0];
+                verify(caption.visible, tile.caption);
+                fontProbe.font = caption.font;
+                probe.font = caption.font;
+                probe.text = "H";
+                const capHeight = probe.tightBoundingRect.height;
+                const leading = fontProbe.ascent - capHeight;
+                verify(leading / 2 > 1, "enough leading to tell: " + leading);
+                const capTop = caption.mapToItem(tile, 0, caption.baselineOffset).y - capHeight;
+                fuzzyCompare(capTop, tile.verticalPadding + leading / 2, 1, tile.caption + " cap top");
+                const column = caption.parent;
+                compare(tile.height - (column.y + column.height), tile.verticalPadding, tile.caption + " bottom");
+            });
+        }
+
+        // The header, the tiles' boxes, the Disk caption, the dividers and
+        // the process list all start and end on one edge.
+        function test_contentEdges_data() {
+            const popups = [["cpu", "CpuPopup"], ["gpu", "GpuPopup"], ["memory", "MemoryPopup"], ["network", "NetworkPopup"]];
+            const rows = [];
+            popups.forEach(([tag, popup]) => {
+                rows.push({ tag: tag, popup: popup, mirrored: false });
+                rows.push({ tag: tag + "Mirrored", popup: popup, mirrored: true });
+            });
+            return rows;
+        }
+
+        function test_contentEdges(data) {
+            const popup = load(data.popup, normal, data.mirrored);
+            const edge = Math.round(Kirigami.Units.largeSpacing * 2);
+            const left = i => i.mapToItem(popup, 0, 0).x;
+            const right = i => left(i) + i.width;
+            const spanning = [headerOf(popup)]
+                .concat(all(popup, i => i.visible && i.key !== undefined && i.threads !== undefined))
+                .concat(all(popup, i => i.visible && i.height === 1 && i.radius !== undefined && i.parent === popup.children[0]))
+                .concat(all(popup, i => i.visible && i.height === 1 && i.radius !== undefined && i.inner !== undefined));
+            spanning.forEach(i => {
+                compare(left(i), edge, String(i));
+                compare(right(i), popup.width - edge, String(i));
+            });
+            const tiles = all(popup, i => i.visible && i.graphNote !== undefined);
+            compare(Math.min(...tiles.map(left)), edge, "the tiles' near edge");
+            compare(Math.max(...tiles.map(right)), popup.width - edge, "the tiles' far edge");
+            const disk = all(popup, i => i.visible && i.label === "Disk")[0];
+            if (data.popup === "NetworkPopup") {
+                verify(disk);
+                compare(data.mirrored ? right(disk) : left(disk), data.mirrored ? popup.width - edge : edge, "the Disk caption");
+            }
+        }
+
+        // Dividers in a popup's body are inset to the content's edge and
+        // equally faint.
+        function test_dividers_data() {
+            return [{ tag: "cpu", popup: "CpuPopup", monitor: normal },
+                    { tag: "memory", popup: "MemoryPopup", monitor: normal },
+                    { tag: "gpu", popup: "GpuPopup", monitor: normal },
+                    { tag: "gpuAsleep", popup: "GpuPopup", monitor: asleep }];
+        }
+
+        function test_dividers(data) {
+            const popup = load(data.popup, data.monitor);
+            const found = all(popup, i => i.visible && i.height === 1 && i.radius !== undefined && i.width > 0
+                                          && !ancestor(i, a => a.ceiling !== undefined));
+            compare(found.length, 1);
+            const edge = Math.round(Kirigami.Units.largeSpacing * 2);
+            const divider = found[0];
+            compare(divider.mapToItem(popup, 0, 0).x, edge);
+            compare(divider.width, popup.width - 2 * edge);
+            compare(String(divider.color), String(Qt.alpha(Kirigami.Theme.textColor, 0.08)));
+        }
+
+        // The rates in the header at the tiles' size: the arrows in a column
+        // that follows the layout, and each number and its unit left to right,
+        // the numbers ending on one line and the units starting on one.
+        function test_networkHeader_data() {
+            return [{ tag: "plain", mirrored: false }, { tag: "mirrored", mirrored: true }];
+        }
+
+        function test_networkHeader(data) {
+            const popup = load("NetworkPopup", normal, data.mirrored);
+            const rates = all(popup, i => i.pairWidth !== undefined)[0];
+            verify(rates);
+            const values = readings(rates);
+            compare(values.length, 2);
+            const arrows = all(rates, i => i.up !== undefined && i.color !== undefined);
+            compare(arrows.map(a => a.up), [false, true]);
+            const x = i => i.mapToItem(popup, 0, 0).x;
+            const down = Format.rate(normal.networkDown, true);
+            const up = Format.rate(normal.networkUp, true);
+            compare(values.map(r => r.value + " " + r.unit), [down.value + " " + down.unit, up.value + " " + up.unit]);
+            compare(rates.Accessible.name, "Down " + down.value + " " + down.unit + ", up " + up.value + " " + up.unit);
+            const ends = [];
+            const starts = [];
+            values.forEach((r, n) => {
+                compare(r.pointSize, Kirigami.Theme.defaultFont.pointSize * 1.38);
+                verify(r.accessibleIgnored);
+                const p = parts(r);
+                verify(x(p.number) < x(p.suffix), "the number before its unit");
+                ends.push(x(p.number) + p.number.implicitWidth);
+                starts.push(x(p.suffix));
+                if (data.mirrored) {
+                    verify(x(arrows[n]) > x(p.suffix) + p.suffix.width, "the arrow after the unit");
+                } else {
+                    verify(x(arrows[n]) + arrows[n].width < x(p.number), "the arrow before the number");
+                }
+            });
+            compare(ends[0], ends[1], "numbers end on one line");
+            compare(starts[0], starts[1], "units start on one line");
+            const cpu = headerOf(load("CpuPopup", normal));
+            verify(headerOf(popup).implicitHeight <= cpu.implicitHeight, "no taller than a header with a ring");
+        }
+
+        // The totals since boot lead with their arrows, as the rates do.
+        function test_sinceBoot() {
+            const down = Format.bytes(normal.networkTotalDown);
+            const up = Format.bytes(normal.networkTotalUp);
+            const expected = "Since boot ↓ " + down.value + " " + down.unit + " · ↑ " + up.value + " " + up.unit;
+            const found = texts(load("NetworkPopup", normal));
+            verify(found.includes(expected), JSON.stringify(found));
+        }
+
+        // With two GPUs each section names its kind, so the header doesn't.
+        function test_gpuSubtitle_data() {
+            return [{ tag: "two", monitor: normal, subtitle: "" },
+                    { tag: "twoOneAsleep", monitor: innerAsleep, subtitle: "" },
+                    { tag: "intel", monitor: intel, subtitle: "" },
+                    { tag: "integratedOnly", monitor: integrated, subtitle: "Integrated" },
+                    { tag: "discreteOnly", monitor: discreteOnly, subtitle: "Discrete" }];
+        }
+
+        function test_gpuSubtitle(data) {
+            const popup = load("GpuPopup", data.monitor);
+            compare(headerOf(popup).subtitle, data.subtitle);
+            const found = texts(popup);
+            verify(!found.some(t => t.indexOf("Discrete · ") >= 0 || t.indexOf("Integrated · ") >= 0), JSON.stringify(found));
+        }
+
+        // A third longer in every string, the page keeps its width and
+        // nothing runs past it: long text elides or wraps, and the header's
+        // reading keeps its full width while the subtitle gives way.
+        function test_longTranslationsFit_data() {
+            return [{ tag: "cpu", popup: "CpuPopup", monitor: normal }, { tag: "gpu", popup: "GpuPopup", monitor: normal },
+                    { tag: "memory", popup: "MemoryPopup", monitor: normal }, { tag: "network", popup: "NetworkPopup", monitor: normal },
+                    { tag: "cpuLongModel", popup: "CpuPopup", monitor: longModel }];
+        }
+
+        function test_longTranslationsFit(data) {
+            const width = load(data.popup, normal).implicitWidth;
+            root.pseudo = true;
+            try {
+                const popup = load(data.popup, data.monitor);
+                verify(texts(popup).some(t => t.endsWith("ß")), "the pseudo-locale is on");
+                compare(popup.implicitWidth, width, "the page keeps its width");
+                compare(popup.width, width);
+                const left = i => i.mapToItem(popup, 0, 0).x;
+                all(popup, i => i.visible && typeof i.text === "string" && i.text !== "" && i.contentWidth !== undefined)
+                    .forEach(t => {
+                        const drawn = t.elide !== Text.ElideNone || t.wrapMode !== Text.NoWrap ? t.width : Math.max(t.width, t.contentWidth);
+                        verify(left(t) >= -0.5 && left(t) + drawn <= popup.width + 0.5,
+                               t.text + " at " + left(t) + " to " + (left(t) + drawn) + " of " + popup.width);
+                    });
+                readings(popup).filter(r => r.visible).forEach(r => {
+                    verify(r.width >= r.implicitWidth - 0.5, r.value + " " + r.unit + " squeezed to " + r.width);
+                });
+                const header = headerOf(popup);
+                const subtitle = shownText(header, header.subtitle);
+                const value = readings(header).find(r => r.visible);
+                if (subtitle && value) {
+                    verify(left(subtitle) + subtitle.width <= left(value) + 0.5, "the subtitle stops short of the reading");
+                }
+            } finally {
+                root.pseudo = false;
+            }
         }
     }
 }

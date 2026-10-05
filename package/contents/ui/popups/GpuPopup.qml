@@ -23,12 +23,12 @@ PopupPage {
         Layout.bottomMargin: Kirigami.Units.smallSpacing
         ringShown: false
         title: i18nc("@title", "GPU")
-        subtitle: [popup.monitor.gpuOuter, popup.monitor.gpuInner]
-            .filter(slot => slot.present)
-            .map(slot => slot.kind === "discrete" ? i18nc("@info kind of GPU", "Discrete")
-                       : slot.kind === "integrated" ? i18nc("@info kind of GPU", "Integrated") : "")
-            .filter(kind => kind !== "")
-            .join(" · ")
+        // With two GPUs, each section's own line says which is which.
+        subtitle: {
+            const kind = popup.slots.length === 1 ? popup.slots[0].kind : "";
+            return kind === "discrete" ? i18nc("@info kind of GPU", "Discrete")
+                 : kind === "integrated" ? i18nc("@info kind of GPU", "Integrated") : "";
+        }
     }
 
     Repeater {
@@ -55,13 +55,8 @@ PopupPage {
             Layout.fillWidth: true
             spacing: 0
 
-            Rectangle {
+            Divider {
                 visible: popup.awake.length > 0
-                Layout.fillWidth: true
-                Layout.leftMargin: Math.round(Kirigami.Units.largeSpacing * 1.5)
-                Layout.rightMargin: Layout.leftMargin
-                Layout.preferredHeight: 1
-                color: Qt.alpha(Kirigami.Theme.textColor, 0.1)
             }
 
             Text {
@@ -98,13 +93,8 @@ PopupPage {
         visible: slot.present
         spacing: 0
 
-        Rectangle {
+        Divider {
             visible: section.inner
-            Layout.fillWidth: true
-            Layout.leftMargin: Math.round(Kirigami.Units.largeSpacing * 1.5)
-            Layout.rightMargin: Layout.leftMargin
-            Layout.preferredHeight: 1
-            color: Qt.alpha(Kirigami.Theme.textColor, 0.1)
         }
 
         RowLayout {
@@ -198,9 +188,9 @@ PopupPage {
 
         GridLayout {
             Layout.fillWidth: true
-            Layout.leftMargin: Math.round(Kirigami.Units.largeSpacing * 1.5)
+            Layout.leftMargin: Math.round(Kirigami.Units.largeSpacing * 2)
             Layout.rightMargin: Layout.leftMargin
-            Layout.bottomMargin: Layout.leftMargin
+            Layout.bottomMargin: Math.round(Kirigami.Units.largeSpacing * 1.5)
             columns: (section.slot.reportsVram ? 1 : 0) + 1 + (section.hasPower ? 1 : 0)
             rowSpacing: Kirigami.Units.largeSpacing
             columnSpacing: Kirigami.Units.largeSpacing

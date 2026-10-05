@@ -31,14 +31,6 @@ PopupPage {
     // Legend and detail text: caption-sized, set as written.
     component Note: Caption {}
 
-    // Tabular figures, so the rates keep their width as they change.
-    component RateText: Text {
-        font.family: Kirigami.Theme.defaultFont.family
-        font.features: ({ "tnum": 1 })
-        font.pointSize: Kirigami.Theme.defaultFont.pointSize
-        textFormat: Text.PlainText
-    }
-
     // Read or write: the rate over a small line graph of its history, which
     // its peak tops. Each DiskRate below names that peak in its caption
     // through peakNote().
@@ -76,33 +68,46 @@ PopupPage {
         subtitle: [popup.monitor.networkConnection, popup.monitor.networkAddress, popup.monitor.networkInterface]
             .filter(s => s !== "").join(" · ")
 
+        // The arrows in a column that follows the layout's direction, and
+        // each rate's number and unit left to right beside them, as in the
+        // panel. The numbers end on one line and the units start on one,
+        // at the tiles' size.
         GridLayout {
             id: rates
 
             readonly property var down: Format.rate(popup.monitor.networkDown, popup.monitor.networkBits)
             readonly property var up: Format.rate(popup.monitor.networkUp, popup.monitor.networkBits)
-            readonly property real arrowHeight: Math.round(downValue.implicitHeight * 0.62)
+            readonly property real pointSize: Kirigami.Theme.defaultFont.pointSize * 1.38
+            readonly property real valueWidth: Math.max(downRate.numberWidth, upRate.numberWidth)
+            readonly property real pairWidth: valueWidth + downRate.unitSpacing + Math.max(downRate.suffixWidth, upRate.suffixWidth)
+            readonly property real arrowHeight: Math.round(downRate.implicitHeight * 0.62)
             readonly property color markColor: Qt.alpha(Kirigami.Theme.textColor, 0.75)
-            readonly property color unitColor: Style.dim(Kirigami.Theme.textColor)
 
-            columns: 3
-            rowSpacing: Math.round(Kirigami.Units.smallSpacing * 1.25)
+            columns: 2
+            rowSpacing: 0
             columnSpacing: Math.round(Kirigami.Units.smallSpacing * 1.75)
+            // Spoken as one, since the arrows say nothing on their own.
+            Accessible.role: Accessible.StaticText
+            Accessible.name: i18nc("@info accessible name of the network rates, e.g. Down 24.8 Mb/s, up 1.2 Mb/s",
+                                   "Down %1 %2, up %3 %4", down.value, down.unit, up.value, up.unit)
 
             Arrow {
                 Layout.preferredWidth: Layout.preferredHeight * 0.8
                 Layout.preferredHeight: rates.arrowHeight
                 color: rates.markColor
             }
-            RateText {
-                id: downValue
-                Layout.alignment: Qt.AlignRight
-                text: rates.down.value
-                color: Kirigami.Theme.textColor
-            }
-            RateText {
-                text: rates.down.unit
-                color: rates.unitColor
+            Item {
+                implicitWidth: rates.pairWidth
+                implicitHeight: downRate.implicitHeight
+
+                Reading {
+                    id: downRate
+                    x: rates.valueWidth - numberWidth
+                    value: rates.down.value
+                    unit: rates.down.unit
+                    pointSize: rates.pointSize
+                    accessibleIgnored: true
+                }
             }
 
             Arrow {
@@ -111,24 +116,28 @@ PopupPage {
                 up: true
                 color: rates.markColor
             }
-            RateText {
-                Layout.alignment: Qt.AlignRight
-                text: rates.up.value
-                color: Kirigami.Theme.textColor
-            }
-            RateText {
-                text: rates.up.unit
-                color: rates.unitColor
+            Item {
+                implicitWidth: rates.pairWidth
+                implicitHeight: upRate.implicitHeight
+
+                Reading {
+                    id: upRate
+                    x: rates.valueWidth - numberWidth
+                    value: rates.up.value
+                    unit: rates.up.unit
+                    pointSize: rates.pointSize
+                    accessibleIgnored: true
+                }
             }
         }
     }
 
     GridLayout {
         Layout.fillWidth: true
-        Layout.leftMargin: Math.round(Kirigami.Units.largeSpacing * 1.5)
+        Layout.leftMargin: Math.round(Kirigami.Units.largeSpacing * 2)
         Layout.rightMargin: Layout.leftMargin
         Layout.topMargin: Math.round(Kirigami.Units.smallSpacing * 1.5)
-        Layout.bottomMargin: Layout.leftMargin
+        Layout.bottomMargin: Math.round(Kirigami.Units.largeSpacing * 1.5)
         columns: 2
         rowSpacing: Kirigami.Units.largeSpacing
         columnSpacing: Kirigami.Units.largeSpacing
@@ -177,8 +186,8 @@ PopupPage {
                     Layout.fillWidth: true
                     horizontalAlignment: Text.AlignRight
                     visible: down.unit !== "" && up.unit !== ""
-                    text: i18nc("@info bytes received and sent since boot, e.g. Since boot 3.2 GiB ↓ · 410 MiB ↑",
-                                "Since boot %1 %2 ↓ · %3 %4 ↑", down.value, down.unit, up.value, up.unit)
+                    text: i18nc("@info bytes received and sent since boot, e.g. Since boot ↓ 3.2 GiB · ↑ 410 MiB",
+                                "Since boot ↓ %1 %2 · ↑ %3 %4", down.value, down.unit, up.value, up.unit)
                 }
             }
         }
@@ -187,8 +196,6 @@ PopupPage {
             Layout.columnSpan: 2
             Layout.fillWidth: true
             Layout.topMargin: Kirigami.Units.smallSpacing
-            Layout.leftMargin: Math.round(Kirigami.Units.smallSpacing / 2)
-            Layout.rightMargin: Layout.leftMargin
             spacing: 0
 
             Caption {
