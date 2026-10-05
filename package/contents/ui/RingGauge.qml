@@ -21,9 +21,10 @@ Item {
     property bool inner: false
     // The colour below the alert levels.
     property color color: Kirigami.Theme.textColor
-    // Raises the outer ring's level, e.g. for a hot temperature the panel has
-    // no room to show.
+    // Raise the rings' levels, e.g. for a hot temperature the panel has no
+    // room to show, or a limit on pace to run out before its reset.
     property int minimumLevel: 0
+    property int innerMinimumLevel: 0
     // About a thirteenth of the ring, in half pixels, for the panel's rings;
     // the popups set their own.
     property real strokeWidth: Math.max(2, Math.round(width / 6.5) / 2)
@@ -41,7 +42,8 @@ Item {
     readonly property real centreWidth: Math.max(0, 2 * ((inner ? innerRadius - innerStrokeWidth / 2
                                                                 : outer.radius - strokeWidth / 2) - 1))
     readonly property color outerTone: tone(Math.max(Format.level(value), minimumLevel))
-    readonly property color innerTone: tone(Format.level(innerValue))
+    readonly property int innerLevel: Math.max(Format.level(innerValue), innerMinimumLevel)
+    readonly property color innerTone: tone(innerLevel)
 
     function tone(level) {
         return level === 2 ? Kirigami.Theme.negativeTextColor
@@ -65,7 +67,8 @@ Item {
                             outerReset.early);
         }
         if (innerReset && inner) {
-            innerArc.playReset(clamped(innerReset.from), innerColor(Format.level(innerReset.from)), innerReset.early);
+            innerArc.playReset(clamped(innerReset.from), innerColor(Math.max(Format.level(innerReset.from), innerMinimumLevel)),
+                               innerReset.early);
         }
     }
 
@@ -129,7 +132,7 @@ Item {
             radius: gauge.innerRadius
             strokeWidth: gauge.innerStrokeWidth
             percent: gauge.clamped(gauge.innerValue)
-            color: gauge.innerColor(Format.level(gauge.innerValue))
+            color: gauge.innerColor(gauge.innerLevel)
             trackColor: Qt.alpha(gauge.color, 0.22 * 0.55 * gauge.color.a)
         }
 

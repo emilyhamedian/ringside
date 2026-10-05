@@ -4,6 +4,7 @@
 import QtQuick
 import "code/format.js" as Format
 import "code/hardware.js" as Hardware
+import "code/pace.js" as Pace
 
 // Each item's readings in words, for screen readers and tooltips, the short
 // readings beside a ring, and the times the Claude and Codex views show.
@@ -55,7 +56,9 @@ QtObject {
     // Readout to set the units small. It keeps to the days from a day out,
     // "6d", and to hours and minutes on the last day, "23h 5m"; the popup and
     // the words give both. With the limit reached it turns red, as in the
-    // popup, since it then says how long the lock-out lasts.
+    // popup, since it then says how long the lock-out lasts. The weekly
+    // percentage also turns red while the week is on pace to run out before
+    // its reset, projected from when it was read.
     function readout(item, nowMs) {
         const percent = value => Number.isFinite(value) ? i18nc("@info:status a percentage", "%1%", Format.percent(value)) : "–";
         const temperature = celsius => Format.temperatureValid(celsius)
@@ -81,8 +84,10 @@ QtObject {
         }
         const entry = monitor.usage.entry(item);
         const weekly = entry && entry.weekly ? entry.weekly : null;
-        const parts = countdownParts(weekly ? weekly.resetsAt : null, nowMs ?? Date.now(), true);
-        return { first: percent(weekly ? weekly.percent : NaN), level: Format.level(weekly ? weekly.percent : NaN),
+        const now = nowMs ?? Date.now();
+        const parts = countdownParts(weekly ? weekly.resetsAt : null, now, true);
+        const pace = Pace.ofWindow(weekly, Pace.pollTime(entry, now / 1000), now / 1000);
+        return { first: percent(weekly ? weekly.percent : NaN), level: Pace.level(Format.level(weekly ? weekly.percent : NaN), pace),
                  second: spelled(parts) || "–", parts: parts, heat: parts.length > 0 && weekly.percent >= 100 ? 2 : 0 };
     }
 

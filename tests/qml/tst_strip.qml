@@ -519,7 +519,8 @@ Item {
         }
 
         // Rings and rates sit side by side, cell against cell: nothing is
-        // drawn between them, and the only rectangles are the cells' washes.
+        // drawn between them, and the only rectangles are the cells' washes
+        // and Claude's failed-check dot, hidden while its checks succeed.
         function test_noSeparator_data() {
             return [{ tag: "two lines", thickness: 38 }, { tag: "thin", thickness: 30 }];
         }
@@ -537,8 +538,12 @@ Item {
             compare(strip.implicitWidth, sum + strip.rateSlack);
             verify(strip.rateSlack > 0, "the rates keep room for wider readings");
             const rectangles = all(strip, isRectangle);
-            compare(rectangles.length, items.length);
-            for (const rectangle of rectangles) {
+            const dots = rectangles.filter(r => r.parent.accessibleDescription !== undefined);
+            compare(dots.length, 1);
+            compare(dots[0].parent, strip.cellAt(5).contentItem, "Claude's dot");
+            verify(!dots[0].visible);
+            compare(rectangles.length, items.length + 1);
+            for (const rectangle of rectangles.filter(r => !dots.includes(r))) {
                 verify(rectangle.parent.inset !== undefined && rectangle.parent.contentItem !== undefined,
                        "a wash, in a cell");
                 verify(rectangle.width > 1 && rectangle.height > 1, rectangle.width + "×" + rectangle.height);
@@ -869,6 +874,31 @@ Item {
             verify(cell.containsMouse && area.containsMouse, "hover reaches the cell and the tooltip");
             strip.openItem = "cpu";
             verify(!area.active, "no tooltip over an open popup");
+        }
+
+        // A failed Claude or Codex check shows only as a dot, so its item
+        // keeps a tooltip, readings shown or not, to say when it failed.
+        function test_failedCheckHasATooltip() {
+            const strip = makeStrip({ items: ["cpu", "claude", "codex", "network"] });
+            const areas = [0, 1, 2, 3].map(i => strip.cellAt(i).parent);
+            verify(line(1, "first").visible, "Claude's readings show");
+            compare(areas.map(a => a.active), [false, false, false, false], "every item shows its readings");
+
+            const entries = monitor.usage.entries;
+            monitor.usage.entries = Object.assign({}, entries, {
+                claude: Object.assign({}, entries.claude, { lastError: "HTTP Error 500", lastErrorAt: monitor.usage.createdAt })
+            });
+            compare(areas.map(a => a.active), [false, true, false, false], "Claude's check failed");
+            compare(areas[1].mainText, "Claude");
+            verify(/^52% used, Fable 78%, resets in 2 days 2\d hours\. Last check failed at .+\.$/.test(areas[1].subText), areas[1].subText);
+            compare(areas[1].subText, strip.cellAt(1).Accessible.description);
+            verify(line(1, "first").visible, "the readings stay");
+            strip.openItem = "claude";
+            verify(!areas[1].active, "no tooltip over an open popup");
+            strip.openItem = "";
+            verify(areas[1].active);
+            monitor.usage.entries = entries;
+            verify(!areas[1].active, "gone with the next good check");
         }
     }
 }

@@ -441,6 +441,10 @@ Item {
                                         weekly: usage.window(percent, left ?? 2 * usage.day, []), scoped: [] } };
         }
 
+        // Five hours before the reset, where every reading under 100 % lasts
+        // the week, so only the percentage sets the level.
+        readonly property int lastHours: 5 * 3600
+
         function test_texts_data() {
             return [{ tag: "claude", percent: "52%", left: "2d" },
                     { tag: "codex", percent: "24%", left: "5d" }];
@@ -522,7 +526,7 @@ Item {
         // The percentage takes the ring's colour; the time stays dim, so
         // only the reading that reached a level shows it.
         function test_levelColours(data) {
-            claudeAt(data.percent);
+            claudeAt(data.percent, lastHours);
             const c = cell("claude");
             const expected = data.tone === "negative" ? Kirigami.Theme.negativeTextColor
                            : data.tone === "neutral" ? Kirigami.Theme.neutralTextColor : Kirigami.Theme.textColor;
@@ -562,19 +566,108 @@ Item {
         }
 
         function test_pulse(data) {
-            claudeAt(data.percent);
+            claudeAt(data.percent, lastHours);
             compare(cell("claude").children[0].pulsing, data.pulsing);
         }
 
-        function test_degradedDims() {
+        // Weekly and model readings as [percent, seconds to the reset],
+        // read `polledAgo` seconds before now, and the tones they give the
+        // ring, the inner ring and the percentage. A reading that runs out
+        // before its reset at its pace so far turns red, never less than its
+        // percentage gives.
+        function test_paceRaisesTheLevel_data() {
+            const day = 86400;
+            return [
+                { tag: "lasts", weekly: [52, 2 * day + 21 * 3600], outer: "text" },
+                { tag: "runs out", weekly: [70, 3 * day], outer: "negative" },
+                { tag: "amber runs out", weekly: [80, 2 * day], outer: "negative" },
+                { tag: "amber lasts", weekly: [80, 5 * 3600], outer: "neutral" },
+                { tag: "runaway first day", weekly: [70, 7 * day - 18 * 3600], outer: "negative" },
+                { tag: "quiet first day", weekly: [5, 7 * day - 3 * 3600], outer: "text" },
+                { tag: "reset passed", weekly: [70, -600], outer: "text" },
+                { tag: "used up", weekly: [100, 2 * day], outer: "negative" },
+                // Three days in at 50 % runs out; four days in it would last.
+                { tag: "from its poll", weekly: [50, 3 * day], polledAgo: day, outer: "negative" },
+                { tag: "model runs out", weekly: [52, 2 * day + 21 * 3600], inner: [78, 2 * day + 21 * 3600],
+                  outer: "text", innerTone: "negative" },
+                { tag: "model lasts", weekly: [52, 5 * 3600], inner: [78, 5 * 3600], outer: "text", innerTone: "neutral" },
+                { tag: "model quiet", weekly: [70, 3 * day], inner: [30, 2 * day + 21 * 3600],
+                  outer: "negative", innerTone: "text" }
+            ];
+        }
+
+        function test_paceRaisesTheLevel(data) {
+            const usage = monitor.usage;
+            const scoped = data.inner ? [Object.assign({ id: "Fable", label: "Fable" }, usage.window(data.inner[0], data.inner[1], []))] : [];
+            usage.entries = { claude: { status: "ok", fetchedAt: usage.createdAt - (data.polledAgo ?? 0),
+                                        weekly: usage.window(data.weekly[0], data.weekly[1], []), scoped: scoped } };
+            const tone = name => name === "negative" ? Kirigami.Theme.negativeTextColor
+                               : name === "neutral" ? Kirigami.Theme.neutralTextColor : Kirigami.Theme.textColor;
             const c = cell("claude");
-            compare(c.opacity, 1);
+            const gauge = c.children[0];
+            compare(gauge.outerTone, tone(data.outer), "the ring");
+            compare(outerArc(c).color, tone(data.outer), "the ring as drawn");
+            compare(line(c, "first").color, gauge.outerTone, "the percentage follows the ring");
+            if (data.weekly[0] < 100) {
+                compare(String(line(c, "second").color), String(Style.dim(Kirigami.Theme.textColor)), "the time stays dim");
+            }
+            compare(gauge.inner, data.inner !== undefined);
+            if (data.inner) {
+                compare(gauge.innerTone, tone(data.innerTone), "the inner ring");
+                compare(innerArc(c).color, Qt.alpha(tone(data.innerTone), 0.55 * Kirigami.Theme.textColor.a), "the inner ring as drawn");
+            }
+            compare(cell("claude", { textShown: false }).children[0].outerTone, gauge.outerTone, "the ring alone keeps its level");
+        }
+
+        function test_failedCheckShowsADot_data() {
+            return [{ tag: "34", ring: 34 }, { tag: "22", ring: 22 }, { tag: "52", ring: 52 },
+                    { tag: "34 mirrored", ring: 34, mirrored: true }];
+        }
+
+        // A failed check keeps the last reading and puts a small dot in the
+        // ring's corner above the readings, clear of the arc and still while
+        // the ring breathes. The words say when the check failed.
+        function test_failedCheckShowsADot(data) {
+            claudeAt(95, lastHours);
+            const c = cell("claude", { ring: data.ring });
+            c.LayoutMirroring.enabled = data.mirrored ?? false;
+            c.LayoutMirroring.childrenInherit = true;
+            const gauge = c.children[0];
+            const dot = Array.from(c.children).find(i => i.border !== undefined);
+            verify(!dot.visible, "no dot while the checks succeed");
+            const reading = [line(c, "first").text, plain(line(c, "second").text), gauge.outerTone];
+
             const entries = monitor.usage.entries;
             monitor.usage.entries = Object.assign({}, entries, {
                 claude: Object.assign({}, entries.claude, { lastError: "HTTP Error 500", lastErrorAt: monitor.usage.createdAt })
             });
-            compare(c.opacity, 0.55);
+            waitForRendering(c);
+            verify(dot.visible, "a dot");
+            compare([line(c, "first").text, plain(line(c, "second").text), gauge.outerTone], reading, "the last reading stays");
+            compare(c.opacity, 1, "no fade");
+            compare(gauge.opacity, 1);
+            compare(dot.color, Kirigami.Theme.neutralTextColor);
+            compare([dot.border.width, dot.border.color], [1, Kirigami.Theme.backgroundColor]);
+            compare(dot.width, Math.max(4, Math.round(data.ring / 6)));
+            compare(dot.height, dot.width);
+            compare(dot.radius, dot.width / 2);
+            verify(dot.Accessible.ignored);
+            verify(gauge.pulsing && dot.parent === c, "outside the breathing face");
+
+            const at = dot.mapToItem(gauge, Qt.point(0, 0));
+            compare(at.y, 0, "at the top");
+            compare(at.x, data.mirrored ? 0 : gauge.width - dot.width, data.mirrored ? "at the left, above the readings" : "at the right");
+            verify(data.mirrored ? line(c, "first").mapToItem(gauge, Qt.point(0, 0)).x < 0
+                                 : line(c, "first").mapToItem(gauge, Qt.point(0, 0)).x > gauge.width, "the readings on its side");
+            const r = dot.width / 2;
+            const clear = Math.hypot(at.x + r - gauge.width / 2, at.y + r - gauge.height / 2) - r;
+            const arc = outerArc(c);
+            verify(clear >= arc.radius + arc.strokeWidth / 2, "clear of the arc: " + clear + " from the centre, the arc to "
+                   + (arc.radius + arc.strokeWidth / 2));
             verify(c.accessibleDescription.indexOf(". Last check failed at ") > 0, c.accessibleDescription);
+
+            monitor.usage.entries = entries;
+            verify(!dot.visible, "gone with the next good check");
         }
 
         function test_descriptions() {
@@ -1010,6 +1103,11 @@ Item {
                 { tag: "claude used up", item: "claude", weekly: [100, 2 * 86400], first: "100%", level: 2, second: "2d", heat: 2 },
                 { tag: "used up, reset passed", item: "claude", weekly: [100, -600], first: "100%", level: 2, second: "–" },
                 { tag: "reset passed", item: "claude", weekly: [40, -600], first: "40%", second: "–" },
+                // On pace to run out before the reset, the percentage is red.
+                { tag: "claude runs out", item: "claude", weekly: [70, 3 * 86400], first: "70%", level: 2, second: "3d" },
+                { tag: "claude runaway first day", item: "claude", weekly: [70, 6 * 86400 + 6 * 3600], first: "70%", level: 2, second: "6d" },
+                { tag: "claude quiet first day", item: "claude", weekly: [5, 6 * 86400 + 21 * 3600], first: "5%", second: "6d" },
+                { tag: "runs out, reset passed", item: "claude", weekly: [70, -600], first: "70%", second: "–" },
                 { tag: "signed out", item: "claude", entries: { claude: { status: "signed_out" } }, first: "–", second: "–" },
                 { tag: "not checked yet", item: "codex", entries: {}, first: "–", second: "–" }
             ];
