@@ -207,8 +207,8 @@ Item {
                        item + " holds " + JSON.stringify(inside));
                 let shown;
                 if (item === "claude" || item === "codex") {
-                    shown = find(name, m => m.isMask !== undefined);
-                    verify(String(shown.source).endsWith(item === "claude" ? "claude.svg" : "openai.svg"), shown.source);
+                    shown = find(name, m => m.markName !== undefined);
+                    compare(shown.markName, item);
                     compare(shown.visible, active, item + "'s mark");
                     compare(name.visible, active, item + "'s mark");
                 } else {
@@ -222,9 +222,18 @@ Item {
                     verify(shown, item + "'s name");
                 }
                 if (shown.visible) {
-                    const drawn = box(shown);
                     verify((shown.contentWidth ?? shown.width) <= hole, item + " " + shown.width + " in " + hole);
-                    verify(Math.abs(drawn.centreX - centre.centreX) <= 0.5 && Math.abs(drawn.centreY - centre.centreY) <= 0.5,
+                    // The mark by its artwork's middle, through its scale;
+                    // the label by its capitals' middle, without the letter
+                    // space after its last glyph.
+                    // Mapped as a point: Qt 6.6 drops the fraction of an x and y
+                    // given apart.
+                    const drawn = shown.markName !== undefined
+                        ? shown.mapToItem(strip, Qt.point(shown.art.box[0] + shown.art.box[2] / 2,
+                                                          shown.art.box[1] + shown.art.box[2] / 2))
+                        : shown.mapToItem(strip, Qt.point(shown.width / 2 - shown.font.letterSpacing / 2,
+                                                          shown.baselineOffset - name.capHeight / 2));
+                    verify(Math.abs(drawn.x - centre.centreX) <= 0.5 && Math.abs(drawn.y - centre.centreY) <= 0.5,
                            item + " centred: " + JSON.stringify(drawn) + " in " + JSON.stringify(centre));
                 }
             }
@@ -601,8 +610,8 @@ Item {
             compare(strip.cellAt(2).Accessible.name, "Codex");
             verify(/^24% used, resets in 5 days [34] hours$/.test(strip.cellAt(2).Accessible.description),
                    strip.cellAt(2).Accessible.description);
-            const mark = find(gaugeAt(1), i => i.isMask !== undefined);
-            verify(String(mark.source).endsWith("claude.svg"), mark.source);
+            const mark = find(gaugeAt(1), i => i.markName !== undefined);
+            compare(mark.markName, "claude");
             verify(mark.visible, "the Claude mark");
             verify(!visibleTexts(strip).includes("CLAUDE"), JSON.stringify(visibleTexts(strip)));
             compare([line(1, "first").text, line(1, "second").text], ["52%", "2d 21h"]);

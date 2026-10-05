@@ -73,6 +73,21 @@ Item {
     readonly property real from: 0
     readonly property real to: 100
 
+    // The height of the figures in the middle text, to set it by them.
+    // capitalHeight needs Qt 6.9; the ink of "0" stands in before that.
+    readonly property real figureHeight: percentMetrics.capitalHeight ?? figureSample.tightBoundingRect.height // qmllint disable missing-property
+
+    FontMetrics {
+        id: percentMetrics
+        font: percent.font
+    }
+
+    TextMetrics {
+        id: figureSample
+        font: percent.font
+        text: "0"
+    }
+
     implicitWidth: 30
     implicitHeight: implicitWidth
 
@@ -92,9 +107,13 @@ Item {
             NumberAnimation { to: 1; duration: 1000; easing.type: Easing.InOutSine }
         }
 
+        // The arcs fill the gauge rather than centring in it: anchors.centerIn
+        // rounds an odd-sized item's centre to a whole pixel, which set a
+        // 33 px ring half a pixel up and left of a 34 px gauge's middle, and
+        // the two rings off each other.
         RingArc {
             id: outer
-            anchors.centerIn: parent
+            anchors.fill: parent
             radius: (Math.min(gauge.width, gauge.height) - gauge.strokeWidth) / 2 - 0.5
             strokeWidth: gauge.strokeWidth
             percent: gauge.clamped(gauge.value)
@@ -105,7 +124,7 @@ Item {
 
         RingArc {
             id: innerArc
-            anchors.centerIn: parent
+            anchors.fill: parent
             visible: gauge.inner
             radius: gauge.innerRadius
             strokeWidth: gauge.innerStrokeWidth
@@ -114,12 +133,20 @@ Item {
             trackColor: Qt.alpha(gauge.color, 0.22 * 0.55 * gauge.color.a)
         }
 
+        // Set by its figures' height and its advance, not anchors.centerIn:
+        // that rounds an odd width to a whole pixel and centres the line
+        // box, which is taller below the baseline than above the figures.
+        // The theme's sans with figures of one width, like the panel's
+        // readings, so a reading keeps its place as it changes.
         Text {
-            anchors.centerIn: parent
+            id: percent
+            x: (parent.width - width) / 2
+            y: parent.height / 2 + gauge.figureHeight / 2 - baselineOffset
             visible: gauge.text !== "" && !gauge.inner && gauge.width >= 24
             text: gauge.text
             color: gauge.outerTone
-            font.family: Kirigami.Theme.fixedWidthFont?.family ?? "monospace" // qmllint disable redundant-optional-chaining
+            font.family: Kirigami.Theme.defaultFont.family
+            font.features: ({ "tnum": 1 })
             font.pixelSize: Math.round(gauge.width * gauge.textScale)
             textFormat: Text.PlainText
             // The gauge's own description reads it out.

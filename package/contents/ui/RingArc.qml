@@ -30,8 +30,10 @@ Shape {
     readonly property bool animating: rollover.running || turn.running
     readonly property color turnTone: Qt.alpha(Kirigami.Theme.textColor, 0.62)
 
-    width: 2 * radius + strokeWidth
-    height: width
+    // Only implicit: a gauge stretches its arcs over itself, which keeps
+    // them on its exact centre, and a set size would fight that.
+    implicitWidth: 2 * radius + strokeWidth
+    implicitHeight: implicitWidth
     preferredRendererType: Shape.CurveRenderer
 
     function mix(from, to, amount) {
