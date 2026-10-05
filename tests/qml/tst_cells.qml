@@ -17,15 +17,20 @@ Item {
     width: 800
     height: 600
 
-    // Source text to translated text, for a test that needs a long one.
+    // Source text to translated text, for a test that needs a long one, and
+    // source text to the context the views gave translators with it.
     property var translations: ({})
+    property var contexts: ({})
 
     // A bare qml runtime has no KI18n; the views find these on the root.
     function substitute(text, args) {
         return text.replace(/%(\d+)/g, (m, n) => n <= args.length ? String(args[n - 1]) : m);
     }
     function i18n(text, ...args) { return substitute(root.translations[text] ?? text, args); }
-    function i18nc(context, text, ...args) { return substitute(root.translations[text] ?? text, args); }
+    function i18nc(context, text, ...args) {
+        root.contexts[text] = context;
+        return substitute(root.translations[text] ?? text, args);
+    }
     function i18np(s, p, n, ...args) { return substitute(n === 1 ? s : p, [n].concat(args)); }
     function i18ncp(c, s, p, n, ...args) { return substitute(n === 1 ? s : p, [n].concat(args)); }
 
@@ -191,6 +196,17 @@ Item {
         PanelCell {
             item: "cpu"
             open: true
+        }
+    }
+
+    // Kirigami's own theme has the highlight colour for focus; a colour of
+    // its own shows which one the cell draws.
+    Component {
+        id: focusCellComponent
+        PanelCell {
+            item: "cpu"
+            Kirigami.Theme.inherit: false
+            Kirigami.Theme.focusColor: "#ff00ff"
         }
     }
 
@@ -654,6 +670,11 @@ Item {
             verify(!nameIn(memory).visible);
             verify(nameIn(cpu).visible);
             compare(label(nameIn(cpu)).text, "CPU");
+            cell("gpu");
+            for (const text of ["CPU", "GPU", "MEM"]) {
+                verify(root.contexts[text].includes("at most 3 characters"),
+                       text + " tells translators its limit: " + root.contexts[text]);
+            }
         }
 
         function test_lines_data() {
@@ -1017,6 +1038,48 @@ Item {
             const wash = root.find(c, i => i !== c && i.radius !== undefined);
             verify(wash.visible, "open shows the wash");
             compare([wash.x, wash.y, wash.width, wash.height], [0, data.inset, 60, 50 - 2 * data.inset]);
+        }
+
+        // Keyboard focus draws a line round the wash in the theme's focus
+        // colour, and Tab moves it from item to item. The pointer and an open
+        // popup show the wash alone, so the focused item stands apart.
+        function test_focusShowsARing() {
+            const cells = [];
+            for (let i = 0; i < 2; ++i) {
+                const block = keep(blockComponent.createObject(root));
+                cells.push(keep(focusCellComponent.createObject(root, { contentItem: block, x: 400 + 100 * i, y: 400 })));
+            }
+            const washes = cells.map(c => root.find(c, i => i !== c && i.radius !== undefined));
+            waitForRendering(cells[1]);
+            verify(!washes[0].visible, "no wash at rest");
+
+            cells[0].forceActiveFocus(Qt.TabFocusReason);
+            verify(cells[0].activeFocus);
+            verify(washes[0].visible, "focus shows the wash");
+            compare(washes[0].border.width, 1);
+            compare(String(washes[0].border.color), "#ff00ff");
+
+            keyClick(Qt.Key_Tab);
+            verify(cells[1].activeFocus, "Tab moves to the next item");
+            compare(washes[1].border.width, 1);
+            compare(washes[0].border.width, 0, "the line goes with focus");
+            verify(!washes[0].visible);
+
+            cells[1].open = true;
+            compare(washes[1].border.width, 1, "an open item keeps its line while focused");
+            cells[0].open = true;
+            verify(washes[0].visible);
+            compare(washes[0].border.width, 0, "open without focus: the wash alone");
+            cells[0].open = false;
+            mouseMove(cells[0]);
+            tryVerify(() => cells[0].containsMouse);
+            verify(washes[0].visible);
+            compare(washes[0].border.width, 0, "under the pointer: the wash alone");
+            mouseMove(root, 10, 10);
+
+            cells[1].focus = false;
+            verify(!cells[1].activeFocus);
+            compare(washes[1].border.width, 0, "the line goes with focus");
         }
 
         // Along a horizontal panel a cell grows with its content at once and

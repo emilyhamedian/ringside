@@ -116,9 +116,9 @@ Item {
         x: (name.width - width) / 2 + font.letterSpacing / 2
         y: name.height / 2 + name.capHeight / 2 - baselineOffset
         horizontalAlignment: Text.AlignHCenter
-        text: name.item === "cpu" ? i18nc("@label short for processor", "CPU")
-            : name.item === "gpu" ? i18nc("@label short for graphics card", "GPU")
-            : i18nc("@label short for memory", "MEM")
+        text: name.item === "cpu" ? i18nc("@label ring name, at most 3 characters, short for processor", "CPU")
+            : name.item === "gpu" ? i18nc("@label ring name, at most 3 characters, short for graphics card", "GPU")
+            : i18nc("@label ring name, at most 3 characters, short for memory", "MEM")
         color: Style.dim(Kirigami.Theme.textColor)
         font.pointSize: Kirigami.Theme.smallFont.pointSize * 0.95 * name.sizeFactor
         font.letterSpacing: Kirigami.Theme.smallFont.pointSize * 0.08 * name.sizeFactor
