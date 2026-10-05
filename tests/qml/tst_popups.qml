@@ -204,6 +204,12 @@ Item {
             return loader.item;
         }
 
+        // A C-locale expectation in the digits and decimal mark Format uses
+        // for the test's locale: "8.4" is "8,4" under German.
+        function localized(text) {
+            return text.replace(/\d+(?:\.(\d+))?/g, (m, decimals) => Format.fixed(Number(m), decimals ? decimals.length : 0));
+        }
+
         function texts(item) {
             const found = [];
             const collect = i => {
@@ -312,12 +318,12 @@ Item {
         function test_popupRingsKeepTheirPercentage() {
             const cpu = gauges(load("CpuPopup", normal));
             compare(cpu.length, 1, "the header ring");
-            compare(cpu[0].text, "23%");
+            compare(cpu[0].text, localized("23%"));
             compare(cpu[0].strokeWidth, 4);
             const cpuText = centreText(cpu[0]);
             verify(cpuText, "the header ring's centre text");
             verify(cpuText.visible, "the header ring shows its percentage");
-            compare(cpuText.text, "23%");
+            compare(cpuText.text, localized("23%"));
             compare(names(cpu[0]), []);
             // At 52 px the panel's default stroke is also 4; a larger ring
             // tells an explicit stroke from the default.
@@ -330,7 +336,7 @@ Item {
             compare(gpu.map(g => g.value), [12, 3], "a ring per GPU");
             gpu.forEach(g => {
                 const tag = "the ring at " + g.value + "%";
-                compare(g.text, g.value + "%", tag);
+                compare(g.text, localized(g.value + "%"), tag);
                 compare(g.strokeWidth, 3.5, tag);
                 const text = centreText(g);
                 verify(text, tag);
@@ -534,7 +540,11 @@ Item {
             });
             // Bare numbers outside readings too: the network rates, the
             // load averages. The header ring's centre is the panel ring's.
-            const numbers = all(popup, i => i.visible && typeof i.text === "string" && /^[0-9.,–]+%?$/.test(i.text) && i.font !== undefined, true);
+            // In the locale's own digits and decimal mark.
+            const digits = Array.from({ length: 10 }, (_, n) => Format.whole(n));
+            const ascii = t => Array.from(t).map(c => digits.indexOf(c) >= 0 ? String(digits.indexOf(c))
+                                                    : c === Qt.locale().decimalPoint ? "." : c).join("");
+            const numbers = all(popup, i => i.visible && typeof i.text === "string" && /^[0-9.,–]+%?$/.test(ascii(i.text)) && i.font !== undefined, true);
             verify(numbers.length > 0);
             numbers.forEach(t => {
                 compare(t.font.family, Kirigami.Theme.defaultFont.family, t.text);
@@ -588,8 +598,8 @@ Item {
         // Process values are readings: a dim, smaller unit, the percent sign
         // against its number, and the values lined up at the row's end.
         function test_processValuesAreReadings_data() {
-            return [{ tag: "cpu", popup: "CpuPopup", units: ["%", "%", "%"], values: ["8.4", "3.1", "2.6"] },
-                    { tag: "memory", popup: "MemoryPopup", units: ["GiB", "MiB", "MiB"], values: ["3.9", "620", "410"] }];
+            return [{ tag: "cpu", popup: "CpuPopup", units: ["%", "%", "%"], values: ["8.4", "3.1", "2.6"].map(localized) },
+                    { tag: "memory", popup: "MemoryPopup", units: ["GiB", "MiB", "MiB"], values: ["3.9", "620", "410"].map(localized) }];
         }
 
         function test_processValuesAreReadings(data) {
@@ -667,7 +677,7 @@ Item {
                 if (g.ceiling) {
                     verify(rule.visible);
                     const label = ruleLabel(rule);
-                    compare(label.text, "100%");
+                    compare(label.text, localized("100%"));
                     probe.font = label.font;
                     probe.text = label.text;
                     const inkTop = label.y + label.baselineOffset + probe.tightBoundingRect.y;
