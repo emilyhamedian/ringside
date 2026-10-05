@@ -682,6 +682,7 @@ Item {
             const entries = all(popup, i => i.swatch !== undefined && i.text !== undefined);
             compare(entries.length, 3);
             popup.width = popup.implicitWidth + Kirigami.Units.gridUnit * 6;
+            waitForRendering(popup);
             tryVerify(() => entries[0].y === entries[2].y, 1000, "one line");
             // The bar's own mapping would include its mirroring flip.
             const left = i => i.parent.mapToItem(popup, i.x, 0).x;
