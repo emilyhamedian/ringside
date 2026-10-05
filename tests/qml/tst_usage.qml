@@ -1681,18 +1681,22 @@ Item {
         }
 
         // Within two hours the line's end shows now; past that a marker does.
+        // Once the reset has passed with an old reading, the marker stays
+        // inside the graph at its end.
         function test_staleMarker_data() {
-            return [{ tag: "fresh", age: 1.5 * 3600, stale: false }, { tag: "stale", age: 2.5 * 3600, stale: true }];
+            return [{ tag: "fresh", now: start + 3 * day, age: 1.5 * 3600, stale: false },
+                    { tag: "stale", now: start + 3 * day, age: 2.5 * 3600, stale: true, x: g => Math.round(3 * day / week * g.width) },
+                    { tag: "pastReset", now: start + week + 3 * 3600, age: 6 * 3600, stale: true, x: g => g.width - 1 }];
         }
 
         function test_staleMarker(data) {
-            const now = start + 3 * day;
+            const now = data.now;
             const g = make([[start, 0], [now - data.age, 20]], { percent: 20, at: now - data.age, now: now });
             compare(g.stale, data.stale);
             const marker = rectangles(g).find(i => i.width === 1 && i.y === rule(g).ruleY);
             compare(marker !== undefined, data.stale);
             if (data.stale) {
-                compare(marker.x, Math.round(3 * day / week * g.width));
+                compare(marker.x, data.x(g));
                 compare(marker.y + marker.height, g.height);
             }
             verify(!make([], { percent: 0, at: now - data.age, now: now }).stale, "no line, nothing to mark");
