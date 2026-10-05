@@ -6,15 +6,14 @@ import QtQuick
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
 import org.kde.ksvg as KSvg
-import org.kde.plasma.core as PlasmaCore
 import "../../package/contents/ui"
 import "../../package/contents/ui/popups"
 
 // The README's pictures, from fixed sample readings: scripts/pictures.sh
-// runs this, which saves each shot and the fold's frames to the folder given
-// after --out and quits. In the popups the week resets at 7:00 AM EDT, far
-// enough ahead that most of it has been used; the panel and Standalone
-// pictures count down a fixed time, so they come out the same on every run.
+// runs this, which saves each shot to the folder given after --out and
+// quits. In the popups the week resets at 7:00 AM EDT, far enough ahead that
+// most of it has been used; the panel picture counts down a fixed time, so
+// it comes out the same on every run.
 Rectangle {
     id: pictures
 
@@ -40,9 +39,6 @@ Rectangle {
     width: shots.implicitWidth
     height: shots.implicitHeight
     color: Kirigami.Theme.backgroundColor
-
-    // Behind the panel pictures, a stand-in for the wallpaper.
-    readonly property color desktop: "#3b4a57"
 
     // The first 11:00 UTC at least two and a half days away, and the week's
     // use until now: working hours in New York, nothing overnight.
@@ -89,9 +85,9 @@ Rectangle {
         })
     }
 
-    // The sample for the panel, Standalone and fold pictures, whose countdowns
-    // would otherwise change with the time of day they are rendered: the
-    // weeks reset 2 days 21 hours and a half from now, which reads "2d 21h".
+    // The sample for the panel picture, whose countdown would otherwise
+    // change with the time of day it is rendered: the weeks reset 2 days 21
+    // hours and a half from now, which reads "2d 21h".
     FakeMonitor {
         id: shown
         readonly property int left: 2 * 86400 + 21 * 3600 + 30 * 60
@@ -115,56 +111,6 @@ Rectangle {
             id: holder
             x: parent.margins.left
             y: parent.margins.top
-        }
-    }
-
-    // One point of the fold on a strip of desktop at the right screen edge:
-    // the panel keeps its thickness while the dials shrink toward the tab,
-    // then snaps to the 44 px tab.
-    component FoldFrame: Rectangle {
-        id: frame
-
-        required property real progress
-        readonly property real open: strip.minimumThickness + 8
-
-        width: open + 48
-        height: fold.implicitHeight + 40
-        color: pictures.desktop
-
-        KSvg.FrameSvgItem {
-            id: fold
-            imagePath: "widgets/panel-background"
-            anchors.right: parent.right
-            anchors.rightMargin: 8
-            anchors.verticalCenter: parent.verticalCenter
-            width: frame.progress === 0 ? 44 : frame.open
-            height: strip.implicitHeight + 8
-            implicitHeight: openStrip.implicitHeight + 8
-
-            StandaloneStrip {
-                id: strip
-                anchors.fill: parent
-                anchors.margins: 4
-                monitor: shown
-                items: ["cpu", "claude", "codex"]
-                enabledItems: items
-                vertical: true
-                location: PlasmaCore.Types.RightEdge
-                expandedThickness: minimumThickness
-                visibilityMode: frame.progress === 0 ? 2 : 1
-                expansionProgress: frame.progress
-                handleProgress: 1
-            }
-        }
-
-        // The open strip's length, so every frame has the same height.
-        StandaloneStrip {
-            id: openStrip
-            visible: false
-            monitor: shown
-            items: strip.items
-            enabledItems: items
-            width: strip.minimumThickness
         }
     }
 
@@ -220,50 +166,6 @@ Rectangle {
                 item: "claude"
             }
         }
-
-        Rectangle {
-            objectName: "standalone"
-            implicitWidth: side.implicitWidth + 48
-            implicitHeight: side.implicitHeight + 40
-            color: pictures.desktop
-
-            KSvg.FrameSvgItem {
-                id: side
-                imagePath: "widgets/panel-background"
-                anchors.right: parent.right
-                anchors.rightMargin: 8
-                anchors.verticalCenter: parent.verticalCenter
-                implicitWidth: dials.minimumThickness + 8
-                implicitHeight: dials.implicitHeight + 8
-
-                StandaloneStrip {
-                    id: dials
-                    anchors.fill: parent
-                    anchors.margins: 4
-                    monitor: shown
-                    items: ["cpu", "gpu", "claude", "codex"]
-                    enabledItems: items
-                    vertical: true
-                    location: PlasmaCore.Types.RightEdge
-                    visibilityMode: 1
-                }
-            }
-        }
-
-        // Folding, eased as the strip eases it, then the tab held.
-        Row {
-            id: frames
-            spacing: 8
-            Repeater {
-                model: [1, 0.97, 0.9, 0.78, 0.62, 0.45, 0.28, 0.14, 0.05, 0]
-                delegate: FoldFrame {
-                    required property real modelData
-                    required property int index
-                    objectName: "fold-" + index
-                    progress: modelData
-                }
-            }
-        }
     }
 
     function save(names, done) {
@@ -295,7 +197,6 @@ Rectangle {
     Timer {
         interval: 5000
         running: pictures.outDir !== ""
-        onTriggered: pictures.save(["panel", "popups", "usage", "standalone"]
-                                   .concat(Array.from({ length: 10 }, (_, i) => "fold-" + i)), Qt.quit)
+        onTriggered: pictures.save(["panel", "popups", "usage"], Qt.quit)
     }
 }

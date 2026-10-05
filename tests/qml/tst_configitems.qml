@@ -231,45 +231,18 @@ Item {
             compare(page.hints.codex, data.codex);
         }
 
-        function test_layoutAndVisibilityCombosEnableDisable_data() {
-            return [
-                { tag: "inline", layout: 0, enabled: false },
-                { tag: "standalone", layout: 1, enabled: true }
-            ];
-        }
-        function test_layoutAndVisibilityCombosEnableDisable(data) {
-            const page = openPage({ cfg_layout: data.layout });
-            compare(accessible(page, "Fold").enabled, data.enabled);
-        }
-
-        function test_ringControlsDisabledInStandalone_data() {
-            return [
-                { tag: "inline", layout: 0, enabled: true },
-                { tag: "standalone", layout: 1, enabled: false }
-            ];
-        }
-        function test_ringControlsDisabledInStandalone(data) {
-            const page = openPage({ cfg_itemOrder: ["cpu", "gpu", "memory", "network", "disk"], cfg_layout: data.layout });
-            compare(accessible(page, "What CPU shows").enabled, data.enabled);
-        }
-
-        // Rings follow the panel's thickness, so the page offers no ring size
-        // and the Standalone note names Ring only alone.
-        function test_noRingSizeSetting_data() {
-            return [
-                { tag: "inline", layout: 0, note: false },
-                { tag: "standalone", layout: 1, note: true }
-            ];
-        }
-        function test_noRingSizeSetting(data) {
-            const page = openPage({ cfg_itemOrder: ["cpu", "gpu", "memory", "network", "disk"], cfg_layout: data.layout });
+        // Rings follow the panel's thickness, so the page offers no ring size,
+        // and with one layout there is none to pick.
+        function test_noRingSizeSetting() {
+            const page = openPage({ cfg_itemOrder: ["cpu", "gpu", "memory", "network", "disk"] });
             compare(page.cfg_ringSize, undefined);
             compare(accessible(page, "Ring size"), null);
             compare(find(page, i => i.value !== undefined && i.stepSize !== undefined), null, "no slider or spin box");
             compare(find(page, i => typeof i.text === "string" && i.text.indexOf("Ring size") >= 0), null);
-            const note = find(page, i => i.text === "Ring only applies to the Inline layout.");
-            verify(note, "the Standalone note");
-            compare(note.visible, data.note);
+            compare(page.cfg_layout, undefined);
+            compare(accessible(page, "Layout"), null);
+            compare(accessible(page, "Fold"), null);
+            verify(accessible(page, "What CPU shows").enabled, "a horizontal panel offers Ring only");
         }
     }
 }

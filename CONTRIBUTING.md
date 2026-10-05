@@ -14,14 +14,14 @@ Apart from `scripts/test-floor.sh`, they need a Plasma 6.5 or later desktop
 (looked for in `/usr/lib/qt6/bin` and `/usr/lib64/qt6/bin`, or set `QMLLINT`,
 `QMLTESTRUNNER`, `QML`), the Plasma and libksysguard QML modules, and
 Python 3.11+. `scripts/test.sh` also runs `shellcheck` and `reuse lint` when
-they're installed, and prints a note when it skips one. `scripts/pictures.sh`
-also needs Python's Pillow. `scripts/test-floor.sh` runs from Plasma 6.0 on
-and counts a test that fails for want of `org.kde.plasma.plasmoid` as skipped.
+they're installed, and prints a note when it skips one. `scripts/test-floor.sh`
+runs from Plasma 6.0 on and counts a test that fails for want of
+`org.kde.plasma.plasmoid` as skipped.
 
 CI runs the full suite and gallery on Fedora 44 and the compatibility tests
 on Fedora 40 as released. Main, tags and release branches always run both.
 On development branches (`codex/`, `fix/`, `feat/`, `feature/`, `docs/`, `ci/`),
-changes limited to this file, README, CHANGELOG and the five existing images
+changes limited to this file, README, CHANGELOG and the three existing images
 in `docs/` run REUSE lint and retain the `test` and `floor` checks. Workflows,
 agent instructions, security guidance and all other paths run the full tests.
 Push coverage uses the whole branch since its merge base with main, so a
@@ -57,8 +57,8 @@ User-Agent, and the Python tests check that the versions agree.
 
 ## Where to start
 
-`AGENTS.md` maps the repository. `package/contents/ui/main.qml` hosts both
-layouts; `Monitor.qml` is the only place that subscribes to ksystemstats.
-Tests live under `tests/qml` (QtTest), `tests/helper` (the sh helper's
-fixtures) and `tests/python` (the Python helper's tests).
+`AGENTS.md` maps the repository. `package/contents/ui/main.qml` hosts the
+panel strip and the popup; `Monitor.qml` is the only place that subscribes
+to ksystemstats. Tests live under `tests/qml` (QtTest), `tests/helper` (the
+sh helper's fixtures) and `tests/python` (the Python helper's tests).
 CI coverage rules and their tests live in `.github/scripts/`.

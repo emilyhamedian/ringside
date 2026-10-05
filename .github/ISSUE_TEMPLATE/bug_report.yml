@@ -30,15 +30,6 @@ body:
       label: Qt version
     validations:
       required: true
-  - type: dropdown
-    id: layout
-    attributes:
-      label: Layout
-      options:
-        - Inline
-        - Standalone
-    validations:
-      required: true
   - type: textarea
     id: items
     attributes:

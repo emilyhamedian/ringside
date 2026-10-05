@@ -19,8 +19,6 @@ KCM.SimpleKCM {
     property var cfg_itemOrder: []
     property var cfg_hiddenItems: []
     property var cfg_ringsOnly: []
-    property int cfg_layout
-    property int cfg_visibilityMode
 
     readonly property var names: ({
         cpu: i18nc("@item panel item", "CPU"),
@@ -139,39 +137,6 @@ KCM.SimpleKCM {
     ColumnLayout {
         spacing: Kirigami.Units.smallSpacing
 
-        Kirigami.FormLayout {
-            Layout.fillWidth: true
-
-            QQC2.ComboBox {
-                Kirigami.FormData.label: i18nc("@label:listbox", "Layout:")
-                model: [i18nc("@item:inlistbox items in a row, in any panel", "Inline"),
-                        i18nc("@item:inlistbox large dials in a panel of their own", "Standalone")]
-                currentIndex: page.cfg_layout
-                Accessible.name: i18nc("@label:listbox", "Layout")
-                onActivated: index => page.cfg_layout = index
-            }
-            QQC2.Label {
-                text: page.cfg_layout === 1
-                    ? i18nc("@info", "Large dials in a panel of their own, which folds away behind maximized windows.")
-                    : i18nc("@info", "Items in a row, in any panel.")
-                textFormat: Text.PlainText
-                wrapMode: Text.Wrap
-                color: Style.dim(Kirigami.Theme.textColor)
-                font.pointSize: Kirigami.Theme.defaultFont.pointSize * 11.5 / 13
-            }
-
-            QQC2.ComboBox {
-                Kirigami.FormData.label: i18nc("@label:listbox when the standalone panel folds into its tab", "Fold:")
-                enabled: page.cfg_layout === 1
-                model: [i18nc("@item:inlistbox the standalone panel folds while a maximized window is shown", "Behind maximized windows"),
-                        i18nc("@item:inlistbox the standalone panel never folds by itself", "Never"),
-                        i18nc("@item:inlistbox the standalone panel stays folded", "Always")]
-                currentIndex: page.cfg_visibilityMode
-                Accessible.name: i18nc("@label:listbox when the standalone panel folds into its tab", "Fold")
-                onActivated: index => page.cfg_visibilityMode = index
-            }
-        }
-
         QQC2.Label {
             Layout.fillWidth: true
             text: i18nc("@info:usagetip", "Drag or use the arrows to reorder. Uncheck an item to hide it.")
@@ -278,7 +243,7 @@ KCM.SimpleKCM {
                             QQC2.ComboBox {
                                 id: mode
                                 visible: entry.ring
-                                enabled: !page.vertical && page.cfg_layout === 0
+                                enabled: !page.vertical
                                 model: [i18nc("@item:inlistbox what a ring item shows", "Ring and text"),
                                         i18nc("@item:inlistbox what a ring item shows", "Ring only")]
                                 currentIndex: page.cfg_ringsOnly.includes(entry.key) ? 1 : 0
@@ -318,16 +283,6 @@ KCM.SimpleKCM {
             Layout.fillWidth: true
             visible: page.vertical
             text: i18nc("@info", "This panel is vertical, so the rings show without their readings.")
-            textFormat: Text.PlainText
-            wrapMode: Text.Wrap
-            color: Style.dim(Kirigami.Theme.textColor)
-            font.pointSize: Kirigami.Theme.defaultFont.pointSize * 11.5 / 13
-        }
-
-        QQC2.Label {
-            Layout.fillWidth: true
-            visible: page.cfg_layout === 1
-            text: i18nc("@info", "Ring only applies to the Inline layout.")
             textFormat: Text.PlainText
             wrapMode: Text.Wrap
             color: Style.dim(Kirigami.Theme.textColor)

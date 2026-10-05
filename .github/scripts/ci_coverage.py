@@ -16,8 +16,7 @@ from pathlib import Path
 DEVELOPMENT_PREFIXES = ("codex/", "fix/", "feat/", "feature/", "docs/", "ci/")
 DOCUMENTS = {
     "README.md", "CONTRIBUTING.md", "CHANGELOG.md",
-    "docs/panel.png", "docs/popups.png", "docs/standalone.png",
-    "docs/usage.png", "docs/fold.gif",
+    "docs/panel.png", "docs/popups.png", "docs/usage.png",
 }
 
 

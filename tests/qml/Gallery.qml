@@ -430,11 +430,6 @@ Rectangle {
             monitor: normal
         }
 
-        // The Standalone layout: dials on each edge, and folding.
-        StandaloneGallery {
-            monitor: normal
-        }
-
         // Breeze Light's colours, for the contrast of dim text on a light scheme.
         Rectangle {
             Layout.fillWidth: true

@@ -8,11 +8,6 @@ SPDX-FileCopyrightText = "2026 Emily Hamedian <me@emily.dev>"
 SPDX-License-Identifier = "GPL-3.0-or-later"
 
 [[annotations]]
-path = "docs/*.gif"
-SPDX-FileCopyrightText = "2026 Emily Hamedian <me@emily.dev>"
-SPDX-License-Identifier = "GPL-3.0-or-later"
-
-[[annotations]]
 path = ["*.md", ".gitignore", ".editorconfig"]
 SPDX-FileCopyrightText = "2026 Emily Hamedian <me@emily.dev>"
 SPDX-License-Identifier = "GPL-3.0-or-later"

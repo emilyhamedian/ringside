@@ -25,7 +25,7 @@ Item {
     // The middle is round, so a name's ink has less room than the middle's
     // width: only the chord at its cap height.
     readonly property real chord: 2 * Math.sqrt(Math.max(0, room * room / 4 - smallest.tightBoundingRect.height ** 2 / 4))
-    // The Standalone dial's proportion: a 15 px mark in a 52 px ring.
+    // A 15 px mark in a 52 px ring, the proportion the marks were drawn at.
     readonly property real markSize: Math.round(width * 15 / 52)
     readonly property bool fits: usage ? markSize >= Kirigami.Units.iconSizes.small / 2 && markSize <= room
                                        : smallest.advanceWidth <= chord

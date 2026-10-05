@@ -2,21 +2,20 @@
 
 A KDE Plasma 6 panel widget: CPU, GPU, memory, network and disk, plus optional
 Claude Code and Codex weekly limits, as rings in the panel, each opening a
-popup. Two layouts: Inline (a strip in any panel) and Standalone (large dials
-in a dedicated panel that folds behind maximized windows). Pure QML with two
-helper scripts; plugin id `dev.emily.ringside`; GPL-3.0-or-later.
+popup. Pure QML with two helper scripts; plugin id `dev.emily.ringside`;
+GPL-3.0-or-later.
 
 ## Where things are
 
-- `package/` is the widget. `contents/ui/main.qml` hosts both layouts and the
-  single popup; `Monitor.qml` is the only place that subscribes to
+- `package/` is the widget. `contents/ui/main.qml` hosts the panel strip and
+  the single popup; `Monitor.qml` is the only place that subscribes to
   ksystemstats; `GpuReader.qml` with `code/gpugate.js` decides when a discrete
   GPU may be read; `UsageData.qml` runs `contents/code/usage.py` for the
   Claude and Codex items; `contents/code/ringside-info.sh` reports hardware
   facts ksystemstats doesn't publish.
 - `tests/` holds the QtTest suites (`tests/qml/tst_*.qml`), the sh helper's
   fixtures (`tests/helper/`) and the Python helper's tests (`tests/python/`).
-- `scripts/`: install, test, test-floor, gallery, pictures, package, add-panel.
+- `scripts/`: install, test, test-floor, gallery, pictures, package.
 
 ## Direction
 
