@@ -376,15 +376,30 @@ Item {
             return { number: texts[0], suffix: texts[1] };
         }
 
+        TextMetrics {
+            id: glyph
+        }
+
+        // The room a Text's last character leaves after its ink.
+        function trailingRoom(text) {
+            glyph.font = text.font;
+            glyph.text = text.text.slice(-1);
+            return glyph.advanceWidth - glyph.tightBoundingRect.x - glyph.tightBoundingRect.width;
+        }
+
         // The temperature unit is as small as the caption under it and sits
-        // against the digits, in the header and in the GPU rows alike.
+        // against the digits, in the header and in the GPU rows alike. At one
+        // size it is as far from the ink after a tabular "1" (61, 41) as
+        // after any other digit (60, 48).
         function test_temperatureUnitSizeAndGap_data() {
             return [{ tag: "celsius", fahrenheit: false, unit: "°C" }, { tag: "fahrenheit", fahrenheit: true, unit: "°F" }];
         }
 
         function test_temperatureUnitSizeAndGap(data) {
             normal.fahrenheit = data.fahrenheit;
-            for (const popup of ["CpuPopup", "GpuPopup"]) {
+            const inkGaps = { CpuPopup: [], GpuPopup: [] };
+            for (const [popup, cpuTemperature] of [["CpuPopup", 61], ["CpuPopup", 60], ["GpuPopup", 61]]) {
+                normal.cpuTemperature = cpuTemperature;
                 const temperatures = readings(load(popup, normal)).filter(r => r.visible && r.degreeUnit !== "");
                 verify(temperatures.length > 0, popup);
                 temperatures.forEach(r => {
@@ -393,11 +408,18 @@ Item {
                     compare(p.suffix.text, data.unit, tag);
                     compare(p.suffix.font.pointSize, Kirigami.Theme.smallFont.pointSize, tag);
                     const gap = p.suffix.x - (p.number.x + p.number.implicitWidth);
-                    verify(gap >= 0 && gap <= 1.5, tag + " gap " + gap);
+                    const inkGap = gap + trailingRoom(p.number);
+                    verify(inkGap >= 0 && inkGap <= 3, tag + " is " + inkGap + " from the ink");
+                    inkGaps[popup].push(inkGap);
                     compare(r.implicitWidth, p.number.implicitWidth + gap + p.suffix.implicitWidth, tag);
                     compare(p.suffix.y + p.suffix.baselineOffset, p.number.y + p.number.baselineOffset, tag + " shares the baseline");
                 });
             }
+            for (const gaps of [inkGaps.CpuPopup, inkGaps.GpuPopup]) {
+                compare(gaps.length, 2);
+                fuzzyCompare(gaps[1], gaps[0], 0.5);
+            }
+            normal.cpuTemperature = 61;
             normal.fahrenheit = false;
         }
 
