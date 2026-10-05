@@ -35,7 +35,7 @@ ColumnLayout {
 
     spacing: 2 * Kirigami.Units.gridUnit
 
-    // Claude amber with Opus red inside it, Codex at its limit.
+    // Claude amber with Fable red inside it, Codex at its limit.
     FakeMonitor {
         id: hot
         usage: FakeUsage {
@@ -45,7 +45,7 @@ ColumnLayout {
                     status: "ok",
                     fetchedAt: hotUsage.createdAt,
                     weekly: hotUsage.window(81, 2 * hotUsage.day + 21 * 3600, section.history(4.1, 81)),
-                    scoped: [Object.assign({ id: "Opus", label: "Opus" },
+                    scoped: [Object.assign({ id: "Fable", label: "Fable" },
                                            hotUsage.window(93, 2 * hotUsage.day + 21 * 3600, section.history(4.1, 93)))]
                 },
                 codex: {
@@ -68,7 +68,7 @@ ColumnLayout {
                     status: "ok",
                     fetchedAt: severalUsage.createdAt,
                     weekly: severalUsage.window(77, 2 * severalUsage.day + 21 * 3600, section.history(4.1, 77)),
-                    scoped: [Object.assign({ id: "Opus", label: "Opus" },
+                    scoped: [Object.assign({ id: "Fable", label: "Fable" },
                                            severalUsage.window(84, 2 * severalUsage.day + 21 * 3600, section.history(4.1, 84))),
                              Object.assign({ id: "Sonnet", label: "Sonnet" },
                                            severalUsage.window(12, 4 * severalUsage.day + 2 * 3600, section.history(3, 12)))]
@@ -103,7 +103,7 @@ ColumnLayout {
                     status: "ok",
                     fetchedAt: failedUsage.createdAt - 3600,
                     weekly: failedUsage.window(58, 2 * failedUsage.day + 22 * 3600, section.history(4, 58)),
-                    scoped: [Object.assign({ id: "Opus", label: "Opus" },
+                    scoped: [Object.assign({ id: "Fable", label: "Fable" },
                                            failedUsage.window(71, 2 * failedUsage.day + 22 * 3600, section.history(4, 71)))],
                     lastError: "HTTP Error 500: Internal Server Error",
                     lastErrorAt: failedUsage.createdAt
@@ -211,7 +211,7 @@ ColumnLayout {
     }
 
     Panel {
-        label: "Claude & Codex · panel · 46 px · Claude 62 % with Opus 78 % inside, Codex 34 %"
+        label: "Claude & Codex · panel · 46 px · Claude 52 % with Fable 78 % inside, Codex 24 %"
         thickness: 46
     }
 
@@ -221,7 +221,7 @@ ColumnLayout {
     }
 
     Panel {
-        label: "Claude & Codex · panel · 46 px · Claude 81 % (amber) with Opus 93 % (red), Codex 100 % (red)"
+        label: "Claude & Codex · panel · 46 px · Claude 81 % (amber) with Fable 93 % (red), Codex 100 % (red)"
         thickness: 46
         monitor: hot
     }
@@ -237,7 +237,7 @@ ColumnLayout {
         spacing: 2 * Kirigami.Units.gridUnit
 
         Frame {
-            label: "Claude · Opus on the inner ring"
+            label: "Claude · Fable on the inner ring"
             UsagePopup { monitor: section.monitor; item: "claude" }
         }
 
@@ -261,7 +261,7 @@ ColumnLayout {
         spacing: 2 * Kirigami.Units.gridUnit
 
         Frame {
-            label: "Claude · 81 % (amber), Opus 93 % (red)"
+            label: "Claude · 81 % (amber), Fable 93 % (red)"
             UsagePopup { monitor: hot; item: "claude" }
         }
 

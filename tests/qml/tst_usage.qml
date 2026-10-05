@@ -194,15 +194,15 @@ Item {
 
         function test_okReport() {
             start("ok");
-            compare(usage.entry("claude").weekly.percent, 62);
-            compare(usage.entry("codex").weekly.percent, 34);
+            compare(usage.entry("claude").weekly.percent, 52);
+            compare(usage.entry("codex").weekly.percent, 24);
             verify(usage.claudePresent && usage.codexPresent);
             verify(!usage.degraded("claude") && !usage.degraded("codex"));
-            compare(usage.inner("claude").id, "Opus");
+            compare(usage.inner("claude").id, "Fable");
             compare(usage.inner("codex"), null);
             compare(usage.helperError, "");
             compare(JSON.parse(config.knownLimits),
-                    { claude: [{ id: "Opus", label: "Opus", reported: true }], codex: [] });
+                    { claude: [{ id: "Fable", label: "Fable", reported: true }], codex: [] });
             compare(JSON.parse(config.usageStatus), { claude: { status: "ok", message: "" },
                                                       codex: { status: "ok", message: "" }, helperError: "" });
         }
@@ -211,7 +211,7 @@ Item {
             start("ok");
             config.claudeInnerLimit = "none";
             compare(usage.inner("claude"), null);
-            config.claudeInnerLimit = "Opus";
+            config.claudeInnerLimit = "Fable";
             compare(usage.inner("claude").percent, 78);
             config.claudeInnerLimit = "Sonnet";
             compare(usage.inner("claude"), null, "a picked limit that isn't reported shows none");
@@ -220,7 +220,7 @@ Item {
         function test_failedPollKeepsTheLastReading() {
             start("ok");
             poll("failed");
-            compare(usage.entry("claude").weekly.percent, 62);
+            compare(usage.entry("claude").weekly.percent, 52);
             compare(usage.entry("claude").lastError, "HTTP Error 500: Internal Server Error");
             verify(Math.abs(usage.entry("claude").lastErrorAt - Date.now() / 1000) < 60);
             compare(usage.entry("codex").lastError, "HTTP Error 429: Too Many Requests");
@@ -265,7 +265,7 @@ Item {
             poll(data.scenario);
             compare(usage.helperError, data.message);
             compare(usage.entry("claude").lastError, data.message);
-            compare(usage.entry("claude").weekly.percent, 62, "the last reading stays");
+            compare(usage.entry("claude").weekly.percent, 52, "the last reading stays");
             verify(usage.degraded("codex"));
             compare(JSON.parse(config.usageStatus).helperError, data.message);
             compare(JSON.parse(config.usageStatus).claude.status, "ok", "the providers keep their last status");
@@ -332,7 +332,7 @@ Item {
 
             poll("reset");
             compare(config.knownLimitsWrites, 4);
-            compare(JSON.parse(config.knownLimits).claude.map(l => l.id), ["Opus", "Sonnet"]);
+            compare(JSON.parse(config.knownLimits).claude.map(l => l.id), ["Fable", "Sonnet"]);
         }
 
         function test_resetsArriveBeforeTheReadings() {
@@ -343,9 +343,9 @@ Item {
             poll("reset");
             usage.resetsDetected.disconnect(listener);
             compare(seen.length, 1);
-            compare(seen[0].percent, 62, "sent while the old reading is still there");
-            compare(seen[0].events, { "claude.weekly": { from: 62, early: true },
-                                      "claude.scoped.Opus": { from: 78, early: true } });
+            compare(seen[0].percent, 52, "sent while the old reading is still there");
+            compare(seen[0].events, { "claude.weekly": { from: 52, early: true },
+                                      "claude.scoped.Fable": { from: 78, early: true } });
             compare(usage.entry("claude").weekly.percent, 3);
         }
 
@@ -432,8 +432,8 @@ Item {
         }
 
         function test_texts_data() {
-            return [{ tag: "claude", percent: "62%", left: "2d 21h", mark: "/icons/claude.svg" },
-                    { tag: "codex", percent: "34%", left: "5d 4h", mark: "/icons/openai.svg" }];
+            return [{ tag: "claude", percent: "52%", left: "2d 21h", mark: "/icons/claude.svg" },
+                    { tag: "codex", percent: "24%", left: "5d 4h", mark: "/icons/openai.svg" }];
         }
 
         // The mark names the item in the ring, and the percentage moves out
@@ -456,7 +456,7 @@ Item {
         // unnamed; with the text off, the ring keeps its mark alone.
         function test_oneLineAndRingOnly() {
             const thin = cell("claude", { twoLines: false });
-            compare(root.texts(thin), ["62%", "·", "2d 21h"]);
+            compare(root.texts(thin), ["52%", "·", "2d 21h"]);
             compare(line(thin, "second").y, line(thin, "first").y, "one line");
             verify(line(thin, "second").x > line(thin, "first").x);
             verify(!mark(thin).visible, "no mark beside one line");
@@ -530,10 +530,10 @@ Item {
         }
 
         function test_descriptions() {
-            compare(cell("claude").accessibleDescription, "62% used, Opus 78%, resets in 2 days 21 hours");
-            compare(cell("codex").accessibleDescription, "34% used, resets in 5 days 4 hours");
+            compare(cell("claude").accessibleDescription, "52% used, Fable 78%, resets in 2 days 21 hours");
+            compare(cell("codex").accessibleDescription, "24% used, resets in 5 days 4 hours");
             monitor.usage.innerChoices = { claude: "none", codex: "" };
-            compare(cell("claude").accessibleDescription, "62% used, resets in 2 days 21 hours");
+            compare(cell("claude").accessibleDescription, "52% used, resets in 2 days 21 hours");
             claudeAt(40, 3600);
             compare(cell("claude").accessibleDescription, "40% used, resets in 1 hour");
             monitor.usage.entries = { claude: { status: "signed_out" } };
@@ -558,13 +558,13 @@ Item {
             const claude = cell("claude");
             const codex = cell("codex");
             monitor.usage.resetsDetected({ "claude.weekly": { from: 80, early: false },
-                                           "claude.scoped.Opus": { from: 95, early: true } });
+                                           "claude.scoped.Fable": { from: 95, early: true } });
             compare(arcs(claude).map(a => a.animating), [true, true]);
             verify(arcs(codex).every(a => !a.animating));
             tryVerify(() => arcs(claude).every(a => !a.animating), 5000);
 
             monitor.usage.innerChoices = { claude: "none", codex: "" };
-            monitor.usage.resetsDetected({ "claude.scoped.Opus": { from: 95, early: false } });
+            monitor.usage.resetsDetected({ "claude.scoped.Fable": { from: 95, early: false } });
             verify(arcs(claude).every(a => !a.animating), "no inner ring, nothing to play");
         }
 
@@ -588,29 +588,29 @@ Item {
         function test_innerLimitFollowsSettings() {
             const claude = cell("claude");
             const codex = cell("codex");
-            compare(claude.innerLimit.id, "Opus", "The only limit shows by default");
+            compare(claude.innerLimit.id, "Fable", "The only limit shows by default");
             compare(claude.children[0].inner, true);
             compare(claude.children[0].innerValue, 78);
-            compare(root.texts(claude), ["62%", "2d 21h"]);
+            compare(root.texts(claude), ["52%", "2d 21h"]);
             compare(codex.innerLimit, null, "No scoped limit, no inner ring");
             compare(codex.children[0].inner, false);
-            compare(root.texts(codex), ["34%", "5d 4h"]);
+            compare(root.texts(codex), ["24%", "5d 4h"]);
 
-            setEntry("codex", { status: "ok", weekly: { percent: 34 },
+            setEntry("codex", { status: "ok", weekly: { percent: 24 },
                                 scoped: [{ id: "codex_spark", label: "GPT-5.3-Codex-Spark", percent: 5 }] });
             compare(codex.innerLimit.id, "codex_spark", "A new limit is picked up");
             compare(codex.children[0].inner, true);
             compare(codex.children[0].innerValue, 5);
-            compare(root.texts(codex), ["34%", "–"]);
+            compare(root.texts(codex), ["24%", "–"]);
 
             const fable = { id: "Fable", label: "Fable", percent: 78 };
-            const opus = { id: "Opus", label: "Opus", percent: 9 };
-            setEntry("claude", { status: "ok", weekly: { percent: 62 }, scoped: [fable, opus] });
+            const sonnet = { id: "Sonnet", label: "Sonnet", percent: 9 };
+            setEntry("claude", { status: "ok", weekly: { percent: 62 }, scoped: [fable, sonnet] });
             compare(claude.innerLimit, null, "Several and none picked: all models only");
             compare(claude.children[0].inner, false);
             compare(root.texts(claude), ["62%", "–"]);
-            monitor.usage.innerChoices = { claude: "Opus", codex: "" };
-            compare(claude.innerLimit.id, "Opus");
+            monitor.usage.innerChoices = { claude: "Sonnet", codex: "" };
+            compare(claude.innerLimit.id, "Sonnet");
             compare(claude.children[0].inner, true);
             compare(claude.children[0].innerValue, 9);
             compare(root.texts(claude), ["62%", "–"]);
@@ -618,7 +618,7 @@ Item {
             compare(claude.innerLimit, null);
             compare(claude.children[0].inner, false);
             compare(root.texts(claude), ["62%", "–"]);
-            monitor.usage.innerChoices = { claude: "Opus", codex: "" };
+            monitor.usage.innerChoices = { claude: "Sonnet", codex: "" };
             setEntry("claude", { status: "ok", weekly: { percent: 62 }, scoped: [fable] });
             compare(claude.innerLimit, null, "A picked limit that goes away leaves one circle");
             compare(claude.children[0].inner, false);
@@ -631,19 +631,19 @@ Item {
 
         function test_resetsReachOnlyTheShownLimit() {
             const fable = { id: "Fable", label: "Fable", percent: 78 };
-            const opus = { id: "Opus", label: "Opus", percent: 9 };
-            setEntry("claude", { status: "ok", weekly: { percent: 62 }, scoped: [fable, opus] });
+            const sonnet = { id: "Sonnet", label: "Sonnet", percent: 9 };
+            setEntry("claude", { status: "ok", weekly: { percent: 62 }, scoped: [fable, sonnet] });
             monitor.usage.innerChoices = { claude: "Fable", codex: "" };
             const claude = cell("claude");
             const codex = cell("codex");
             const inner = innerArc(claude);
-            monitor.usage.resetsDetected({ "claude.scoped.Opus": { from: 92, early: true } });
+            monitor.usage.resetsDetected({ "claude.scoped.Sonnet": { from: 92, early: true } });
             compare(inner.animating, false, "A limit that is not shown plays nothing");
             monitor.usage.resetsDetected({ "claude.scoped.Fable": { from: 92, early: true } });
             verify(inner.animating, "The shown limit plays its reset");
             tryCompare(inner, "animating", false);
             // Events are handed over once, so changing the pick replays nothing.
-            monitor.usage.innerChoices = { claude: "Opus", codex: "" };
+            monitor.usage.innerChoices = { claude: "Sonnet", codex: "" };
             monitor.usage.innerChoices = { claude: "Fable", codex: "" };
             compare(inner.animating, false);
             compare(inner.head, 78);
@@ -701,12 +701,12 @@ Item {
         function test_innerLimit() {
             const popup = load("claude");
             const shown = root.texts(popup);
-            for (const text of ["Claude", "Weekly limits", "2d 21h", "until reset", "All models", "Opus", "62%", "78%",
-                                "— All models", "- - Opus"]) {
+            for (const text of ["Claude", "Weekly limits", "2d 21h", "until reset", "All models", "Fable", "52%", "78%",
+                                "— All models", "- - Fable"]) {
                 verify(shown.includes(text), text + " in " + JSON.stringify(shown));
             }
             verify(shown.some(t => /^THIS WEEK · resets .+ EDT$/.test(t)), JSON.stringify(shown));
-            verify(!shown.some(t => t.startsWith("resets in")), "Opus resets with the week");
+            verify(!shown.some(t => t.startsWith("resets in")), "Fable resets with the week");
             verify(!shown.includes("Open System Monitor"), "the footer has the gear alone");
             compare(graph(popup).mainPoints.length, 17);
             compare(graph(popup).secondPoints.length, 17);
@@ -721,10 +721,10 @@ Item {
         // Every model's limit gets a row, whichever the ring shows.
         function test_severalLimits() {
             const usage = monitor.usage;
-            setClaude({ scoped: [Object.assign({ id: "Opus", label: "Opus" }, usage.window(78, 2 * usage.day + 21 * 3600, [])),
+            setClaude({ scoped: [Object.assign({ id: "Fable", label: "Fable" }, usage.window(78, 2 * usage.day + 21 * 3600, [])),
                                  Object.assign({ id: "Sonnet", label: "Sonnet" }, usage.window(12, 4 * usage.day, []))] });
             const shown = root.texts(load("claude"));
-            for (const text of ["All models", "Opus", "Sonnet", "78%", "12%", "resets in 4d 0h"]) {
+            for (const text of ["All models", "Fable", "Sonnet", "78%", "12%", "resets in 4d 0h"]) {
                 verify(shown.includes(text), text + " in " + JSON.stringify(shown));
             }
             verify(!shown.some(t => t.startsWith("- - ")), "two limits and no choice: no inner ring");
@@ -748,7 +748,7 @@ Item {
             verify(note !== null);
             verify(note.text.endsWith(": <b>HTTP Error 500</b>"), note.text);
             compare(note.textFormat, Text.PlainText);
-            verify(root.texts(popup).includes("62%"), "the last reading stays");
+            verify(root.texts(popup).includes("52%"), "the last reading stays");
         }
 
         function test_emptyHistory() {
@@ -961,8 +961,8 @@ Item {
                 { tag: "memory full", item: "memory", set: { memoryUsed: 29 * 1073741824 },
                   first: "91%", level: 2, second: "29.0G" },
                 { tag: "memory unread", item: "memory", set: { memoryUsed: NaN }, first: "–", second: "–" },
-                { tag: "claude", item: "claude", first: "62%", second: "2d 21h" },
-                { tag: "codex", item: "codex", first: "34%", second: "5d 4h" },
+                { tag: "claude", item: "claude", first: "52%", second: "2d 21h" },
+                { tag: "codex", item: "codex", first: "24%", second: "5d 4h" },
                 { tag: "claude at its limit", item: "claude", weekly: [90, 3600], first: "90%", level: 2, second: "1h 0m" },
                 { tag: "claude amber", item: "claude", weekly: [75, 12 * 60], first: "75%", level: 1, second: "12m" },
                 { tag: "claude used up", item: "claude", weekly: [100, 2 * 86400], first: "100%", level: 2, second: "2d 0h" },

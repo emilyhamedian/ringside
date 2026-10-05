@@ -75,12 +75,14 @@ Rectangle {
                  clockZone: { offset: -4 * 3600, abbreviation: "EDT" }, history: history(percent) };
     }
 
+    // Wherever the reset falls, Claude's week and Codex's last to it at
+    // these rates and the Fable limit runs out before it.
     FakeMonitor {
         id: sample
         memoryUsed: 24.6 * gib
         usage.entries: ({
-            claude: { status: "ok", fetchedAt: pictures.now, weekly: pictures.window(62),
-                      scoped: [Object.assign({ id: "Opus", label: "Opus" }, pictures.window(78))] },
+            claude: { status: "ok", fetchedAt: pictures.now, weekly: pictures.window(45),
+                      scoped: [Object.assign({ id: "Fable", label: "Fable" }, pictures.window(78))] },
             codex: { status: "ok", fetchedAt: pictures.now, weekly: pictures.window(34), scoped: [] }
         })
     }
@@ -93,8 +95,8 @@ Rectangle {
         readonly property int left: 2 * 86400 + 21 * 3600 + 30 * 60
         memoryUsed: 24.6 * gib
         usage.entries: ({
-            claude: { status: "ok", fetchedAt: shown.usage.createdAt, weekly: shown.usage.window(62, shown.left, []),
-                      scoped: [Object.assign({ id: "Opus", label: "Opus" }, shown.usage.window(78, shown.left, []))] },
+            claude: { status: "ok", fetchedAt: shown.usage.createdAt, weekly: shown.usage.window(45, shown.left, []),
+                      scoped: [Object.assign({ id: "Fable", label: "Fable" }, shown.usage.window(78, shown.left, []))] },
             codex: { status: "ok", fetchedAt: shown.usage.createdAt, weekly: shown.usage.window(34, shown.left, []), scoped: [] }
         })
     }

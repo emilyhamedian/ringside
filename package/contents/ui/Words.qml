@@ -111,9 +111,9 @@ QtObject {
         const limit = usage.inner(item);
         let text;
         if (limit) {
-            text = left ? i18nc("@info:tooltip weekly share used, a model's own limit, time to the reset, e.g. 62% used, Opus 78%, resets in 2 days 21 hours",
+            text = left ? i18nc("@info:tooltip weekly share used, a model's own limit, time to the reset, e.g. 62% used, Fable 78%, resets in 2 days 21 hours",
                                 "%1 used, %2 %3, resets in %4", used, limit.label, percentText(limit.percent), left)
-                        : i18nc("@info:tooltip weekly share used and a model's own limit, e.g. 62% used, Opus 78%",
+                        : i18nc("@info:tooltip weekly share used and a model's own limit, e.g. 62% used, Fable 78%",
                                 "%1 used, %2 %3", used, limit.label, percentText(limit.percent));
         } else {
             text = left ? i18nc("@info:tooltip weekly share used and time to the reset, e.g. 62% used, resets in 2 days 21 hours",
