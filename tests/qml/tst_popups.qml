@@ -122,6 +122,15 @@ Item {
         gpuInner.temperatureLabel: "mem"
     }
 
+    // Rates well under the rate graphs' floors.
+    FakeMonitor {
+        id: idle
+        networkDownHistory: Array(historyLength).fill(4000)
+        networkUpHistory: Array(historyLength).fill(1000)
+        diskReadHistory: Array(historyLength).fill(20000)
+        diskWriteHistory: Array(historyLength).fill(8000)
+    }
+
     // Just opened: no rate has a sample yet.
     FakeMonitor {
         id: fresh
@@ -674,23 +683,49 @@ Item {
 
         // The disk tiles name their peak in the caption, the way Throughput
         // does, and nowhere else; before the first sample they say nothing.
-        function test_diskPeaksInTheCaption() {
+        // Throughput's peak is in the header's unit, bits or bytes.
+        function test_diskPeaksInTheCaption_data() {
+            return [{ tag: "bits", bits: true }, { tag: "bytes", bits: false }];
+        }
+
+        function test_diskPeaksInTheCaption(data) {
             const peak = (samples, bits) => {
                 const r = Format.rate(Math.max(...samples), bits);
                 return "peak " + r.value + " " + r.unit;
             };
+            const seconds = "THROUGHPUT · 60 s";
             const expected = {
-                Throughput: "THROUGHPUT · 60 s · " + peak(normal.networkDownHistory.concat(normal.networkUpHistory), true),
+                Throughput: seconds + " · " + peak(normal.networkDownHistory.concat(normal.networkUpHistory), data.bits),
                 Read: "READ · " + peak(normal.diskReadHistory, false),
                 Write: "WRITE · " + peak(normal.diskWriteHistory, false)
             };
-            const popup = load("NetworkPopup", normal);
-            const found = graphs(popup).map(tileCaption);
-            compare(found.map(c => c.text), [expected.Throughput, expected.Read, expected.Write]);
-            verify(!texts(popup).some(t => t.indexOf("Peak") >= 0), JSON.stringify(texts(popup)));
+            normal.networkBits = data.bits;
+            fresh.networkBits = data.bits;
+            try {
+                const popup = load("NetworkPopup", normal);
+                const found = graphs(popup).map(tileCaption);
+                compare(found.map(c => c.text), [expected.Throughput, expected.Read, expected.Write]);
+                verify(!texts(popup).some(t => t.indexOf("Peak") >= 0), JSON.stringify(texts(popup)));
 
-            const empty = graphs(load("NetworkPopup", fresh)).map(tileCaption);
-            compare(empty.map(c => c.text), ["THROUGHPUT · 60 s", "READ", "WRITE"]);
+                const empty = graphs(load("NetworkPopup", fresh)).map(tileCaption);
+                compare(empty.map(c => c.text), [seconds, "READ", "WRITE"]);
+            } finally {
+                normal.networkBits = true;
+                fresh.networkBits = true;
+            }
+        }
+
+        // A rate graph scales to its floor while the rates stay under it,
+        // 1 Mb/s for throughput and 1 MiB/s for a disk, so an idle link or
+        // disk draws its noise low rather than at full height.
+        function test_rateGraphFloors() {
+            const popup = load("NetworkPopup", idle);
+            const found = graphs(popup);
+            compare(found.map(g => g.maximum), [125000, 1048576, 1048576]);
+            found.forEach(g => {
+                const top = g.mainPoints.concat(g.secondPoints).reduce((m, p) => Math.min(m, p.y), Infinity);
+                verify(top > g.topY + (g.height - g.topY) / 2, "the line keeps low: " + top + " of " + g.height);
+            });
         }
 
         // The rule's label keeps to its end unless a line runs through it
@@ -875,12 +910,24 @@ Item {
 
         // The rates in the header at the tiles' size: the arrows in a column
         // that follows the layout, and each number and its unit left to right,
-        // the numbers ending on one line and the units starting on one.
+        // the numbers ending on one line and the units starting on one, in
+        // bits or in bytes.
         function test_networkHeader_data() {
-            return [{ tag: "plain", mirrored: false }, { tag: "mirrored", mirrored: true }];
+            return [{ tag: "plain", mirrored: false, bits: true }, { tag: "mirrored", mirrored: true, bits: true },
+                    { tag: "bytes", mirrored: false, bits: false }];
         }
 
         function test_networkHeader(data) {
+            normal.networkBits = data.bits;
+            try {
+                networkHeader(data);
+            } finally {
+                normal.networkBits = true;
+                normal.networkDown = 3.1e6;
+            }
+        }
+
+        function networkHeader(data) {
             const popup = load("NetworkPopup", normal, data.mirrored);
             const rates = all(popup, i => i.pairWidth !== undefined)[0];
             verify(rates);
@@ -889,8 +936,8 @@ Item {
             const arrows = all(rates, i => i.up !== undefined && i.color !== undefined);
             compare(arrows.map(a => a.up), [false, true]);
             const x = i => i.mapToItem(popup, 0, 0).x;
-            const down = Format.rate(normal.networkDown, true);
-            const up = Format.rate(normal.networkUp, true);
+            const down = Format.rate(normal.networkDown, data.bits);
+            const up = Format.rate(normal.networkUp, data.bits);
             compare(values.map(r => r.value + " " + r.unit), [down.value + " " + down.unit, up.value + " " + up.unit]);
             compare(rates.Accessible.name, "Down " + down.value + " " + down.unit + ", up " + up.value + " " + up.unit);
             normal.networkDown = NaN;
