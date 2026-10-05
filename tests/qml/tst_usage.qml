@@ -811,6 +811,55 @@ Item {
             compare(words.widestCountdown(), local("00h 00m"));
         }
 
+        function test_countdownParts_data() {
+            return [
+                { tag: "days", left: 5 * 86400 + 18 * 3600 + 7 * 60, expected: [["5", "d"], ["18", "h"]] },
+                { tag: "daysLeadingOnly", left: 5 * 86400 + 18 * 3600 + 7 * 60, leadingOnly: true, expected: [["5", "d"]] },
+                { tag: "oneDayLeadingOnly", left: 86400 + 30 * 60, leadingOnly: true, expected: [["1", "d"]] },
+                { tag: "lastDayLeadingOnly", left: 23 * 3600 + 5 * 60, leadingOnly: true, expected: [["23", "h"], ["5", "m"]] },
+                { tag: "hours", left: 5 * 3600 + 12 * 60, expected: [["5", "h"], ["12", "m"]] },
+                { tag: "minutes", left: 12 * 60, leadingOnly: true, expected: [["12", "m"]] },
+                { tag: "passed", left: -60, expected: [] },
+                { tag: "noReset", left: NaN, expected: [] }
+            ];
+        }
+        function test_countdownParts(data) {
+            const parts = words.countdownParts(nowMs / 1000 + data.left, nowMs, data.leadingOnly ?? false);
+            compare(parts.length, data.expected.length);
+            data.expected.forEach((pair, i) => {
+                compare(parts[i].value, local(pair[0]), data.tag + " " + i);
+                compare(parts[i].unit, pair[1], data.tag + " " + i);
+            });
+            // countdown() spells out the same parts.
+            if (!data.leadingOnly) {
+                compare(words.countdown(nowMs / 1000 + data.left, nowMs), parts.map(p => p.value + p.unit).join(" "));
+            }
+        }
+
+        function test_weekdayTime() {
+            const locale = Qt.locale();
+            const spelled = date => locale.dayName(date.getDay(), Locale.ShortFormat) + " "
+                                    + date.toLocaleTimeString(locale, Locale.ShortFormat);
+            // 7:30 UTC on Friday 25 September 2026, two days before the reset.
+            const friday = Date.UTC(2026, 8, 25, 7, 30) / 1000;
+            const systemOffset = -new Date(sunday * 1000).getTimezoneOffset() * 60;
+
+            // A clock zone three hours east of UTC, or five when that is
+            // system time, reads as its own wall clock and names no zone.
+            const east = systemOffset === 3 * 3600 ? 5 : 3;
+            const elsewhere = { resetsAt: sunday, clockZone: { offset: east * 3600, abbreviation: "XYZ" } };
+            compare(words.weekdayTime(friday, elsewhere), spelled(new Date(2026, 8, 25, 7 + east, 30)));
+
+            // A clock zone that matches system time at the reset, and no zone
+            // at all, read in system time.
+            const here = { resetsAt: sunday, clockZone: { offset: systemOffset, abbreviation: "XYZ" } };
+            compare(words.weekdayTime(friday, here), spelled(new Date(friday * 1000)));
+            compare(words.weekdayTime(friday, { resetsAt: sunday }), spelled(new Date(friday * 1000)));
+            compare(words.weekdayTime(friday, null), spelled(new Date(friday * 1000)));
+
+            compare(words.weekdayTime(NaN, elsewhere), "");
+        }
+
         function test_duration_data() {
             return [
                 { tag: "daysAndHours", left: 2 * 86400 + 21 * 3600, expected: "2 days 21 hours" },

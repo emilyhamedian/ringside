@@ -128,15 +128,35 @@ QtObject {
     // Time to a reset in the panel's letters: "2d 21h", "5h 12m", "12m";
     // empty once it has passed.
     function countdown(resetsAt, nowMs) {
+        return spelled(countdownParts(resetsAt, nowMs));
+    }
+
+    // countdown() as number and unit pairs, for setting the units apart:
+    // [{ value: "5", unit: "d" }, { value: "18", unit: "h" }]. With
+    // leadingOnly, a day or more out keeps only the days. Empty once the
+    // reset has passed.
+    function countdownParts(resetsAt, nowMs, leadingOnly) {
         const left = Format.timeLeft(resetsAt, nowMs);
         if (left === null) {
-            return "";
+            return [];
         }
-        return left.days > 0 ? i18nc("@info time left in days and hours, e.g. 2d 21h", "%1d %2h",
-                                     Format.whole(left.days), Format.whole(left.hours))
-             : left.hours > 0 ? i18nc("@info time left in hours and minutes, e.g. 5h 12m", "%1h %2m",
-                                      Format.whole(left.hours), Format.whole(left.minutes))
-             : i18nc("@info time left in minutes, e.g. 12m", "%1m", Format.whole(left.minutes));
+        const [days, hours, minutes] = timeParts(Format.whole(left.days), Format.whole(left.hours), Format.whole(left.minutes));
+        return left.days > 0 ? (leadingOnly ? [days] : [days, hours])
+             : left.hours > 0 ? [hours, minutes]
+             : [minutes];
+    }
+
+    // Numbers of days, hours and minutes with their unit letters. Each unit is
+    // one message, so every countdown reads in the same notation.
+    function timeParts(days, hours, minutes) {
+        return [{ value: days, unit: i18nc("@info unit after a number of days left, as in 5d 18h", "d") },
+                { value: hours, unit: i18nc("@info unit after a number of hours left, as in 5d 18h or 5h 12m", "h") },
+                { value: minutes, unit: i18nc("@info unit after a number of minutes left, as in 5h 12m", "m") }];
+    }
+
+    // countdownParts() as one text: "5d 18h".
+    function spelled(parts) {
+        return parts.map(part => part.value + part.unit).join(" ");
     }
 
     // The longest countdown() can get, for reserving its room: a week holds
@@ -144,9 +164,8 @@ QtObject {
     function widestCountdown() {
         const one = Format.whole(0);
         const two = one + one;
-        return [i18nc("@info time left in days and hours, e.g. 2d 21h", "%1d %2h", one, two),
-                i18nc("@info time left in hours and minutes, e.g. 5h 12m", "%1h %2m", two, two),
-                i18nc("@info time left in minutes, e.g. 12m", "%1m", two)]
+        const [days, hours, minutes] = timeParts(one, two, two);
+        return [[days, hours], [hours, minutes], [minutes]].map(spelled)
             .reduce((a, b) => b.length > a.length ? b : a);
     }
 
@@ -175,14 +194,36 @@ QtObject {
         }
         const zone = window.clockZone;
         // To the nearest minute: a reset reported as 10:59:59 reads as 11:00.
-        const at = Math.round(window.resetsAt / 60) * 60;
-        const date = zone ? Format.wallClock(at, zone.offset) : new Date(at * 1000);
+        const date = zonedDate(Math.round(window.resetsAt / 60) * 60, window);
         const locale = Qt.locale();
         const day = locale.dayName(date.getDay(), Locale.ShortFormat);
         const time = date.toLocaleTimeString(locale, Locale.ShortFormat);
         return zone && zone.abbreviation
             ? i18nc("@info weekday, time and time zone of a reset, e.g. Sun 7:00 AM EDT", "%1 %2 %3", day, time, zone.abbreviation)
             : i18nc("@info weekday and time of a reset, e.g. Sun 7:00 AM", "%1 %2", day, time);
+    }
+
+    // A time within a window, such as when its limit runs out, as a weekday
+    // and time: "Tue 3:30 AM". It carries no zone; the words around it say
+    // which clock the window keeps.
+    function weekdayTime(epoch, window) {
+        if (!Format.usable(epoch)) {
+            return "";
+        }
+        const date = zonedDate(epoch, window);
+        const locale = Qt.locale();
+        return i18nc("@info weekday and time within a weekly window, e.g. Tue 3:30 AM", "%1 %2",
+                     locale.dayName(date.getDay(), Locale.ShortFormat), date.toLocaleTimeString(locale, Locale.ShortFormat));
+    }
+
+    // A Date whose fields read as the wall clock at `epoch` for a window: in
+    // its clock zone when that differs from system time at the reset, else in
+    // system time, which keeps daylight saving right across the week.
+    function zonedDate(epoch, window) {
+        const zone = window ? window.clockZone : null;
+        const resetsAt = window && Format.usable(window.resetsAt) ? window.resetsAt : epoch;
+        const systemOffset = -new Date(resetsAt * 1000).getTimezoneOffset() * 60;
+        return zone && zone.offset !== systemOffset ? Format.wallClock(epoch, zone.offset) : new Date(epoch * 1000);
     }
 
     // "4:12 PM" today, the date and time otherwise, in system time.

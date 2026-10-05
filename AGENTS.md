@@ -12,7 +12,8 @@ GPL-3.0-or-later.
   ksystemstats; `GpuReader.qml` with `code/gpugate.js` decides when a discrete
   GPU may be read; `UsageData.qml` runs `contents/code/usage.py` for the
   Claude and Codex items; `contents/code/ringside-info.sh` reports hardware
-  facts ksystemstats doesn't publish.
+  facts ksystemstats doesn't publish. `code/pace.js` projects a weekly
+  limit's pace for the panel and the popup.
 - `tests/` holds the QtTest suites (`tests/qml/tst_*.qml`), the sh helper's
   fixtures (`tests/helper/`) and the Python helper's tests (`tests/python/`).
 - `scripts/`: install, test, test-floor, gallery, pictures, package.
