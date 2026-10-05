@@ -551,8 +551,7 @@ def parse_claude(usage):
     "scoped" in the order listed. Each is keyed by the model's display name:
     the endpoint leaves the model id empty today, and staying on the name keeps
     a pinned choice valid if ids appear later. Entries scoped to something
-    other than a model are skipped. The cinder_cove entry is the older unscoped
-    form of the Fable window and stands in when the list has no Fable entry.
+    other than a model are skipped.
     """
     weekly = usage.get("seven_day")
     if not weekly:
@@ -563,11 +562,6 @@ def parse_claude(usage):
         if limit.get("kind") == "weekly_scoped" and name and all(s["id"] != name for s in scoped):
             scoped.append({"id": name, "label": name,
                            **window_from(limit.get("percent"), limit.get("resets_at"), WEEK_SECONDS)})
-    fallback = usage.get("cinder_cove")
-    if (fallback and fallback.get("utilization") is not None
-            and not any("fable" in s["id"].lower() for s in scoped)):
-        scoped.append({"id": "Fable", "label": "Fable",
-                       **window_from(fallback["utilization"], fallback.get("resets_at"), WEEK_SECONDS)})
     return {"weekly": window_from(weekly.get("utilization"), weekly.get("resets_at"), WEEK_SECONDS),
             "scoped": scoped}
 

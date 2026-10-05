@@ -171,18 +171,11 @@ class ClaudeParsing(Isolated):
         scoped = usage.parse_claude(usage_body)["scoped"]
         self.assertEqual([(s["id"], s["percent"]) for s in scoped], [("Fable", 78), ("Opus", 9)])
 
-    def test_fable_falls_back_to_cinder_cove(self):
+    def test_model_limits_come_only_from_the_limits_list(self):
         usage_body = fixture("claude_usage.json")
         usage_body["limits"] = []
         usage_body["cinder_cove"] = {"utilization": 55.6, "resets_at": "2026-09-04T16:00:00Z"}
-        self.assertEqual(usage.parse_claude(usage_body)["scoped"],
-                         [{"id": "Fable", "label": "Fable", "percent": 56, "resetsAt": 1788537600,
-                           "windowSeconds": WEEK}])
-
-    def test_cinder_cove_does_not_duplicate_a_listed_fable(self):
-        usage_body = fixture("claude_usage.json")
-        usage_body["cinder_cove"] = {"utilization": 55.6, "resets_at": "2026-09-04T16:00:00Z"}
-        self.assertEqual([s["id"] for s in usage.parse_claude(usage_body)["scoped"]], ["Fable", "Opus"])
+        self.assertEqual(usage.parse_claude(usage_body)["scoped"], [])
 
     def test_scoped_is_empty_when_not_reported(self):
         usage_body = fixture("claude_usage.json")
