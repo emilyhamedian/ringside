@@ -255,4 +255,25 @@ QtObject {
         return reading.value === "–" ? i18nc("@info:tooltip no reading", "unavailable")
                                      : i18nc("@info:tooltip a transfer rate, e.g. 24.8 Mb/s", "%1 %2", reading.value, reading.unit);
     }
+
+    // A temperature sensor's label in plain words: k10temp's Tctl, Tdie and
+    // Tccd1, coretemp's Package id 0, amdgpu's edge, junction and mem. Any
+    // other label, such as an NVMe drive's Composite, is shown as it is.
+    function sensorName(raw) {
+        if (/^(Tctl|Tdie|Package id \d+|edge)$/.test(raw)) {
+            return i18nc("@label temperature sensor for a whole processor or GPU chip", "chip");
+        }
+        const chiplet = /^Tccd(\d+)$/.exec(raw);
+        if (chiplet) {
+            return i18nc("@label temperature sensor for one of a processor's chiplets, e.g. chiplet 1", "chiplet %1",
+                         Format.whole(Number(chiplet[1])));
+        }
+        switch (raw) {
+        case "junction":
+            return i18nc("@label temperature sensor for the hottest spot on a GPU", "hotspot");
+        case "mem":
+            return i18nc("@label temperature sensor for a GPU's memory", "memory");
+        }
+        return raw;
+    }
 }

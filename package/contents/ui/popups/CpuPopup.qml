@@ -41,7 +41,12 @@ PopupPage {
             return level === 2 ? Kirigami.Theme.negativeTextColor
                  : level === 1 ? Kirigami.Theme.neutralTextColor : Kirigami.Theme.textColor;
         }
-        caption: popup.monitor.cpuTemperatureLabel
+        caption: words.sensorName(popup.monitor.cpuTemperatureLabel)
+    }
+
+    Words {
+        id: words
+        monitor: popup.monitor
     }
 
     GridLayout {

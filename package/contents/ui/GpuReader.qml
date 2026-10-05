@@ -63,7 +63,9 @@ QtObject {
     // put on a ring: an older one may predate its going to sleep.
     readonly property bool subscribed: leading && wanted && ownPhase === "live" && (!gated || pmReadAt >= wantedSince)
     readonly property string name: present ? Format.gpuModel(info.name, nameSensor.value, info.pciName, info.vendor) : ""
-    readonly property string temperatureLabel: vendor === "1002" ? i18nc("@label amdgpu's edge temperature sensor", "edge") : ""
+    // amdgpu's hwmon label for the sensor ksystemstats reads; Words.sensorName()
+    // puts it in plain words.
+    readonly property string temperatureLabel: vendor === "1002" ? "edge" : ""
     // ksystemstats' Intel backend publishes no temperature and no VRAM.
     readonly property bool reportsTemperature: present && vendor !== "8086"
     readonly property bool reportsVram: present && vendor !== "8086"
