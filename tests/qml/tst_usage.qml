@@ -1050,6 +1050,28 @@ Item {
             verify(gap > fable.y - (all.y + all.height));
         }
 
+        // One limit with nothing to say has no bars, and its tile then sits
+        // as far under the ring as the CPU popup's first tile does.
+        function test_tileUnderTheHeader() {
+            const usage = monitor.usage;
+            setClaude({ weekly: usage.window(5, 7 * usage.day - 3 * 3600, [[0.1, 2], [0, 5]]), scoped: [] });
+            const popup = load("claude");
+            verify(rows(popup).every(r => !r.parent.visible), "no bars and no sentence");
+            const loader = host.createObject(root) as Loader;
+            loaders.push(loader);
+            loader.setSource(Qt.resolvedUrl("../../package/contents/ui/popups/CpuPopup.qml"), { monitor: monitor });
+            compare(loader.status, Loader.Ready);
+            const cpu = loader.item as Item;
+            waitForRendering(cpu);
+            const gap = page => {
+                const r = ring(page);
+                const tile = root.find(page, i => i.visible && i.graphNote !== undefined);
+                return tile.mapToItem(page, 0, 0).y - r.mapToItem(page, 0, r.height).y;
+            };
+            verify(gap(cpu) > 0);
+            compare(gap(popup), gap(cpu));
+        }
+
         // The countdown's caption shares the subtitle's baseline, plain and
         // mirrored, and the graph's tile spans the content's edges.
         function test_captionBaselineAndTileEdges_data() {
