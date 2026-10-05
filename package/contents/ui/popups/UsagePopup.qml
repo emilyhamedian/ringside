@@ -6,13 +6,15 @@ import QtQuick
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
 import "../code/format.js" as Format
+import "../code/pace.js" as Pace
 import "../code/style.js" as Style
 import ".."
 
 // Claude's or Codex's weekly limits: the all-models week in the header with
-// the time left until it resets, a bar for it and for each model's own
-// limit, and the week so far as a graph. A failed check or a signed-out CLI
-// is said in a line under the header.
+// the time left until it resets, a bar for it and for each model's own limit
+// with a sentence under one of them on where the current pace leads, and
+// the week so far as a graph. With one limit the header's ring is its bar.
+// A failed check or a signed-out CLI is said in a line under the header.
 PopupPage {
     id: popup
 
@@ -25,14 +27,61 @@ PopupPage {
     readonly property bool claude: item === "claude"
     // All models first, then every model's own limit, whichever the ring shows.
     readonly property var limits: weekly
-        ? [{ id: "", label: i18nc("@label the weekly limit shared by every model", "All models"),
-             percent: weekly.percent, resetsAt: weekly.resetsAt }].concat(Array.from(entry.scoped ?? []))
+        ? [Object.assign({}, weekly, { id: "", label: i18nc("@label the weekly limit shared by every model", "All models") })]
+            .concat(Array.from(entry.scoped ?? []))
         : []
-    // Stepped by the timer below, for the countdowns.
+    readonly property real pollAt: Pace.pollTime(entry, nowMs / 1000)
+    // Each limit's projection, in the order of limits.
+    readonly property var paces: limits.map(l => Pace.ofWindow(l, pollAt, nowMs / 1000))
+    // The one thing worth saying about the pace, as { index, p } into limits:
+    // every model locked out, else the soonest run-out of a limit not yet
+    // reached (the one warning nothing else on screen gives), else a model's
+    // reached limit, else how the week as a whole is going.
+    readonly property var paceEvent: {
+        const events = paces.map((p, index) => ({ index: index, p: p }));
+        if (events.length === 0) {
+            return null;
+        }
+        if (events[0].p.state === "reached") {
+            return events[0];
+        }
+        const out = events.filter(e => e.p.state === "out").reduce((a, b) => !a || b.p.runOut < a.p.runOut ? b : a, null);
+        return out ?? events.find(e => e.p.state === "reached") ?? (events[0].p.state !== "none" ? events[0] : null);
+    }
+    readonly property string paceText: paceEvent ? paceSentence(limits[paceEvent.index], paceEvent.p) : ""
+    // Stepped by the timer below, for the countdowns and the paces.
     property real nowMs: Date.now()
 
-    function tone(percent) {
-        const level = Format.level(percent);
+    function paceSentence(limit, p) {
+        const all = limit.id === "";
+        switch (p.state) {
+        case "reached": {
+            const when = Format.usable(p.reachedAt) ? words.weekdayTime(Math.round(p.reachedAt / 60) * 60, popup.weekly) : "";
+            return all ? (when ? i18nc("@info when the weekly limit was used up, e.g. Limit reached Sun 3:00 PM", "Limit reached %1", when)
+                               : i18nc("@info the weekly limit is used up", "Limit reached"))
+                       : (when ? i18nc("@info when a model's limit was used up, e.g. Fable limit reached Sun 3:00 PM", "%1 limit reached %2", limit.label, when)
+                               : i18nc("@info a model's limit is used up, e.g. Fable limit reached", "%1 limit reached", limit.label));
+        }
+        case "out": {
+            // To ten minutes: a projection to the minute claims more than it knows.
+            const when = words.weekdayTime(Math.round(p.runOut / 600) * 600, popup.weekly);
+            // The shared limit is named too: under the first of several bars,
+            // a bare "runs out" could be read as being about a model.
+            return !all ? i18nc("@info a model's limit runs out before the reset at the rate so far, e.g. At this pace, Fable runs out Tue 3:30 AM",
+                                "At this pace, %1 runs out %2", limit.label, when)
+                 : popup.limits.length > 1 ? i18nc("@info every model's shared weekly limit runs out before the reset at the rate so far, e.g. At this pace, all models run out Wed 12:20 PM",
+                                                   "At this pace, all models run out %1", when)
+                 : i18nc("@info the weekly limit runs out before the reset at the rate so far, e.g. At this pace, the weekly limit runs out Wed 12:20 PM",
+                         "At this pace, the weekly limit runs out %1", when);
+        }
+        case "lasts":
+            return i18nc("@info the share of the weekly limit used by the reset at the rate so far, e.g. At this pace, 93% by the reset",
+                         "At this pace, %1 by the reset", i18nc("@info a percentage", "%1%", Format.percent(p.atReset)));
+        }
+        return "";
+    }
+
+    function tone(level) {
         return level === 2 ? Kirigami.Theme.negativeTextColor
              : level === 1 ? Kirigami.Theme.neutralTextColor : Kirigami.Theme.textColor;
     }
@@ -52,12 +101,22 @@ PopupPage {
     }
 
     PopupHeader {
+        id: header
         ringValue: popup.weekly ? popup.weekly.percent : NaN
+        ringMinimumLevel: popup.paces.length > 0 ? Pace.alarm(popup.paces[0]) : 0
         title: popup.claude ? i18nc("@title", "Claude") : i18nc("@title", "Codex")
-        subtitle: i18nc("@info under Claude or Codex: what the popup shows", "Weekly limits")
-        value: popup.weekly ? words.countdown(popup.weekly.resetsAt, popup.nowMs) || "–" : ""
-        valueColor: popup.tone(ringValue)
-        caption: i18nc("@info:label under the time left, e.g. 2d 21h until reset", "until reset")
+        subtitle: i18ncp("@info under Claude or Codex: what the popup shows", "Weekly limit", "Weekly limits",
+                         popup.limits.length)
+        parts: popup.weekly ? words.countdownParts(popup.weekly.resetsAt, popup.nowMs) : []
+        value: popup.weekly && !header.partsShown ? "–" : ""
+        // The ring and bars carry the level; at the limit the countdown is
+        // how long the lock-out lasts, and only then does it turn red.
+        valueColor: popup.weekly && popup.weekly.percent >= 100 ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor
+        caption: header.partsShown ? i18nc("@info:label under the time left, e.g. 2d 21h until reset", "until reset") : ""
+        accessibleValue: header.partsShown
+            ? i18nc("@info:accessible the time left until the weekly reset, e.g. 5 days 18 hours until reset", "%1 until reset",
+                    words.duration(popup.weekly.resetsAt, popup.nowMs))
+            : ""
     }
 
     // The last check's failure, or why there is nothing to show.
@@ -86,13 +145,15 @@ PopupPage {
         horizontalAlignment: Text.AlignLeft
     }
 
+    // A bar per limit when there are several, with the pace sentence under
+    // the bar it is about; with one limit, the sentence alone.
     ColumnLayout {
-        visible: popup.weekly !== null
+        visible: popup.weekly !== null && (popup.limits.length > 1 || popup.paceText !== "")
         Layout.fillWidth: true
         Layout.leftMargin: Math.round(Kirigami.Units.largeSpacing * 2)
         Layout.rightMargin: Layout.leftMargin
         Layout.topMargin: Math.round(Kirigami.Units.smallSpacing / 2)
-        Layout.bottomMargin: Math.round(Kirigami.Units.largeSpacing * 1.25)
+        Layout.bottomMargin: Math.round(Kirigami.Units.largeSpacing * 1.75)
         spacing: Kirigami.Units.largeSpacing
 
         Repeater {
@@ -102,61 +163,85 @@ PopupPage {
                 id: row
 
                 required property var modelData
+                required property int index
                 // A model's limit that resets apart from the week says when.
                 readonly property string resets: modelData.id !== "" && popup.weekly
                     && Math.abs(modelData.resetsAt - popup.weekly.resetsAt) >= 60
                     ? words.countdown(modelData.resetsAt, popup.nowMs) : ""
+                // Raised, never lowered, by a run-out before the reset.
+                readonly property int level: {
+                    const base = Format.level(modelData.percent);
+                    const pace = popup.paces[index];
+                    return pace ? Pace.level(base, pace) : base;
+                }
 
                 Layout.fillWidth: true
                 spacing: Kirigami.Units.smallSpacing
 
-                Accessible.role: Accessible.ProgressBar
-                Accessible.name: modelData.label
-                Accessible.description: words.percentText(modelData.percent)
-
-                RowLayout {
+                ColumnLayout {
+                    visible: popup.limits.length > 1
                     Layout.fillWidth: true
-                    spacing: Kirigami.Units.largeSpacing
+                    spacing: Kirigami.Units.smallSpacing
 
-                    Text {
+                    Accessible.role: Accessible.ProgressBar
+                    Accessible.name: row.modelData.label
+                    Accessible.description: words.percentText(row.modelData.percent)
+
+                    RowLayout {
                         Layout.fillWidth: true
-                        text: row.modelData.label
-                        color: Kirigami.Theme.textColor
-                        elide: Text.ElideRight
-                        textFormat: Text.PlainText
-                        horizontalAlignment: Text.AlignLeft
+                        spacing: Kirigami.Units.largeSpacing
+
+                        Text {
+                            Layout.fillWidth: true
+                            text: row.modelData.label
+                            color: Kirigami.Theme.textColor
+                            elide: Text.ElideRight
+                            textFormat: Text.PlainText
+                            horizontalAlignment: Text.AlignLeft
+                        }
+
+                        Text {
+                            visible: row.resets !== ""
+                            text: i18nc("@info time left until this limit resets, e.g. resets in 4d 2h", "resets in %1", row.resets)
+                            color: Style.dim(Kirigami.Theme.textColor)
+                            font.pointSize: Kirigami.Theme.smallFont.pointSize
+                            textFormat: Text.PlainText
+                        }
+
+                        Text {
+                            text: i18nc("@info a percentage", "%1%", Format.percent(row.modelData.percent))
+                            color: popup.tone(row.level)
+                            font.family: Kirigami.Theme.defaultFont.family
+                            font.features: ({ "tnum": 1 })
+                            textFormat: Text.PlainText
+                        }
                     }
 
-                    Text {
-                        visible: row.resets !== ""
-                        text: i18nc("@info time left until this limit resets, e.g. resets in 4d 2h", "resets in %1", row.resets)
-                        color: Style.dim(Kirigami.Theme.textColor)
-                        font.pointSize: Kirigami.Theme.smallFont.pointSize
-                        textFormat: Text.PlainText
-                    }
+                    Rectangle {
+                        Layout.fillWidth: true
+                        implicitHeight: Math.round(Kirigami.Units.smallSpacing * 1.5)
+                        radius: height / 2
+                        color: Qt.alpha(Kirigami.Theme.textColor, 0.08)
 
-                    Text {
-                        text: i18nc("@info a percentage", "%1%", Format.percent(row.modelData.percent))
-                        color: popup.tone(row.modelData.percent)
-                        font.family: Kirigami.Theme.defaultFont.family
-                        font.features: ({ "tnum": 1 })
-                        textFormat: Text.PlainText
+                        Rectangle {
+                            anchors.left: parent.left
+                            width: parent.width * Math.max(0, Math.min(100, row.modelData.percent)) / 100
+                            height: parent.height
+                            radius: parent.radius
+                            color: popup.tone(row.level)
+                        }
                     }
                 }
 
-                Rectangle {
+                Text {
                     Layout.fillWidth: true
-                    implicitHeight: Math.round(Kirigami.Units.smallSpacing * 1.5)
-                    radius: height / 2
-                    color: Qt.alpha(Kirigami.Theme.textColor, 0.08)
-
-                    Rectangle {
-                        anchors.left: parent.left
-                        width: parent.width * Math.max(0, Math.min(100, row.modelData.percent)) / 100
-                        height: parent.height
-                        radius: parent.radius
-                        color: popup.tone(row.modelData.percent)
-                    }
+                    visible: text !== ""
+                    text: popup.paceEvent !== null && popup.paceEvent.index === row.index ? popup.paceText : ""
+                    color: Kirigami.Theme.textColor
+                    font.pointSize: Kirigami.Theme.smallFont.pointSize
+                    wrapMode: Text.Wrap
+                    textFormat: Text.PlainText
+                    horizontalAlignment: Text.AlignLeft
                 }
             }
         }
@@ -183,6 +268,7 @@ PopupPage {
                 window: popup.weekly
                 secondWindow: popup.innerLimit
                 nowMs: popup.nowMs
+                pollAt: popup.pollAt
             }
 
             RowLayout {

@@ -807,6 +807,14 @@ Item {
         property var monitor: null
         property var loaders: []
 
+        Component {
+            id: mirroredHost
+            Loader {
+                LayoutMirroring.enabled: true
+                LayoutMirroring.childrenInherit: true
+            }
+        }
+
         function init() {
             failOnWarning(/TypeError|ReferenceError|SyntaxError|is not a function|Unable to assign|Cannot assign|Binding loop/);
             monitor = monitorComponent.createObject(popups);
@@ -819,8 +827,8 @@ Item {
             monitor.destroy();
         }
 
-        function load(item) {
-            const loader = host.createObject(root) as Loader;
+        function load(item, mirrored) {
+            const loader = (mirrored ? mirroredHost : host).createObject(root) as Loader;
             loaders.push(loader);
             loader.setSource(Qt.resolvedUrl("../../package/contents/ui/popups/UsagePopup.qml"), { monitor: monitor, item: item });
             compare(loader.status, Loader.Ready);
@@ -834,6 +842,65 @@ Item {
             return root.find(popup, i => i.mainPoints !== undefined);
         }
 
+        function header(popup) {
+            return root.find(popup, i => i.partsShown !== undefined);
+        }
+
+        function ring(popup) {
+            return root.find(popup, i => i.outerTone !== undefined);
+        }
+
+        // The countdown's visible Readings, in the order of the parts.
+        function countdown(popup) {
+            const found = [];
+            const collect = i => {
+                if (i.numberWidth !== undefined) {
+                    if (i.visible && i.accessibleIgnored) {
+                        found.push(i);
+                    }
+                    return;
+                }
+                i.children.forEach(collect);
+            };
+            collect(header(popup));
+            return found;
+        }
+
+        function caption(popup) {
+            return root.find(header(popup), i => i.text === "until reset");
+        }
+
+        // Each limit's delegate, in order: its bar and the pace sentence.
+        function rows(popup) {
+            const found = [];
+            const collect = i => {
+                if (i.resets !== undefined && i.level !== undefined) {
+                    found.push(i);
+                    return;
+                }
+                i.children.forEach(collect);
+            };
+            collect(popup);
+            return found;
+        }
+
+        function sentence(row) {
+            return row.children.find(c => c.wrapMode === Text.Wrap) ?? null;
+        }
+
+        function bars(row) {
+            return row.children.find(c => c.wrapMode === undefined);
+        }
+
+        // The filled part of a row's bar.
+        function fill(row) {
+            return root.find(bars(row), i => i.radius !== undefined && i.parent.radius !== undefined);
+        }
+
+        function rowText(row, text) {
+            return root.find(row, i => i.text === text);
+        }
+
         function setClaude(changes) {
             const entries = monitor.usage.entries;
             monitor.usage.entries = Object.assign({}, entries, { claude: Object.assign({}, entries.claude, changes) });
@@ -842,41 +909,145 @@ Item {
         function test_innerLimit() {
             const popup = load("claude");
             const shown = root.texts(popup);
-            for (const text of ["Claude", "Weekly limits", "2d 21h", "until reset", "All models", "Fable", "52%", "78%",
+            for (const text of ["Claude", "Weekly limits", "until reset", "All models", "Fable", "52%", "78%",
                                 "— All models", "- - Fable"]) {
                 verify(shown.includes(text), text + " in " + JSON.stringify(shown));
             }
             verify(shown.some(t => /^THIS WEEK · resets .+ EDT$/.test(t)), JSON.stringify(shown));
             verify(!shown.some(t => t.startsWith("resets in")), "Fable resets with the week");
             verify(!shown.includes("Open System Monitor"), "the footer has the gear alone");
+            compare(countdown(popup).map(r => [r.value, r.unit]), [["2", "d"], ["21", "h"]]);
             compare(graph(popup).mainPoints.length, 17);
             compare(graph(popup).secondPoints.length, 17);
+            compare(graph(popup).pollAt, monitor.usage.createdAt);
         }
 
         // A limit's percentage is set like the other popups' numbers. The
         // header ring's centre, which says the same, is the panel ring's.
         function test_percentInSans() {
-            const rows = [];
+            const found = [];
             const collect = i => {
                 if (i.outerTone !== undefined) {
                     return;
                 }
                 if (i.text === "52%" && i.font !== undefined) {
-                    rows.push(i);
+                    found.push(i);
                 }
                 i.children.forEach(collect);
             };
             collect(load("claude"));
-            compare(rows.length, 1);
-            const percent = rows[0];
+            compare(found.length, 1);
+            const percent = found[0];
             compare(percent.font.family, Kirigami.Theme.defaultFont.family);
             compare(percent.font.features.tnum, 1);
         }
 
+        // The countdown is a Reading per part, stepped in place as time
+        // passes; the row is spoken as one, caption included.
+        function test_countdownKeepsItsReadings() {
+            const popup = load("claude");
+            const before = countdown(popup);
+            const row = before[0].parent;
+            compare(row.Accessible.name, "2 days 21 hours until reset");
+            verify(caption(popup).Accessible.ignored);
+            verify(before.every(r => r.accessibleIgnored));
+            popup.nowMs += 3600 * 1000;
+            const after = countdown(popup);
+            compare(after.map(r => r.value + r.unit), ["2d", "20h"]);
+            verify(after[0] === before[0] && after[1] === before[1], "the same Readings, not new ones");
+            compare(row.Accessible.name, "2 days 20 hours until reset");
+            popup.nowMs = (monitor.usage.entries.claude.weekly.resetsAt - 300) * 1000;
+            compare(countdown(popup).map(r => r.value + r.unit), ["5m"]);
+            popup.nowMs = (monitor.usage.entries.claude.weekly.resetsAt + 60) * 1000;
+            compare(countdown(popup).length, 0);
+            verify(root.texts(header(popup)).includes("–"), "a passed reset reads as a dash");
+            verify(!root.texts(header(popup)).includes("until reset"));
+        }
+
+        // The pairs follow the popup's direction, the largest unit first in
+        // reading order; each number stays before its unit, and the caption
+        // lines up with the row's outer edge.
+        function test_countdownMirrors_data() {
+            return [{ tag: "plain", mirrored: false }, { tag: "mirrored", mirrored: true }];
+        }
+
+        function test_countdownMirrors(data) {
+            const popup = load("claude", data.mirrored);
+            const [days, hours] = countdown(popup);
+            const x = r => r.mapToItem(popup, 0, 0).x;
+            verify(data.mirrored ? x(days) > x(hours) : x(days) < x(hours), x(days) + " " + x(hours));
+            verify(!days.LayoutMirroring.enabled && !hours.LayoutMirroring.enabled);
+            const row = days.parent;
+            const label = caption(popup);
+            const rowLeft = row.mapToItem(popup, 0, 0).x;
+            const labelLeft = label.mapToItem(popup, 0, 0).x;
+            if (data.mirrored) {
+                fuzzyCompare(labelLeft, rowLeft, 1);
+            } else {
+                fuzzyCompare(labelLeft + label.width, rowLeft + row.width, 1);
+            }
+        }
+
+        // The ring and the bars carry the level; the countdown turns red only
+        // once the limit is used up, when it is the time the lock-out lasts.
+        function test_countdownRedOnlyAtTheLimit_data() {
+            return [{ tag: "52", percent: 52, red: false }, { tag: "91", percent: 91, red: false },
+                    { tag: "100", percent: 100, red: true }];
+        }
+
+        function test_countdownRedOnlyAtTheLimit(data) {
+            const usage = monitor.usage;
+            setClaude({ weekly: usage.window(data.percent, 2 * usage.day + 21 * 3600, []) });
+            const readings = countdown(load("claude"));
+            compare(readings.length, 2);
+            const expected = String(data.red ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor);
+            readings.forEach(r => compare(String(r.color), expected));
+        }
+
         function test_codex() {
-            const shown = root.texts(load("codex"));
-            verify(shown.includes("Codex") && shown.includes("Weekly limits") && shown.includes("5d 4h"), JSON.stringify(shown));
+            const popup = load("codex");
+            const shown = root.texts(popup);
+            verify(shown.includes("Codex") && shown.includes("Weekly limit"), JSON.stringify(shown));
+            compare(countdown(popup).map(r => r.value + r.unit), ["5d", "4h"]);
             verify(!shown.some(t => t.startsWith("- - ")), "no dashed series without an inner ring");
+        }
+
+        // One limit has no bars: the header's ring says the same number, and
+        // "All models" contrasts with nothing. The subtitle is singular.
+        function test_oneLimitHasNoBars() {
+            const popup = load("codex");
+            const shown = root.texts(popup);
+            verify(!shown.includes("All models"), JSON.stringify(shown));
+            const only = rows(popup);
+            compare(only.length, 1);
+            verify(!bars(only[0]).visible);
+            verify(sentence(only[0]).visible, "the pace sentence takes the bars' place");
+            verify(shown.includes("Weekly limit") && !shown.includes("Weekly limits"));
+            const claude = root.texts(load("claude"));
+            verify(claude.includes("Weekly limits") && !claude.includes("Weekly limit"), JSON.stringify(claude));
+        }
+
+        // With one limit and nothing to say about its pace, the graph's tile
+        // follows the header directly.
+        function test_oneQuietLimitShowsNoColumn() {
+            const usage = monitor.usage;
+            setClaude({ weekly: usage.window(5, 7 * usage.day - 3 * 3600, [[0.1, 2], [0, 5]]), scoped: [] });
+            const popup = load("claude");
+            const only = rows(popup);
+            compare(only.length, 1);
+            verify(!only[0].parent.visible, "no bars and no sentence");
+        }
+
+        // A tile reads as apart from the last bar: more room under the bars
+        // than between them.
+        function test_barsBottomMargin() {
+            const [all, fable] = rows(load("claude"));
+            const column = all.parent;
+            const siblings = Array.from(column.parent.children);
+            const tiles = siblings.slice(siblings.indexOf(column) + 1).find(i => i.visible);
+            const gap = tiles.y - (column.y + column.height);
+            compare(gap, Math.round(Kirigami.Units.largeSpacing * 1.75));
+            verify(gap > fable.y - (all.y + all.height));
         }
 
         // Every model's limit gets a row, whichever the ring shows.
@@ -891,11 +1062,131 @@ Item {
             verify(!shown.some(t => t.startsWith("- - ")), "two limits and no choice: no inner ring");
         }
 
+        // The one thing worth saying about the pace, under the bar it is
+        // about, in the text colour. `row` is the limit it sits under; times
+        // are rounded as the sentence rounds them.
+        function test_paceSentence_data() {
+            const day = 86400;
+            const window = (percent, left, points) => ({ percent: percent, left: left, points: points });
+            return [
+                { tag: "modelOut", row: 1, expect: u => {
+                    // Fable: 78 % four days and three hours in.
+                    const w = u.entries.claude.scoped[0];
+                    const start = w.resetsAt - w.windowSeconds;
+                    return "At this pace, Fable runs out " + wallClock(u, start + (u.createdAt - start) * 100 / 78, 600);
+                } },
+                { tag: "allOutFirst", row: 0,
+                  weekly: window(60, 4 * day, [[3, 0], [2, 20], [1, 40], [0, 60]]),
+                  scoped: [{ id: "Fable", label: "Fable", w: window(30, 4 * day, [[3, 0], [0, 30]]) }],
+                  expect: u => "At this pace, all models run out " + wallClock(u, u.createdAt + 2 * day, 600) },
+                { tag: "oneLimitOut", row: 0,
+                  weekly: window(60, 4 * day, [[3, 0], [2, 20], [1, 40], [0, 60]]), scoped: [],
+                  expect: u => "At this pace, the weekly limit runs out " + wallClock(u, u.createdAt + 2 * day, 600) },
+                { tag: "lasts", row: 0,
+                  weekly: window(30, 4 * day, [[3, 0], [0, 30]]), scoped: [],
+                  expect: u => "At this pace, 70% by the reset" },
+                { tag: "everyModelLockedOut", row: 0,
+                  weekly: window(100, 2 * day, [[3, 50], [2, 100], [0, 100]]),
+                  expect: u => "Limit reached " + wallClock(u, u.createdAt - 2 * day, 60) },
+                { tag: "reachedAtAnUnknownTime", row: 0,
+                  weekly: window(100, 2 * day, []), scoped: [],
+                  expect: u => "Limit reached" },
+                { tag: "modelReached", row: 1,
+                  scoped: [{ id: "Fable", label: "Fable", w: window(100, 2 * day + 21 * 3600, [[1, 90], [0.5, 100], [0, 100]]) }],
+                  expect: u => "Fable limit reached " + wallClock(u, u.createdAt - day / 2, 60) },
+                // A runaway first day already warns.
+                { tag: "runawayFirstDay", row: 0,
+                  weekly: window(70, 7 * day - 18 * 3600, [[0.75, 0], [0, 70]]), scoped: [],
+                  expect: u => "At this pace, the weekly limit runs out "
+                      + wallClock(u, u.createdAt - 18 * 3600 + day * 100 / 70, 600) },
+                // A quiet one has nothing to say, and never says it is too early.
+                { tag: "quietFirstDay", row: -1,
+                  weekly: window(5, 7 * day - 3 * 3600, [[0.1, 2], [0, 5]]), scoped: [], expect: u => "" },
+                { tag: "resetPassed", row: -1,
+                  weekly: window(40, -60, [[3, 10], [0, 40]]), scoped: [], expect: u => "" }
+            ];
+        }
+
+        function wallClock(usage, epoch, step) {
+            return words.weekdayTime(Math.round(epoch / step) * step, usage.entries.claude.weekly);
+        }
+
+        function test_paceSentence(data) {
+            const usage = monitor.usage;
+            const changes = {};
+            if (data.weekly) {
+                changes.weekly = usage.window(data.weekly.percent, data.weekly.left, data.weekly.points);
+            }
+            if (data.scoped) {
+                changes.scoped = data.scoped.map(s => Object.assign({ id: s.id, label: s.label },
+                                                                    usage.window(s.w.percent, s.w.left, s.w.points)));
+            }
+            setClaude(changes);
+            const popup = load("claude");
+            const all = rows(popup);
+            const said = all.map(r => sentence(r)).filter(s => s.visible);
+            const expected = data.expect(usage);
+            verify(!root.texts(popup).some(t => /early/i.test(t)), JSON.stringify(root.texts(popup)));
+            if (data.row < 0) {
+                compare(said.length, 0);
+                return;
+            }
+            compare(said.length, 1);
+            const text = sentence(all[data.row]);
+            compare(text.text, expected);
+            compare(String(text.color), String(Kirigami.Theme.textColor));
+            compare(text.textFormat, Text.PlainText);
+            if (all.length > 1) {
+                const bar = bars(all[data.row]);
+                verify(bar.visible);
+                verify(text.mapToItem(popup, 0, 0).y >= bar.mapToItem(popup, 0, bar.height).y,
+                       "the sentence sits under its bar");
+                if (data.row + 1 < all.length) {
+                    verify(text.mapToItem(popup, 0, text.height).y <= all[data.row + 1].mapToItem(popup, 0, 0).y,
+                           "and above the next limit");
+                }
+            }
+        }
+
+        // A run-out before the reset raises a limit's level to red, never
+        // lowers it: the row's percentage and bar, and the header's ring for
+        // the shared week.
+        function test_paceRaisesTheLevel() {
+            const red = String(Kirigami.Theme.negativeTextColor);
+            const plain = String(Kirigami.Theme.textColor);
+            let popup = load("claude");
+            let [all, fable] = rows(popup);
+            compare(fable.level, 2);
+            compare(String(rowText(fable, "78%").color), red);
+            compare(String(fill(fable).color), red);
+            compare(all.level, 0);
+            compare(String(rowText(all, "52%").color), plain);
+            compare(String(fill(all).color), plain);
+            compare(header(popup).ringMinimumLevel, 0);
+            compare(String(ring(popup).outerTone), plain);
+
+            const usage = monitor.usage;
+            setClaude({ weekly: usage.window(60, 4 * usage.day, [[3, 0], [0, 60]]) });
+            popup = load("claude");
+            [all, fable] = rows(popup);
+            compare(all.level, 2);
+            compare(String(rowText(all, "60%").color), red);
+            compare(header(popup).ringMinimumLevel, 2);
+            compare(String(ring(popup).outerTone), red);
+
+            // 91 % that lasts to the reset stays at its own level.
+            setClaude({ weekly: usage.window(91, 3600, [[6.9, 0], [0, 91]]), scoped: [] });
+            popup = load("claude");
+            compare(header(popup).ringMinimumLevel, 0);
+            compare(String(ring(popup).outerTone), red);
+        }
+
         function test_signedOut() {
             monitor.usage.entries = { claude: { status: "signed_out" } };
             const shown = root.texts(load("claude"));
             verify(shown.includes("Run claude in a terminal to sign in."), JSON.stringify(shown));
             verify(!shown.includes("All models") && !shown.includes("until reset"), JSON.stringify(shown));
+            verify(!shown.some(t => t.startsWith("At this pace")), JSON.stringify(shown));
             monitor.usage.entries = {};
             monitor.usage.helperError = "python3 was not found on the Plasma session's PATH.";
             verify(root.texts(load("codex")).includes(monitor.usage.helperError));
@@ -912,14 +1203,26 @@ Item {
             verify(root.texts(popup).includes("52%"), "the last reading stays");
         }
 
+        // The pace is measured to the poll the reading came from, so a
+        // reading hours old doesn't understate the rate.
+        function test_paceFromThePoll() {
+            const usage = monitor.usage;
+            setClaude({ fetchedAt: usage.createdAt - 6 * 3600 });
+            const popup = load("claude");
+            compare(popup.pollAt, usage.createdAt - 6 * 3600);
+            verify(graph(popup).stale, "a reading six hours old is marked");
+            setClaude({ fetchedAt: undefined });
+            compare(popup.pollAt, usage.entries.claude.weekly.history[usage.entries.claude.weekly.history.length - 1][0]);
+        }
+
         function test_emptyHistory() {
             const usage = monitor.usage;
             setClaude({ weekly: usage.window(0, 6 * usage.day, []), scoped: [] });
             const g = graph(load("claude"));
             verify(g.placed);
             compare(g.mainPoints.length, 0);
-            compare(g.dayXs.length, 6);
-            verify(Number.isFinite(g.nowX));
+            verify(!g.stale);
+            compare(g.mainRunOut.length, 0);
         }
 
         function test_fullWeek() {
@@ -933,7 +1236,7 @@ Item {
             const g = graph(popup);
             compare(g.mainPoints.length, history.length);
             verify(g.mainPoints[0].x >= 0 && g.mainPoints[g.mainPoints.length - 1].x <= g.width);
-            verify(root.texts(popup).includes("1h 0m"), JSON.stringify(root.texts(popup)));
+            compare(countdown(popup).map(r => r.value + r.unit), ["1h", "0m"]);
         }
     }
 
@@ -1162,31 +1465,64 @@ Item {
         when: windowShown
 
         readonly property real start: 1000000
-        readonly property real week: 7 * 86400
+        readonly property real day: 86400
+        readonly property real week: 7 * day
 
-        function make(history, nowMs) {
+        Component {
+            id: mirroredGraph
+            Item {
+                width: 700
+                height: 100
+                LayoutMirroring.enabled: true
+                LayoutMirroring.childrenInherit: true
+                WeekGraph {
+                    anchors.fill: parent
+                }
+            }
+        }
+
+        // A week from `start` read at `at` (epoch seconds) with `percent`
+        // and `history`, seen at `now`.
+        function make(history, options) {
+            const o = options ?? {};
             return createTemporaryObject(graphComponent, root, {
-                window: { resetsAt: start + week, windowSeconds: week, history: history },
-                nowMs: nowMs ?? (start + 86400) * 1000
+                window: { resetsAt: start + week, windowSeconds: week, percent: o.percent ?? NaN, history: history },
+                pollAt: o.at ?? NaN,
+                nowMs: (o.now ?? o.at ?? start + day) * 1000
             });
+        }
+
+        function rule(g) {
+            return root.find(g, i => i.limitY !== undefined);
+        }
+
+        // Where a percentage lands: 100 % on the rule, 0 % half a stroke
+        // above the bottom.
+        function yOf(g, percent) {
+            const top = rule(g).limitY;
+            return top + (1 - percent / 100) * (g.height - 0.75 - top);
+        }
+
+        // The graph's own Rectangles, outside the rule.
+        function rectangles(g) {
+            return g.children.filter(i => i.radius !== undefined && i.visible);
         }
 
         function test_pointsSpanTheWindow() {
             const g = make([[start - 10, 5], [start, 0], [start + week / 2, 50], [start + week, 100], [start + week + 10, 7]]);
-            compare(g.mainPoints.map(p => [p.x, p.y]), [[0, 100], [350, 50], [700, 0]]);
-            compare(g.dayXs, [100, 200, 300, 400, 500, 600]);
-            compare(g.nowX, 100);
+            compare(g.mainPoints.map(p => p.x), [0, 350, 700]);
+            fuzzyCompare(g.mainPoints[0].y, g.height - 0.75, 1e-9);
+            fuzzyCompare(g.mainPoints[1].y, yOf(g, 50), 1e-9);
+            fuzzyCompare(g.mainPoints[2].y, rule(g).limitY, 1e-9);
+            verify(rule(g).limitY >= Kirigami.Units.smallSpacing, "100 % is on the rule, under its label's room");
         }
 
         function test_secondSeriesSharesTheAxis() {
             const g = make([]);
-            g.secondWindow = { resetsAt: start + 3 * 86400, windowSeconds: week, history: [[start + 86400, 20]] };
-            compare(g.secondPoints.map(p => [p.x, p.y]), [[100, 80]]);
-        }
-
-        function test_nowStaysInside() {
-            compare(make([], (start - 3600) * 1000).nowX, 0);
-            compare(make([], (start + week + 3600) * 1000).nowX, 700);
+            g.secondWindow = { resetsAt: start + 3 * day, windowSeconds: week, history: [[start + day, 20]] };
+            compare(g.secondPoints.length, 1);
+            compare(g.secondPoints[0].x, 100);
+            fuzzyCompare(g.secondPoints[0].y, yOf(g, 20), 1e-9);
         }
 
         function test_noResetTimeDrawsNothing() {
@@ -1194,8 +1530,123 @@ Item {
             g.window = { resetsAt: null, windowSeconds: week, history: [[start, 10]] };
             verify(!g.placed);
             compare(g.mainPoints.length, 0);
-            compare(g.dayXs.length, 0);
-            verify(isNaN(g.nowX));
+            verify(!rule(g).visible);
+            compare(rectangles(g).length, 0, "no floor, tick, marker or dot");
+        }
+
+        // A faint floor across the whole width and a short tick at the
+        // reset, in the rule's colour.
+        function test_baselineAndResetTick() {
+            const g = make([[start, 0], [start + day, 9]], { percent: 9, at: start + day });
+            const r = rule(g);
+            const floor = rectangles(g).find(i => i.height === 1);
+            verify(floor);
+            compare(floor.x, 0);
+            compare(floor.y, g.height - 1);
+            compare(floor.width, g.width);
+            compare(String(floor.color), String(r.lineColor));
+            const tick = rectangles(g).find(i => i.width === 1 && i.height > 1);
+            verify(tick);
+            compare(tick.x, g.width - 1);
+            compare(tick.y + tick.height, g.height);
+            verify(tick.height <= Kirigami.Units.smallSpacing + 1, tick.height);
+            compare(String(tick.color), String(r.lineColor));
+        }
+
+        // A dotted line from the last point to 100 % at the run-out, only for
+        // a limit on course to run out before the reset. It joins the rule's
+        // series, so the "100%" label keeps clear of it.
+        function test_projectionOnlyWhenOut_data() {
+            return [
+                { tag: "out", percent: 60, at: start + 3 * day, runOut: start + 5 * day },
+                { tag: "lasts", percent: 30, at: start + 3 * day },
+                { tag: "reached", percent: 100, at: start + 3 * day },
+                { tag: "tooEarlyToTell", percent: 5, at: start + 3 * 3600 },
+                { tag: "resetPassed", percent: 60, at: start + 3 * day, now: start + week + 60 }
+            ];
+        }
+
+        function test_projectionOnlyWhenOut(data) {
+            const g = make([[start, 0], [data.at, data.percent]], data);
+            const dotted = g.children.find(i => i.data !== undefined
+                && Array.from(i.data).some(p => p.dashPattern !== undefined && p.dashPattern[0] === 1));
+            verify(dotted);
+            if (data.runOut === undefined) {
+                compare(g.mainRunOut.length, 0);
+                verify(!dotted.visible);
+                return;
+            }
+            verify(dotted.visible);
+            compare(g.mainRunOut.length, 2);
+            const last = g.mainPoints[g.mainPoints.length - 1];
+            compare([g.mainRunOut[0].x, g.mainRunOut[0].y], [last.x, last.y]);
+            fuzzyCompare(g.mainRunOut[1].x, (data.runOut - start) / week * g.width, 1e-9);
+            fuzzyCompare(g.mainRunOut[1].y, rule(g).limitY, 1e-9);
+            verify(rule(g).series.some(s => s.length === 2 && s[1].x === g.mainRunOut[1].x && s[1].y === g.mainRunOut[1].y),
+                   "the run-out is among the rule's series");
+        }
+
+        function test_secondLimitRunsOutToo() {
+            const g = make([[start, 0], [start + 3 * day, 30]], { percent: 30, at: start + 3 * day });
+            g.secondWindow = { resetsAt: start + week, windowSeconds: week, percent: 70,
+                               history: [[start, 0], [start + 3 * day, 70]] };
+            compare(g.mainRunOut.length, 0);
+            compare(g.secondRunOut.length, 2);
+            fuzzyCompare(g.secondRunOut[1].x, 3 * day * 100 / 70 / week * g.width, 1e-9);
+        }
+
+        // The label sits at the right end, where the week is still to come,
+        // and moves left when a run-out ends under it there.
+        function test_labelAvoidsTheRunOut() {
+            const at = start + 3 * day;
+            const lasting = make([[start, 0], [at, 40]], { percent: 40, at: at });
+            verify(!rule(lasting).atStart);
+            const late = 3 * day * 100 / (week - 2 * 3600);
+            const running = make([[start, 0], [at, late]], { percent: late, at: at });
+            compare(running.mainRunOut.length, 2);
+            verify(rule(running).atStart);
+        }
+
+        function test_singleReadingIsADot() {
+            const g = make([[start + day, 20]], { percent: 20, at: start + day });
+            compare(g.mainPoints.length, 1);
+            const dot = rectangles(g).find(i => i.radius > 0);
+            verify(dot);
+            const p = g.mainPoints[0];
+            fuzzyCompare(dot.x + dot.width / 2, p.x, 1e-9);
+            fuzzyCompare(dot.y + dot.height / 2, p.y, 1e-9);
+            const line = make([[start, 0], [start + day, 20]], { percent: 20, at: start + day });
+            verify(!rectangles(line).some(i => i.radius > 0), "a line has no dot");
+        }
+
+        // Within two hours the line's end shows now; past that a marker does.
+        function test_staleMarker_data() {
+            return [{ tag: "fresh", age: 3600, stale: false }, { tag: "stale", age: 3 * 3600, stale: true }];
+        }
+
+        function test_staleMarker(data) {
+            const now = start + 3 * day;
+            const g = make([[start, 0], [now - data.age, 20]], { percent: 20, at: now - data.age, now: now });
+            compare(g.stale, data.stale);
+            const marker = rectangles(g).find(i => i.width === 1 && i.y === rule(g).ruleY);
+            compare(marker !== undefined, data.stale);
+            if (data.stale) {
+                compare(marker.x, Math.round(3 * day / week * g.width));
+                compare(marker.y + marker.height, g.height);
+            }
+            verify(!make([], { percent: 0, at: now - data.age, now: now }).stale, "no line, nothing to mark");
+        }
+
+        // Time runs left to right in every language.
+        function test_noMirroring() {
+            const host = createTemporaryObject(mirroredGraph, root);
+            const g = host.children[0];
+            g.window = { resetsAt: start + week, windowSeconds: week, percent: 50,
+                         history: [[start, 0], [start + week / 2, 50]] };
+            verify(!g.LayoutMirroring.enabled);
+            compare(g.mainPoints[0].x, 0);
+            const label = root.find(rule(g), i => i.text === "100%");
+            compare(label.x, g.width - label.implicitWidth);
         }
     }
 }

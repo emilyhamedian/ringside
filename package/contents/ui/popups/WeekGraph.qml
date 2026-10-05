@@ -5,23 +5,32 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Shapes
 import org.kde.kirigami as Kirigami
+import "../code/pace.js" as Pace
 
 // A weekly limit's use through its window: time from the window's start to
-// its reset across, 0 to 100 % up, with a faint line per day and a marker at
-// the current time. The faint diagonal is an even pace, the use that would
-// reach the limit just as the week resets, so a line above it is ahead of
-// pace. The main series is filled; a second one, the model limit on the
-// inner ring, is dashed, as in Graph. The line ends at the last poll, since
-// nothing is known about the use after it.
+// its reset across, 0 to 100 % up, between a faint floor and the labelled
+// 100 % rule the system graphs share (LimitRule), with a tick at the reset.
+// The main series is filled; a second one, the model limit on the inner
+// ring, is dashed, as in Graph. The line ends at the last poll, so the empty
+// stretch to its right is the time left; only when the last poll is hours
+// old does a marker say where now is. A limit on course to run out before
+// the reset gets a dotted line on to where it reaches 100 %, the time the
+// pace sentence under the bars names.
 Item {
     id: graph
 
-    // A window as the helper reports it: resetsAt, windowSeconds and a
-    // history of [epoch seconds, percent], oldest first.
+    // Time runs left to right in every language.
+    LayoutMirroring.enabled: false
+    LayoutMirroring.childrenInherit: true
+
+    // A window as the helper reports it: resetsAt, windowSeconds, percent and
+    // a history of [epoch seconds, percent], oldest first.
     property var window: null
-    // Another window's history, drawn dashed on this window's time axis.
+    // Another window, drawn dashed on this window's time axis.
     property var secondWindow: null
     property real nowMs: Date.now()
+    // When the readings were last fetched, in epoch seconds.
+    property real pollAt: NaN
     property color color: Kirigami.Theme.textColor
     property real fillOpacity: 0.15
 
@@ -32,22 +41,25 @@ Item {
 
     readonly property var mainPoints: points(window)
     readonly property var secondPoints: points(secondWindow)
-    readonly property real nowX: placed ? Math.max(0, Math.min(width, xAt(nowMs / 1000))) : NaN
-    // A line where each day of the window starts, counted back from the reset.
-    readonly property var dayXs: {
-        const list = [];
-        for (let t = end - 86400; placed && t > start; t -= 86400) {
-            list.unshift(xAt(t));
-        }
-        return list;
-    }
+    // Each window's projection, as the popup's sentence reads it.
+    readonly property var mainPace: Pace.ofWindow(window, pollAt, nowMs / 1000)
+    readonly property var secondPace: Pace.ofWindow(secondWindow, pollAt, nowMs / 1000)
+    readonly property var mainRunOut: runOut(mainPoints, mainPace)
+    readonly property var secondRunOut: runOut(secondPoints, secondPace)
+
+    // Two hours are about 4 px of a week: within that, the line's end
+    // already shows now. Later than that, checks have been failing, which
+    // the line under the header says.
+    readonly property bool stale: placed && mainPoints.length > 0 && pollAt < nowMs / 1000 - 7200
 
     function xAt(epoch) {
         return (epoch - start) / (end - start) * width;
     }
 
+    // 100 % on the rule; 0 % half a stroke above the bottom, so a line
+    // along it is drawn whole rather than half clipped.
     function yAt(percent) {
-        return height - Math.max(0, Math.min(100, percent)) / 100 * height;
+        return rule.limitY + (1 - Math.max(0, Math.min(100, percent)) / 100) * (height - 0.75 - rule.limitY);
     }
 
     // The window's samples inside this graph's window, as points.
@@ -59,49 +71,64 @@ Item {
             .map(p => Qt.point(xAt(p[0]), yAt(p[1])));
     }
 
+    // From a series' last point to where its limit runs out, while the pace
+    // says it will before the reset; otherwise no segment.
+    function runOut(series, pace) {
+        if (series.length === 0 || pace.state !== "out") {
+            return [];
+        }
+        return [series[series.length - 1], Qt.point(xAt(pace.runOut), yAt(100))];
+    }
+
     implicitHeight: Kirigami.Units.gridUnit * 3.2
     clip: true
 
-    Repeater {
-        model: graph.dayXs
-        delegate: Rectangle {
-            required property real modelData
-            x: Math.round(modelData)
-            width: 1
-            height: graph.height
-            color: Qt.alpha(Kirigami.Theme.textColor, 0.07)
-        }
+    LimitRule {
+        id: rule
+        anchors.fill: parent
+        visible: graph.placed
+        // The week so far lies to the left; the right end is still to come.
+        preferEnd: true
+        series: [graph.mainPoints, graph.secondPoints, graph.mainRunOut, graph.secondRunOut]
     }
 
-    // A rule at half the limit.
+    // The floor, so a low week reads against 0 %, and the reset's tick at
+    // the right end, so the time left reads as part of the week.
     Rectangle {
-        y: Math.round(graph.height / 2)
+        visible: graph.placed
+        y: graph.height - 1
         width: graph.width
         height: 1
-        color: Qt.alpha(Kirigami.Theme.textColor, 0.07)
-    }
-
-    Shape {
-        anchors.fill: parent
-        preferredRendererType: Shape.CurveRenderer
-        visible: graph.placed
-
-        ShapePath {
-            strokeColor: Qt.alpha(graph.color, 0.25 * graph.color.a)
-            strokeWidth: 1
-            fillColor: "transparent"
-            startX: 0
-            startY: graph.height
-            PathLine { x: graph.width; y: 0 }
-        }
+        color: rule.lineColor
     }
 
     Rectangle {
         visible: graph.placed
-        x: Math.min(graph.width - width, Math.round(graph.nowX))
+        x: graph.width - 1
+        y: graph.height - height
         width: 1
-        height: graph.height
+        height: Kirigami.Units.smallSpacing + 1
+        color: rule.lineColor
+    }
+
+    Rectangle {
+        visible: graph.stale
+        x: Math.min(graph.width - width, Math.round(Math.max(0, graph.xAt(graph.nowMs / 1000))))
+        y: rule.ruleY
+        width: 1
+        height: graph.height - rule.ruleY
         color: Qt.alpha(graph.color, 0.45 * graph.color.a)
+    }
+
+    // A first reading has no line yet; it shows as a dot.
+    Rectangle {
+        visible: graph.mainPoints.length === 1
+        width: 3
+        height: 3
+        radius: 1.5
+        x: graph.mainPoints.length === 1 ? graph.mainPoints[0].x - 1.5 : 0
+        y: graph.mainPoints.length === 1 ? graph.mainPoints[0].y - 1.5 : 0
+        color: graph.color
     }
 
     Shape {
@@ -141,6 +168,31 @@ Item {
             dashPattern: [2, 1.33]
             fillColor: "transparent"
             PathPolyline { path: graph.secondPoints }
+        }
+    }
+
+    // The run-outs, dotted in their series' colours.
+    Shape {
+        anchors.fill: parent
+        preferredRendererType: Shape.CurveRenderer
+        visible: graph.mainRunOut.length > 0 || graph.secondRunOut.length > 0
+
+        ShapePath {
+            strokeColor: graph.mainRunOut.length > 0 ? graph.color : "transparent"
+            strokeWidth: 1.5
+            strokeStyle: ShapePath.DashLine
+            dashPattern: [1, 2]
+            fillColor: "transparent"
+            PathPolyline { path: graph.mainRunOut }
+        }
+
+        ShapePath {
+            strokeColor: graph.secondRunOut.length > 0 ? Qt.alpha(graph.color, 0.55 * graph.color.a) : "transparent"
+            strokeWidth: 1.5
+            strokeStyle: ShapePath.DashLine
+            dashPattern: [1, 2]
+            fillColor: "transparent"
+            PathPolyline { path: graph.secondRunOut }
         }
     }
 }

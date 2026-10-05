@@ -19,6 +19,8 @@ Item {
     // For graphs whose right end is still to come, such as the week so far.
     property bool preferEnd: false
 
+    // The rule's colour, which the week graph's floor and reset tick share.
+    readonly property color lineColor: Qt.alpha(Kirigami.Theme.textColor, 0.12)
     readonly property real inkHeight: Math.ceil(ink.tightBoundingRect.height)
     // A full smallSpacing over the label, so it reads as part of the graph
     // and not as a second line of the tile's caption.
@@ -48,7 +50,7 @@ Item {
         y: rule.ruleY
         width: Math.max(0, rule.width - rule.span)
         height: 1
-        color: Qt.alpha(Kirigami.Theme.textColor, 0.12)
+        color: rule.lineColor
     }
 
     Text {
