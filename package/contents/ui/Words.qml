@@ -51,7 +51,11 @@ QtObject {
     // use or the time to the weekly reset; empty where there is none, as for
     // Intel GPUs, which publish no temperature. `level` and `heat` choose
     // their colours (see Readout). The integrated GPU's temperature stays in
-    // the words and the popup.
+    // the words and the popup. A countdown also comes as its `parts`, for
+    // Readout to set the units small. It keeps to the days from a day out,
+    // "6d", and to hours and minutes on the last day, "23h 5m"; the popup and
+    // the words give both. With the limit reached it turns red, as in the
+    // popup, since it then says how long the lock-out lasts.
     function readout(item, nowMs) {
         const percent = value => Number.isFinite(value) ? i18nc("@info:status a percentage", "%1%", Format.percent(value)) : "–";
         const temperature = celsius => Format.temperatureValid(celsius)
@@ -77,8 +81,9 @@ QtObject {
         }
         const entry = monitor.usage.entry(item);
         const weekly = entry && entry.weekly ? entry.weekly : null;
+        const parts = countdownParts(weekly ? weekly.resetsAt : null, nowMs ?? Date.now(), true);
         return { first: percent(weekly ? weekly.percent : NaN), level: Format.level(weekly ? weekly.percent : NaN),
-                 second: countdown(weekly ? weekly.resetsAt : null, nowMs ?? Date.now()) || "–" };
+                 second: spelled(parts) || "–", parts: parts, heat: parts.length > 0 && weekly.percent >= 100 ? 2 : 0 };
     }
 
     // A Claude or Codex item: its weekly use, the limit on its inner ring,

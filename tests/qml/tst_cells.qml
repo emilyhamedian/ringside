@@ -86,6 +86,11 @@ Item {
         return findAll(item, test)[0] ?? null;
     }
 
+    // A countdown's styled text as the words it shows: "23h 5m".
+    function plain(text) {
+        return text.replace(/<[^>]*>/g, "").replace(/&#8201;/g, " ").replace(/\u200f/g, "");
+    }
+
     // Texts with their digits, in any locale, as "0", so readings that
     // differ only in their digits read the same.
     function shape(texts) {
@@ -112,6 +117,24 @@ Item {
             ring: 34
             textShown: true
             twoLines: true
+        }
+    }
+
+    Component {
+        id: mirrorComponent
+        Item {
+            LayoutMirroring.enabled: true
+            LayoutMirroring.childrenInherit: true
+            width: 400
+            height: 100
+        }
+    }
+
+    // The countdown's markup in a text of its own, to compare the drawn one with.
+    Component {
+        id: styledComponent
+        Text {
+            textFormat: Text.StyledText
         }
     }
 
@@ -656,26 +679,29 @@ Item {
                 { tag: "only gpu asleep", item: "gpu", outer: asleep, inner: { present: false }, lines: ["off", ""], tones: ["dim", "dim"] },
                 { tag: "intel only", item: "gpu", outer: { reportsTemperature: false, kind: "integrated" }, inner: { present: false },
                   lines: [percent(12), ""], tones: ["text", "dim"] },
-                { tag: "claude", item: "claude", lines: [percent(52), digits(2) + "d " + digits(21) + "h"], tones: ["text", "dim"] },
-                { tag: "claude 81 %", item: "claude", week: [81, 2 * day + 21 * 3600], lines: [percent(81), digits(2) + "d " + digits(21) + "h"],
+                { tag: "claude", item: "claude", lines: [percent(52), digits(2) + "d"], tones: ["text", "dim"] },
+                { tag: "claude 81 %", item: "claude", week: [81, 2 * day + 21 * 3600], lines: [percent(81), digits(2) + "d"],
                   tones: ["neutral", "dim"] },
+                { tag: "claude last day", item: "claude", week: [40, 23 * 3600 + 5 * 60], lines: [percent(40), digits(23) + "h " + digits(5) + "m"],
+                  tones: ["text", "dim"] },
                 { tag: "claude 95 %", item: "claude", week: [95, 5 * 3600 + 12 * 60], lines: [percent(95), digits(5) + "h " + digits(12) + "m"],
                   tones: ["negative", "dim"] },
                 { tag: "claude minutes", item: "claude", week: [40, 12 * 60], lines: [percent(40), digits(12) + "m"], tones: ["text", "dim"] },
                 { tag: "claude reset passed", item: "claude", week: [40, -600], lines: [percent(40), "–"], tones: ["text", "dim"] },
                 { tag: "claude no weekly", item: "claude", week: null, lines: ["–", "–"], tones: ["text", "dim"] },
-                { tag: "codex", item: "codex", lines: [percent(24), digits(5) + "d " + digits(4) + "h"], tones: ["text", "dim"] }
+                { tag: "codex", item: "codex", lines: [percent(24), digits(5) + "d"], tones: ["text", "dim"] }
             ];
         }
 
         // The ring's own reading, heavier and in the ring's colour, over a
-        // dimmer one in its own heat colour.
+        // dimmer one in its own heat colour. A countdown is a day count from
+        // a day out, then hours and minutes.
         function test_lines(data) {
             apply(data.item, data);
             const c = cell(data.item);
             const first = line(c, "first");
             const second = line(c, "second");
-            compare([first.text, second.text], data.lines);
+            compare([first.text, root.plain(second.text)], data.lines);
             compare(String(first.color), root.tone(data.tones[0]), "line 1 colour");
             compare(String(second.color), root.tone(data.tones[1]), "line 2 colour");
             checkFace(first, Font.DemiBold, "line 1");
@@ -722,7 +748,8 @@ Item {
             return [
                 { tag: "cpu", item: "cpu", texts: [percent(23), "·", degrees(61)] },
                 { tag: "memory", item: "memory", texts: [percent(42), "·", decimal(13.4) + "G"] },
-                { tag: "claude", item: "claude", texts: [percent(52), "·", digits(2) + "d " + digits(21) + "h"] },
+                { tag: "claude", item: "claude", texts: [percent(52), "·", digits(2) + "d"] },
+                { tag: "claude last day", item: "claude", week: [52, 5 * 3600 + 12 * 60], texts: [percent(52), "·", digits(5) + "h " + digits(12) + "m"] },
                 { tag: "gpu asleep", item: "gpu", asleep: true, texts: ["off"] }
             ];
         }
@@ -730,13 +757,14 @@ Item {
         // On a thin panel the readings share one line, centred on the ring,
         // and the ring goes unnamed.
         function test_thinPanelIsOneLine(data) {
+            apply(data.item, data);
             const c = breezeSized(cell(data.item, { ring: 26, twoLines: false }));
             if (data.asleep) {
                 monitor.gpuInner.present = false;
                 monitor.gpuOuter.phase = "asleep";
                 settle();
             }
-            compare(root.texts(c), data.texts);
+            compare(root.texts(c).map(root.plain), data.texts);
             verify(!nameIn(c).visible);
             const middle = centreY(gauge(c), c);
             const shown = root.findAll(c, i => i.visible && typeof i.text === "string" && i.text !== "");
@@ -745,6 +773,53 @@ Item {
             if (dot) {
                 compare(String(dot.color), root.tone("dim"));
             }
+        }
+
+        function test_countdownMarkup_data() {
+            const rows = [];
+            for (const [what, left, parts] of [["days", 6 * day + 23 * 3600, [[6, "d"]]],
+                                               ["last day", 23 * 3600 + 5 * 60, [[23, "h"], [5, "m"]]],
+                                               ["minutes", 12 * 60, [[12, "m"]]]]) {
+                for (const mirrored of [false, true]) {
+                    rows.push({ tag: what + (mirrored ? " mirrored" : ""), left: left, parts: parts, mirrored: mirrored });
+                }
+            }
+            return rows;
+        }
+
+        // A countdown is one styled text: each number with its unit at the
+        // smallest size, the pairs a thin space apart, so the units read
+        // smaller than the digits and the line stays short. Mirrored, a
+        // right-to-left mark leads it, so the days come first from the right.
+        // A hidden twin with every digit at its widest keeps its room.
+        function test_countdownMarkup(data) {
+            setWeek("claude", [52, data.left]);
+            const holder = data.mirrored ? keep(mirrorComponent.createObject(root)) : root;
+            const c = keep(usageComponent.createObject(holder, { monitor: monitor, item: "claude" }));
+            waitForRendering(c);
+            const second = line(c, "second");
+            const markup = data.parts.map(([value, unit]) => root.digits(value) + '<font size="1">' + unit + '</font>');
+            compare(second.textFormat, Text.StyledText);
+            compare(second.text, (data.mirrored ? "\u200f" : "") + markup.join("&#8201;"));
+            verify(second.contentWidth <= second.width, second.contentWidth + " in " + second.width);
+
+            // Drawn, the units are smaller and the thin space is thin.
+            const probe = keep(styledComponent.createObject(root, { font: second.font, text: second.text }));
+            const width = second.implicitWidth;
+            compare(probe.implicitWidth, width, "the probe draws as the line does");
+            probe.text = markup.map(m => m.replace('<font size="1">', "<font>")).join("&#8201;");
+            verify(probe.implicitWidth > width, "full-size units take " + probe.implicitWidth + ", small ones " + width);
+            if (data.parts.length > 1) {
+                probe.text = markup.join(" ");
+                verify(probe.implicitWidth > width, "a space takes " + probe.implicitWidth + ", a thin one " + width);
+            }
+
+            const readout = root.find(c, i => i.textWidth !== undefined);
+            const twin = root.find(readout, i => i !== second && i.textFormat === Text.StyledText);
+            verify(!twin.visible, "the twin is hidden");
+            compare(root.shape([twin.text]), root.shape([second.text]), "the twin differs only in its digits");
+            compare(readout.rooms[1], Math.ceil(twin.implicitWidth), "the twin keeps the room");
+            verify(twin.implicitWidth >= width, "the widest digits take " + twin.implicitWidth + ", these " + width);
         }
 
         function test_widthFollowsCharacters_data() {

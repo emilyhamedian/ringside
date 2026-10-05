@@ -31,6 +31,11 @@ Item {
         return substitute(n === 1 ? singular : plural, [n].concat(args));
     }
 
+    // A countdown's styled text as the words it shows: "23h 5m".
+    function plain(text) {
+        return text.replace(/<[^>]*>/g, "").replace(/&#8201;/g, " ").replace(/\u200f/g, "");
+    }
+
     // A name at the smallest size it may shrink to, measured here rather
     // than read from RingName.
     TextMetrics {
@@ -361,7 +366,15 @@ Item {
                     entries.claude.weekly.percent = 100;
                     entries.claude.weekly.resetsAt = monitor.usage.createdAt + 600;
                     monitor.usage.entries = entries;
-                }, shows: "10m" }
+                }, shows: "10m" },
+                // The countdown keeps to the days from a day out, so a new
+                // week is narrower than the last minutes of the old one.
+                { what: "Claude's new week", change: () => {
+                    const entries = JSON.parse(JSON.stringify(monitor.usage.entries));
+                    entries.claude.weekly.percent = 0;
+                    entries.claude.weekly.resetsAt = monitor.usage.createdAt + 6 * 86400 + 23 * 3600;
+                    monitor.usage.entries = entries;
+                }, shows: "6d" }
             ];
             let before = widths();
             checkFits("at first");
@@ -369,7 +382,7 @@ Item {
                 sizeAfter(strip, step.change);
                 checkFits(step.what);
                 if (step.shows) {
-                    verify(visibleTexts(strip).includes(step.shows), step.what + ": " + JSON.stringify(visibleTexts(strip)));
+                    verify(visibleTexts(strip).map(root.plain).includes(step.shows), step.what + ": " + JSON.stringify(visibleTexts(strip)));
                 }
                 const now = widths();
                 for (let i = 0; i < 4; ++i) {
@@ -751,15 +764,39 @@ Item {
             compare(mark.markName, "claude");
             verify(mark.visible, "the Claude mark");
             verify(!visibleTexts(strip).includes("CLAUDE"), JSON.stringify(visibleTexts(strip)));
-            compare([line(1, "first").text, line(1, "second").text], ["52%", "2d 21h"]);
-            compare([line(2, "first").text, line(2, "second").text], ["24%", "5d 4h"]);
+            compare([line(1, "first").text, root.plain(line(1, "second").text)], ["52%", "2d"]);
+            compare([line(2, "first").text, root.plain(line(2, "second").text)], ["24%", "5d"]);
 
-            const width = strip.implicitWidth;
+            // At the limit both readings turn red, and the wider one takes
+            // its room at once.
             const entries = JSON.parse(JSON.stringify(monitor.usage.entries));
             entries.claude.weekly.percent = 100;
             entries.claude.weekly.resetsAt = monitor.usage.createdAt + 600;
-            compare(sizeAfter(strip, () => monitor.usage.entries = entries).width, width);
-            compare([line(1, "first").text, line(1, "second").text], ["100%", "10m"]);
+            sizeAfter(strip, () => monitor.usage.entries = entries);
+            compare([line(1, "first").text, root.plain(line(1, "second").text)], ["100%", "10m"]);
+            compare([line(1, "first").color, line(1, "second").color], [root.hotColor, root.hotColor]);
+            checkFits("at the limit");
+            checkRow("at the limit");
+        }
+
+        // A ring's readings are drawn for the eye alone: screen readers hear
+        // the cell, a button named for the item whose description says the
+        // readings in words, the countdown in full.
+        function test_readoutIsSpokenByTheCell() {
+            const strip = makeStrip({ items: ["cpu", "gpu", "memory", "claude", "codex", "network"] });
+            for (let i = 0; i < 5; ++i) {
+                const cell = strip.cellAt(i);
+                const readout = find(cell.contentItem, r => r.textWidth !== undefined);
+                const texts = all(readout, t => t.textFormat !== undefined);
+                compare(texts.length, 4, strip.items[i] + ": two lines, the dot and the twin");
+                texts.forEach(t => verify(t.Accessible.ignored, strip.items[i] + ": " + t.text + " is left to the cell"));
+                compare(cell.Accessible.role, Accessible.Button);
+                verify(cell.Accessible.description !== "", strip.items[i]);
+                compare(cell.Accessible.description, cell.contentItem.accessibleDescription);
+            }
+            compare(strip.cellAt(0).Accessible.description, "Usage 23%, temperature 61 °C");
+            verify(/resets in 2 days 2\d hours$/.test(strip.cellAt(3).Accessible.description), strip.cellAt(3).Accessible.description);
+            compare(root.plain(line(3, "second").text), "2d", "where the panel shows the days alone");
         }
 
         // Right to left the strip runs from the right edge, with the rates'
