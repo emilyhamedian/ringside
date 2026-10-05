@@ -451,6 +451,27 @@ Item {
             compare(gpu.filter(s => s !== gpu[0]), [], "the GPU row at 59, 60, 61, 62, 71: " + gpu.join(", "));
         }
 
+        // A degree sign is always at the small font's size, where another
+        // unit grows with its digits. The digits here are large enough for
+        // the two rules to differ under any theme's fonts.
+        function test_degreeUnitAtTheSmallFont() {
+            const small = Kirigami.Theme.smallFont.pointSize;
+            const pointSize = 3 * small;
+            const make = properties => {
+                const loader = createTemporaryObject(host, root);
+                loader.setSource(Qt.resolvedUrl("../../package/contents/ui/Reading.qml"),
+                                 Object.assign({ value: Format.temperature(61, false), pointSize: pointSize }, properties));
+                compare(loader.status, Loader.Ready);
+                return parts(loader.item).suffix;
+            };
+            const degree = make({ degreeUnit: "C" });
+            compare(degree.text, "°C");
+            compare(degree.font.pointSize, small);
+            const other = make({ unit: "GHz" });
+            compare(other.font.pointSize, Style.unitPointSize(pointSize, small));
+            verify(other.font.pointSize > degree.font.pointSize, other.font.pointSize + " against " + degree.font.pointSize);
+        }
+
         // A missing temperature is a bare dash.
         function test_missingTemperatureHasNoUnit() {
             normal.cpuTemperature = NaN;
