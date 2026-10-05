@@ -384,6 +384,28 @@ Item {
             normal.cpuTemperature = 61;
         }
 
+        // The header's caption lines up with the reading's digits, the unit
+        // hanging past them. Under RTL the reading stays left to right, so
+        // the caption starts where the digits do.
+        function test_headerCaptionUnderTheDigits_data() {
+            return [{ tag: "plain", mirrored: false }, { tag: "mirrored", mirrored: true }];
+        }
+
+        function test_headerCaptionUnderTheDigits(data) {
+            const popup = load("CpuPopup", normal, data.mirrored);
+            const headline = readings(popup).find(r => r.visible && r.degreeUnit !== "" && r.parent.parent.partsShown !== undefined);
+            verify(headline);
+            const caption = Array.from(headline.parent.children).find(i => i.visible && typeof i.text === "string" && i.text !== "");
+            verify(caption);
+            const digits = headline.mapToItem(popup, 0, 0).x;
+            const left = caption.mapToItem(popup, 0, 0).x;
+            if (data.mirrored) {
+                fuzzyCompare(left, digits, 1);
+            } else {
+                fuzzyCompare(left + caption.width, digits + headline.numberWidth, 1);
+            }
+        }
+
         // Popup numbers are set in the theme's face with figures of one
         // width; only process names keep the monospace face.
         function test_numbersInSans_data() {
