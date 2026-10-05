@@ -7,6 +7,7 @@ import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
 import org.kde.ksysguard.sensors as Sensors
 import "../code/format.js" as Format
+import "../code/style.js" as Style
 import ".."
 
 PopupPage {
@@ -34,7 +35,6 @@ PopupPage {
             return [m.cpuModel, count].filter(s => s !== "").join(" · ");
         }
         value: Format.temperature(popup.monitor.cpuTemperature, popup.monitor.fahrenheit)
-        degree: true
         degreeUnit: popup.monitor.fahrenheit ? "F" : "C"
         valueColor: {
             const level = popup.monitor.heat(popup.monitor.cpuTemperature);
@@ -74,7 +74,6 @@ PopupPage {
                 readonly property var f: Format.frequency(popup.sensorValue(frequency))
                 value: f.value
                 unit: f.unit
-                unitScale: 0.67
                 pointSize: Kirigami.Theme.defaultFont.pointSize * 1.38
             }
         }
@@ -82,11 +81,42 @@ PopupPage {
         Tile {
             caption: i18nc("@title:group", "Load average")
 
-            Reading {
-                value: Format.load(popup.sensorValue(load1))
-                unit: Format.load(popup.sensorValue(load5)) + " · " + Format.load(popup.sensorValue(load15))
-                unitScale: 0.67
-                pointSize: Kirigami.Theme.defaultFont.pointSize * 1.38
+            // The last minute large, then the 5 and 15 minute averages dimmer,
+            // evenly spaced and in reading order under mirroring too. The
+            // spans don't fit beside the caption in a half-width tile, so
+            // only the spoken name carries them.
+            RowLayout {
+                id: load
+                readonly property real pointSize: Kirigami.Theme.defaultFont.pointSize * 1.38
+                spacing: Kirigami.Units.largeSpacing
+                Accessible.role: Accessible.StaticText
+                Accessible.name: i18nc("@info accessible name of the load averages",
+                                       "%1 over 1 minute, %2 over 5 minutes, %3 over 15 minutes",
+                                       Format.load(popup.sensorValue(load1)), Format.load(popup.sensorValue(load5)),
+                                       Format.load(popup.sensorValue(load15)))
+
+                Reading {
+                    Layout.alignment: Qt.AlignBaseline
+                    value: Format.load(popup.sensorValue(load1))
+                    pointSize: load.pointSize
+                    accessibleIgnored: true
+                }
+
+                Repeater {
+                    model: [load5, load15]
+
+                    delegate: Text {
+                        required property var modelData
+                        Layout.alignment: Qt.AlignBaseline
+                        text: Format.load(popup.sensorValue(modelData))
+                        color: Style.dim(Kirigami.Theme.textColor)
+                        font.family: Kirigami.Theme.defaultFont.family
+                        font.features: ({ "tnum": 1 })
+                        font.pointSize: Style.unitPointSize(load.pointSize, Kirigami.Theme.smallFont.pointSize)
+                        textFormat: Text.PlainText
+                        Accessible.ignored: true
+                    }
+                }
             }
         }
 

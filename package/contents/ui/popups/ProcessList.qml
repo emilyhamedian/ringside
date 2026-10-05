@@ -8,6 +8,8 @@ import org.kde.kirigami as Kirigami
 import org.kde.ksysguard.process as Process
 import "../code/format.js" as Format
 import "../code/processes.js" as Processes
+import "../code/style.js" as Style
+import ".."
 
 // The three heaviest processes by CPU or by memory. The process model scans
 // /proc every two seconds, so it only exists while its popup is open.
@@ -43,7 +45,8 @@ ColumnLayout {
     Layout.leftMargin: Math.round(Kirigami.Units.largeSpacing * 2)
     Layout.rightMargin: Math.round(Kirigami.Units.largeSpacing * 2)
     Layout.topMargin: Kirigami.Units.largeSpacing
-    Layout.bottomMargin: Kirigami.Units.smallSpacing
+    // As much room below as the tile grids leave above the footer.
+    Layout.bottomMargin: Math.round(Kirigami.Units.largeSpacing * 1.25)
     spacing: Kirigami.Units.smallSpacing
 
     Process.ProcessDataModel {
@@ -88,6 +91,7 @@ ColumnLayout {
 
             Text {
                 Layout.fillWidth: true
+                Layout.alignment: Qt.AlignBaseline
                 text: !row.entry ? " " : row.entry.count > 1 ? row.entry.name + " ×" + row.entry.count : row.entry.name
                 color: Kirigami.Theme.textColor
                 font.family: Kirigami.Theme.fixedWidthFont?.family ?? "monospace" // qmllint disable redundant-optional-chaining
@@ -98,21 +102,16 @@ ColumnLayout {
                 horizontalAlignment: Text.AlignLeft
             }
 
-            Text {
-                text: {
-                    if (!row.entry) {
-                        return "";
-                    }
-                    if (list.key === "memory") {
-                        const b = Format.bytes(row.entry.memory);
-                        return b.value + " " + b.unit;
-                    }
-                    return Format.fixed(row.entry.usage / Math.max(1, list.threads), 1) + "%";
-                }
-                color: Kirigami.Theme.textColor
-                font.family: Kirigami.Theme.fixedWidthFont?.family ?? "monospace" // qmllint disable redundant-optional-chaining
-                font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.92
-                textFormat: Text.PlainText
+            // Set like the tiles' readings, with a smaller, dimmer unit; the
+            // percent sign stays against its number.
+            Reading {
+                readonly property bool memory: list.key === "memory"
+                readonly property var b: row.entry && memory ? Format.bytes(row.entry.memory) : null
+
+                Layout.alignment: Qt.AlignBaseline
+                value: !row.entry ? "" : memory ? b.value : Format.fixed(row.entry.usage / Math.max(1, list.threads), 1)
+                unit: !row.entry ? "" : memory ? b.unit : "%"
+                unitSpacing: memory ? Style.unitGap(pointSize) : 0
             }
         }
     }

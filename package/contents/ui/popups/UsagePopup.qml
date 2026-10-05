@@ -138,7 +138,8 @@ PopupPage {
                     Text {
                         text: i18nc("@info a percentage", "%1%", Format.percent(row.modelData.percent))
                         color: popup.tone(row.modelData.percent)
-                        font.family: Kirigami.Theme.fixedWidthFont?.family ?? "monospace" // qmllint disable redundant-optional-chaining
+                        font.family: Kirigami.Theme.defaultFont.family
+                        font.features: ({ "tnum": 1 })
                         textFormat: Text.PlainText
                     }
                 }

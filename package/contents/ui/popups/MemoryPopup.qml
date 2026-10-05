@@ -154,7 +154,6 @@ PopupPage {
                 value: none ? i18nc("@info no swap space configured", "none") : swap.value
                 unit: none ? "" : "/ " + swap.total + " " + swap.unit
                 color: none ? Style.dim(Kirigami.Theme.textColor) : Kirigami.Theme.textColor
-                unitScale: 0.67
                 pointSize: Kirigami.Theme.defaultFont.pointSize * 1.38
             }
         }
