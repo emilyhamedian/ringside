@@ -505,6 +505,9 @@ Item {
             // live where ksystemstats runs, so only the form is fixed.
             const row = first[0].parent;
             verify(/^\S+ over 1 minute, \S+ over 5 minutes, \S+ over 15 minutes$/.test(row.Accessible.name), row.Accessible.name);
+            // A missing average is a word, never the dash on screen.
+            compare(popup.loadAverageName(NaN, 0.5, NaN),
+                    "unavailable over 1 minute, " + Format.load(0.5) + " over 5 minutes, unavailable over 15 minutes");
             verify(first[0].accessibleIgnored);
             rest.forEach(t => {
                 verify(t.Accessible.ignored);
@@ -840,6 +843,9 @@ Item {
             const up = Format.rate(normal.networkUp, true);
             compare(values.map(r => r.value + " " + r.unit), [down.value + " " + down.unit, up.value + " " + up.unit]);
             compare(rates.Accessible.name, "Down " + down.value + " " + down.unit + ", up " + up.value + " " + up.unit);
+            normal.networkDown = NaN;
+            compare(rates.Accessible.name, "Down unavailable, up " + up.value + " " + up.unit);
+            normal.networkDown = 3.1e6;
             const ends = [];
             const starts = [];
             values.forEach((r, n) => {

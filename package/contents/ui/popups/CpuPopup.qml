@@ -19,6 +19,14 @@ PopupPage {
         return sensor && typeof sensor.value === "number" ? sensor.value : NaN;
     }
 
+    // The load averages spoken as one, a missing one as a word rather than
+    // the dash shown on screen.
+    function loadAverageName(one, five, fifteen) {
+        const spoken = v => Format.usable(v) ? Format.load(v) : i18nc("@info:tooltip no reading", "unavailable");
+        return i18nc("@info accessible name of the load averages", "%1 over 1 minute, %2 over 5 minutes, %3 over 15 minutes",
+                     spoken(one), spoken(five), spoken(fifteen));
+    }
+
     // Readings only this popup shows; the Monitor never subscribes these ids.
     Sensors.Sensor { id: frequency; sensorId: "cpu/all/averageFrequency"; updateRateLimit: popup.monitor.interval }
     Sensors.Sensor { id: load1; sensorId: "cpu/loadaverages/loadaverage1" }
@@ -95,10 +103,8 @@ PopupPage {
                 readonly property real pointSize: Kirigami.Theme.defaultFont.pointSize * 1.38
                 spacing: Kirigami.Units.largeSpacing
                 Accessible.role: Accessible.StaticText
-                Accessible.name: i18nc("@info accessible name of the load averages",
-                                       "%1 over 1 minute, %2 over 5 minutes, %3 over 15 minutes",
-                                       Format.load(popup.sensorValue(load1)), Format.load(popup.sensorValue(load5)),
-                                       Format.load(popup.sensorValue(load15)))
+                Accessible.name: popup.loadAverageName(popup.sensorValue(load1), popup.sensorValue(load5),
+                                                       popup.sensorValue(load15))
 
                 Reading {
                     Layout.alignment: Qt.AlignBaseline
