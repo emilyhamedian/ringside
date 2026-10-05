@@ -26,7 +26,11 @@ Item {
     property real pointSize: Kirigami.Theme.defaultFont.pointSize
     property color color: Kirigami.Theme.textColor
     property color unitColor: Style.dim(color)
-    property real unitSpacing: degreeUnit !== "" ? 1 : Style.unitGap(pointSize)
+    // Tabular digits are centred in cells of one width, so a narrow last
+    // digit such as "1" would leave the degree sign standing apart. The sign
+    // keeps the distance from the last digit's ink that it has after a "0".
+    property real unitSpacing: degreeUnit !== "" ? 1 + trailingRoom(zero) - trailingRoom(lastDigit)
+                                                 : Style.unitGap(pointSize)
     // Set when a parent speaks for several readings at once.
     property bool accessibleIgnored: false
     readonly property real numberWidth: number.implicitWidth
@@ -35,6 +39,22 @@ Item {
 
     implicitWidth: numberWidth + (suffixWidth > 0 ? suffix.anchors.leftMargin + suffixWidth : 0)
     implicitHeight: number.implicitHeight
+
+    function trailingRoom(metrics) {
+        return metrics.text === "" ? 0 : metrics.advanceWidth - metrics.tightBoundingRect.x - metrics.tightBoundingRect.width;
+    }
+
+    TextMetrics {
+        id: lastDigit
+        font: number.font
+        text: reading.degreeUnit !== "" ? reading.value.slice(-1) : ""
+    }
+
+    TextMetrics {
+        id: zero
+        font: number.font
+        text: reading.degreeUnit !== "" ? "0" : ""
+    }
 
     Text {
         id: number
