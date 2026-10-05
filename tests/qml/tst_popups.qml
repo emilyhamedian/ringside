@@ -664,6 +664,47 @@ Item {
             compare(label.x, data.atStart ? 0 : rule.width - label.implicitWidth);
         }
 
+        // The memory legend spans its bar with even gaps: Used at the bar's
+        // start, Free flush with its end, plain and mirrored. The test's
+        // fallback font is wide enough to wrap Free at the popup's own width,
+        // so the popup is widened until the entries fit.
+        function test_memoryLegendSpread_data() {
+            return [{ tag: "plain", mirrored: false }, { tag: "mirrored", mirrored: true }];
+        }
+
+        function test_memoryLegendSpread(data) {
+            const popup = load("MemoryPopup", normal, data.mirrored);
+            const bar = all(popup, i => i.usedColor !== undefined)[0];
+            const entries = all(popup, i => i.swatch !== undefined && i.text !== undefined);
+            compare(entries.length, 3);
+            popup.width = popup.implicitWidth + Kirigami.Units.gridUnit * 6;
+            tryVerify(() => entries[0].y === entries[2].y, 1000, "one line");
+            // The bar's own mapping would include its mirroring flip.
+            const left = i => i.parent.mapToItem(popup, i.x, 0).x;
+            const right = i => left(i) + i.width;
+            // In reading order, each entry's far edge to the next one's near edge.
+            const [start, end] = data.mirrored ? [right, left] : [left, right];
+            const gap = (a, b) => Math.abs(start(b) - end(a));
+            compare(start(entries[0]), start(bar));
+            verify(Math.abs(end(entries[2]) - end(bar)) <= 1, "Free ends at the bar's end: " + end(entries[2]) + " " + end(bar));
+            compare(gap(entries[0], entries[1]), gap(entries[1], entries[2]));
+            verify(gap(entries[0], entries[1]) > Kirigami.Units.largeSpacing, "spread wider than the minimum spacing");
+        }
+
+        // A sparse line can run over the label between two points of which
+        // only the low one lies under it.
+        function test_ruleLabelSegment() {
+            const loader = createTemporaryObject(host, root, { width: 200, height: 40 });
+            loader.setSource(Qt.resolvedUrl("../../package/contents/ui/popups/LimitRule.qml"));
+            const rule = loader.item;
+            const x = rule.span + 4;
+            rule.series = [[{ x: 0, y: rule.height }, { x: x, y: 0 }]];
+            verify(rule.height * (x - rule.span) / x < rule.labelBottom, "the segment crosses the label's end above it");
+            compare(rule.atStart, false);
+            rule.series = [[{ x: 0, y: rule.height }, { x: x, y: rule.labelBottom * x / rule.span }]];
+            compare(rule.atStart, true, "a line that stays below keeps the label at the start");
+        }
+
         function headerOf(popup) {
             return all(popup, i => i.partsShown !== undefined)[0];
         }
@@ -710,11 +751,14 @@ Item {
                 fontProbe.font = caption.font;
                 probe.font = caption.font;
                 probe.text = "H";
-                const capHeight = probe.tightBoundingRect.height;
-                const leading = fontProbe.ascent - capHeight;
+                // Qt 6.9 and later give the font's own capital height, which
+                // can differ a little from the ink of an "H".
+                fuzzyCompare(tile.capHeight, probe.tightBoundingRect.height, 1, tile.caption + " cap height");
+                const leading = fontProbe.ascent - tile.capHeight;
                 verify(leading / 2 > 1, "enough leading to tell: " + leading);
-                const capTop = caption.mapToItem(tile, 0, caption.baselineOffset).y - capHeight;
-                fuzzyCompare(capTop, tile.verticalPadding + leading / 2, 1, tile.caption + " cap top");
+                const capTop = caption.mapToItem(tile, 0, caption.baselineOffset).y - tile.capHeight;
+                // Rounding to whole pixels is the only slack.
+                fuzzyCompare(capTop, tile.verticalPadding + leading / 2, 0.5, tile.caption + " cap top");
                 const column = caption.parent;
                 compare(tile.height - (column.y + column.height), tile.verticalPadding, tile.caption + " bottom");
             });
