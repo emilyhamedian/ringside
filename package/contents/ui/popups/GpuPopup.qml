@@ -40,8 +40,14 @@ PopupPage {
 
             monitor: popup.monitor
             slot: modelData
+            temperatureName: words.sensorName(modelData.temperatureLabel)
             inner: index > 0
         }
+    }
+
+    Words {
+        id: words
+        monitor: popup.monitor
     }
 
     Repeater {
@@ -80,6 +86,8 @@ PopupPage {
         required property var monitor
         // A GpuReader, or an object with the same properties.
         required property var slot
+        // The slot's temperature label in plain words.
+        required property string temperatureName
         property bool inner: false
 
         readonly property color dim: Style.dim(Kirigami.Theme.textColor)
@@ -166,7 +174,7 @@ PopupPage {
                 Text {
                     Layout.alignment: Qt.AlignBaseline
                     visible: text !== "" && section.temperatureShown
-                    text: section.slot.temperatureLabel
+                    text: section.temperatureName
                     color: section.dim
                     font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.81
                     textFormat: Text.PlainText

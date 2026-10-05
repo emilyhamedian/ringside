@@ -114,6 +114,14 @@ Item {
         swapLabel: ""
     }
 
+    // Sensors other than the usual Tctl and edge.
+    FakeMonitor {
+        id: otherSensors
+        cpuTemperatureLabel: "Tccd3"
+        gpuOuter.temperatureLabel: "junction"
+        gpuInner.temperatureLabel: "mem"
+    }
+
     // Just opened: no rate has a sample yet.
     FakeMonitor {
         id: fresh
@@ -810,6 +818,52 @@ Item {
             compare(headerOf(popup).subtitle, data.subtitle);
             const found = texts(popup);
             verify(!found.some(t => t.indexOf("Discrete · ") >= 0 || t.indexOf("Integrated · ") >= 0), JSON.stringify(found));
+        }
+
+        // Temperature sensors go by plain words, not their hwmon labels;
+        // labels Words doesn't know are shown as they are.
+        function test_sensorNamesInWords_data() {
+            return [{ tag: "Tctl", raw: "Tctl", shown: "chip" },
+                    { tag: "Tdie", raw: "Tdie", shown: "chip" },
+                    { tag: "Package id 0", raw: "Package id 0", shown: "chip" },
+                    { tag: "Package id 1", raw: "Package id 1", shown: "chip" },
+                    { tag: "edge", raw: "edge", shown: "chip" },
+                    { tag: "Tccd1", raw: "Tccd1", shown: "chiplet " + Format.whole(1) },
+                    { tag: "Tccd12", raw: "Tccd12", shown: "chiplet " + Format.whole(12) },
+                    { tag: "junction", raw: "junction", shown: "hotspot" },
+                    { tag: "mem", raw: "mem", shown: "memory" },
+                    { tag: "Composite", raw: "Composite", shown: "Composite" },
+                    { tag: "Core 0", raw: "Core 0", shown: "Core 0" },
+                    { tag: "Tccd", raw: "Tccd", shown: "Tccd" },
+                    { tag: "edges", raw: "edges", shown: "edges" },
+                    { tag: "hottest core", raw: "hottest core", shown: "hottest core" },
+                    { tag: "none", raw: "", shown: "" }];
+        }
+
+        function test_sensorNamesInWords(data) {
+            const component = Qt.createComponent(Qt.resolvedUrl("../../package/contents/ui/Words.qml"));
+            compare(component.status, Component.Ready, component.errorString());
+            const words = createTemporaryObject(component, root, { monitor: normal });
+            compare(words.sensorName(data.raw), data.shown);
+        }
+
+        // The CPU caption and the GPU rows show the plain words.
+        function test_popupsNameTheirSensors_data() {
+            return [{ tag: "usual", monitor: normal, cpu: "chip", gpu: ["chip", "chip"] },
+                    { tag: "other", monitor: otherSensors, cpu: "chiplet " + Format.whole(3), gpu: ["hotspot", "memory"] }];
+        }
+
+        function test_popupsNameTheirSensors(data) {
+            const cpu = load("CpuPopup", data.monitor);
+            const header = headerOf(cpu);
+            compare(header.caption, data.cpu);
+            verify(shownText(header, data.cpu), "the caption is shown");
+            const gpu = load("GpuPopup", data.monitor);
+            const found = texts(gpu);
+            compare(found.filter(t => t === data.gpu[0] || t === data.gpu[1]).length, 2, JSON.stringify(found));
+            data.gpu.forEach(name => verify(found.includes(name), name + " in " + JSON.stringify(found)));
+            const raw = ["Tctl", "Tccd3", "edge", "junction", "mem"];
+            verify(!texts(cpu).concat(found).some(t => raw.includes(t)), "no raw label is shown");
         }
 
         // A third longer in every string, the page keeps its width and
