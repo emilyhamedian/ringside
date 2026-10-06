@@ -13,9 +13,10 @@ follows [Semantic Versioning](https://semver.org/).
 - A Claude or Codex ring turns red when its weekly limit is on pace to run
   out before the reset, at the rate it has been used so far; the inner ring
   does the same for its model's limit. The popup says where the week is
-  heading in one sentence: when a limit runs out at this pace, when one was
-  reached, or how much of the limit the week will use. It appears from a
-  day into the week, or at once for a limit that is running out.
+  heading in one sentence, such as "On pace to use 80% by the reset",
+  "Fable is on pace to run out Tue 3:30 AM" or "Limit reached Sun 3:00 PM".
+  It appears from a day into the week, or at once for a limit that is
+  running out.
 - The week graph in the Claude and Codex popup has a line at 100%, a floor,
   a tick at the reset and, for the limit the pace sentence says runs out, a
   line of red dots to where it would reach 100%. A single reading shows as
@@ -33,11 +34,14 @@ follows [Semantic Versioning](https://semver.org/).
   instead of keeping room for their widest readings. When a reading gains a
   character the items after it move at once; when it loses one they wait
   three minutes, so a value that keeps changing width doesn't shuffle the
-  panel. Rates keep their widest room at the end of the widget, so they
-  never move the widgets after it.
+  panel. Rates do the same, so an idle disk at the end of the widget leaves
+  the usual gap after it.
 - The panel countdown shows the days alone ("6d") until the last day, then
-  hours and minutes, with smaller unit letters. It turns red at 100%, where
-  it says how long the limit stays reached.
+  hours and minutes ("23h 5m"). It turns red at 100%, where it says how
+  long the limit stays reached.
+- Top processes show a busy indicator until they are read. The CPU list,
+  which needs two scans, fills in about two seconds after its popup opens,
+  where it could take four.
 - Popup numbers and the ring's centre percentage use the theme's font with
   figures of even width instead of a monospace font, which left gaps around
   the decimal point. Units are smaller, and °C and °F sit against the
@@ -48,10 +52,10 @@ follows [Semantic Versioning](https://semver.org/).
   move into its captions.
 - Temperature sensors have plain names: chip, chiplet, hotspot and memory
   instead of Tctl, Tccd, junction and mem.
-- The Claude and Codex popup sets its countdown's units smaller, like the
-  panel's. With one limit it shows no bars, since the ring gives the
-  number, and reads "Weekly limit". The week graph loses its day lines,
-  half line and even-pace diagonal.
+- The Claude and Codex popup sets its countdown's units smaller than its
+  digits; the panel's stay the size of its digits. With one limit it shows
+  no bars, since the ring gives the number, and reads "Weekly limit". The
+  week graph loses its day lines, half line and even-pace diagonal.
 - Popups line up their content on one edge and their headers on shared
   baselines, with even padding in tiles and matching dividers. The load
   average shows its three numbers evenly spaced, the network header's
