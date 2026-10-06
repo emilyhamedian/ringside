@@ -873,12 +873,11 @@ Item {
         }
 
         // Right to left the strip runs from the right edge to the left one;
-        // each item's content keeps to the cell's
-        // start, each reading on the ring's left, hugging it; on one line the
-        // ring's own reading comes first, nearest the ring. A reading is one
-        // text, so a number never parts from its sign. A rate's arrow or
-        // letter moves to its right, and the number still comes before its
-        // unit.
+        // each item's content keeps to the cell's start, each reading on the
+        // ring's left, hugging it; on one line the ring's own reading comes
+        // first, nearest the ring. A reading is one text, so a number never
+        // parts from its sign. A rate's arrow or letter moves to its right,
+        // and the number still comes before its unit.
         function test_mirrored_data() {
             return [{ tag: "two lines", thickness: 38 }, { tag: "thin", thickness: 30 }];
         }
