@@ -30,7 +30,7 @@ PopupPage {
             monitor: popup.monitor
             slot: modelData
             temperatureName: words.sensorName(modelData.temperatureLabel)
-            inner: index > 0
+            first: index === 0
         }
     }
 
@@ -80,8 +80,8 @@ PopupPage {
         required property var slot
         // The slot's temperature label in plain words.
         required property string temperatureName
-        // The inner ring's GPU, set off from the first by a rule.
-        property bool inner: false
+        // Any section after the first is set off from it by a rule.
+        property bool first: true
 
         // Intel GPUs publish no temperature, so theirs is left out rather than shown as a dash.
         readonly property bool temperatureShown: slot.reportsTemperature
@@ -93,7 +93,7 @@ PopupPage {
         spacing: 0
 
         Divider {
-            visible: section.inner
+            visible: !section.first
         }
 
         PopupHeader {
