@@ -297,6 +297,13 @@ PopupPage {
                 secondWindow: popup.innerLimit
                 nowMs: popup.nowMs
                 pollAt: popup.pollAt
+                // The run-out the pace sentence names, if the graph draws that
+                // limit: the week, or the model on the inner ring.
+                projected: {
+                    const e = popup.paceEvent;
+                    return !e ? "" : e.index === 0 ? "main"
+                         : popup.innerLimit !== null && popup.limits[e.index].id === popup.innerLimit.id ? "second" : "";
+                }
             }
 
             RowLayout {
