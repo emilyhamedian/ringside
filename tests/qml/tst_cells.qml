@@ -1218,11 +1218,10 @@ Item {
         }
 
         // Along a horizontal panel a cell grows with its content at once and
-        // keeps up to a digit more than a narrower content until that has
-        // lasted the settle delay, so a reading that comes and goes a digit
-        // moves nothing, and one that drops further leaves a digit's gap at
-        // most. A change of layout, and the moments after the cell is made,
-        // apply at once.
+        // keeps its width through a narrower content until that has lasted
+        // the settle delay, so a reading that comes and goes moves nothing.
+        // A change of layout, and the moments after the cell is made, apply
+        // at once.
         function test_settleHold() {
             const block = keep(blockComponent.createObject(root));
             const c = keep(panelCellComponent.createObject(root, { contentItem: block, settleDelay: 400, relayoutWindow: 100 }));
@@ -1248,7 +1247,7 @@ Item {
             wait(200);
             compare(c.implicitWidth, 61 + outside, "still holding");
             block.implicitWidth = 40;
-            compare(c.implicitWidth, 40 + digit + outside, "a bigger shrink keeps a digit at most");
+            compare(c.implicitWidth, 61 + outside, "and through a bigger one");
             tryCompare(c, "implicitWidth", 40 + outside, 2000, "settles after the delay");
 
             // A reading that comes back in time moves nothing.
@@ -1295,6 +1294,32 @@ Item {
             wait(2 * c.settleDelay);
             compare(c.implicitWidth, 60 - digit + outside, "and stays there");
             compare(moves.count, 1, "moved once");
+        }
+
+        // Every trim delay a held cell gives up all but a digit more than the
+        // widest content it had in that time, so a reading that came back
+        // within it keeps its room, and one that stayed down leaves a digit.
+        function test_trimToADigit() {
+            const block = keep(blockComponent.createObject(root));
+            const c = keep(panelCellComponent.createObject(root, { contentItem: block, settleDelay: 60000, trimDelay: 600, relayoutWindow: 1 }));
+            const outside = 2 * Kirigami.Units.largeSpacing;
+            const digit = c.digitWidth;
+            wait(20);
+            block.implicitWidth = 60;
+            block.implicitWidth = 40;
+            compare(c.implicitWidth, 60 + outside, "holds at first");
+            wait(100);
+            block.implicitWidth = 50;
+            wait(50);
+            block.implicitWidth = 40;
+            verify(50 + digit < 60, "a digit's width: " + digit);
+            tryVerify(() => c.implicitWidth < 60 + outside, 3000, "trims");
+            compare(c.implicitWidth, 50 + digit + outside, "to a digit more than the widest in that time");
+            tryCompare(c, "implicitWidth", 40 + digit + outside, 3000, "then to a digit more than one that stayed down");
+            wait(2 * c.trimDelay);
+            compare(c.implicitWidth, 40 + digit + outside, "and stays there");
+            block.implicitWidth = 40 + Math.floor(digit);
+            compare(c.implicitWidth, 40 + digit + outside, "a digit back moves nothing");
         }
 
         // Font features have to reach both what measures and what draws, or
