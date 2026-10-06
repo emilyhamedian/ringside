@@ -98,9 +98,9 @@ GridLayout {
             // Along a horizontal panel a ring's content keeps to the cell's
             // start, so room the cell holds on to, and the cell's rounding up
             // to a whole pixel, fall after it. Rates take the cell's room and
-            // keep what it holds inside, between their markers and values or,
-            // on one row, between the two rates, so their readings end the
-            // cell's padding before the next item, the gap any item leaves.
+            // keep what it holds before their markers, so their readings end
+            // the cell's padding before the next item, the gap any item
+            // leaves.
             // Along a vertical panel the content is centred.
             // Both in whole pixels, rounding as the ring cells' own layout
             // does, so a ring's readings and the rates land on the same rows.
