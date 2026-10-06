@@ -19,8 +19,8 @@ QtObject {
     // Milliseconds; 0 follows at once.
     property real settle: 0
     // How near counts as there, in units of target: it comes to rest once
-    // this near and slower than twenty times this a second. What draws it
-    // sets what a quarter of a pixel is worth.
+    // this near and too slow to carry itself further than this. What draws
+    // it sets what a quarter of a pixel is worth.
     property real precision: 0.05
     // Off follows at once, as while a reset animation draws the ring.
     property bool enabled: true
@@ -70,7 +70,9 @@ QtObject {
         const c = (velocity + w * x) * dt;
         const nx = (x + c) * e;
         const nv = (velocity - w * c) * e;
-        if (Math.abs(nx) < precision && Math.abs(nv) < 20 * precision) {
+        // A critically damped follower at speed v carries on by less than
+        // v / ω.
+        if (Math.abs(nx) < precision && Math.abs(nv) < w * precision) {
             frames.stop();
             shown = target;
             velocity = 0;
