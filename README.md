@@ -7,7 +7,7 @@
 CPU, GPU, memory, network and disk in a KDE Plasma 6 panel, and your Claude
 and Codex usage limits if you want them.
 
-![Ringside in a panel: CPU, GPU and memory rings with their names inside, each with its usage over its temperature or the memory in use, a Claude ring with its weekly usage over the time to its reset, then network rates](docs/panel.png)
+![Ringside in a panel: CPU, GPU and memory rings with their names inside, each with its usage over its temperature or the memory in use, a Claude ring with its weekly usage over the days to its reset and its Fable limit in red on the inner ring, then network rates](docs/panel.png)
 
 Each item is a ring with its name inside and its readings beside it, or a
 pair of rates. Items are as wide as their text, with the same gap between
@@ -92,7 +92,7 @@ scripts/install.sh
 
 ## Claude and Codex
 
-![The Claude popup: the weekly limit, a per-model limit, and a graph of this week's usage](docs/usage.png)
+![The Claude popup: the weekly limit, the Fable limit in red with a sentence saying when it runs out at this pace, and a graph of this week's usage](docs/usage.png)
 
 Turn them on under *Configure Ringside… → Panel Items*. Each shows while its
 command-line tool is signed in on this machine; if one doesn't appear, its row
