@@ -143,9 +143,8 @@ sh tests/helper/test-info.sh || failed=1
 
 echo
 echo "== tests/python (Python helper) =="
-# The helper has to run on Python 3.11, whatever this machine has.
-PYTHONDONTWRITEBYTECODE=1 python3 -c 'import ast, sys; ast.parse(open(sys.argv[1]).read(), feature_version=(3, 11))' \
-    package/contents/code/usage.py || fail "usage.py needs a newer Python than 3.11"
+# test_python311 checks the helper's syntax against Python 3.11, whatever
+# this machine has.
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests/python || failed=1
 
 echo
