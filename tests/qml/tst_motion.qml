@@ -12,8 +12,10 @@ import "../../package/contents/ui/code/history.js" as History
 // How readings move: a ring's arc follows a new reading without passing it
 // and bends when another arrives mid-move, its colour turns as it passes 75
 // and 90 %, and the number in a popup's ring counts with it; a history
-// graph's points ease to a new sample in their slots. A duration of 0, as
-// Plasma's Instant animation speed gives, puts everything in place at once.
+// graph's points ease to a new sample in their slots; a week graph's new
+// stretch draws on and its run-out, marker and old week fade. A duration of
+// 0, as Plasma's Instant animation speed gives, puts everything in place at
+// once.
 // The test runner's Kirigami units are the defaults, at speed 1.
 Item {
     id: root
@@ -87,6 +89,14 @@ Item {
         LimitRule {
             width: 200
             height: 40
+        }
+    }
+
+    Component {
+        id: weekComponent
+        WeekGraph {
+            width: 700
+            height: 100
         }
     }
 
@@ -443,6 +453,140 @@ Item {
             compare(xy(g.mainDrawn), rest(g, next));
             g.maximum = 180;
             compare(xy(g.mainDrawn), rest(g, next, 180));
+        }
+    }
+
+    TestCase {
+        id: weeks
+        name: "WeekMotion"
+        when: windowShown
+
+        readonly property real start: 1000000
+        readonly property real day: 86400
+        readonly property real week: 7 * day
+
+        function init() {
+            failOnWarning(/TypeError|ReferenceError|SyntaxError|is not a function|Unable to assign|Cannot assign|Binding loop/);
+        }
+
+        function window(history, percent) {
+            return { resetsAt: start + week, windowSeconds: week, percent: percent, history: history };
+        }
+
+        // Two days in at 20 %, on course to last the week.
+        function make(options) {
+            return createTemporaryObject(weekComponent, weeks, Object.assign({
+                window: window([[start, 0], [start + 2 * day, 20]], 20),
+                projected: "main",
+                pollAt: start + 2 * day,
+                nowMs: (start + 2 * day) * 1000
+            }, options));
+        }
+
+        // A day later at 60 %, now on course to run out on day five.
+        function poll(g) {
+            g.window = window([[start, 0], [start + 2 * day, 20], [start + 3 * day, 60]], 60);
+            g.pollAt = start + 3 * day;
+            g.nowMs = g.pollAt * 1000;
+        }
+
+        function end(points) {
+            const p = points[points.length - 1];
+            return [p.x, p.y];
+        }
+
+        // The new stretch draws on from the old end and lands on the new
+        // reading; the run-out it brings waits until then and fades in.
+        function test_drawsOnThenTheRunOutFadesIn() {
+            const g = make();
+            const old = end(g.mainPoints);
+            compare(g.runOutOpacity, 0);
+            const seen = [];
+            createTemporaryObject(samplerComponent, weeks, { sample: () => seen.push([g.drawClock, g.runOutOpacity]) });
+            poll(g);
+            compare(end(g.mainDrawn), old, "from the old end");
+            verify(g.drawClock < 1);
+            compare(g.projection.length, 2, "on course to run out");
+            tryCompare(g, "drawClock", 1, 2000);
+            compare(end(g.mainDrawn), end(g.mainPoints), "on the new reading");
+            tryCompare(g, "runOutOpacity", 1, 2000);
+            verify(seen.length > 3);
+            verify(seen.every(([clock, opacity]) => clock === 1 || opacity === 0), "no run-out while it draws on: " + JSON.stringify(seen));
+            compare(g.runOutEnd.x, g.projection[1].x);
+        }
+
+        // A poll while the line still draws on starts from where its end is.
+        function test_aPollMidDrawStartsWhereTheEndIs() {
+            const g = make();
+            const old = end(g.mainPoints);
+            poll(g);
+            tryVerify(() => g.drawIn > 0.2 && g.drawIn < 0.8, 2000, "part way");
+            const target = end(g.mainPoints);
+            g.window = window([[start, 0], [start + 2 * day, 20], [start + 3 * day, 60], [start + 4 * day, 70]], 70);
+            const from = [g.mainFrom.x, g.mainFrom.y];
+            verify(from[0] > old[0] && from[0] < target[0], "between the old end and the one it drew to: " + from);
+            compare(end(g.mainDrawn), from, "no jump");
+            tryCompare(g, "drawClock", 1, 2000);
+            compare(end(g.mainDrawn), end(g.mainPoints));
+        }
+
+        // A run-out that goes fades out where it was.
+        function test_runOutFadesOutWhereItWas() {
+            const g = make({ window: window([[start, 0], [start + 3 * day, 60]], 60), pollAt: start + 3 * day,
+                             nowMs: (start + 3 * day) * 1000 });
+            compare(g.runOutOpacity, 1, "shown at once when the popup opens");
+            const at = g.shownRunOutAt;
+            g.projected = "";
+            compare(g.projection.length, 0);
+            tryVerify(() => g.runOutOpacity > 0 && g.runOutOpacity < 1, 1000, "fading out");
+            compare(g.shownRunOutAt, at, "where it was");
+            tryCompare(g, "runOutOpacity", 0, 1000);
+        }
+
+        // The marker for now fades in once the reading is hours old.
+        function test_staleMarkerFades() {
+            const g = make();
+            const marker = g.children.find(i => i.width === 1 && i.radius !== undefined && i.y > 0 && i.height > 10);
+            verify(marker && !marker.visible);
+            g.nowMs = (start + 2 * day + 3 * 3600) * 1000;
+            verify(g.stale);
+            tryVerify(() => marker.opacity > 0 && marker.opacity < 1, 1000, "fading in");
+            tryCompare(marker, "opacity", 1, 1000);
+        }
+
+        // A week that starts over while the popup is open: the last week's
+        // line fades out as the new week's first reading fades in as a dot.
+        function test_newWeekFadesTheOldOneOut() {
+            const g = make();
+            const old = g.mainPoints.map(p => [p.x, p.y]);
+            g.window = { resetsAt: start + 2 * week, windowSeconds: week, percent: 1, history: [[start + week + 3600, 1]] };
+            compare(g.ghostMain.map(p => [p.x, p.y]), old);
+            compare(g.ghostOpacity, 1);
+            const dot = g.children.find(i => i.shown !== undefined && i.color === g.color);
+            verify(dot.shown);
+            verify(dot.opacity < 1, "the new week's dot fades in");
+            tryCompare(g, "ghostOpacity", 0, 2000);
+            tryCompare(dot, "opacity", 1, 1000);
+        }
+
+        // At Plasma's Instant speed every change is drawn at once.
+        function test_instant() {
+            const g = make({ duration: 0 });
+            poll(g);
+            compare(g.drawClock, 1);
+            compare(g.mainDrawn, g.mainPoints);
+            compare(g.runOutOpacity, 1);
+            compare(g.runOutEnd.x, g.projection[1].x);
+            g.window = { resetsAt: start + 2 * week, windowSeconds: week, percent: 1, history: [[start + week + 3600, 1]] };
+            compare(g.ghostOpacity, 0);
+        }
+
+        // A graph closed mid-change leaves nothing to run.
+        function test_closedMidChange() {
+            const g = make();
+            poll(g);
+            g.destroy();
+            wait(50);
         }
     }
 }

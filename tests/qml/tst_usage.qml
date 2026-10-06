@@ -1818,7 +1818,8 @@ Item {
             verify(!g.placed);
             compare(g.mainPoints.length, 0);
             verify(!rule(g).visible);
-            compare(rectangles(g).length, 0, "no floor, tick, marker or dot");
+            // The dot of the reading that was there fades out.
+            tryVerify(() => rectangles(g).length === 0, 1000, "no floor, tick, marker or dot");
         }
 
         // A faint floor across the whole width and a short tick at the
@@ -1908,6 +1909,8 @@ Item {
             const at = start + 3 * day;
             const g = make([[start, 0], [at, 60]], { percent: 60, at: at, projected: data.runOut ? data.tag : "" });
             g.secondWindow = { resetsAt: start + week, windowSeconds: week, percent: 70, history: [[start, 0], [at, 70]] };
+            // A run-out the model's window brings fades in.
+            tryCompare(g, "runOutOpacity", data.runOut === undefined ? 0 : 1, 1000);
             const ends = rectangles(g).filter(i => i.radius > 0);
             if (data.runOut === undefined) {
                 compare(g.projection.length, 0);
@@ -1953,8 +1956,8 @@ Item {
             line.secondWindow = { resetsAt: start + week, windowSeconds: week, percent: 10, history: [[start + day, 10]] };
             compare(line.projection.length, 0);
             compare(line.secondPoints.length, 1);
+            tryVerify(() => rectangles(line).some(i => i.radius > 0 && i.opacity === 1), 1000, "the model's single reading is a dot");
             const second = rectangles(line).find(i => i.radius > 0);
-            verify(second, "the model's single reading is a dot");
             const q = line.secondPoints[0];
             fuzzyCompare(second.x + second.width / 2, q.x, 1e-9);
             fuzzyCompare(second.y + second.height / 2, q.y, 1e-9);
