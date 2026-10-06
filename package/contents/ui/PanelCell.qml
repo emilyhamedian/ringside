@@ -51,16 +51,13 @@ MouseArea {
 
     // Along a horizontal panel the cell is as wide as its content: it grows
     // at once, but shrinks back only once the content has stayed narrower
-    // for settleDelay, and then to the widest it has been in that time, so a
-    // reading that keeps crossing between widths, 9 % and 10 %, moves the
-    // items after it once rather than on every update. Until then the extra
-    // room sits after the content. Whole pixels, so a fraction of one
-    // doesn't count as a change.
+    // for settleDelay, and then to its width at that moment, so a reading
+    // that keeps crossing between widths, 9 % and 10 %, moves the items
+    // after it once rather than on every update. Until then the extra room
+    // sits after the content. Whole pixels, so a fraction of one doesn't
+    // count as a change.
     readonly property real contentWidth: contentItem ? Math.ceil(contentItem.implicitWidth) : 0
     property real settledWidth: 0
-    // The widest the content has been during the hold, taken once each
-    // change has settled, so a width it passes through on the way isn't kept.
-    property real heldWidth: 0
     readonly property real shownWidth: holdsWidth ? Math.max(contentWidth, settledWidth) : contentWidth
     property int settleDelay: 3 * 60 * 1000
     // A change of layout reaches the content's width a frame or two later,
@@ -85,16 +82,9 @@ MouseArea {
         if (contentWidth >= settledWidth || relayout.running) {
             settledWidth = contentWidth;
             settle.stop();
-        } else {
-            if (!settle.running) {
-                heldWidth = 0;
-                settle.start();
-            }
-            Qt.callLater(noteHeldWidth);
+        } else if (!settle.running) {
+            settle.start();
         }
-    }
-    function noteHeldWidth() {
-        heldWidth = Math.max(heldWidth, contentWidth);
     }
     onLayoutKeyChanged: {
         settledWidth = contentWidth;
@@ -112,7 +102,7 @@ MouseArea {
     Timer {
         id: settle
         interval: cell.settleDelay
-        onTriggered: cell.settledWidth = Math.max(cell.contentWidth, cell.heldWidth)
+        onTriggered: cell.settledWidth = cell.contentWidth
     }
 
     Timer {
