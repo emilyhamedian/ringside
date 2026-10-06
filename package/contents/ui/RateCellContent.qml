@@ -16,8 +16,7 @@ import "code/style.js" as Style
 // gains or loses a character. Stacked, the two values end at the edge the
 // wider one sets, so their units line up. The value and its unit read in that
 // order either way, as a number keeps its sign; only the marker moves to the
-// other side. reservedWidth is the room the widest rates take, which the
-// strip keeps, so changing rates never move what comes after the strip.
+// other side.
 GridLayout {
     id: rates
 
@@ -94,21 +93,11 @@ GridLayout {
     // Between a value and its unit, close enough that they read as one.
     readonly property real unitGap: Math.round(Kirigami.Units.smallSpacing * 0.75)
     readonly property real markerWidth: markerRoom(drawn)
-    // Room for the widest value and unit at the size drawn. Bits move to the
-    // next unit at 999.5, so they never need a fourth digit, though "99.9"
-    // can be wider than "999"; bytes can show 1023.
-    readonly property real valueRoom: drawn.room(drawn.plain, !vertical ? (bits ? [Format.whole(999), Format.decimal(99.9, 1)] : [Format.whole(1000)])
-                                                             : [whole ? Format.whole(100) + "M" : Format.whole(1000) + "M"])
-    // Units differ in length: b/s and Mb/s, B/s and MiB/s.
-    readonly property real unitRoom: drawn.room(drawn.plain, bits ? ["b/s", "kb/s", "Mb/s", "Gb/s", "Tb/s"]
-                                                                  : ["B/s", "KiB/s", "MiB/s", "GiB/s", "TiB/s", "PiB/s"])
+    // Along a vertical panel, room for the widest value at the size drawn.
+    readonly property real valueRoom: drawn.room(drawn.plain, [whole ? Format.whole(100) + "M" : Format.whole(1000) + "M"])
     // The wider of the two values and of the two units now shown.
     readonly property real valuesWidth: drawn.room(drawn.plain, [lines[0].value, lines[1].value])
     readonly property real unitsWidth: drawn.room(drawn.plain, [lines[0].unit, lines[1].unit])
-    // A rate with room for the widest value and unit, rounded up to a whole
-    // pixel as the layout rounds each rate.
-    readonly property real rateRoom: Math.ceil(markerWidth + markerGap + valueRoom + (vertical ? 0 : unitGap + unitRoom))
-    readonly property real reservedWidth: singleRow ? 2 * rateRoom + columnSpacing : rateRoom
     // Horizontally each row is a ring's line; a vertical panel spaces its own.
     readonly property real rowHeight: vertical ? -1 : drawn.lineHeight
 

@@ -990,7 +990,7 @@ Item {
             fuzzyCompare(end - c.implicitWidth, readout.overhang, 0.01, what + ": the readings end past the cell");
         }
 
-        function test_ratesHugAndKeepTheirReserve_data() {
+        function test_ratesHugTheirText_data() {
             const states = {
                 network: [{ networkDown: 0, networkUp: 0 }, { networkDown: 99.9e6 / 8, networkUp: 999e3 / 8 },
                           { networkDown: 999e6 / 8, networkUp: 99.9e9 / 8 }, { networkDown: 1.3e6, networkUp: 1023 },
@@ -1009,25 +1009,20 @@ Item {
             return rows;
         }
 
-        // Rates hug their text and say how much room their widest readings
-        // take, which the strip keeps. Each marker sits a small spacing from
-        // its value, at least the gap before the unit, so an arrow never
-        // touches a long value; stacked, the values end at one edge and the
-        // units start at one.
-        function test_ratesHugAndKeepTheirReserve(data) {
+        // Rates hug their text, so short ones take less room than long ones.
+        // Each marker sits a small spacing from its value, at least the gap
+        // before the unit, so an arrow never touches a long value; stacked,
+        // the values end at one edge and the units start at one.
+        function test_ratesHugTheirText(data) {
             monitor.networkBits = data.bits;
             const c = cell(data.item, { singleRow: data.singleRow });
-            const reserve = c.reservedWidth;
-            verify(reserve > 0);
             verify(Kirigami.Units.smallSpacing >= c.unitGap, "the marker's gap is at least the unit's");
-            let narrowest = Infinity;
+            const widths = [];
             for (const state of data.states) {
                 apply(data.item, { set: state });
                 settle();
                 const what = "showing " + root.texts(c).join(" ");
-                compare(c.reservedWidth, reserve, what + ": the reserve stays");
-                verify(c.implicitWidth <= reserve, what + ": " + c.implicitWidth + " in a reserve of " + reserve);
-                narrowest = Math.min(narrowest, c.implicitWidth);
+                widths.push(c.implicitWidth);
                 // Each rate: its marker, then its value and unit.
                 const rates = root.findAll(c, i => i.reading !== undefined).sort((a, b) => a.index - b.index);
                 compare(rates.length, 2);
@@ -1057,7 +1052,7 @@ Item {
                     compare(units[0].mapToItem(c, Qt.point(0, 0)).x, units[1].mapToItem(c, Qt.point(0, 0)).x, what + ": the units line up");
                 }
             }
-            verify(narrowest < reserve, "short rates take less than their reserve");
+            verify(Math.min(...widths) < Math.max(...widths), "short rates take less room: " + widths.join(", "));
         }
 
         function test_ratesShareTheGrid_data() {
@@ -1170,7 +1165,7 @@ Item {
         // shrinks back only once the content has stayed narrower for the
         // settle delay, so a reading that comes and goes moves nothing. A
         // change of layout, and the moments after the cell is made, apply at
-        // once; a cell that doesn't hold follows its content both ways.
+        // once.
         function test_settleHold() {
             const block = keep(blockComponent.createObject(root));
             const c = keep(panelCellComponent.createObject(root, { contentItem: block, settleDelay: 400, relayoutWindow: 100 }));
@@ -1214,17 +1209,6 @@ Item {
             wait(200);
             block.implicitWidth = 20;
             compare(c.implicitWidth, 25 + outside, "then it holds again");
-
-            c.holdsWidth = false;
-            compare(c.implicitWidth, 20 + outside, "a cell that doesn't hold");
-            block.implicitWidth = 10;
-            compare(c.implicitWidth, 10 + outside, "follows its content");
-
-            // The room it leaves of a reserve is its slack.
-            c.reservedWidth = 80;
-            compare(c.slack, 80 - 10 - outside);
-            c.reservedWidth = 10;
-            compare(c.slack, 0);
         }
 
         // Through a hold the cell keeps the widest it showed, whatever its

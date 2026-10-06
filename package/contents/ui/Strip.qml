@@ -45,22 +45,6 @@ GridLayout {
     }
     // Two lines need room for both; otherwise they share one.
     readonly property bool twoLines: thickness >= Kirigami.Units.gridUnit * 2
-    // The room the rates keep for their widest readings and don't use now,
-    // kept after the last item, so the strip's width, and with it whatever
-    // follows the strip in the panel, doesn't change as rates do. itemAt()
-    // doesn't notify, so this follows the cells the Repeater adds.
-    readonly property real rateSlack: {
-        if (vertical) {
-            return 0;
-        }
-        cells.built;
-        let slack = 0;
-        for (let i = 0; i < cells.count; ++i) {
-            const entry = cells.itemAt(i);
-            slack += entry ? entry.cell.slack : 0; // qmllint disable missing-property
-        }
-        return slack;
-    }
 
     function isRing(item) {
         return Items.isRing(item);
@@ -81,13 +65,8 @@ GridLayout {
         id: entry
 
         required property string modelData
-        required property int index
         readonly property alias cell: cell
         readonly property bool textShown: !strip.isRing(modelData) || !strip.vertical && !strip.ringsOnly.includes(modelData)
-        // A rate in the last place: its changes move nothing but the room
-        // kept at the strip's end, so it needn't hold its width. Any other
-        // item, a rate included, would move the ones after it.
-        readonly property bool trailingRate: !strip.isRing(modelData) && index === strip.items.length - 1
 
         Layout.fillWidth: strip.vertical
         Layout.fillHeight: !strip.vertical
@@ -107,7 +86,6 @@ GridLayout {
             item: entry.modelData
             open: strip.openItem === entry.modelData
             vertical: strip.vertical
-            holdsWidth: !entry.trailingRate
             settleDelay: strip.settleDelay
             relayoutWindow: strip.relayoutWindow
             layoutKey: [entry.textShown, strip.vertical, strip.thickness, strip.twoLines,
@@ -182,12 +160,6 @@ GridLayout {
                         property: "description"
                         value: rates.accessibleDescription
                     }
-
-                    Binding {
-                        target: cell
-                        property: "reservedWidth"
-                        value: rates.reservedWidth + 2 * cell.padding
-                    }
                 }
             }
         }
@@ -195,19 +167,7 @@ GridLayout {
 
     Repeater {
         id: cells
-
-        // Counts the cells added, for rateSlack.
-        property int built: 0
-
         model: strip.items
         delegate: Entry {}
-        onItemAdded: ++built
-    }
-
-    // The rates' slack, after the last item.
-    Item {
-        visible: !strip.vertical
-        Layout.preferredWidth: strip.rateSlack
-        Layout.fillHeight: true
     }
 }
