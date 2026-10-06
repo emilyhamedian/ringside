@@ -1061,6 +1061,22 @@ Item {
             compare(String(dash.color), String(Kirigami.Theme.textColor));
         }
 
+        // After the reset the dash has no caption, yet sits where the
+        // countdown did, level with the title, and the header keeps its
+        // height.
+        function test_dashSitsWhereTheCountdownDid() {
+            const place = () => {
+                const h = header(load("claude"));
+                const digits = root.find(h, i => i.numberWidth !== undefined && i.visible);
+                return { height: h.height, baseline: digits.mapToItem(h, Qt.point(0, digits.baselineOffset)).y };
+            };
+            const countdown = place();
+            setClaude({ weekly: monitor.usage.window(40, -600, []) });
+            const dash = place();
+            compare(dash.baseline, countdown.baseline, "the headline's baseline");
+            compare(dash.height, countdown.height, "the header's height");
+        }
+
         function test_codex() {
             const popup = load("codex");
             const shown = root.texts(popup);

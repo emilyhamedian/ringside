@@ -120,8 +120,6 @@ PopupPage {
                      : level === 1 ? Kirigami.Theme.neutralTextColor : Kirigami.Theme.textColor;
             }
             caption: section.temperatureName
-            // NVIDIA names no sensor.
-            keepsCaptionLine: true
         }
 
         GridLayout {
