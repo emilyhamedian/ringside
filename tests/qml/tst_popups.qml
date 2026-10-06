@@ -105,6 +105,19 @@ Item {
         gpuInner.present: false
     }
 
+    FakeMonitor {
+        id: onlyAsleep
+        gpuOuter.phase: "asleep"
+        gpuInner.present: false
+    }
+
+    // Names longer than a header has room for at any popup width.
+    FakeMonitor {
+        id: longGpuNames
+        gpuOuter.name: "NVIDIA GeForce RTX 4090 Laptop GPU with a very long marketing name"
+        gpuInner.name: "Advanced Micro Devices Radeon 890M Graphics (Strix Point)"
+    }
+
     // No pressure stall information and no swap.
     FakeMonitor {
         id: bare
@@ -193,6 +206,8 @@ Item {
                 { tag: "gpuIntegratedOnly", popup: "GpuPopup", monitor: integrated },
                 { tag: "gpuInnerAsleep", popup: "GpuPopup", monitor: innerAsleep },
                 { tag: "gpuIntel", popup: "GpuPopup", monitor: intel },
+                { tag: "gpuOnlyAsleep", popup: "GpuPopup", monitor: onlyAsleep },
+                { tag: "gpuLongNames", popup: "GpuPopup", monitor: longGpuNames },
                 { tag: "memory", popup: "MemoryPopup", monitor: normal },
                 { tag: "memoryWithoutPressureOrSwap", popup: "MemoryPopup", monitor: bare },
                 { tag: "network", popup: "NetworkPopup", monitor: normal }
@@ -234,11 +249,33 @@ Item {
             return found;
         }
 
-        // A sleeping GPU is one line under the awake one, not a section.
-        function test_aSleepingGpuIsOneLine() {
-            const found = texts(load("GpuPopup", asleep));
+        // A sleeping GPU is one dim line, not a section: under the awake
+        // GPU's, or where a header would start when no GPU is awake.
+        function test_aSleepingGpuIsOneLine_data() {
+            return [{ tag: "underAnAwakeGpu", monitor: asleep }, { tag: "theOnlyGpu", monitor: onlyAsleep }];
+        }
+
+        function test_aSleepingGpuIsOneLine(data) {
+            const popup = load("GpuPopup", data.monitor);
+            const found = texts(popup);
             verify(found.includes("AMD Radeon RX 7700S · off"), JSON.stringify(found));
             verify(!found.some(t => t.indexOf("Powered down") >= 0), JSON.stringify(found));
+            const line = shownText(popup, "AMD Radeon RX 7700S · off");
+            compare(String(line.color), String(Style.dim(Kirigami.Theme.textColor)));
+            const top = i => i.mapToItem(popup, Qt.point(0, 0)).y;
+            const edge = Math.round(Kirigami.Units.largeSpacing * 2);
+            compare(line.mapToItem(popup, Qt.point(0, 0)).x, edge);
+            compare(line.width, popup.width - 2 * edge);
+            const headers = all(popup, i => i.visible && i.partsShown !== undefined);
+            const tiles = all(popup, i => i.visible && i.graphNote !== undefined);
+            if (data.monitor === onlyAsleep) {
+                compare(headers.length, 0);
+                compare(tiles.length, 0);
+                compare(top(line), top(headerOf(load("CpuPopup", normal))), "where a header would start");
+            } else {
+                compare(headers.length, 1);
+                verify(tiles.length > 0 && tiles.every(t => top(t) + t.height < top(line)), "under the awake GPU's section");
+            }
         }
 
         function gauges(item) {
@@ -268,7 +305,7 @@ Item {
             return arcs[0].radius > arcs[1].radius ? arcs[0] : arcs[1];
         }
 
-        // The header ring, and the GPU popup's ring per GPU, take the level
+        // The header rings, one per GPU in the GPU popup, take the level
         // colours at 75 % and 90 % of their own reading, in the arc they draw.
         function test_popupRingsTakeTheLevelColours_data() {
             return [{ tag: "74", value: 74, tone: "text" }, { tag: "75", value: 75, tone: "neutral" },
@@ -343,20 +380,20 @@ Item {
             tryCompare(cpu[0], "width", 80);
             compare(cpu[0].strokeWidth, 4, "the header ring's stroke at any size");
 
-            // The GPU popup's header hides its ring.
+            // Each GPU's header has the same ring.
             const gpu = gauges(load("GpuPopup", normal)).filter(g => g.visible);
             compare(gpu.map(g => g.value), [12, 3], "a ring per GPU");
             gpu.forEach(g => {
                 const tag = "the ring at " + g.value + "%";
                 compare(g.text, localized(g.value + "%"), tag);
-                compare(g.strokeWidth, 3.5, tag);
+                compare(g.strokeWidth, 4, tag);
                 const text = centreText(g);
                 verify(text, tag);
                 verify(text.visible, tag + " shows its percentage");
                 compare(names(g), [], tag);
                 g.Layout.preferredWidth = 80;
                 tryCompare(g, "width", 80);
-                compare(g.strokeWidth, 3.5, tag + " keeps its stroke at any size");
+                compare(g.strokeWidth, 4, tag + " keeps its stroke at any size");
             });
         }
 
@@ -416,7 +453,7 @@ Item {
         }
 
         // The temperature unit is as small as the caption under it and sits
-        // against the digits, in the header and in the GPU rows alike. At one
+        // against the digits, in the CPU and GPU headers alike. At one
         // size it is as far from the ink after a tabular "1" (61, 41) as
         // after any other digit (60, 48).
         function test_temperatureUnitSizeAndGap_data() {
@@ -453,7 +490,7 @@ Item {
 
         // Only the degree sign moves toward a narrow last digit: the digits,
         // the reading's width and the caption under it hold still as the
-        // temperature changes, in the CPU header and in a GPU row.
+        // temperature changes, in the CPU header and in a GPU's.
         function test_temperatureDigitsHoldStill() {
             const where = (r, popup) => parts(r).number.mapToItem(popup, Qt.point(0, 0)).x;
             const cpu = [];
@@ -468,14 +505,18 @@ Item {
                 verify(headline && caption);
                 cpu.push([where(headline, popup), headline.implicitWidth, caption.mapToItem(popup, Qt.point(0, 0)).x].join(" "));
                 const gpuPopup = load("GpuPopup", normal);
-                const row = readings(gpuPopup).find(r => r.visible && r.degreeUnit !== "" && r.value === Format.temperature(t, false));
-                verify(row, "the GPU row at " + t);
-                gpu.push([where(row, gpuPopup), row.implicitWidth].join(" "));
+                const gpuHeader = headerOf(gpuPopup);
+                const gpuHeadline = readings(gpuHeader).find(r => r.visible && r.degreeUnit !== "");
+                const gpuCaption = shownText(gpuHeader, gpuHeader.caption);
+                verify(gpuHeadline && gpuCaption, "the GPU header at " + t);
+                compare(gpuHeadline.value, Format.temperature(t, false));
+                gpu.push([where(gpuHeadline, gpuPopup), gpuHeadline.implicitWidth,
+                          gpuCaption.mapToItem(gpuPopup, Qt.point(0, 0)).x].join(" "));
             }
             normal.cpuTemperature = 61;
             normal.gpuOuter.temperature = Qt.binding(() => normal.gpuOuter.awake ? 48 : NaN);
             compare(cpu.filter(s => s !== cpu[0]), [], "the header at 59, 60, 61, 62, 71: " + cpu.join(", "));
-            compare(gpu.filter(s => s !== gpu[0]), [], "the GPU row at 59, 60, 61, 62, 71: " + gpu.join(", "));
+            compare(gpu.filter(s => s !== gpu[0]), [], "the GPU header at 59, 60, 61, 62, 71: " + gpu.join(", "));
         }
 
         // A degree sign is always at the small font's size, where another
@@ -1085,20 +1126,142 @@ Item {
             verify(found.includes(expected), JSON.stringify(found));
         }
 
-        // With two GPUs each section names its kind, so the header doesn't.
-        function test_gpuSubtitle_data() {
-            return [{ tag: "two", monitor: normal, subtitle: "" },
-                    { tag: "twoOneAsleep", monitor: innerAsleep, subtitle: "" },
-                    { tag: "intel", monitor: intel, subtitle: "" },
-                    { tag: "integratedOnly", monitor: integrated, subtitle: "Integrated" },
-                    { tag: "discreteOnly", monitor: discreteOnly, subtitle: "Discrete" }];
+        // Each awake GPU opens with the CPU popup's header: its usage in the
+        // ring, its name, its kind and memory, and its temperature over the
+        // sensor's name where it has one. Nothing titles the popup "GPU"; a
+        // powered-down GPU stays one line after the sections.
+        function test_gpuHeaders_data() {
+            const amd = ["AMD Radeon RX 7700S", "AMD Radeon 780M Graphics"];
+            const kinds = ["dGPU · 8 GiB", "iGPU · shared"];
+            const off = ["AMD Radeon RX 7700S · off"];
+            return [{ tag: "two", monitor: normal, titles: amd, subtitles: kinds, rings: [12, 3], values: [48, 41],
+                      captions: ["chip", "chip"], off: [] },
+                    { tag: "outerAsleep", monitor: asleep, titles: [amd[1]], subtitles: [kinds[1]], rings: [3], values: [41],
+                      captions: ["chip"], off: off },
+                    { tag: "innerAsleep", monitor: innerAsleep, titles: [amd[1]], subtitles: [kinds[1]], rings: [12], values: [48],
+                      captions: ["chip"], off: off },
+                    { tag: "integratedOnly", monitor: integrated, titles: [amd[1]], subtitles: [kinds[1]], rings: [12], values: [48],
+                      captions: ["chip"], off: [] },
+                    { tag: "discreteOnly", monitor: discreteOnly, titles: [amd[0]], subtitles: [kinds[0]], rings: [12], values: [48],
+                      captions: ["chip"], off: [] },
+                    { tag: "intel", monitor: intel, titles: ["NVIDIA GeForce RTX 3060 Laptop GPU", "Intel Iris Xe Graphics"],
+                      subtitles: kinds, rings: [12, 3], values: [48, NaN], captions: ["", ""], off: [] },
+                    { tag: "onlyAsleep", monitor: onlyAsleep, titles: [], subtitles: [], rings: [], values: [], captions: [], off: off }];
         }
 
-        function test_gpuSubtitle(data) {
+        function test_gpuHeaders(data) {
+            const cpuRing = gauges(headerOf(load("CpuPopup", normal)))[0];
             const popup = load("GpuPopup", data.monitor);
-            compare(headerOf(popup).subtitle, data.subtitle);
+            const headers = all(popup, i => i.visible && i.partsShown !== undefined);
+            compare(headers.map(h => h.title), data.titles);
+            compare(headers.map(h => h.subtitle), data.subtitles.map(localized));
+            compare(headers.map(h => h.caption), data.captions);
+            headers.forEach((h, n) => {
+                const tag = h.title;
+                const rings = gauges(h).filter(g => g.visible);
+                compare(rings.length, 1, tag);
+                compare(rings[0].value, data.rings[n], tag);
+                compare(rings[0].width, cpuRing.width, tag + ": the CPU popup's ring size");
+                compare(rings[0].strokeWidth, cpuRing.strokeWidth, tag);
+                compare(rings[0].Accessible.name, h.title, tag + " names its ring");
+                verify(shownText(h, h.title), tag + ": the title");
+                verify(shownText(h, h.subtitle), tag + ": the subtitle");
+                const headline = readings(h).filter(r => r.visible);
+                if (Number.isFinite(data.values[n])) {
+                    compare(headline.length, 1, tag);
+                    compare(headline[0].value, Format.temperature(data.values[n], false), tag);
+                    compare(headline[0].degreeUnit, "C", tag);
+                } else {
+                    compare(headline.length, 0, tag + " has no temperature");
+                }
+                if (h.caption !== "") {
+                    verify(shownText(h, h.caption), tag + ": the caption");
+                }
+            });
             const found = texts(popup);
-            verify(!found.some(t => t.indexOf("Discrete · ") >= 0 || t.indexOf("Integrated · ") >= 0), JSON.stringify(found));
+            verify(!found.some(t => ["GPU", "Discrete", "Integrated"].includes(t)), JSON.stringify(found));
+            compare(found.filter(t => t.endsWith(" · off")), data.off);
+            // A rule before every section but the first, and before a
+            // powered-down GPU under an awake one.
+            const rules = all(popup, i => i.visible && i.height > 0 && i.height <= 1 && i.radius !== undefined && i.width > 0
+                                          && !ancestor(i, a => a.ceiling !== undefined));
+            compare(rules.length, Math.max(0, headers.length - 1) + (headers.length > 0 ? data.off.length : 0));
+        }
+
+        // Every GPU header is laid out as the CPU popup's is, on the
+        // content's edges and with its tiles as far under it, plain and
+        // mirrored. Each section's parts sit where the CPU header's do.
+        function test_gpuHeadersMatchTheCpu_data() {
+            return [{ tag: "plain", mirrored: false }, { tag: "mirrored", mirrored: true }];
+        }
+
+        function test_gpuHeadersMatchTheCpu(data) {
+            const edge = Math.round(Kirigami.Units.largeSpacing * 2);
+            const layout = popup => all(popup, i => i.visible && i.partsShown !== undefined).map(header => {
+                const at = i => i.mapToItem(header, Qt.point(0, 0));
+                const baseline = t => t.mapToItem(header, Qt.point(0, t.baselineOffset)).y;
+                const ring = gauges(header)[0];
+                const title = shownText(header, header.title);
+                const subtitle = shownText(header, header.subtitle);
+                const caption = shownText(header, header.caption);
+                const headline = readings(header).find(r => r.visible);
+                const top = header.mapToItem(popup, Qt.point(0, 0)).y;
+                const tiles = all(popup, i => i.visible && i.graphNote !== undefined)
+                    .map(t => t.mapToItem(popup, Qt.point(0, 0)).y).filter(y => y > top);
+                return {
+                    edges: [header.mapToItem(popup, Qt.point(0, 0)).x, popup.width - header.mapToItem(popup, Qt.point(header.width, 0)).x],
+                    height: header.height,
+                    ring: [at(ring).x, at(ring).y, ring.width],
+                    title: [at(title).x, baseline(title), title.font.pointSize],
+                    subtitle: [at(subtitle).x, baseline(subtitle)],
+                    headline: [at(headline).x + (data.mirrored ? 0 : headline.width), baseline(headline), headline.pointSize],
+                    caption: [at(caption).x + (data.mirrored ? 0 : caption.width), baseline(caption)],
+                    tiles: Math.min(...tiles) - top - header.height
+                };
+            });
+            const cpu = layout(load("CpuPopup", normal, data.mirrored));
+            compare(cpu.length, 1);
+            compare(cpu[0].edges, [edge, edge]);
+            const gpu = layout(load("GpuPopup", normal, data.mirrored));
+            compare(gpu.length, 2);
+            gpu.forEach((g, n) => {
+                for (const key in cpu[0]) {
+                    compare(JSON.stringify(g[key]), JSON.stringify(cpu[0][key]), "GPU " + (n + 1) + ": " + key);
+                }
+            });
+        }
+
+        // A long name elides in its header at the page widths a popup
+        // takes, short of the temperature, which keeps its full width.
+        function test_gpuLongNamesFit_data() {
+            const rows = [];
+            for (const width of [Kirigami.Units.gridUnit * 20, Math.round(Kirigami.Units.gridUnit * 20 * 14 / 18)]) {
+                rows.push({ tag: width + " px", width: width, mirrored: false });
+                rows.push({ tag: width + " px mirrored", width: width, mirrored: true });
+            }
+            return rows;
+        }
+
+        function test_gpuLongNamesFit(data) {
+            const loader = createTemporaryObject(data.mirrored ? mirroredHost : host, root, { width: data.width });
+            loader.setSource(Qt.resolvedUrl("../../package/contents/ui/popups/GpuPopup.qml"), { monitor: longGpuNames });
+            const popup = loader.item;
+            waitForRendering(popup);
+            compare(popup.width, data.width);
+            const left = i => i.mapToItem(popup, Qt.point(0, 0)).x;
+            const edge = Math.round(Kirigami.Units.largeSpacing * 2);
+            const headers = all(popup, i => i.visible && i.partsShown !== undefined);
+            compare(headers.length, 2);
+            headers.forEach(h => {
+                const title = shownText(h, h.title);
+                verify(title.truncated, h.title + " elides");
+                const headline = readings(h).find(r => r.visible);
+                verify(headline.width >= headline.implicitWidth - 0.5, "the temperature keeps its width");
+                const [near, far] = data.mirrored ? [headline, title] : [title, headline];
+                verify(left(near) + near.width <= left(far) + 0.5, "the name stops short of the temperature");
+                compare(left(h), edge);
+                compare(left(h) + h.width, popup.width - edge);
+            });
         }
 
         // Temperature sensors go by plain words, not their hwmon labels;
@@ -1128,7 +1291,7 @@ Item {
             compare(words.sensorName(data.raw), data.shown);
         }
 
-        // The CPU caption and the GPU rows show the plain words.
+        // The CPU and GPU headers' captions show the plain words.
         function test_popupsNameTheirSensors_data() {
             return [{ tag: "usual", monitor: normal, cpu: "chip", gpu: ["chip", "chip"] },
                     { tag: "other", monitor: otherSensors, cpu: "chiplet " + Format.whole(3), gpu: ["hotspot", "memory"] }];
@@ -1141,7 +1304,7 @@ Item {
             verify(shownText(header, data.cpu), "the caption is shown");
             const gpu = load("GpuPopup", data.monitor);
             const found = texts(gpu);
-            compare(found.filter(t => t === data.gpu[0] || t === data.gpu[1]).length, 2, JSON.stringify(found));
+            compare(all(gpu, i => i.partsShown !== undefined).map(h => h.caption), data.gpu);
             data.gpu.forEach(name => verify(found.includes(name), name + " in " + JSON.stringify(found)));
             const raw = ["Tctl", "Tccd3", "edge", "junction", "mem"];
             verify(!texts(cpu).concat(found).some(t => raw.includes(t)), "no raw label is shown");

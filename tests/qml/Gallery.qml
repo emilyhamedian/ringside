@@ -482,6 +482,11 @@ Rectangle {
                 label: "GPU · NVIDIA and Intel"
                 GpuPopup { monitor: intel }
             }
+
+            PopupFrame {
+                label: "GPU · the only GPU asleep"
+                GpuPopup { monitor: onlyAsleep }
+            }
         }
 
         // Claude and Codex, in the panel and in their popups.
