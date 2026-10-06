@@ -146,7 +146,7 @@ Item {
             compare(Report.helperFailure(data.data), data.failure);
         }
 
-        function test_markFailedDimsOnlyShownEntries() {
+        function test_markFailedMarksOnlyShownEntries() {
             const before = { claude: { status: "ok", weekly: { percent: 40 } }, codex: { status: "signed_out" } };
             const after = Report.markFailed(before, "boom", 1000);
             compare(after.claude.weekly.percent, 40);

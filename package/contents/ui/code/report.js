@@ -26,8 +26,9 @@ function helperFailure(data) {
 }
 
 // The entries with every shown one marked as failed at `at`, keeping its
-// last reading so the item dims. Signed-out entries are left alone, and a
-// failure never adds an entry for a tool nobody signed in to.
+// last reading so the item shows a failed-check dot. Signed-out entries are
+// left alone, and a failure never adds an entry for a tool nobody signed in
+// to.
 function markFailed(entries, message, at) {
     const marked = Object.assign({}, entries);
     for (const id in marked) {
