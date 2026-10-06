@@ -16,9 +16,10 @@ import "code/style.js" as Style
 // gains or loses a character. Stacked, the two values end at the edge the
 // wider one sets, so their units line up. The value and its unit read in that
 // order either way, as a number keeps its sign; only the marker moves to the
-// other side. Given more room, as a cell holding its width gives them, each
-// rate keeps the extra between its marker and its value, so the readings
-// still end where the rates do.
+// other side. Given more room, as a cell holding its width gives them, the
+// readings still end where the rates do: stacked, each rate keeps the extra
+// between its marker and its value, so the units still line up; side by
+// side, it goes between the two rates, so each marker stays by its value.
 GridLayout {
     id: rates
 
@@ -147,18 +148,20 @@ GridLayout {
             // item's width and its implicitWidth reports a loop as the layout
             // resizes the item.
             readonly property real ownWidth: markerWidth + rates.markerGap + valueWidth + (rates.vertical ? 0 : rates.unitGap + unitWidth)
-            // The whole pixels of room the rate has beyond its own, which
-            // sit after the marker.
+            // The whole pixels of room the rate has beyond its own: after
+            // the marker when stacked, before it side by side, where only
+            // the second rate takes any.
             readonly property real spare: Math.max(0, Math.floor(width - ownWidth))
 
             Layout.row: rates.singleRow ? 0 : index
             Layout.column: rates.singleRow ? index : 0
-            Layout.fillWidth: true
+            Layout.fillWidth: !rates.singleRow || index === 1
             implicitWidth: ownWidth
             implicitHeight: rates.vertical ? value.implicitHeight : rates.rowHeight
 
             Item {
                 anchors.left: parent.left
+                anchors.leftMargin: rates.singleRow ? rate.spare : 0
                 width: rate.markerWidth
                 height: parent.height
 
@@ -184,9 +187,9 @@ GridLayout {
             }
 
             // The value and its unit, never mirrored, after the marker and
-            // any spare room; the layout's rounding up to a whole pixel falls
-            // after them. Placed by x, since with mirroring off its own
-            // anchors would read left to right.
+            // the spare room, wherever that sits; the layout's rounding up to
+            // a whole pixel falls after them. Placed by x, since with
+            // mirroring off its own anchors would read left to right.
             Item {
                 x: rate.LayoutMirroring.enabled ? parent.width - rate.markerWidth - rates.markerGap - rate.spare - width
                                                 : rate.markerWidth + rates.markerGap + rate.spare
