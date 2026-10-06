@@ -179,6 +179,20 @@ Item {
         Loader {}
     }
 
+    // A reading drawn light on dark, so its ink can be told apart.
+    Component {
+        id: inkHost
+        Rectangle {
+            property alias loader: inkLoader
+            width: inkLoader.width
+            height: inkLoader.height
+            color: "black"
+            Loader {
+                id: inkLoader
+            }
+        }
+    }
+
     Component {
         id: mirroredHost
         Loader {
@@ -575,6 +589,54 @@ Item {
             compare(r.implicitHeight, p.number.implicitHeight);
             const other = parts(make({ unit: "GHz" }));
             compare(other.suffix.y + other.suffix.baselineOffset, other.number.y + other.number.baselineOffset, "a unit on the baseline");
+        }
+
+        // In the drawn reading, the degree sign is as far from the digits'
+        // ink box after a "1", a "7", a "0" or a "4", within a pixel. At the
+        // sign's own height a digit whose top falls away leaves more room,
+        // as much as its shape in the font gives, but the sign never
+        // touches it.
+        function test_degreeSignGapAtItsHeight() {
+            const boxGaps = [];
+            for (const value of ["41", "47", "40", "44"]) {
+                const host = createTemporaryObject(inkHost, root);
+                host.loader.setSource(Qt.resolvedUrl("../../package/contents/ui/Reading.qml"),
+                                      { value: value, degreeUnit: "C", color: "white", unitColor: "white",
+                                        pointSize: Kirigami.Theme.defaultFont.pointSize * 1.7 });
+                waitForRendering(host);
+                const image = grabImage(host);
+                const bottom = Math.floor(host.loader.item.baselineOffset);
+                const ink = (x, ys) => ys.some(y => image.pixel(x, y).hslLightness > 0.3);
+                const above = Array.from({ length: bottom }, (_, y) => y);
+                // Runs of inked columns: the digits, then "°", then "C".
+                const runs = [];
+                for (let x = 0; x < image.width; ++x) {
+                    if (!ink(x, above)) {
+                        continue;
+                    }
+                    if (runs.length > 0 && x === runs[runs.length - 1][1] + 1) {
+                        runs[runs.length - 1][1] = x;
+                    } else {
+                        runs.push([x, x]);
+                    }
+                }
+                verify(runs.length >= 3, value + " draws apart: " + JSON.stringify(runs));
+                const sign = runs[runs.length - 2];
+                const signColumns = Array.from({ length: sign[1] - sign[0] + 1 }, (_, i) => sign[0] + i);
+                const rows = above.filter(y => signColumns.some(x => ink(x, [y])));
+                const edge = ys => {
+                    let x = sign[0] - 1;
+                    while (x >= 0 && !ink(x, ys)) {
+                        --x;
+                    }
+                    return x;
+                };
+                const boxGap = sign[0] - edge(above) - 1;
+                const signGap = sign[0] - edge(rows) - 1;
+                verify(signGap >= 1, value + ": the sign is " + signGap + " from the digit at its height");
+                boxGaps.push(boxGap);
+            }
+            verify(Math.max(...boxGaps) - Math.min(...boxGaps) <= 1, "after 1, 7, 0, 4: " + boxGaps.join(", "));
         }
 
         // A missing temperature is a bare dash.
