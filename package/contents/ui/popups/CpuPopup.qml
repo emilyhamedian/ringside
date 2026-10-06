@@ -150,7 +150,11 @@ PopupPage {
                 readonly property int gap: count > 32 ? 1 : 3
                 // From the tile rather than this layout's own width, which it
                 // only learns mid-layout: changing columns then makes the
-                // layout rearrange itself recursively.
+                // layout rearrange itself recursively. The rows' height still
+                // follows the width, so on Qt 6.6 a host that sized the popup
+                // straight from the Loader's preferred size, rather than a
+                // resize later as AppletPopup does, reports a binding loop on
+                // preferredHeight with more than 32 threads.
                 readonly property real available: perThread.width - 2 * perThread.horizontalPadding
                 readonly property int maxColumns: Math.max(1, Math.floor((available + gap) / (2 + gap)))
                 // One row until the tile has a width to fit, and while no thread is known.
