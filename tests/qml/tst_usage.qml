@@ -1788,6 +1788,20 @@ Item {
             verify(!make([], { percent: 0, at: now - data.age, now: now }).stale, "no line, nothing to mark");
         }
 
+        // Late in the week the marker for now falls where the "100%" label
+        // sits, at the right end; the label moves to the start rather than
+        // have the line run through its digits.
+        function test_labelAvoidsTheStaleMarker() {
+            const now = start + week - 5 * 3600;
+            const fresh = make([[start, 0], [now - 3600, 40]], { percent: 40, at: now - 3600, now: now });
+            verify(!rule(fresh).atStart, "a fresh reading leaves the label at the end");
+            const old = make([[start, 0], [now - 6 * 3600, 40]], { percent: 40, at: now - 6 * 3600, now: now });
+            verify(old.stale);
+            const marker = rectangles(old).find(i => i.width === 1 && i.y === rule(old).ruleY);
+            verify(marker.x > old.width - rule(old).span, "the marker is under the label's place at the end");
+            verify(rule(old).atStart, "the label moves to the start");
+        }
+
         // Time runs left to right in every language.
         function test_noMirroring() {
             const host = createTemporaryObject(mirroredGraph, root);
