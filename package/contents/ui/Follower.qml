@@ -18,6 +18,10 @@ QtObject {
     property real shown: target
     // Milliseconds; 0 follows at once.
     property real settle: 0
+    // How near counts as there, in units of target: it comes to rest once
+    // this near and slower than twenty times this a second. What draws it
+    // sets what a quarter of a pixel is worth.
+    property real precision: 0.05
     // Off follows at once, as while a reset animation draws the ring.
     property bool enabled: true
     // In units of target per second.
@@ -48,7 +52,7 @@ QtObject {
             bound = false;
             shown = target;
         }
-        if (Math.abs(shown - target) >= 0.05 || Math.abs(velocity) >= 1) {
+        if (shown !== target || velocity !== 0) {
             frames.start();
         }
     }
@@ -66,7 +70,7 @@ QtObject {
         const c = (velocity + w * x) * dt;
         const nx = (x + c) * e;
         const nv = (velocity - w * c) * e;
-        if (Math.abs(nx) < 0.05 && Math.abs(nv) < 1) {
+        if (Math.abs(nx) < precision && Math.abs(nv) < 20 * precision) {
             frames.stop();
             shown = target;
             velocity = 0;

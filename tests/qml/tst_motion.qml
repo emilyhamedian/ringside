@@ -196,6 +196,19 @@ Item {
             verify(values.every(v => v >= 45), "never below the nearer reading: " + JSON.stringify(values));
         }
 
+        // It comes to rest on the target once within its precision, sooner
+        // the coarser that is, and at once where that is more than the change.
+        function test_restsWithinItsPrecision() {
+            const followers = [0.05, 0.5, 5].map(p => createTemporaryObject(followerComponent, testCase, { precision: p }));
+            const [fine, coarse, loose] = followers.map(f => trace(f));
+            followers.forEach(f => { f.target = 11; });
+            tryVerify(() => followers.every(f => !f.moving), 2000);
+            followers.forEach(f => compare(f.shown, 11));
+            verify(coarse.length < fine.length, "fewer frames: " + coarse.length + " against " + fine.length);
+            verify(coarse.every((v, i) => v <= 11 && (i === 0 || v >= coarse[i - 1])), JSON.stringify(coarse));
+            compare(loose, [11]);
+        }
+
         // Plasma's Instant speed: no frames, and the value at once.
         function test_noSettleFollowsAtOnce() {
             const f = createTemporaryObject(followerComponent, testCase, { settle: 0 });
@@ -266,6 +279,19 @@ Item {
             verify(seen.every(f => f.percent === 40), "no motion: " + JSON.stringify(seen));
             gauge.value = 40.6;
             tryCompare(arc, "percent", 41, 2000);
+        }
+
+        // A point more comes to rest once the arc is within a quarter of a
+        // pixel of it, without frames that move it by less.
+        function test_restsWithinAQuarterPixel() {
+            const gauge = createTemporaryObject(gaugeComponent, root, { value: 40 });
+            const arc = outerArc(gauge);
+            const seen = frames(gauge);
+            gauge.value = 41;
+            tryCompare(arc, "percent", 41, 2000);
+            const pixels = seen.map(f => Math.abs(41 - f.percent) * 2 * Math.PI * arc.radius / 100);
+            verify(pixels.some(p => p > 0.25), "it moves: " + JSON.stringify(pixels));
+            verify(pixels.every(p => p === 0 || p >= 0.25), JSON.stringify(pixels));
         }
 
         // 70 to 92: the arc sweeps in the base colour, turns amber on the

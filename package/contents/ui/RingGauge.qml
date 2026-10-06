@@ -106,6 +106,12 @@ Item {
         return Number.isFinite(percent) ? Math.max(0, Math.min(100, percent)) : 0;
     }
 
+    // A quarter of a pixel along an arc of this radius, in percent: an arc
+    // that near its reading comes to rest there.
+    function quarterPixel(radius) {
+        return 25 / (2 * Math.PI * Math.max(1, radius));
+    }
+
     // Plays the windows that just started over, each { from, early } or null;
     // see code/reset.js.
     function playResets(outerReset, innerReset) {
@@ -127,6 +133,7 @@ Item {
         id: outerFollower
         target: Math.round(gauge.clamped(gauge.value))
         settle: gauge.visible ? gauge.settle : 0
+        precision: gauge.quarterPixel(outer.radius)
         enabled: !outer.animating
     }
 
@@ -134,6 +141,7 @@ Item {
         id: innerFollower
         target: gauge.innerDrawn ? Math.round(gauge.clamped(gauge.innerValue)) : 0
         settle: gauge.visible ? gauge.settle : 0
+        precision: gauge.quarterPixel(gauge.innerRadius)
         enabled: gauge.innerShown > 0 && !innerArc.animating
     }
 
