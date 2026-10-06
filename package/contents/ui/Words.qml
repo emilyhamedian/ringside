@@ -181,9 +181,8 @@ QtObject {
         const zone = window.clockZone;
         // To the nearest minute: a reset reported as 10:59:59 reads as 11:00.
         const date = zonedDate(Math.round(window.resetsAt / 60) * 60, window);
-        const locale = Qt.locale();
-        const day = locale.dayName(date.getDay(), Locale.ShortFormat);
-        const time = date.toLocaleTimeString(locale, Locale.ShortFormat);
+        const day = Qt.locale().dayName(date.getDay(), Locale.ShortFormat);
+        const time = shortTime(date);
         return zone && zone.abbreviation
             ? i18nc("@info weekday, time and time zone of a reset, e.g. Sun 7:00 AM EDT", "%1 %2 %3", day, time, zone.abbreviation)
             : i18nc("@info weekday and time of a reset, e.g. Sun 7:00 AM", "%1 %2", day, time);
@@ -197,9 +196,8 @@ QtObject {
             return "";
         }
         const date = zonedDate(epoch, window);
-        const locale = Qt.locale();
         return i18nc("@info weekday and time within a weekly window, e.g. Tue 3:30 AM", "%1 %2",
-                     locale.dayName(date.getDay(), Locale.ShortFormat), date.toLocaleTimeString(locale, Locale.ShortFormat));
+                     Qt.locale().dayName(date.getDay(), Locale.ShortFormat), shortTime(date));
     }
 
     // A Date whose fields read as the wall clock at `epoch` for a window: in
@@ -218,9 +216,22 @@ QtObject {
             return "";
         }
         const when = new Date(epoch * 1000);
+        const locale = Qt.locale();
         return when.toDateString() === new Date(nowMs).toDateString()
-            ? when.toLocaleTimeString(Qt.locale(), Locale.ShortFormat)
-            : when.toLocaleString(Qt.locale(), Locale.ShortFormat);
+            ? shortTime(when)
+            : when.toLocaleString(locale, withoutSeconds(locale.dateTimeFormat(Locale.ShortFormat)));
+    }
+
+    // A time in the locale's short format, to the minute. Qt 6.6 gives the
+    // C locale's short time with seconds, "17:49:00", which would claim more
+    // than a reset to the minute or a run-out to ten minutes knows.
+    function shortTime(date) {
+        const locale = Qt.locale();
+        return date.toLocaleTimeString(locale, withoutSeconds(locale.timeFormat(Locale.ShortFormat)));
+    }
+
+    function withoutSeconds(format) {
+        return format.replace(/[:.]ss?/, "");
     }
 
     function percentText(value) {

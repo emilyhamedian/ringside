@@ -81,6 +81,8 @@ follows [Semantic Versioning](https://semver.org/).
   widening the popup past its frame.
 - Screen readers say "unavailable" for a missing rate or load average
   instead of reading out a dash and a stray unit.
+- Claude and Codex times, such as when the week resets or when a check
+  failed, no longer show seconds in the C locale on Qt 6.6.
 
 ## [0.2.2] - 2026-10-04
 
