@@ -171,11 +171,38 @@ class ClaudeParsing(Isolated):
         scoped = usage.parse_claude(usage_body)["scoped"]
         self.assertEqual([(s["id"], s["percent"]) for s in scoped], [("Fable", 78), ("Opus", 9)])
 
-    def test_model_limits_come_only_from_the_limits_list(self):
+    def test_only_weekly_scoped_entries_count(self):
         usage_body = fixture("claude_usage.json")
-        usage_body["limits"] = []
-        usage_body["cinder_cove"] = {"utilization": 55.6, "resets_at": "2026-09-04T16:00:00Z"}
-        self.assertEqual(usage.parse_claude(usage_body)["scoped"], [])
+        fable = usage_body["limits"][2]
+        opus = {"model": {"id": None, "display_name": "Opus"}, "surface": None}
+        usage_body["limits"] = [dict(fable, kind=kind, scope=opus, percent=40)
+                                for kind in ("session", "weekly_all", "weekly", "five_hour", None)] + [fable]
+        scoped = usage.parse_claude(usage_body)["scoped"]
+        self.assertEqual([(s["id"], s["percent"]) for s in scoped], [("Fable", 78)])
+
+    def test_scoped_is_keyed_by_display_name_even_with_a_model_id(self):
+        usage_body = fixture("claude_usage.json")
+        usage_body["limits"][2]["scope"]["model"]["id"] = "claude-fable-5"
+        scoped = usage.parse_claude(usage_body)["scoped"]
+        self.assertEqual([(s["id"], s["label"]) for s in scoped], [("Fable", "Fable"), ("Opus", "Opus")])
+
+    def test_model_limits_come_only_from_the_limits_list(self):
+        # Every top-level key the endpoint sends today, each other than the
+        # list and seven_day given a window a fallback could read.
+        live_keys = ("amber_cistern", "amber_gauge", "amber_ladder", "brass_thimble", "cedar_ember", "cinder_cove",
+                     "copper_kite", "extra_usage", "five_hour", "harbor_lantern", "iguana_necktie", "juniper_tide",
+                     "limits", "member_dashboard_available", "nimbus_quill", "omelette_promotional", "seven_day",
+                     "seven_day_breakdown", "seven_day_cowork", "seven_day_oauth_apps", "seven_day_omelette",
+                     "seven_day_opus", "seven_day_sonnet", "spend", "tangelo", "wattle_ember")
+        listed = fixture("claude_usage.json")
+        for limits, expected in (([], []), (listed["limits"], [("Fable", 78), ("Opus", 9)])):
+            with self.subTest(limits=len(limits)):
+                usage_body = {key: {"utilization": 55.6, "resets_at": "2026-09-04T16:00:00Z"} for key in live_keys}
+                usage_body["seven_day"] = listed["seven_day"]
+                usage_body["limits"] = limits
+                report = usage.parse_claude(usage_body)
+                self.assertEqual(report["weekly"]["percent"], 62)
+                self.assertEqual([(s["id"], s["percent"]) for s in report["scoped"]], expected)
 
     def test_scoped_is_empty_when_not_reported(self):
         usage_body = fixture("claude_usage.json")
