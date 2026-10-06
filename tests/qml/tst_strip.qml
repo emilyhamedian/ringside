@@ -434,6 +434,27 @@ Item {
             checkRow("a new layout");
         }
 
+        // Bits or bytes is a change of layout, so a held cell takes its new
+        // width at once. The theme's font is one too, but a test can't
+        // change it, so the cells' layout keys are checked for its family
+        // and size.
+        function test_unitsAndFontAreLayout() {
+            const strip = makePanel(46, { items: ["cpu", "network", "claude"], relayoutWindow: 0 });
+            const network = strip.cellAt(1);
+            verify(network.holdsWidth, "a rate mid-strip holds");
+            const tight = () => network.contentWidth + 2 * network.padding;
+            sizeAfter(strip, () => { monitor.networkDown = 88.8e6 / 8; });
+            sizeAfter(strip, () => { monitor.networkDown = 999 / 8; });
+            verify(network.implicitWidth > tight(), "holds after a narrower reading");
+            sizeAfter(strip, () => { monitor.networkBits = false; });
+            compare(network.implicitWidth, tight(), "bytes apply at once");
+
+            const font = Kirigami.Theme.defaultFont.family + "," + Kirigami.Theme.defaultFont.pointSize;
+            for (let i = 0; i < strip.items.length; ++i) {
+                verify(strip.cellAt(i).layoutKey.indexOf(font) >= 0, strip.items[i] + ": " + strip.cellAt(i).layoutKey);
+            }
+        }
+
         function test_verticalRatesFit_data() {
             // Breeze gives an applet the panel's thickness less 8 px.
             return [34, 36, 40, 44, 48, 52, 60].map(width => ({ tag: String(width), width: width }));
