@@ -1063,32 +1063,47 @@ Item {
         }
 
         // Given more room than their text needs, as a cell holding its width
-        // gives them, the rates keep it between each marker and its value in
-        // whole pixels: each marker stays at its rate's start, the first at
-        // the rates' start, the readings end at the rate's end, the last at
-        // the rates' end, and stacked values and units still line up.
+        // gives them, the rates keep it inside in whole pixels: the first
+        // marker at the rates' start, each rate's readings at its end, the
+        // last at the rates' end. Stacked, each marker stays at its rate's
+        // start with the room after it, and the values and units still line
+        // up. Side by side the room goes before the second marker, so each
+        // marker keeps its usual gap to its value and the first rate its
+        // own width.
         function test_ratesKeepSpareRoomInside(data) {
             const c = cell(data.item, { singleRow: data.singleRow });
             const rates = root.findAll(c, i => i.reading !== undefined).sort((a, b) => a.index - b.index);
+            const firstWidth = rates[0].width;
             // The strip gives a cell whole pixels.
             c.width = Math.ceil(c.implicitWidth) + 40;
             settle();
-            compare(rates[0].mapToItem(c, Qt.point(0, 0)).x, 0, "the first rate at the start");
+            const x = i => i.mapToItem(c, Qt.point(0, 0)).x;
+            const right = i => i.mapToItem(c, Qt.point(i.width, 0)).x;
+            const inWholePixels = (room, what) => verify(room > 0 && Math.abs(room - Math.round(room)) < 1e-6, what + ", in whole pixels: " + room);
+            compare(x(rates[0]), 0, "the first rate at the start");
+            compare(x(rates[0].children[0]), 0, "the first marker at the start");
             const ends = [];
             for (const rate of rates) {
+                const what = "rate " + rate.index + ": ";
                 const marker = rate.children[0];
-                compare(marker.mapToItem(c, Qt.point(0, 0)).x, rate.mapToItem(c, Qt.point(0, 0)).x, "the marker at the rate's start");
                 const value = root.find(rate, i => i.visible && i.horizontalAlignment === Text.AlignRight);
                 const pair = value.parent;
-                const gap = value.mapToItem(c, Qt.point(0, 0)).x - marker.mapToItem(c, Qt.point(marker.width, 0)).x - Kirigami.Units.smallSpacing;
-                verify(gap > 0 && Math.abs(gap - Math.round(gap)) < 1e-6, "room after the marker, in whole pixels: " + gap);
-                const end = pair.mapToItem(c, Qt.point(pair.width, 0)).x;
-                const rateEnd = rate.mapToItem(c, Qt.point(rate.width, 0)).x;
-                verify(end > rateEnd - 1 && end <= rateEnd, "the readings end at the rate's end: " + end + ", " + rateEnd);
+                const gap = x(value) - right(marker);
+                if (data.singleRow) {
+                    fuzzyCompare(gap, Kirigami.Units.smallSpacing, 1e-6, what + "the marker by its value");
+                } else {
+                    compare(x(marker), x(rate), what + "the marker at the rate's start");
+                    inWholePixels(gap - Kirigami.Units.smallSpacing, what + "room after the marker");
+                }
+                const end = right(pair);
+                verify(end > right(rate) - 1 && end <= right(rate), what + "the readings end at the rate's end: " + end + ", " + right(rate));
                 ends.push(end);
             }
             verify(ends[1] > c.width - 1 && ends[1] <= c.width, "the last readings end at the rates' end: " + ends[1] + " in " + c.width);
-            if (!data.singleRow) {
+            if (data.singleRow) {
+                compare(rates[0].width, firstWidth, "the first rate keeps its width");
+                inWholePixels(x(rates[1].children[0]) - x(rates[1]), "room before the second marker");
+            } else {
                 compare(ends[0], ends[1], "stacked, the values and units end at one edge");
                 const units = rates.map((r, row) => root.find(r, i => i.visible && i.text === c.lines[row].unit && i.horizontalAlignment !== Text.AlignRight));
                 compare(units[0].mapToItem(c, Qt.point(0, 0)).x, units[1].mapToItem(c, Qt.point(0, 0)).x, "the units line up");
