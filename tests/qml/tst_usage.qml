@@ -1000,11 +1000,11 @@ Item {
             for (const r of [days, hours]) {
                 const [number, unit] = r.children.filter(c => typeof c.text === "string");
                 spaceProbe.font = unit.font;
-                const gap = unit.mapToItem(r, 0, 0).x - number.mapToItem(r, number.width, 0).x;
+                const gap = unit.mapToItem(r, Qt.point(0, 0)).x - number.mapToItem(r, Qt.point(number.width, 0)).x;
                 verify(gap >= 0 && gap < spaceProbe.advanceWidth / 2, r.value + r.unit + ": " + gap + " px against a space of "
                        + spaceProbe.advanceWidth);
             }
-            const between = hours.mapToItem(days.parent, 0, 0).x - days.mapToItem(days.parent, days.width, 0).x;
+            const between = hours.mapToItem(days.parent, Qt.point(0, 0)).x - days.mapToItem(days.parent, Qt.point(days.width, 0)).x;
             verify(between >= spaceProbe.advanceWidth, "the pairs " + between + " px apart");
         }
 
@@ -1018,13 +1018,13 @@ Item {
         function test_countdownMirrors(data) {
             const popup = load("claude", data.mirrored);
             const [days, hours] = countdown(popup);
-            const x = r => r.mapToItem(popup, 0, 0).x;
+            const x = r => r.mapToItem(popup, Qt.point(0, 0)).x;
             verify(data.mirrored ? x(days) > x(hours) : x(days) < x(hours), x(days) + " " + x(hours));
             verify(!days.LayoutMirroring.enabled && !hours.LayoutMirroring.enabled);
             const row = days.parent;
             const label = caption(popup);
-            const rowLeft = row.mapToItem(popup, 0, 0).x;
-            const labelLeft = label.mapToItem(popup, 0, 0).x;
+            const rowLeft = row.mapToItem(popup, Qt.point(0, 0)).x;
+            const labelLeft = label.mapToItem(popup, Qt.point(0, 0)).x;
             if (data.mirrored) {
                 fuzzyCompare(labelLeft, rowLeft, 1);
             } else {
@@ -1110,7 +1110,7 @@ Item {
             const gap = page => {
                 const r = ring(page);
                 const tile = root.find(page, i => i.visible && i.graphNote !== undefined);
-                return tile.mapToItem(page, 0, 0).y - r.mapToItem(page, 0, r.height).y;
+                return tile.mapToItem(page, Qt.point(0, 0)).y - r.mapToItem(page, Qt.point(0, r.height)).y;
             };
             verify(gap(cpu) > 0);
             compare(gap(popup), gap(cpu));
@@ -1127,11 +1127,11 @@ Item {
             const h = header(popup);
             const subtitle = root.find(h, i => i.visible && i.text === h.subtitle);
             verify(subtitle);
-            const baseline = t => t.mapToItem(popup, 0, t.baselineOffset).y;
+            const baseline = t => t.mapToItem(popup, Qt.point(0, t.baselineOffset)).y;
             fuzzyCompare(baseline(caption(popup)), baseline(subtitle), 1);
             const edge = Math.round(Kirigami.Units.largeSpacing * 2);
             const tile = root.find(popup, i => i.visible && i.graphNote !== undefined);
-            const left = tile.mapToItem(popup, 0, 0).x;
+            const left = tile.mapToItem(popup, Qt.point(0, 0)).x;
             compare(left, edge);
             compare(left + tile.width, popup.width - edge);
         }
@@ -1239,10 +1239,10 @@ Item {
             if (all.length > 1) {
                 const bar = bars(all[data.row]);
                 verify(bar.visible);
-                verify(text.mapToItem(popup, 0, 0).y >= bar.mapToItem(popup, 0, bar.height).y,
+                verify(text.mapToItem(popup, Qt.point(0, 0)).y >= bar.mapToItem(popup, Qt.point(0, bar.height)).y,
                        "the sentence sits under its bar");
                 if (data.row + 1 < all.length) {
-                    verify(text.mapToItem(popup, 0, text.height).y <= all[data.row + 1].mapToItem(popup, 0, 0).y,
+                    verify(text.mapToItem(popup, Qt.point(0, text.height)).y <= all[data.row + 1].mapToItem(popup, Qt.point(0, 0)).y,
                            "and above the next limit");
                 }
             }

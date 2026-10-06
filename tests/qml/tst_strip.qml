@@ -146,7 +146,7 @@ Item {
 
         // An item's box in the strip's coordinates.
         function box(item) {
-            const p = item.mapToItem(strip, 0, 0);
+            const p = item.mapToItem(strip, Qt.point(0, 0));
             return { x: p.x, y: p.y, width: item.width, height: item.height,
                      right: p.x + item.width, bottom: p.y + item.height,
                      centreX: p.x + item.width / 2, centreY: p.y + item.height / 2 };

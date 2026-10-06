@@ -425,11 +425,11 @@ Item {
         }
 
         function centreY(item, c) {
-            return item.mapToItem(c, 0, item.height / 2).y;
+            return item.mapToItem(c, Qt.point(0, item.height / 2)).y;
         }
 
         function baselineIn(text, scene) {
-            return text.mapToItem(scene, 0, text.baselineOffset).y;
+            return text.mapToItem(scene, Qt.point(0, text.baselineOffset)).y;
         }
 
         function checkFace(text, weight, what) {
@@ -763,9 +763,9 @@ Item {
             const measure = () => {
                 const first = line(c, "first");
                 const second = line(c, "second");
-                const at = first.mapToItem(c, 0, 0);
+                const at = first.mapToItem(c, Qt.point(0, 0));
                 return { height: c.implicitHeight, firstX: at.x, firstY: at.y, firstHeight: first.height,
-                         second: data.twoLines ? [second.visible, second.mapToItem(c, 0, 0).y, second.height] : [] };
+                         second: data.twoLines ? [second.visible, second.mapToItem(c, Qt.point(0, 0)).y, second.height] : [] };
             };
             const awake = measure();
             compare(line(c, "second").text, degrees(48));
@@ -913,7 +913,7 @@ Item {
                 // Where the text ends: a right-aligned one at its box's end.
                 // Rounding up, the room's and the layout's, and the last
                 // glyph's ink counted a pixel high leave under three pixels.
-                const end = Math.max(...shown.map(t => t.mapToItem(c, 0, 0).x
+                const end = Math.max(...shown.map(t => t.mapToItem(c, Qt.point(0, 0)).x
                                                       + (t.effectiveHorizontalAlignment === Text.AlignRight ? t.width : t.contentWidth)));
                 verify(c.implicitWidth - end < 3 && end - c.implicitWidth <= Kirigami.Units.smallSpacing,
                        what + ": the text ends at " + end + ", the cell at " + c.implicitWidth);
@@ -963,7 +963,7 @@ Item {
                 compare(readout.overhang, 0, what);
             }
             compare(c.implicitWidth, gauge(c).width + Kirigami.Units.largeSpacing + readout.textWidth, what);
-            const end = Math.max(...readingsIn(c).map(t => t.mapToItem(c, t.width, 0).x));
+            const end = Math.max(...readingsIn(c).map(t => t.mapToItem(c, Qt.point(t.width, 0)).x));
             fuzzyCompare(end - c.implicitWidth, readout.overhang, 0.01, what + ": the readings end past the cell");
         }
 
@@ -1017,15 +1017,15 @@ Item {
                     verify(value.contentWidth <= value.width && unit.contentWidth <= unit.width, what + " fits");
                     const marker = rates[row].children[0];
                     const markerEnd = marker.mapToItem(c, Qt.point(marker.width, 0)).x;
-                    const valueAt = value.mapToItem(c, 0, 0).x;
-                    const unitAt = unit.mapToItem(c, 0, 0).x;
+                    const valueAt = value.mapToItem(c, Qt.point(0, 0)).x;
+                    const unitAt = unit.mapToItem(c, Qt.point(0, 0)).x;
                     compare(valueAt - markerEnd, Kirigami.Units.smallSpacing, what + ": the marker's gap");
                     compare(unitAt - (valueAt + value.width), c.unitGap, what + ": the unit's gap");
                 }
                 if (!data.singleRow) {
                     compare(values[0].mapToItem(c, Qt.point(values[0].width, 0)).x, values[1].mapToItem(c, Qt.point(values[1].width, 0)).x,
                             what + ": the values end at one edge");
-                    compare(units[0].mapToItem(c, 0, 0).x, units[1].mapToItem(c, 0, 0).x, what + ": the units line up");
+                    compare(units[0].mapToItem(c, Qt.point(0, 0)).x, units[1].mapToItem(c, Qt.point(0, 0)).x, what + ": the units line up");
                 }
             }
             verify(narrowest < reserve, "short rates take less than their reserve");
@@ -1045,7 +1045,7 @@ Item {
             waitForRendering(pair);
             const rates = pair.rates;
             // Row by row, then left to right: down before up.
-            const inOrder = (a, b) => baselineIn(a, pair) - baselineIn(b, pair) || a.mapToItem(pair, 0, 0).x - b.mapToItem(pair, 0, 0).x;
+            const inOrder = (a, b) => baselineIn(a, pair) - baselineIn(b, pair) || a.mapToItem(pair, Qt.point(0, 0)).x - b.mapToItem(pair, Qt.point(0, 0)).x;
             const shown = root.findAll(rates, i => i.visible && typeof i.text === "string" && i.text !== "");
             const values = shown.filter(t => t.horizontalAlignment === Text.AlignRight).sort(inOrder);
             const units = shown.filter(t => t.horizontalAlignment !== Text.AlignRight).sort(inOrder);

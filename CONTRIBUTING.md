@@ -54,6 +54,8 @@ User-Agent, and the Python tests check that the versions agree.
   dependencies.
 - Comments explain intent in plain sentences; match the surrounding code
   rather than restating it.
+- Tests map points with `mapToItem(item, Qt.point(x, y))`: Qt 6.6 truncates
+  the separate x and y of `mapToItem(item, x, y)` to whole numbers.
 
 ## Where to start
 
