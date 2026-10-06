@@ -774,6 +774,21 @@ Item {
             tryCompare(nameIn(c), "shownSize", nameIn(c).size, 1000, "the name grows to its size");
         }
 
+        // The name scales as a texture, so its strokes soften rather than
+        // drop out, and is drawn as text again once it is at its size.
+        function test_nameScalesAsATexture() {
+            const c = cell();
+            const name = nameIn(c);
+            verify(!name.layer.enabled);
+            const seen = [];
+            createTemporaryObject(samplerComponent, gpus, { sample: () => seen.push([name.shownSize !== name.size, name.layer.enabled]) });
+            monitor.gpuInner.phase = "asleep";
+            tryVerify(() => name.shownSize !== name.size, 2000, "scaling");
+            tryCompare(name, "shownSize", name.size, 2000);
+            verify(seen.every(([scaling, layered]) => scaling === layered), JSON.stringify(seen));
+            verify(!name.layer.enabled, "drawn as text at rest");
+        }
+
         // A change back mid-fade turns the track round where it is.
         function test_reversesCleanly() {
             monitor.gpuInner.phase = "asleep";

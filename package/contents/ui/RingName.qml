@@ -67,6 +67,11 @@ Item {
         xScale: name.size > 0 ? name.shownSize / name.size : 1
         yScale: xScale
     }
+    // While it scales, the name is drawn once into a texture and the
+    // texture scaled, so thin strokes soften rather than drop out.
+    layer.enabled: animated && shownSize !== size
+    layer.smooth: true
+    layer.mipmap: true
     // The cell's description names the item.
     Accessible.ignored: true
 
