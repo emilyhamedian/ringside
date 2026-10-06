@@ -1426,8 +1426,7 @@ Item {
 
         function test_weekdayTime() {
             const locale = Qt.locale();
-            const spelled = date => locale.dayName(date.getDay(), Locale.ShortFormat) + " "
-                                    + date.toLocaleTimeString(locale, Locale.ShortFormat);
+            const spelled = date => locale.dayName(date.getDay(), Locale.ShortFormat) + " " + words.shortTime(date);
             // 7:30 UTC on Friday 25 September 2026, two days before the reset.
             const friday = Date.UTC(2026, 8, 25, 7, 30) / 1000;
             const systemOffset = -new Date(sunday * 1000).getTimezoneOffset() * 60;
@@ -1461,7 +1460,7 @@ Item {
         }
 
         function test_resetDateInTheClockZone() {
-            const time = new Date(2026, 8, 27, 7, 0).toLocaleTimeString(Qt.locale(), Locale.ShortFormat);
+            const time = words.shortTime(new Date(2026, 8, 27, 7, 0));
             compare(words.resetDate({ resetsAt: sunday, clockZone: { offset: -4 * 3600, abbreviation: "EDT" } }),
                     Qt.locale().dayName(0, Locale.ShortFormat) + " " + time + " EDT");
             // Claude reports its reset a second before the hour.
@@ -1472,17 +1471,37 @@ Item {
         function test_resetDateInSystemTime() {
             const date = new Date(sunday * 1000);
             compare(words.resetDate({ resetsAt: sunday }),
-                    Qt.locale().dayName(date.getDay(), Locale.ShortFormat) + " "
-                    + date.toLocaleTimeString(Qt.locale(), Locale.ShortFormat));
+                    Qt.locale().dayName(date.getDay(), Locale.ShortFormat) + " " + words.shortTime(date));
             compare(words.resetDate({ resetsAt: null }), "");
         }
 
         function test_timeOfDay() {
             const noon = new Date(2026, 8, 27, 12, 0).getTime();
             const earlier = new Date(2026, 8, 27, 9, 15);
-            compare(words.timeOfDay(earlier.getTime() / 1000, noon), earlier.toLocaleTimeString(Qt.locale(), Locale.ShortFormat));
+            compare(words.timeOfDay(earlier.getTime() / 1000, noon), words.shortTime(earlier));
             const yesterday = new Date(2026, 8, 26, 9, 15);
-            compare(words.timeOfDay(yesterday.getTime() / 1000, noon), yesterday.toLocaleString(Qt.locale(), Locale.ShortFormat));
+            const shortDate = yesterday.toLocaleDateString(Qt.locale(), Locale.ShortFormat);
+            verify(words.timeOfDay(yesterday.getTime() / 1000, noon).includes(shortDate), "another day gives the date");
+        }
+
+        // Times read to the minute in every locale, as they are rounded to
+        // it or coarser: Qt 6.6's C locale gives its short time with seconds,
+        // which the floor's tests run in. Where the locale's short time has
+        // no seconds, it is the one shown.
+        function test_timesHaveNoSeconds() {
+            const digits = new RegExp("[0-9" + [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map(d => Format.whole(d)).join("") + "]+", "g");
+            const numbers = text => (text.match(digits) ?? []).length;
+            const at = new Date(2026, 8, 27, 9, 15, 42);
+            const epoch = at.getTime() / 1000;
+            compare(numbers(words.resetDate({ resetsAt: epoch })), 2, words.resetDate({ resetsAt: epoch }));
+            compare(numbers(words.weekdayTime(epoch, null)), 2, words.weekdayTime(epoch, null));
+            compare(numbers(words.timeOfDay(epoch, at.getTime())), 2, words.timeOfDay(epoch, at.getTime()));
+            const nextDay = new Date(2026, 8, 28, 12, 0).getTime();
+            verify(!words.timeOfDay(epoch, nextDay).includes(Format.whole(42)), words.timeOfDay(epoch, nextDay));
+            const locale = Qt.locale();
+            if (!/s/.test(locale.timeFormat(Locale.ShortFormat))) {
+                compare(words.shortTime(at), at.toLocaleTimeString(locale, Locale.ShortFormat));
+            }
         }
     }
 
