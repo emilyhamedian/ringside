@@ -854,6 +854,9 @@ Item {
             tryCompare(outer, "visible", false, 1000);
             verify(visibleTexts(popup).includes("AMD Radeon RX 7700S · off"));
             verify(inner.first, "the integrated GPU's section now opens the page");
+            // The height follows at the layout's next polish.
+            tryVerify(() => heights.length > 0, 1000, "the popup's height changes");
+            waitForRendering(popup);
             compare(heights.length, 1, "one change of height: " + JSON.stringify(heights));
             heights.length = 0;
             monitor.gpuOuter.phase = "live";
