@@ -1177,6 +1177,8 @@ Item {
                 if (h.caption !== "") {
                     verify(shownText(h, h.caption), tag + ": the caption");
                 }
+                // A caption line kept with nothing in it says nothing to a screen reader.
+                compare(all(h, i => i.visible && i.text === "" && i.font !== undefined && !i.Accessible.ignored).length, 0, tag);
             });
             const found = texts(popup);
             verify(!found.some(t => ["GPU", "Discrete", "Integrated"].includes(t)), JSON.stringify(found));
@@ -1190,9 +1192,16 @@ Item {
 
         // Every GPU header is laid out as the CPU popup's is, on the
         // content's edges and with its tiles as far under it, plain and
-        // mirrored. Each section's parts sit where the CPU header's do.
+        // mirrored. Each section's parts sit where the CPU header's do. An
+        // NVIDIA GPU names no sensor, yet its temperature stays level with
+        // its name; the Intel GPU after it has no reading to line up.
         function test_gpuHeadersMatchTheCpu_data() {
-            return [{ tag: "plain", mirrored: false }, { tag: "mirrored", mirrored: true }];
+            const every = ["edges", "height", "ring", "title", "subtitle", "headline", "caption", "tiles"];
+            const unnamed = every.filter(key => key !== "caption");
+            return [{ tag: "plain", mirrored: false, monitor: normal, shown: [every, every] },
+                    { tag: "mirrored", mirrored: true, monitor: normal, shown: [every, every] },
+                    { tag: "nvidia", mirrored: false, monitor: intel, shown: [unnamed] },
+                    { tag: "nvidiaMirrored", mirrored: true, monitor: intel, shown: [unnamed] }];
         }
 
         function test_gpuHeadersMatchTheCpu(data) {
@@ -1203,7 +1212,7 @@ Item {
                 const ring = gauges(header)[0];
                 const title = shownText(header, header.title);
                 const subtitle = shownText(header, header.subtitle);
-                const caption = shownText(header, header.caption);
+                const caption = header.caption !== "" ? shownText(header, header.caption) : null;
                 const headline = readings(header).find(r => r.visible);
                 const top = header.mapToItem(popup, Qt.point(0, 0)).y;
                 const tiles = all(popup, i => i.visible && i.graphNote !== undefined)
@@ -1214,19 +1223,20 @@ Item {
                     ring: [at(ring).x, at(ring).y, ring.width],
                     title: [at(title).x, baseline(title), title.font.pointSize],
                     subtitle: [at(subtitle).x, baseline(subtitle)],
-                    headline: [at(headline).x + (data.mirrored ? 0 : headline.width), baseline(headline), headline.pointSize],
-                    caption: [at(caption).x + (data.mirrored ? 0 : caption.width), baseline(caption)],
+                    headline: headline ? [at(headline).x + (data.mirrored ? 0 : headline.width), baseline(headline), headline.pointSize] : null,
+                    caption: caption ? [at(caption).x + (data.mirrored ? 0 : caption.width), baseline(caption)] : null,
                     tiles: Math.min(...tiles) - top - header.height
                 };
             });
             const cpu = layout(load("CpuPopup", normal, data.mirrored));
             compare(cpu.length, 1);
             compare(cpu[0].edges, [edge, edge]);
-            const gpu = layout(load("GpuPopup", normal, data.mirrored));
+            const gpu = layout(load("GpuPopup", data.monitor, data.mirrored));
             compare(gpu.length, 2);
-            gpu.forEach((g, n) => {
+            data.shown.forEach((keys, n) => {
                 for (const key in cpu[0]) {
-                    compare(JSON.stringify(g[key]), JSON.stringify(cpu[0][key]), "GPU " + (n + 1) + ": " + key);
+                    const expected = keys.includes(key) ? cpu[0][key] : null;
+                    compare(JSON.stringify(gpu[n][key]), JSON.stringify(expected), "GPU " + (n + 1) + ": " + key);
                 }
             });
         }
