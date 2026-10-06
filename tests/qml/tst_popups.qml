@@ -582,70 +582,77 @@ Item {
             compare(other.suffix.y + other.suffix.baselineOffset, other.number.y + other.number.baselineOffset, "a unit on the baseline");
         }
 
+        // How far a drawn reading's degree sign stands from the last
+        // digit's ink in the rows the sign covers, in the image's pixels.
+        // Drawn white on black, a pixel's lightness tells how much of it
+        // the ink covers, which places each edge within a pixel.
+        function drawnDegreeGap(properties) {
+            const host = createTemporaryObject(inkHost, root);
+            host.loader.setSource(Qt.resolvedUrl("../../package/contents/ui/Reading.qml"),
+                                  Object.assign({ degreeUnit: "C", color: "white", unitColor: "white",
+                                                  pointSize: Kirigami.Theme.defaultFont.pointSize * 1.7 }, properties));
+            const r = host.loader.item;
+            waitForRendering(host);
+            tryVerify(() => r.scan !== null, 2000, "the digits are scanned for " + r.value);
+            const image = grabImage(host);
+            const p = parts(r);
+            const range = (from, to) => Array.from({ length: Math.max(0, to - from) }, (_, i) => from + i);
+            const cover = (x, ys) => x < 0 || x >= image.width ? 0 : Math.max(0, ...ys.map(y => image.pixel(x, y).hslLightness));
+            // The sign's ink starts past the unit's origin; at small sizes
+            // it may touch the letter, so its rows are the first run the
+            // left half of its ring inks, near where its box says, above
+            // any bar of a "4" it overhangs.
+            glyph.font = p.suffix.font;
+            glyph.text = "°";
+            const signTop = p.suffix.y + p.suffix.baselineOffset + glyph.tightBoundingRect.y;
+            const near = range(Math.max(0, Math.floor(signTop) - 1), Math.min(image.height, Math.ceil(signTop + glyph.tightBoundingRect.height) + 1));
+            let left = Math.floor(p.suffix.x);
+            while (left < image.width && cover(left, near) <= 0.02) {
+                ++left;
+            }
+            const inked = near.filter(y => range(left, left + Math.max(1, Math.floor(glyph.tightBoundingRect.width / 2))).some(x => cover(x, [y]) > 0.3));
+            const rows = inked.filter((y, i) => y - i === inked[0]);
+            verify(left < image.width && rows.length > 0, r.value + " draws a degree sign");
+            const rightmost = ys => {
+                let x = left - 1;
+                while (x >= 0 && cover(x, ys) <= 0.02) {
+                    --x;
+                }
+                return x;
+            };
+            // An Arabic-Indic zero is a dot at mid-height, with no ink
+            // beside the sign; the sign keeps its gap from the dot.
+            glyph.font = p.number.font;
+            glyph.text = r.value.slice(-1);
+            const cell = p.number.x + p.number.implicitWidth - glyph.advanceWidth;
+            const beside = rightmost(rows) >= cell ? rows : range(0, Math.floor(r.baselineOffset));
+            const right = rightmost(beside);
+            verify(right >= 0, r.value + " draws its digits");
+            return { reading: r, gap: (left + 1 - cover(left, rows)) - (right + cover(right, beside)) };
+        }
+
         // In the drawn reading, the degree sign stands as far from the last
         // digit's ink in the rows the sign covers after a "1", a "7", a "0"
-        // or a "4", within a pixel, though a "0" and a "4" fall away up
-        // there. That gap is the one the reading asks for, and after a "1"
-        // or a "7" at least a pixel wider than the sign had when it sat a
-        // pixel past a "0"'s box, as it did on the baseline.
+        // or a "4", though a "0" and a "4" fall away up there, and that is
+        // the gap the reading asks for. It is a pixel more than the sign had
+        // before, when it stood a pixel past where a "0"'s ink box ends and
+        // as far past a "1"'s or a "7"'s.
         function test_degreeSignGapAtItsHeight() {
             const gaps = [];
+            let reading = null;
             for (const t of [41, 47, 40, 44]) {
-                const host = createTemporaryObject(inkHost, root);
-                host.loader.setSource(Qt.resolvedUrl("../../package/contents/ui/Reading.qml"),
-                                      { value: Format.temperature(t, false), degreeUnit: "C", color: "white", unitColor: "white",
-                                        pointSize: Kirigami.Theme.defaultFont.pointSize * 1.7 });
-                const r = host.loader.item;
-                waitForRendering(host);
-                tryVerify(() => r.scan !== null, 2000, "the digits are scanned for " + r.value);
-                const image = grabImage(host);
-                const bottom = Math.floor(r.baselineOffset);
-                const ink = (x, ys) => ys.some(y => image.pixel(x, y).hslLightness > 0.3);
-                const above = Array.from({ length: bottom }, (_, y) => y);
-                // Runs of inked columns in the digits' top rows, above a
-                // "4"'s bar: the digits, then "°", then "C".
-                const top = above.filter(y => y < bottom - 0.6 * r.figureHeight);
-                const runs = [];
-                for (let x = 0; x < image.width; ++x) {
-                    if (!ink(x, top)) {
-                        continue;
-                    }
-                    if (runs.length > 0 && x === runs[runs.length - 1][1] + 1) {
-                        runs[runs.length - 1][1] = x;
-                    } else {
-                        runs.push([x, x]);
-                    }
-                }
-                verify(runs.length >= 3, r.value + " draws apart: " + JSON.stringify(runs));
-                const sign = runs[runs.length - 2];
-                const signColumns = Array.from({ length: sign[1] - sign[0] + 1 }, (_, i) => sign[0] + i);
-                const rows = above.filter(y => signColumns.some(x => ink(x, [y])));
-                const edge = ys => {
-                    let x = sign[0] - 1;
-                    while (x >= 0 && !ink(x, ys)) {
-                        --x;
-                    }
-                    return x;
-                };
-                // An Arabic-Indic zero is a dot at mid-height, with no ink
-                // beside the sign; the sign keeps its gap from the dot.
-                const number = parts(r).number;
-                glyph.font = number.font;
-                glyph.text = r.value.slice(-1);
-                const cell = number.x + number.implicitWidth - glyph.advanceWidth;
-                const near = edge(rows) >= cell ? edge(rows) : edge(above);
-                const gap = sign[0] - near - 1;
-                const asked = r.degreeGap * r.ratio;
-                verify(gap >= Math.floor(asked) - 1 && gap <= Math.ceil(asked) + 1, r.value + ": " + gap + " px, not " + asked);
-                if (t % 10 === 1 || t % 10 === 7) {
-                    glyph.font = parts(r).number.font;
-                    glyph.text = "0";
-                    const before = (1 + r.degreeBearing + glyph.advanceWidth - glyph.tightBoundingRect.x - glyph.tightBoundingRect.width) * r.ratio;
-                    verify(gap >= before + 1, r.value + ": " + gap + " px, before " + before);
-                }
-                gaps.push(gap);
+                const value = Format.temperature(t, false);
+                const drawn = drawnDegreeGap({ value: value });
+                reading = drawn.reading;
+                const asked = reading.degreeGap * reading.ratio;
+                verify(Math.abs(drawn.gap - asked) <= 0.75, value + ": " + drawn.gap + " px, not " + asked);
+                gaps.push(drawn.gap);
             }
-            verify(Math.max(...gaps) - Math.min(...gaps) <= 1, "after 1, 7, 0, 4: " + gaps.join(", "));
+            verify(Math.max(...gaps) - Math.min(...gaps) <= 0.75, "after 1, 7, 0, 4: " + gaps.join(", "));
+            glyph.font = parts(reading).number.font;
+            glyph.text = "0";
+            const before = 1 + reading.degreeBearing + glyph.advanceWidth - glyph.tightBoundingRect.x - glyph.tightBoundingRect.width;
+            verify(reading.degreeGap >= before + 1, reading.degreeGap + " px, before " + before);
         }
 
         // A missing temperature is a bare dash.
