@@ -140,6 +140,11 @@ GridLayout {
 
             required property int index
             readonly property var reading: rates.lines[index]
+            // Side by side, a letter's marker is as wide as the letter, so the
+            // first rate starts at the cell's padding; stacked, both take the
+            // wider one, so the values line up.
+            readonly property real markerWidth: rates.singleRow && !rates.network
+                ? drawn.room(drawn.plain, [index === 1 ? rates.writeLetter : rates.readLetter]) : rates.markerWidth
             // Stacked, both rates take the wider value and unit; side by
             // side, each its own.
             readonly property real valueWidth: rates.vertical ? rates.valueRoom
@@ -149,12 +154,12 @@ GridLayout {
 
             Layout.row: rates.singleRow ? 0 : index
             Layout.column: rates.singleRow ? index : 0
-            implicitWidth: rates.markerWidth + rates.markerGap + valueWidth + (rates.vertical ? 0 : rates.unitGap + unitWidth)
+            implicitWidth: markerWidth + rates.markerGap + valueWidth + (rates.vertical ? 0 : rates.unitGap + unitWidth)
             implicitHeight: rates.vertical ? value.implicitHeight : rates.rowHeight
 
             Item {
                 anchors.left: parent.left
-                width: rates.markerWidth
+                width: rate.markerWidth
                 height: parent.height
 
                 Arrow {
@@ -183,8 +188,8 @@ GridLayout {
             // by x, since with mirroring off its own anchors would read left
             // to right.
             Item {
-                x: rate.LayoutMirroring.enabled ? parent.width - rates.markerWidth - rates.markerGap - width
-                                                : rates.markerWidth + rates.markerGap
+                x: rate.LayoutMirroring.enabled ? parent.width - rate.markerWidth - rates.markerGap - width
+                                                : rate.markerWidth + rates.markerGap
                 width: rate.valueWidth + (unit.visible ? rates.unitGap + rate.unitWidth : 0)
                 height: parent.height
                 LayoutMirroring.enabled: false
