@@ -63,8 +63,12 @@ PopupPage {
                                : i18nc("@info a model's limit is used up, e.g. Fable limit reached", "%1 limit reached", limit.label));
         }
         case "out": {
-            // To ten minutes: a projection to the minute claims more than it knows.
-            const when = words.weekdayTime(Math.round(p.runOut / 600) * 600, popup.weekly);
+            // To ten minutes: a projection to the minute claims more than it
+            // knows. Rounded up, it could land on the reset or after it, so
+            // there it rounds down, and stays at least a minute before it.
+            const nearest = Math.round(p.runOut / 600) * 600;
+            const when = words.weekdayTime(nearest <= limit.resetsAt - 60 ? nearest : Math.floor(p.runOut / 600) * 600,
+                                           popup.weekly);
             // The shared limit is named too: under the first of several bars,
             // a bare "runs out" could be read as being about a model.
             return !all ? i18nc("@info a model's limit runs out before the reset at the rate so far, e.g. At this pace, Fable runs out Tue 3:30 AM",
