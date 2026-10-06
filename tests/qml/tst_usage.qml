@@ -1049,6 +1049,19 @@ Item {
             readings.forEach(r => compare(String(r.color), expected));
         }
 
+        // Once the reset has passed with the reading still at 100 %, no
+        // lock-out is left to count down: the dash stays plain, as in the
+        // panel, until the next check brings the new week.
+        function test_dashAfterTheResetIsNotRed() {
+            const usage = monitor.usage;
+            setClaude({ weekly: usage.window(100, -600, []) });
+            const popup = load("claude");
+            verify(!header(popup).partsShown);
+            const dash = root.find(header(popup), i => i.numberWidth !== undefined && i.visible);
+            compare(dash.value, "–");
+            compare(String(dash.color), String(Kirigami.Theme.textColor));
+        }
+
         function test_codex() {
             const popup = load("codex");
             const shown = root.texts(popup);

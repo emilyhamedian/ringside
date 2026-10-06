@@ -114,8 +114,9 @@ PopupPage {
         parts: popup.weekly ? words.countdownParts(popup.weekly.resetsAt, popup.nowMs) : []
         value: popup.weekly && !header.partsShown ? "–" : ""
         // The ring and bars carry the level; at the limit the countdown is
-        // how long the lock-out lasts, and only then does it turn red.
-        valueColor: popup.weekly && popup.weekly.percent >= 100 ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor
+        // how long the lock-out lasts, and only then does it turn red. Once
+        // the reset has passed there is none, and the dash stays plain.
+        valueColor: header.partsShown && popup.weekly.percent >= 100 ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor
         caption: header.partsShown ? i18nc("@info:label under the time left, e.g. 2d 21h until reset", "until reset") : ""
         accessibleValue: header.partsShown
             ? i18nc("@info:accessible the time left until the weekly reset, e.g. 5 days 18 hours until reset", "%1 until reset",
