@@ -75,7 +75,8 @@ Item {
 
     function take() {
         const restOf = samples => History.points(samples, length, width, height, maximum, topY);
-        const eases = duration > 0 && values !== shownValues;
+        // A hidden graph takes a sample at once.
+        const eases = duration > 0 && visible && values !== shownValues;
         mainFrom = eases ? easedFrom(mainDrawn, shownValues, values, restOf(values)) : [];
         secondFrom = eases && second ? easedFrom(secondDrawn, shownSecondValues, secondValues, restOf(secondValues)) : [];
         shownValues = values;

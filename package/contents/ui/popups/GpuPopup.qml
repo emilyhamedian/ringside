@@ -12,25 +12,77 @@ import ".."
 // One section per awake GPU, the outer ring's first, each under a header as
 // in the other popups and the second after a rule. A powered-down GPU is a
 // single line at the end; nothing here reads it, so opening the popup can't
-// wake it.
+// wake it. A GPU that wakes opens its section at once and fades it in; one
+// that goes to sleep fades its section out with its last readings, and only
+// then gives way to its line, so the popup changes height once each way.
 PopupPage {
     id: popup
 
     readonly property var slots: [popup.monitor.gpuOuter, popup.monitor.gpuInner].filter(slot => slot.present)
     readonly property var awake: slots.filter(slot => slot.phase !== "asleep")
-    readonly property var asleep: slots.filter(slot => slot.phase === "asleep")
+    // The GPUs with a section open: the awake ones, and one that has just
+    // gone to sleep while its section fades out. Set rather than bound, so
+    // that a GPU going to sleep is still among them when it is noticed.
+    property var open: []
+    // Off opens and closes sections at once, as at Plasma's Instant speed.
+    property bool animated: Kirigami.Units.longDuration > 1
 
+    Component.onCompleted: open = awake
+    onAwakeChanged: {
+        if (animated && open.some(slot => !awake.includes(slot))) {
+            open = slots.filter(slot => open.includes(slot) || awake.includes(slot));
+            closing.restart();
+        } else {
+            closing.stop();
+            open = awake;
+        }
+    }
+
+    Timer {
+        id: closing
+        interval: Kirigami.Units.longDuration
+        onTriggered: popup.open = popup.awake
+    }
+
+    // A section per GPU, kept as it sleeps and wakes.
     Repeater {
-        model: popup.awake
+        model: popup.slots.length
 
         delegate: Section {
-            required property var modelData
             required property int index
+            readonly property var live: popup.slots[index] ?? popup.monitor.gpuOuter
+            readonly property bool opened: popup.open.includes(live)
+            // Its readings while it was last awake, a reading that went
+            // missing keeping the one before.
+            property var last: null
+            readonly property var readings: [live.phase, live.usage, live.temperature, live.vramUsed, live.knownVramTotal,
+                                             live.clock, live.power, live.history]
+
+            function keep() {
+                if (live.phase === "asleep") {
+                    return;
+                }
+                const was = last ?? {};
+                const held = key => Number.isFinite(live[key]) ? live[key] : was[key] ?? NaN;
+                last = {
+                    present: true, name: live.name, kind: live.kind, reportsVram: live.reportsVram,
+                    reportsTemperature: live.reportsTemperature, temperatureLabel: live.temperatureLabel,
+                    knownVramTotal: held("knownVramTotal"), usage: held("usage"), temperature: held("temperature"),
+                    vramUsed: held("vramUsed"), clock: held("clock"), power: held("power"),
+                    history: live.history.length > 0 ? live.history : was.history ?? []
+                };
+            }
+
+            Component.onCompleted: keep()
+            onReadingsChanged: keep()
 
             monitor: popup.monitor
-            slot: modelData
-            temperatureName: words.sensorName(modelData.temperatureLabel)
-            first: index === 0
+            awake: live.phase !== "asleep"
+            visible: opened
+            slot: !awake && opened && last ? last : live
+            temperatureName: words.sensorName(live.temperatureLabel)
+            first: popup.open.indexOf(live) === 0
+            animated: popup.animated
         }
     }
 
@@ -40,7 +92,7 @@ PopupPage {
     }
 
     Repeater {
-        model: popup.asleep
+        model: popup.slots.filter(slot => !popup.open.includes(slot))
 
         delegate: ColumnLayout {
             id: sleeper
@@ -52,7 +104,7 @@ PopupPage {
             spacing: 0
 
             Divider {
-                visible: popup.awake.length > 0
+                visible: popup.open.length > 0
             }
 
             Text {
@@ -60,7 +112,7 @@ PopupPage {
                 Layout.leftMargin: Math.round(Kirigami.Units.largeSpacing * 2)
                 Layout.rightMargin: Layout.leftMargin
                 // Where it opens the page, as far down as a header would start.
-                Layout.topMargin: popup.awake.length > 0 || sleeper.index > 0
+                Layout.topMargin: popup.open.length > 0 || sleeper.index > 0
                     ? Kirigami.Units.largeSpacing : Math.round(Kirigami.Units.largeSpacing * 1.75)
                 Layout.bottomMargin: Kirigami.Units.largeSpacing
                 text: i18nc("@info a powered-down GPU: its name, then off", "%1 · off", sleeper.modelData.name)
@@ -82,6 +134,9 @@ PopupPage {
         required property string temperatureName
         // Any section after the first is set off from it by a rule.
         property bool first: true
+        // Faded in while the GPU is awake and out while it sleeps.
+        property bool awake: true
+        property bool animated: true
 
         // Intel GPUs publish no temperature, so theirs is left out rather than shown as a dash.
         readonly property bool temperatureShown: slot.reportsTemperature
@@ -89,8 +144,13 @@ PopupPage {
         readonly property real tilePointSize: Kirigami.Theme.defaultFont.pointSize * 1.23
 
         Layout.fillWidth: true
-        visible: slot.present
+        opacity: awake ? 1 : 0
         spacing: 0
+
+        Behavior on opacity {
+            enabled: section.animated
+            NumberAnimation { duration: Kirigami.Units.longDuration; easing.type: Easing.InOutQuad }
+        }
 
         Divider {
             visible: !section.first

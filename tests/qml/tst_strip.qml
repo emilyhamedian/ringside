@@ -389,6 +389,8 @@ Item {
         // widest ones are really drawn (100%, 302°, 1023M, "off"), and fits.
         function test_ringsGrowAtOnceAndShrinkAfterTheHold(data) {
             const strip = makePanel(data.thickness, { items: ["cpu", "gpu", "memory", "claude", "network", "disk"], relayoutWindow: 0 });
+            // Layout only: the GPU's readings change at once (see tst_motion).
+            strip.cellAt(1).contentItem.animated = false;
             const widths = () => strip.items.map((item, i) => strip.cellAt(i).implicitWidth);
             const tight = i => strip.cellAt(i).contentWidth + 2 * strip.cellAt(i).padding;
             const changes = [
@@ -800,6 +802,7 @@ Item {
             const place = text => { const b = box(text); return [b.x, b.y, b.height]; };
             const first = place(line(0, "first"));
             const second = place(line(0, "second"));
+            strip.cellAt(0).contentItem.animated = false;
             monitor.gpuOuter.phase = "asleep";
             waitForRendering(strip);
             compare(strip.cellAt(0).contentItem.primary.name, "AMD Radeon 780M Graphics");
