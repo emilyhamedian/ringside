@@ -11,9 +11,11 @@ import "../../package/contents/ui/popups"
 
 // The README's pictures, from fixed sample readings: scripts/pictures.sh
 // runs this, which saves each shot to the folder given after --out and
-// quits. In the popups the week resets at 7:00 AM EDT, far enough ahead that
-// most of it has been used; the panel picture counts down a fixed time, so
-// it comes out the same on every run.
+// quits. The Claude popup is seen at a fixed time, with the week resetting
+// at 7:00 AM EDT far enough ahead that most of it has been used, and the
+// panel picture counts down a fixed time, so usage.png and panel.png come
+// out the same on every run. The CPU popup's frequency, load and threads
+// are read live, so popups.png shows the machine that renders it.
 Rectangle {
     id: pictures
 
@@ -40,10 +42,11 @@ Rectangle {
     height: shots.implicitHeight
     color: Kirigami.Theme.backgroundColor
 
-    // The first 11:00 UTC at least two and a half days away, and the week's
-    // use until now: working hours in New York, nothing overnight.
+    // Now is 9:30 AM on Tuesday 6 October 2026 in New York; the reset the
+    // first 11:00 UTC at least two and a half days away, and the week's use
+    // until now working hours in New York, nothing overnight.
     readonly property int week: 7 * 86400
-    readonly property real now: Math.floor(Date.now() / 1000)
+    readonly property real now: Date.UTC(2026, 9, 6, 13, 30) / 1000
     readonly property real resetsAt: {
         const earliest = now + 2.5 * 86400;
         const d = new Date(earliest * 1000);
@@ -166,6 +169,7 @@ Rectangle {
             UsagePopup {
                 monitor: sample
                 item: "claude"
+                nowMs: pictures.now * 1000
             }
         }
     }
