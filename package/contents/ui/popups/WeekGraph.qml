@@ -51,6 +51,8 @@ Item {
     // already shows now. Later than that, checks have been failing, which
     // the line under the header says.
     readonly property bool stale: placed && mainPoints.length > 0 && pollAt < nowMs / 1000 - 7200
+    // The marker's place, inside the graph once the reset has passed.
+    readonly property real markerX: Math.min(width - 1, Math.round(Math.max(0, xAt(nowMs / 1000))))
 
     function xAt(epoch) {
         return (epoch - start) / (end - start) * width;
@@ -87,9 +89,11 @@ Item {
         id: rule
         anchors.fill: parent
         visible: graph.placed
-        // The week so far lies to the left; the right end is still to come.
+        // The week so far lies to the left; the right end is still to come,
+        // though late in the week the marker for now can stand there.
         preferEnd: true
-        series: [graph.mainPoints, graph.secondPoints, graph.mainRunOut, graph.secondRunOut]
+        series: [graph.mainPoints, graph.secondPoints, graph.mainRunOut, graph.secondRunOut,
+                 graph.stale ? [Qt.point(graph.markerX, rule.ruleY), Qt.point(graph.markerX, graph.height)] : []]
     }
 
     // The floor, so a low week reads against 0 %, and the reset's tick at
@@ -113,7 +117,7 @@ Item {
 
     Rectangle {
         visible: graph.stale
-        x: Math.min(graph.width - width, Math.round(Math.max(0, graph.xAt(graph.nowMs / 1000))))
+        x: graph.markerX
         y: rule.ruleY
         width: 1
         height: graph.height - rule.ruleY
