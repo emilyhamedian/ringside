@@ -112,7 +112,7 @@ Item {
 
             // Names the mark for the tests, which can't read a path.
             readonly property string markName: name.item
-            readonly property var art: name.item === "claude" ? Marks.CLAUDE : Marks.OPENAI
+            readonly property var art: name.item === "claude" ? Marks.CLAUDE : Marks.CODEX
             // Scene pixels per viewBox unit.
             readonly property real unit: name.markSize / art.box[2]
 

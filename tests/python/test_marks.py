@@ -24,11 +24,12 @@ def marks():
 
 
 def icon(name):
-    """The viewBox and the one path's data of an icon in icons/."""
+    """An icon's viewBox, and its one path's fill rule and data."""
     root = ET.parse(ICONS / name).getroot()
     paths = root.findall(f".//{SVG}path")
     assert len(paths) == 1, f"{name} has {len(paths)} paths"
-    return [float(n) for n in root.get("viewBox").split()], paths[0].get("d")
+    view_box = [float(n) for n in root.get("viewBox").split()]
+    return view_box, paths[0].get("fill-rule", "nonzero"), paths[0].get("d")
 
 
 class MarksTest(unittest.TestCase):
@@ -36,12 +37,15 @@ class MarksTest(unittest.TestCase):
 
     def test_marks_are_the_icons(self):
         found = marks()
-        self.assertEqual(sorted(found), ["CLAUDE", "OPENAI"])
-        for name, svg in (("CLAUDE", "claude.svg"), ("OPENAI", "openai.svg")):
+        self.assertEqual(sorted(found), ["CLAUDE", "CODEX"])
+        for name, svg in (("CLAUDE", "claude.svg"), ("CODEX", "codex.svg")):
             with self.subTest(mark=name):
                 box, path = found[name]
-                view_box, d = icon(svg)
+                view_box, fill_rule, d = icon(svg)
                 self.assertEqual(path, d)
+                # RingName fills every mark by the nonzero rule, so a mark's
+                # holes must be wound against its outline.
+                self.assertEqual(fill_rule, "nonzero")
                 # RingName scales a square box; [x, y, size] is the viewBox
                 # with its equal width and height given once.
                 self.assertEqual(view_box[2], view_box[3], f"{svg} is square")
