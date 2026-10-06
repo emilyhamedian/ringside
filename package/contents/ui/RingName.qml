@@ -34,14 +34,26 @@ Item {
     // size and scaled from the old one.
     readonly property real size: usage ? markSize : label.fontInfo.pixelSize
     property real shownSize: size
+    // A change that comes with a resize of the ring, in the same event, as
+    // the panel's thickness changes, is drawn at once, so the name keeps up
+    // with its ring. Its anchors resize the name before its room changes.
+    readonly property bool easing: animated && !resized.running
+
+    onWidthChanged: resized.restart()
+    onHeightChanged: resized.restart()
+
+    Timer {
+        id: resized
+        interval: 0
+    }
 
     Behavior on shownSize {
-        enabled: name.animated && name.shownSize > 0
+        enabled: name.easing && name.shownSize > 0
         NumberAnimation { duration: Kirigami.Units.longDuration; easing.type: Easing.InOutCubic }
     }
 
     Behavior on opacity {
-        enabled: name.animated
+        enabled: name.easing
         NumberAnimation { duration: Kirigami.Units.shortDuration }
     }
 

@@ -817,6 +817,29 @@ Item {
             verify(!name.layer.enabled, "drawn as text at rest");
         }
 
+        // A ring resized, as the panel's thickness changes, has its name at
+        // the new size at once, shown or left out, so the name keeps up with
+        // its ring; only a change of room at one size eases it.
+        function test_nameKeepsUpWithAResize() {
+            const c = cell();
+            const name = nameIn(c);
+            const seen = [];
+            createTemporaryObject(samplerComponent, gpus, { sample: () => seen.push([name.shownSize, name.size, name.opacity]) });
+            const sizes = [];
+            const fitted = [];
+            for (const ring of [22, 46, 30, 60, 46]) {
+                c.ring = ring;
+                compare(name.shownSize, name.size, ring + " px: at its size at once");
+                compare(name.opacity, name.fits ? 1 : 0, ring + " px: shown or left out at once");
+                sizes.push(name.size);
+                fitted.push(name.fits);
+                wait(20);
+            }
+            verify(new Set(sizes).size > 1 && fitted.includes(true) && fitted.includes(false), JSON.stringify([sizes, fitted]));
+            verify(seen.every(([shown, size, opacity]) => shown === size && (opacity === 0 || opacity === 1)), JSON.stringify(seen));
+            verify(!name.layer.enabled);
+        }
+
         // A change back mid-fade turns the track round where it is.
         function test_reversesCleanly() {
             monitor.gpuInner.phase = "asleep";
