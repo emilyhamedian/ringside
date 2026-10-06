@@ -538,19 +538,25 @@ Item {
             compare(g.runOutEnd.x, g.projection[1].x);
         }
 
-        // A poll while the line still draws on starts from where its end is.
-        function test_aPollMidDrawStartsWhereTheEndIs() {
+        // A poll while the line still draws on puts the rest of that stretch
+        // in at once and draws the new one on from its end, so the line
+        // never runs back on itself.
+        function test_aPollMidDrawDrawsOnFromTheLastReading() {
             const g = make();
-            const old = end(g.mainPoints);
             poll(g);
             tryVerify(() => g.drawIn > 0.2 && g.drawIn < 0.8, 2000, "part way");
-            const target = end(g.mainPoints);
+            const last = end(g.mainPoints);
+            const xs = () => g.mainDrawn.map(p => p.x);
+            const seen = [];
+            createTemporaryObject(samplerComponent, weeks, { sample: () => seen.push(xs()) });
             g.window = window([[start, 0], [start + 2 * day, 20], [start + 3 * day, 60], [start + 4 * day, 70]], 70);
-            const from = [g.mainFrom.x, g.mainFrom.y];
-            verify(from[0] > old[0] && from[0] < target[0], "between the old end and the one it drew to: " + from);
-            compare(end(g.mainDrawn), from, "no jump");
+            seen.push(xs());
+            compare([g.mainFrom.x, g.mainFrom.y], last, "from the reading it was drawing to");
+            compare(end(g.mainDrawn), last);
             tryVerify(() => g.drawClock === 1, 2000, "drawn on");
             compare(end(g.mainDrawn), end(g.mainPoints));
+            verify(seen.length > 3);
+            verify(seen.every(list => list.every((x, i) => i === 0 || x >= list[i - 1])), "never back: " + JSON.stringify(seen));
         }
 
         // A run-out that goes fades out where it was.

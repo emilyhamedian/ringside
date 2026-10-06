@@ -114,13 +114,6 @@ Item {
         return series.slice(0, -1).concat([Qt.point(from.x + (end.x - from.x) * drawIn, from.y + (end.y - from.y) * drawIn)]);
     }
 
-    // Where a series' end is drawn, `added` readings (0 or 1) back from its
-    // last point.
-    function drawnEnd(series, from, added) {
-        const end = series[series.length - 1 - added];
-        return drawClock < 1 && from ? Qt.point(from.x + (end.x - from.x) * drawIn, from.y + (end.y - from.y) * drawIn) : end;
-    }
-
     function seen(source) {
         return source ? { resetsAt: source.resetsAt, windowSeconds: source.windowSeconds, history: Array.from(source.history ?? []) }
                       : null;
@@ -140,8 +133,10 @@ Item {
     }
 
     // A window has changed. Each series that took one more reading draws its
-    // new stretch on from where its end was drawn, and one still drawing on
-    // carries on from where it is; anything else stops the drawing.
+    // new stretch on from its last reading, the rest of a stretch still
+    // drawing on put in at once so that the line never doubles back, and
+    // one still drawing on carries on from where its end is; anything else
+    // stops the drawing.
     function poll() {
         const main = change(seenMain, window);
         const second = change(seenSecond, secondWindow);
@@ -165,8 +160,8 @@ Item {
         if (duration > 0 && main !== "other" && second !== "other" && (main === "grew" || second === "grew")) {
             // The points afresh: the bindings on the windows may not have
             // caught up with them yet.
-            const from = (series, was, grew) => series.length < 2 ? null : grew ? drawnEnd(series, was, 1)
-                                                : drawClock < 1 && was ? drawnEnd(series, was, 0) : null;
+            const from = (series, was, grew) => series.length < 2 ? null : grew ? series[series.length - 2]
+                                                : drawClock < 1 && was ? drawnSeries(series, was).slice(-1)[0] : null;
             mainFrom = from(points(window), mainFrom, main === "grew");
             secondFrom = from(points(secondWindow), secondFrom, second === "grew");
             drawing.restart();
