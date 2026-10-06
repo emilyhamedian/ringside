@@ -593,7 +593,11 @@ Item {
                   outer: "text", innerTone: "negative" },
                 { tag: "model lasts", weekly: [52, 5 * 3600], inner: [78, 5 * 3600], outer: "text", innerTone: "neutral" },
                 { tag: "model quiet", weekly: [70, 3 * day], inner: [30, 2 * day + 21 * 3600],
-                  outer: "negative", innerTone: "text" }
+                  outer: "negative", innerTone: "text" },
+                // The model's limit is projected from the poll too: three
+                // days in at 50 % runs out, where four days would last.
+                { tag: "model from its poll", weekly: [52, 5 * 3600], inner: [50, 3 * day], polledAgo: day,
+                  outer: "text", innerTone: "negative" }
             ];
         }
 

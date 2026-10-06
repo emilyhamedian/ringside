@@ -537,6 +537,16 @@ Item {
                 verify(Math.abs(middle.x - g.width / 2) <= 0.5 && Math.abs(middle.y - g.height / 2) <= 0.5,
                        "centred: " + middle.x + ", " + middle.y);
             }
+            if (data.shown && data.text) {
+                // Across, the drawn advance less its trailing letter space
+                // is held closer: half that space is about a third of a
+                // pixel, inside the half pixel above.
+                const l = label(name);
+                const left = (l.width - l.contentWidth) / 2;
+                const across = l.mapToItem(g, Qt.point(left + (l.contentWidth - l.font.letterSpacing) / 2, 0)).x;
+                verify(l.font.letterSpacing / 2 > 0.25, "a letter space worth checking: " + l.font.letterSpacing);
+                fuzzyCompare(across, g.width / 2, 0.05, "the advance's middle on the ring's");
+            }
         }
 
         function test_nameFitsTheHole_data() {
@@ -910,6 +920,46 @@ Item {
                 compare(c.implicitWidth, widths[key], what + " is as wide as " + key + " was");
             }
             verify(Object.keys(widths).length < data.states.length, "some readings differ only in their digits: " + JSON.stringify(widths));
+        }
+
+        function test_dimLineOverhang_data() {
+            return [{ tag: "long dim line", item: "memory", state: { set: { memoryPercent: 1, memoryUsed: 1023 * mib } }, capped: true },
+                    { tag: "first line longer", item: "cpu", state: { set: { cpuUsage: 100, cpuTemperature: 5 } } },
+                    { tag: "one line", item: "memory", twoLines: false, state: { set: { memoryPercent: 1, memoryUsed: 1023 * mib } } },
+                    { tag: "coloured", item: "cpu", state: { set: { fahrenheit: true, cpuUsage: 5, cpuTemperature: 92 } },
+                      dim: { cpuTemperature: 50 } }];
+        }
+
+        // A dim second line longer than the first runs past the readings
+        // into the gap after them, by at most smallSpacing: any closer and
+        // it reads as the next item's. The cell's width leaves that much
+        // out. A coloured line, or one on a thin panel, stays inside.
+        function test_dimLineOverhang(data) {
+            const c = cell(data.item, { twoLines: data.twoLines ?? true, ring: 34 });
+            const readout = root.find(c, i => i.textWidth !== undefined);
+            const second = line(c, "second");
+            if (data.dim) {
+                apply(data.item, { set: Object.assign({}, data.state.set, data.dim) });
+                settle();
+                compare(String(second.color), root.tone("dim"), "dim at " + second.text);
+                verify(readout.overhang > 0, second.text + " runs over");
+            }
+            apply(data.item, data.state);
+            settle();
+            if (data.dim) {
+                compare(String(second.color), root.tone("negative"), "coloured at " + second.text);
+            }
+            const longer = readout.rooms[1] - readout.rooms[0];
+            const what = line(c, "first").text + " over " + second.text + ", " + longer + " px longer";
+            if (data.capped) {
+                verify(Math.round(longer * 0.4) > Kirigami.Units.smallSpacing, what + ": long enough to reach the cap");
+                compare(readout.overhang, Kirigami.Units.smallSpacing, what);
+            } else {
+                compare(readout.overhang, 0, what);
+            }
+            compare(c.implicitWidth, gauge(c).width + Kirigami.Units.largeSpacing + readout.textWidth, what);
+            const end = Math.max(...readingsIn(c).map(t => t.mapToItem(c, t.width, 0).x));
+            fuzzyCompare(end - c.implicitWidth, readout.overhang, 0.01, what + ": the readings end past the cell");
         }
 
         function test_ratesHugAndKeepTheirReserve_data() {
