@@ -195,11 +195,15 @@ class ClaudeParsing(Isolated):
                      "seven_day_breakdown", "seven_day_cowork", "seven_day_oauth_apps", "seven_day_omelette",
                      "seven_day_opus", "seven_day_sonnet", "spend", "tangelo", "wattle_ember")
         listed = fixture("claude_usage.json")
-        for limits, expected in (([], []), (listed["limits"], [("Fable", 78), ("Opus", 9)])):
-            with self.subTest(limits=len(limits)):
+        # No list at all, an empty one, and today's.
+        for limits, expected in ((None, []), ([], []), (listed["limits"], [("Fable", 78), ("Opus", 9)])):
+            with self.subTest(limits=limits and len(limits)):
                 usage_body = {key: {"utilization": 55.6, "resets_at": "2026-09-04T16:00:00Z"} for key in live_keys}
                 usage_body["seven_day"] = listed["seven_day"]
-                usage_body["limits"] = limits
+                if limits is None:
+                    del usage_body["limits"]
+                else:
+                    usage_body["limits"] = limits
                 report = usage.parse_claude(usage_body)
                 self.assertEqual(report["weekly"]["percent"], 62)
                 self.assertEqual([(s["id"], s["percent"]) for s in report["scoped"]], expected)
