@@ -41,16 +41,20 @@ MouseArea {
     signal activated()
 
     // Along a horizontal panel the cell is as wide as its content: it grows
-    // at once, but shrinks back only once the content has stayed narrower
-    // for settleDelay, and then to its width at that moment, so a reading
-    // that keeps crossing between widths, 9 % and 10 %, moves the items
-    // after it once rather than on every update. Until then a ring's extra
-    // room sits after its readings, and rates keep theirs before their
-    // arrows or letters, so their readings still end one padding before the
-    // next item. Whole pixels, so a fraction of one doesn't count as a
-    // change.
+    // at once, but when the content narrows it keeps up to one digit of the
+    // room it had until the content has stayed narrower for settleDelay, and
+    // then takes its width at that moment. A reading that keeps crossing
+    // between widths, 9 % and 10 %, moves the items after it once rather
+    // than on every update, while a burst of traffic that dies down leaves a
+    // digit's gap at most. Until then a ring's extra room sits after its
+    // readings, and rates keep theirs before their arrows or letters, so
+    // their readings still end one padding before the next item. Whole
+    // pixels, so a fraction of one doesn't count as a change.
     readonly property real contentWidth: contentItem ? Math.ceil(contentItem.implicitWidth) : 0
     property real settledWidth: 0
+    // The widest digit in the readings' heavier weight, which covers the
+    // lighter one.
+    readonly property real digitWidth: face.room(face.strong, ["0"])
     property int settleDelay: 3 * 60 * 1000
     // A change of layout reaches the content's width a frame or two later,
     // once the layouts in it are polished; for this long after one, and
@@ -74,8 +78,11 @@ MouseArea {
         if (contentWidth >= settledWidth || relayout.running) {
             settledWidth = contentWidth;
             settle.stop();
-        } else if (!settle.running) {
-            settle.start();
+        } else {
+            settledWidth = Math.min(settledWidth, contentWidth + digitWidth);
+            if (!settle.running) {
+                settle.start();
+            }
         }
     }
     onLayoutKeyChanged: {
@@ -89,6 +96,10 @@ MouseArea {
             activated();
             event.accepted = true;
         }
+    }
+
+    ReadoutFont {
+        id: face
     }
 
     Timer {

@@ -1218,20 +1218,23 @@ Item {
         }
 
         // Along a horizontal panel a cell grows with its content at once and
-        // shrinks back only once the content has stayed narrower for the
-        // settle delay, so a reading that comes and goes moves nothing. A
-        // change of layout, and the moments after the cell is made, apply at
-        // once.
+        // keeps up to a digit more than a narrower content until that has
+        // lasted the settle delay, so a reading that comes and goes a digit
+        // moves nothing, and one that drops further leaves a digit's gap at
+        // most. A change of layout, and the moments after the cell is made,
+        // apply at once.
         function test_settleHold() {
             const block = keep(blockComponent.createObject(root));
             const c = keep(panelCellComponent.createObject(root, { contentItem: block, settleDelay: 400, relayoutWindow: 100 }));
             const outside = 2 * Kirigami.Units.largeSpacing;
+            const digit = c.digitWidth;
             compare(c.implicitWidth, 50 + outside, "as wide as its content");
+            verify(digit > 1 && digit < 20, "a digit's width: " + digit);
 
             // Content given at creation holds through its first shrink.
             const declared = keep(declaredCellComponent.createObject(root));
             wait(20);
-            declared.contentItem.implicitWidth = 40;
+            declared.contentItem.implicitWidth = 50 - digit;
             compare(declared.implicitWidth, 50 + outside, "holds what it was made with");
 
             block.implicitWidth = 45;
@@ -1240,15 +1243,17 @@ Item {
 
             block.implicitWidth = 60.2;
             compare(c.implicitWidth, 61 + outside, "grows at once, to a whole pixel");
-            block.implicitWidth = 40;
-            compare(c.implicitWidth, 61 + outside, "holds through a shrink");
+            block.implicitWidth = 61 - digit;
+            compare(c.implicitWidth, 61 + outside, "holds through a digit's shrink");
             wait(200);
             compare(c.implicitWidth, 61 + outside, "still holding");
+            block.implicitWidth = 40;
+            compare(c.implicitWidth, 40 + digit + outside, "a bigger shrink keeps a digit at most");
             tryCompare(c, "implicitWidth", 40 + outside, 2000, "settles after the delay");
 
             // A reading that comes back in time moves nothing.
             block.implicitWidth = 50;
-            block.implicitWidth = 45;
+            block.implicitWidth = 50 - digit;
             wait(200);
             block.implicitWidth = 50;
             wait(400);
@@ -1256,19 +1261,20 @@ Item {
 
             // A change of layout applies at once, and so does a narrower
             // content for a moment after it.
-            block.implicitWidth = 30;
+            block.implicitWidth = 50 - digit;
             compare(c.implicitWidth, 50 + outside, "held");
             c.layoutKey = "thin";
-            compare(c.implicitWidth, 30 + outside, "a new layout applies at once");
+            compare(c.implicitWidth, 50 - digit + outside, "a new layout applies at once");
             block.implicitWidth = 25;
             compare(c.implicitWidth, 25 + outside, "and so does its content, for a moment");
             wait(200);
-            block.implicitWidth = 20;
+            block.implicitWidth = 25 - digit;
             compare(c.implicitWidth, 25 + outside, "then it holds again");
         }
 
         // Through a hold the cell keeps the widest it showed, whatever its
-        // content passes through; the hold ends at the content's width then.
+        // content passes through within a digit of that; the hold ends at
+        // the content's width then.
         // Ended any wider, the cell would keep the difference as a gap until
         // its content next changed, as nothing would start another hold.
         function test_settleEndsAtTheContentWidth() {
@@ -1279,14 +1285,15 @@ Item {
             block.implicitWidth = 60;
             compare(c.implicitWidth, 60 + outside);
             const moves = keep(signalSpyComponent.createObject(root, { target: c, signalName: "implicitWidthChanged" }));
-            for (const width of [40, 50, 40]) {
+            const digit = c.digitWidth;
+            for (const width of [60 - digit, 60 - digit / 2, 60 - digit]) {
                 block.implicitWidth = width;
                 wait(50);
             }
             compare(c.implicitWidth, 60 + outside, "holding");
-            tryCompare(c, "implicitWidth", 40 + outside, 2000, "settles at the content's width");
+            tryCompare(c, "implicitWidth", 60 - digit + outside, 2000, "settles at the content's width");
             wait(2 * c.settleDelay);
-            compare(c.implicitWidth, 40 + outside, "and stays there");
+            compare(c.implicitWidth, 60 - digit + outside, "and stays there");
             compare(moves.count, 1, "moved once");
         }
 
