@@ -17,10 +17,10 @@ follows [Semantic Versioning](https://semver.org/).
   reached, or how much of the limit the week will use. It appears from a
   day into the week, or at once for a limit that is running out.
 - The week graph in the Claude and Codex popup has a line at 100%, a floor,
-  a tick at the reset and, for a limit on pace to run out, a line of red
-  dots to where it would reach 100%. A single reading shows as a dot, and
-  the marker for now appears only when the last reading is over two hours
-  old.
+  a tick at the reset and, for the limit the pace sentence says runs out, a
+  line of red dots to where it would reach 100%. A single reading shows as
+  a dot, and the marker for now appears only when the last reading is over
+  two hours old.
 - A failed Claude or Codex check shows a small amber dot at the ring's
   corner, and the tooltip says when it failed, even with the ring's text
   shown. This replaces the fade, which looked like a sleeping GPU.
