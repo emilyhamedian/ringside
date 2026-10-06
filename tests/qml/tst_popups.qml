@@ -459,13 +459,6 @@ Item {
             id: glyph
         }
 
-        // The room a Text's last character leaves after its ink.
-        function trailingRoom(text) {
-            glyph.font = text.font;
-            glyph.text = text.text.slice(-1);
-            return glyph.advanceWidth - glyph.tightBoundingRect.x - glyph.tightBoundingRect.width;
-        }
-
         // Where a Text's ink starts, down from its reading's top.
         function inkTop(text) {
             glyph.font = text.font;
@@ -473,17 +466,18 @@ Item {
             return text.y + text.baselineOffset + glyph.tightBoundingRect.y;
         }
 
-        // The temperature unit is as small as the caption under it and sits
-        // a pixel from the digits, its top level with theirs, in the CPU and
-        // GPU headers alike. At one size it is as far from the ink after a
-        // tabular "1" (61, 41) as after any other digit (60, 48).
+        // The temperature unit is as small as the caption under it, its top
+        // level with the digits' top, and as far from them in the CPU and
+        // GPU headers alike. Its gap is drawn and checked in
+        // test_degreeSignGapAtItsHeight.
         function test_temperatureUnitSizeAndGap_data() {
             return [{ tag: "celsius", fahrenheit: false, unit: "°C" }, { tag: "fahrenheit", fahrenheit: true, unit: "°F" }];
         }
 
         function test_temperatureUnitSizeAndGap(data) {
             normal.fahrenheit = data.fahrenheit;
-            const inkGaps = { CpuPopup: [], GpuPopup: [] };
+            normal.gpuOuter.temperature = 61;
+            const offsets = {};
             for (const [popup, cpuTemperature] of [["CpuPopup", 61], ["CpuPopup", 60], ["GpuPopup", 61]]) {
                 normal.cpuTemperature = cpuTemperature;
                 const temperatures = readings(load(popup, normal)).filter(r => r.visible && r.degreeUnit !== "");
@@ -491,23 +485,20 @@ Item {
                 temperatures.forEach(r => {
                     const p = parts(r);
                     const tag = popup + " " + p.number.text;
+                    tryVerify(() => r.scan !== null, 2000, tag + " is scanned");
                     compare(p.suffix.text, data.unit, tag);
                     compare(p.suffix.font.pointSize, Kirigami.Theme.smallFont.pointSize, tag);
-                    const gap = p.suffix.x - (p.number.x + p.number.implicitWidth);
-                    const inkGap = gap + trailingRoom(p.number);
-                    compare(r.unitSpacing, 1, tag);
-                    verify(inkGap >= r.unitSpacing && inkGap <= r.unitSpacing + 3, tag + " is " + inkGap + " from the ink");
-                    inkGaps[popup].push(inkGap);
                     compare(r.implicitWidth, p.number.implicitWidth + r.unitSpacing + p.suffix.implicitWidth, tag);
                     fuzzyCompare(inkTop(p.suffix), inkTop(p.number), 0.5, tag + " level with the digits' top");
+                    offsets[tag] = p.suffix.x - (p.number.x + p.number.implicitWidth);
                 });
             }
-            for (const gaps of [inkGaps.CpuPopup, inkGaps.GpuPopup]) {
-                compare(gaps.length, 2);
-                fuzzyCompare(gaps[1], gaps[0], 0.5);
-            }
             normal.cpuTemperature = 61;
+            normal.gpuOuter.temperature = Qt.binding(() => normal.gpuOuter.awake ? 48 : NaN);
             normal.fahrenheit = false;
+            const shown = Format.temperature(61, data.fahrenheit);
+            verify(offsets["CpuPopup " + shown] !== undefined && offsets["GpuPopup " + shown] !== undefined, JSON.stringify(offsets));
+            compare(offsets["GpuPopup " + shown], offsets["CpuPopup " + shown], "the unit after " + shown);
         }
 
         // Only the degree sign moves toward a narrow last digit: the digits,
@@ -591,27 +582,32 @@ Item {
             compare(other.suffix.y + other.suffix.baselineOffset, other.number.y + other.number.baselineOffset, "a unit on the baseline");
         }
 
-        // In the drawn reading, the degree sign is as far from the digits'
-        // ink box after a "1", a "7", a "0" or a "4", within a pixel. At the
-        // sign's own height a digit whose top falls away leaves more room,
-        // as much as its shape in the font gives, but the sign never
-        // touches it.
+        // In the drawn reading, the degree sign stands as far from the last
+        // digit's ink in the rows the sign covers after a "1", a "7", a "0"
+        // or a "4", within a pixel, though a "0" and a "4" fall away up
+        // there. That gap is the one the reading asks for, and after a "1"
+        // or a "7" at least a pixel wider than the sign had when it sat a
+        // pixel past a "0"'s box, as it did on the baseline.
         function test_degreeSignGapAtItsHeight() {
-            const boxGaps = [];
-            for (const value of ["41", "47", "40", "44"]) {
+            const gaps = [];
+            for (const t of [41, 47, 40, 44]) {
                 const host = createTemporaryObject(inkHost, root);
                 host.loader.setSource(Qt.resolvedUrl("../../package/contents/ui/Reading.qml"),
-                                      { value: value, degreeUnit: "C", color: "white", unitColor: "white",
+                                      { value: Format.temperature(t, false), degreeUnit: "C", color: "white", unitColor: "white",
                                         pointSize: Kirigami.Theme.defaultFont.pointSize * 1.7 });
+                const r = host.loader.item;
                 waitForRendering(host);
+                tryVerify(() => r.scan !== null, 2000, "the digits are scanned for " + r.value);
                 const image = grabImage(host);
-                const bottom = Math.floor(host.loader.item.baselineOffset);
+                const bottom = Math.floor(r.baselineOffset);
                 const ink = (x, ys) => ys.some(y => image.pixel(x, y).hslLightness > 0.3);
                 const above = Array.from({ length: bottom }, (_, y) => y);
-                // Runs of inked columns: the digits, then "°", then "C".
+                // Runs of inked columns in the digits' top rows, above a
+                // "4"'s bar: the digits, then "°", then "C".
+                const top = above.filter(y => y < bottom - 0.6 * r.figureHeight);
                 const runs = [];
                 for (let x = 0; x < image.width; ++x) {
-                    if (!ink(x, above)) {
+                    if (!ink(x, top)) {
                         continue;
                     }
                     if (runs.length > 0 && x === runs[runs.length - 1][1] + 1) {
@@ -620,7 +616,7 @@ Item {
                         runs.push([x, x]);
                     }
                 }
-                verify(runs.length >= 3, value + " draws apart: " + JSON.stringify(runs));
+                verify(runs.length >= 3, r.value + " draws apart: " + JSON.stringify(runs));
                 const sign = runs[runs.length - 2];
                 const signColumns = Array.from({ length: sign[1] - sign[0] + 1 }, (_, i) => sign[0] + i);
                 const rows = above.filter(y => signColumns.some(x => ink(x, [y])));
@@ -631,12 +627,25 @@ Item {
                     }
                     return x;
                 };
-                const boxGap = sign[0] - edge(above) - 1;
-                const signGap = sign[0] - edge(rows) - 1;
-                verify(signGap >= 1, value + ": the sign is " + signGap + " from the digit at its height");
-                boxGaps.push(boxGap);
+                // An Arabic-Indic zero is a dot at mid-height, with no ink
+                // beside the sign; the sign keeps its gap from the dot.
+                const number = parts(r).number;
+                glyph.font = number.font;
+                glyph.text = r.value.slice(-1);
+                const cell = number.x + number.implicitWidth - glyph.advanceWidth;
+                const near = edge(rows) >= cell ? edge(rows) : edge(above);
+                const gap = sign[0] - near - 1;
+                const asked = r.degreeGap * r.ratio;
+                verify(gap >= Math.floor(asked) - 1 && gap <= Math.ceil(asked) + 1, r.value + ": " + gap + " px, not " + asked);
+                if (t % 10 === 1 || t % 10 === 7) {
+                    glyph.font = parts(r).number.font;
+                    glyph.text = "0";
+                    const before = (1 + r.degreeBearing + glyph.advanceWidth - glyph.tightBoundingRect.x - glyph.tightBoundingRect.width) * r.ratio;
+                    verify(gap >= before + 1, r.value + ": " + gap + " px, before " + before);
+                }
+                gaps.push(gap);
             }
-            verify(Math.max(...boxGaps) - Math.min(...boxGaps) <= 1, "after 1, 7, 0, 4: " + boxGaps.join(", "));
+            verify(Math.max(...gaps) - Math.min(...gaps) <= 1, "after 1, 7, 0, 4: " + gaps.join(", "));
         }
 
         // A missing temperature is a bare dash.
