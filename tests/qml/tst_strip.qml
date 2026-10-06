@@ -438,9 +438,16 @@ Item {
                     verify(visibleTexts(strip).includes(step.shows), step.what + ": " + JSON.stringify(visibleTexts(strip)));
                 }
                 const now = widths();
+                // A step that changes two readings can pass through a
+                // narrower width on the way, and the cell keeps a digit more
+                // than that, so a narrower one is held to a bound.
                 for (let i = 0; i < 4; ++i) {
-                    compare(now[i], step.layout ? tight(i) : Math.max(tight(i), Math.min(before[i], tight(i) + strip.cellAt(i).digitWidth)),
-                            step.what + ": " + strip.items[i]);
+                    const held = Math.max(tight(i), Math.min(before[i], tight(i) + strip.cellAt(i).digitWidth));
+                    if (step.layout || tight(i) >= before[i]) {
+                        compare(now[i], tight(i), step.what + ": " + strip.items[i]);
+                    } else {
+                        verify(now[i] >= tight(i) && now[i] <= held, step.what + ": " + strip.items[i] + " " + now[i] + " within " + [tight(i), held]);
+                    }
                 }
                 checkRow(step.what);
                 before = now;
