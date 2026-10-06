@@ -33,12 +33,19 @@ Item {
         }
     }
 
+    SignalSpy {
+        id: spy
+    }
+
     TestCase {
         name: "Processes"
         when: windowShown
 
         function init() {
             failOnWarning(/TypeError|ReferenceError|SyntaxError|is not a function|Unable to assign|Cannot assign|Binding loop/);
+            spy.clear();
+            spy.target = null;
+            spy.signalName = "";
         }
 
         // Every item under `item` that `test` accepts.
@@ -60,6 +67,13 @@ Item {
 
         function indicatorOf(list) {
             const found = all(list, c => c.running !== undefined);
+            compare(found.length, 1);
+            return found[0];
+        }
+
+        // The list's process model, among its resources.
+        function modelOf(list) {
+            const found = Array.from(list.resources).filter(o => o.availableAttributes !== undefined);
             compare(found.length, 1);
             return found[0];
         }
@@ -134,9 +148,47 @@ Item {
             const list = createTemporaryObject(liveList, root, { key: "usage" });
             verify(list);
             tryVerify(() => !list.loading, 5000);
-            verify(list.scanned || list.rows.length > 0);
             verify(!indicatorOf(list).visible);
             list.rows.forEach(r => verify(r.usage > 0, r.name));
+        }
+
+        // Just after two seconds the list asks the model for its attributes
+        // again, which scans then unless a tick just has, and stops waiting
+        // even with nothing to show. By a key no process has, the list never
+        // has rows, so the indicator shows until then.
+        function test_listAsksAgainAndStopsWaiting() {
+            failOnWarning(/QModelIndex/);
+            const start = Date.now();
+            const list = createTemporaryObject(liveList, root, { key: "none" });
+            verify(list);
+            spy.target = modelOf(list);
+            spy.signalName = "enabledAttributesChanged";
+            waitForRendering(list);
+            verify(list.loading && indicatorOf(list).visible, "waiting at first");
+            wait(Math.max(0, 1800 - (Date.now() - start)));
+            verify(list.loading && indicatorOf(list).visible, "still waiting at 1.8 s");
+            compare(spy.count, 0);
+            tryVerify(() => !list.loading, 4000);
+            const waited = Date.now() - start;
+            verify(waited >= 2000 && waited < 4000, "stopped waiting after " + waited + " ms");
+            compare(spy.count, 1, "asked the model again");
+            verify(list.scanned);
+            compare(list.rows.length, 0);
+            verify(!indicatorOf(list).visible);
+        }
+
+        // After that the list reads each scan as it lands, every two
+        // seconds, with no timer of its own.
+        function test_listFollowsTheScans() {
+            failOnWarning(/QModelIndex/);
+            const list = createTemporaryObject(liveList, root);
+            verify(list);
+            tryVerify(() => list.scanned, 5000);
+            spy.target = list;
+            spy.signalName = "rowsChanged";
+            // Fails the test if no read comes.
+            spy.wait(4500);
+            verify(list.rows.length > 0);
         }
 
         // Until the list has readings a busy indicator lies over its empty rows,
@@ -171,6 +223,20 @@ Item {
             verify(!list.loading);
             verify(!indicator.visible, "gone with the readings");
             compare(list.implicitHeight, height, "the list keeps its height");
+        }
+
+        // A list made with its rows, as the gallery's are, never shows the
+        // indicator.
+        function test_sampleShowsNoIndicator() {
+            const list = createTemporaryObject(sampleList, root, { key: "usage", sample: [{ name: "firefox", usage: 8.4, memory: 3.9 * 1024 ** 3, count: 1 }] });
+            verify(list);
+            const indicator = indicatorOf(list);
+            verify(!list.loading && !indicator.visible, "not at first");
+            spy.target = indicator;
+            spy.signalName = "visibleChanged";
+            waitForRendering(list);
+            verify(!indicator.visible);
+            compare(spy.count, 0, "nor on the first frame");
         }
 
         // Rows arriving in a list that started empty, as the first scan's do,
