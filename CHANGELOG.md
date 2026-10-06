@@ -43,8 +43,9 @@ follows [Semantic Versioning](https://semver.org/).
   the decimal point. Units are smaller, and °C and °F sit against the
   digits, the disk's caption included. Process names stay monospace.
 - Graphs lose their grid lines. Percentage graphs have a labelled line at
-  100%; rate graphs reach up to their peak, which the caption names, and
-  the disk's peaks move into its captions.
+  100%; rate graphs reach up to their peak, which the caption names, or to
+  1 Mb/s (1 MiB/s for a disk) when the peak is lower, and the disk's peaks
+  move into its captions.
 - Temperature sensors have plain names: chip, chiplet, hotspot and memory
   instead of Tctl, Tccd, junction and mem.
 - The Claude and Codex popup sets its countdown's units smaller, like the

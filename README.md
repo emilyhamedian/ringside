@@ -18,8 +18,8 @@ value that keeps changing width doesn't shuffle the panel.
 Click an item for its popup: history graphs, per-thread load, top
 processes, VRAM, clocks, power, swap, memory pressure and disk activity.
 Percentage graphs have a line at 100%; rate graphs reach up to their peak,
-which the caption names. Temperature sensors go by plain names such as chip
-and hotspot.
+which the caption names, or to 1 Mb/s (1 MiB/s for a disk) when the peak is
+lower. Temperature sensors go by plain names such as chip and hotspot.
 
 ![The CPU, GPU, memory and network popups](docs/popups.png)
 
