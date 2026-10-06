@@ -138,11 +138,52 @@ Rectangle {
         })
     }
 
+    // Claude's last day, which it lasts at this pace.
+    FakeMonitor {
+        id: lastDay
+        usage.entries: ({
+            claude: { status: "ok", weekly: lastDay.usage.window(70, 23 * 3600 + 5 * 60, []), scoped: [] }
+        })
+    }
+
     // The only GPU, asleep.
     FakeMonitor {
         id: onlyAsleep
         gpuOuter.phase: "asleep"
         gpuInner.present: false
+    }
+
+    // The Memory popup with every string about a third longer, as German and
+    // the Romance languages often run. Its views find these functions before
+    // the root's, as this component's root is the nearer context object.
+    component LongMemoryPopup: Item {
+        id: stretched
+
+        required property var monitor
+
+        function i18n(text, ...args) {
+            return stretch(gallery.i18n(text, ...args));
+        }
+        function i18nc(context, text, ...args) {
+            return stretch(gallery.i18nc(context, text, ...args));
+        }
+        function i18np(singular, plural, n, ...args) {
+            return stretch(gallery.i18np(singular, plural, n, ...args));
+        }
+        function i18ncp(context, singular, plural, n, ...args) {
+            return stretch(gallery.i18ncp(context, singular, plural, n, ...args));
+        }
+        function stretch(s) {
+            return s + "ß".repeat(Math.round(s.length * 0.35));
+        }
+
+        implicitWidth: popup.implicitWidth
+        implicitHeight: popup.implicitHeight
+
+        MemoryPopup {
+            id: popup
+            monitor: stretched.monitor
+        }
     }
 
     component Note: Text {
@@ -160,6 +201,8 @@ Rectangle {
         required property real thickness
         property var monitor: normal
         property var ringsOnly: []
+        // Right to left, as main.qml lays the strip out in such a locale.
+        property bool mirrored: false
 
         spacing: Kirigami.Units.smallSpacing
 
@@ -183,6 +226,8 @@ Rectangle {
                 vertical: false
                 thickness: panel.thickness - 8
                 ringsOnly: panel.ringsOnly
+                LayoutMirroring.enabled: panel.mirrored
+                LayoutMirroring.childrenInherit: true
             }
         }
     }
@@ -314,6 +359,13 @@ Rectangle {
         }
 
         Panel {
+            label: "Panel · 46 px · right to left · Claude's last day, 23h 5m left"
+            thickness: 46
+            monitor: lastDay
+            mirrored: true
+        }
+
+        Panel {
             label: "Panel · 46 px · the only GPU asleep"
             thickness: 46
             monitor: onlyAsleep
@@ -408,6 +460,11 @@ Rectangle {
             PopupFrame {
                 label: "Memory · no PSI, no swap"
                 MemoryPopup { monitor: bare }
+            }
+
+            PopupFrame {
+                label: "Memory · every string a third longer"
+                LongMemoryPopup { monitor: normal }
             }
         }
 
