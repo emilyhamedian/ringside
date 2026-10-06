@@ -993,9 +993,11 @@ Item {
                     { tag: "gpuAsleep", popup: "GpuPopup", monitor: asleep }];
         }
 
+        // A divider is a whole number of the screen's pixels tall, one at
+        // 125 %, so wherever it lands it draws as many rows as the others.
         function test_dividers(data) {
             const popup = load(data.popup, data.monitor);
-            const found = all(popup, i => i.visible && i.height === 1 && i.radius !== undefined && i.width > 0
+            const found = all(popup, i => i.visible && i.height > 0 && i.height <= 1 && i.radius !== undefined && i.width > 0
                                           && !ancestor(i, a => a.ceiling !== undefined));
             compare(found.length, 1);
             const edge = Math.round(Kirigami.Units.largeSpacing * 2);
@@ -1003,6 +1005,8 @@ Item {
             compare(divider.mapToItem(popup, Qt.point(0, 0)).x, edge);
             compare(divider.width, popup.width - 2 * edge);
             compare(String(divider.color), String(Qt.alpha(Kirigami.Theme.textColor, 0.08)));
+            const ratio = divider.Window.window.devicePixelRatio ?? divider.Screen.devicePixelRatio;
+            fuzzyCompare(divider.height * ratio, Math.max(1, Math.floor(ratio)), 1e-9, "device pixels at " + ratio);
         }
 
         // The rates in the header at the tiles' size: the arrows in a column
