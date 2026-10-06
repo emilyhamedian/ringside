@@ -27,6 +27,14 @@ follows [Semantic Versioning](https://semver.org/).
   shown. This replaces the fade, which looked like a sleeping GPU.
 - A panel item with keyboard focus has a line around it in the theme's
   focus colour.
+- Readings move into place instead of jumping. A ring sweeps to each new
+  reading and turns amber or red as it passes 75% or 90%, and the number in
+  a popup's ring counts along with it; the Claude and Codex bars do the
+  same. Graph points ease to their new heights, the week graph draws each
+  new stretch of line and fades in its run-out, and a second GPU's ring and
+  its popup section fade in and out. The motion follows Plasma's animation
+  speed and is over before the next reading; with animations set to
+  Instant, readings change at once as before.
 
 ### Changed
 
