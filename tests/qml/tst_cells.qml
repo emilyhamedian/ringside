@@ -1282,6 +1282,43 @@ Item {
 
         // A room counts every digit, ASCII or the locale's, as the widest of
         // the locale's, so "1%" keeps the room "8%" needs in any font.
+        // A room is the width a Text takes for its widest digits, rounded up
+        // to a whole pixel. Never less, or the text would overrun the room;
+        // and where the last glyph's ink reaches less than half a pixel past
+        // its advance, as an "s", a "%" or most digits do, no more, since a
+        // Text adds nothing for that and the cell would end in a gap of its
+        // own. A text ending in a digit keeps room for whichever digit
+        // reaches furthest.
+        function test_roomIsTheTextsWidth() {
+            const face = keep(faceComponent.createObject(root));
+            const probe = keep(styledComponent.createObject(root, { textFormat: Text.PlainText }));
+            const texts = ["b/s", "Mb/s", "kb/s", "KiB/s", "MiB/s", "B/s", root.decimal(99.9), root.digits(1000),
+                           root.digits(27) + "%", root.digits(100) + "%", root.digits(61) + "°", "R", "W", "off", "f", "–"];
+            let exact = 0;
+            for (const [what, metrics] of [["strong", face.strong], ["plain", face.plain]]) {
+                probe.font = metrics.font;
+                const reach = glyph => {
+                    const ink = metrics.boundingRect(glyph);
+                    return ink.x + ink.width - metrics.advanceWidth(glyph);
+                };
+                for (const text of texts) {
+                    const widest = face.widestDigits(metrics, text);
+                    const lasts = face.digits.includes(text.slice(-1)) ? face.digits : [text.slice(-1)];
+                    const drawn = Math.max(...lasts.map(last => {
+                        probe.text = widest.slice(0, -1) + last;
+                        return Math.ceil(probe.implicitWidth);
+                    }));
+                    const room = face.room(metrics, [text]);
+                    verify(room >= drawn, what + " " + text + ": " + room + " holds " + drawn);
+                    if (Math.max(...lasts.map(reach)) < 0.5) {
+                        compare(room, drawn, what + " " + text + " ends no further than its text");
+                        ++exact;
+                    }
+                }
+            }
+            verify(exact > 0, "some texts tell");
+        }
+
         function test_roomCountsWidestDigit() {
             const face = keep(faceComponent.createObject(root));
             const proportional = keep(proportionalComponent.createObject(root));
