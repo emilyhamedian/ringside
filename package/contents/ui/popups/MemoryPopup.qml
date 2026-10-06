@@ -23,6 +23,7 @@ PopupPage {
         readonly property var used: Format.bytes(popup.monitor.memoryUsed)
 
         ringValue: popup.monitor.memoryPercent
+        interval: popup.monitor.interval
         title: i18nc("@title", "Memory")
         subtitle: {
             const m = popup.monitor;

@@ -98,6 +98,7 @@ PopupPage {
 
         PopupHeader {
             ringValue: section.slot.usage
+            interval: section.monitor.interval
             title: section.slot.name
             subtitle: {
                 const slot = section.slot;

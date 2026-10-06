@@ -1183,6 +1183,27 @@ Item {
             fuzzyCompare(foot, capTop, 1, "the foot's ink " + foot + " from the bottom, the capitals " + capTop + " from the top");
         }
 
+        // A new reading keeps the limit's row: its bar moves to the reading
+        // and the percentage counts with it, each frame in the colour of
+        // the bar as drawn. Here the pace keeps Fable's red throughout.
+        function test_barsFollowTheirReadings() {
+            const popup = load("claude");
+            const row = rows(popup)[1];
+            const bar = fill(row);
+            const percent = rowText(row, root.localized("78%"));
+            verify(percent, "78% beside Fable's bar");
+            compare(bar.width, bar.parent.width * 0.78);
+            const seen = [];
+            row.levelChanged.connect(() => seen.push([bar.width, String(bar.color), row.level]));
+            setClaude({ scoped: [Object.assign({}, monitor.usage.entries.claude.scoped[0], { percent: 95 })] });
+            compare(rows(popup)[1], row, "the same row");
+            compare(bar.width, bar.parent.width * 0.78, "starting from where it was");
+            tryCompare(bar, "width", bar.parent.width * 0.95, 2000);
+            compare(percent.text, root.localized("95%"));
+            compare(String(bar.color), String(Kirigami.Theme.negativeTextColor));
+            compare(seen, [], "no change of level on the way");
+        }
+
         // Every model's limit gets a row, whichever the ring shows.
         function test_severalLimits() {
             const usage = monitor.usage;

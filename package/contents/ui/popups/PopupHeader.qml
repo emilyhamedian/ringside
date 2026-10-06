@@ -17,6 +17,8 @@ RowLayout {
 
     property bool ringShown: true
     property real ringValue: NaN
+    // How often a system reading updates, for the ring: see RingGauge.
+    property int interval: 0
     // Raises the ring's level past its own reading's, as a weekly limit on
     // course to run out does.
     property int ringMinimumLevel: 0
@@ -61,6 +63,7 @@ RowLayout {
     spacing: Math.round(Kirigami.Units.largeSpacing * 1.75)
 
     RingGauge {
+        id: ring
         visible: header.ringShown
         Accessible.name: header.title
         Layout.preferredWidth: Math.round(Kirigami.Units.gridUnit * 2.9)
@@ -68,7 +71,9 @@ RowLayout {
         strokeWidth: 4
         value: header.ringValue
         minimumLevel: header.ringMinimumLevel
-        text: Number.isFinite(header.ringValue) ? i18nc("@info a percentage", "%1%", Format.percent(header.ringValue)) : "–"
+        interval: header.interval
+        // Counts with the arc, as the screen reader's value doesn't.
+        text: Number.isFinite(header.ringValue) ? i18nc("@info a percentage", "%1%", Format.percent(ring.drawnValue)) : "–"
         // "100%" needs a little more room than "62%".
         textScale: text.length > 3 ? 0.25 : 0.29
     }

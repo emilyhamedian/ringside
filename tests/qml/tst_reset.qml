@@ -111,7 +111,7 @@ Item {
                 compare(arc.drawColor, arc.color);
             }
             gauge.value = 30;
-            compare(arcs(gauge)[0].head, 30, "and keep following them");
+            tryCompare(arcs(gauge)[0], "head", 30, 2000, "and keep following them");
         }
 
         function test_onSchedule() {

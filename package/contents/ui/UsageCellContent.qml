@@ -29,6 +29,7 @@ Item {
     // Stepped by the minute timer below, for the countdown and the pace.
     property real nowMs: Date.now()
     readonly property var lines: words.readout(item, nowMs)
+    readonly property var pace: Pace.ofWindow(weekly, Pace.pollTime(entry, nowMs / 1000), nowMs / 1000)
 
     // The readings in words, for screen readers and the tooltip.
     readonly property string accessibleDescription: words.describe(item, nowMs)
@@ -72,9 +73,10 @@ Item {
         value: content.weekly ? content.weekly.percent : NaN
         inner: content.innerLimit !== null
         innerValue: content.innerLimit ? content.innerLimit.percent : NaN
-        // The ring takes the level of the percentage beside it, which counts
-        // the week's pace; the inner ring is raised by its own limit's pace.
-        minimumLevel: content.lines.level
+        // The ring is raised as the percentage beside it is, by the week's
+        // pace, and the inner ring by its own limit's. Their own readings'
+        // levels come from the arcs as drawn.
+        minimumLevel: Pace.alarm(content.pace)
         innerMinimumLevel: content.innerLimit
             ? Pace.alarm(Pace.ofWindow(content.innerLimit, Pace.pollTime(content.entry, content.nowMs / 1000), content.nowMs / 1000))
             : 0
