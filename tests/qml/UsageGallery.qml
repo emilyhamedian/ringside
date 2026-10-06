@@ -11,8 +11,9 @@ import "../../package/contents/ui/popups"
 import "../../package/contents/ui/code/style.js" as Style
 
 // A section of Gallery.qml: Claude and Codex in the panel beside two system
-// items, then their popups in each state, then a panel and a popup under
-// Breeze Light. The readings are FakeUsage's, with made-up weeks of use.
+// items, then their popups in each state, then panels and popups under
+// Breeze Light. The monitor's readings are FakeUsage's; the section's own
+// come with made-up weeks of use.
 ColumnLayout {
     id: section
 
@@ -35,7 +36,8 @@ ColumnLayout {
 
     spacing: 2 * Kirigami.Units.gridUnit
 
-    // Claude amber with Fable red inside it, Codex at its limit.
+    // Red three ways: Claude at 81 % only from its pace, Fable over 90 %,
+    // Codex at its limit.
     FakeMonitor {
         id: hot
         usage: FakeUsage {
@@ -59,6 +61,7 @@ ColumnLayout {
     }
 
     // Two model limits and no choice between them: no inner ring, a row each.
+    // A day before the reset, Claude and Fable are amber and last to it.
     FakeMonitor {
         id: several
         usage: FakeUsage {
@@ -67,9 +70,9 @@ ColumnLayout {
                 claude: {
                     status: "ok",
                     fetchedAt: severalUsage.createdAt,
-                    weekly: severalUsage.window(77, 2 * severalUsage.day + 21 * 3600, section.history(4.1, 77)),
+                    weekly: severalUsage.window(77, severalUsage.day, section.history(6, 77)),
                     scoped: [Object.assign({ id: "Fable", label: "Fable" },
-                                           severalUsage.window(84, 2 * severalUsage.day + 21 * 3600, section.history(4.1, 84))),
+                                           severalUsage.window(82, severalUsage.day, section.history(6, 82))),
                              Object.assign({ id: "Sonnet", label: "Sonnet" },
                                            severalUsage.window(12, 4 * severalUsage.day + 2 * 3600, section.history(3, 12)))]
                 }
@@ -93,7 +96,8 @@ ColumnLayout {
         }
     }
 
-    // The last check failed: the readings stay, dimmed.
+    // The last check, an hour after the one that worked, failed: the
+    // readings stay, marked with a dot. At this pace both last the week.
     FakeMonitor {
         id: failed
         usage: FakeUsage {
@@ -102,11 +106,45 @@ ColumnLayout {
                 claude: {
                     status: "ok",
                     fetchedAt: failedUsage.createdAt - 3600,
-                    weekly: failedUsage.window(58, 2 * failedUsage.day + 22 * 3600, section.history(4, 58)),
+                    weekly: failedUsage.window(48, 2 * failedUsage.day + 22 * 3600, section.history(4, 48)),
                     scoped: [Object.assign({ id: "Fable", label: "Fable" },
-                                           failedUsage.window(71, 2 * failedUsage.day + 22 * 3600, section.history(4, 71)))],
+                                           failedUsage.window(52, 2 * failedUsage.day + 22 * 3600, section.history(4, 52)))],
                     lastError: "HTTP Error 500: Internal Server Error",
                     lastErrorAt: failedUsage.createdAt
+                }
+            })
+        }
+    }
+
+    // Two days into the week, Claude at 25 % lasts it, while Fable at 55 %
+    // is red only because it runs out before the reset at this pace.
+    FakeMonitor {
+        id: fablePace
+        usage: FakeUsage {
+            id: fablePaceUsage
+            entries: ({
+                claude: {
+                    status: "ok",
+                    fetchedAt: fablePaceUsage.createdAt,
+                    weekly: fablePaceUsage.window(25, 5 * fablePaceUsage.day, section.history(2, 25)),
+                    scoped: [Object.assign({ id: "Fable", label: "Fable" },
+                                           fablePaceUsage.window(55, 5 * fablePaceUsage.day, section.history(2, 55)))]
+                }
+            })
+        }
+    }
+
+    // Codex's one limit at 40 % two days in, on pace to run out.
+    FakeMonitor {
+        id: codexPace
+        usage: FakeUsage {
+            id: codexPaceUsage
+            entries: ({
+                codex: {
+                    status: "ok",
+                    fetchedAt: codexPaceUsage.createdAt,
+                    weekly: codexPaceUsage.window(40, 5 * codexPaceUsage.day, section.history(2, 40)),
+                    scoped: []
                 }
             })
         }
@@ -211,8 +249,15 @@ ColumnLayout {
     }
 
     Panel {
-        label: "Claude & Codex · panel · 46 px · Claude 52 % with Fable 78 % inside, Codex 24 %"
+        label: "Claude & Codex · panel · 46 px · Claude 52 % with Fable 78 % inside (red, on pace to run out), Codex 24 %"
         thickness: 46
+    }
+
+    Panel {
+        label: "Claude & Codex · panel · 46 px · Claude 25 %, Fable 55 % (red only from its pace)"
+        thickness: 46
+        monitor: fablePace
+        items: ["cpu", "memory", "claude"]
     }
 
     Panel {
@@ -221,14 +266,21 @@ ColumnLayout {
     }
 
     Panel {
-        label: "Claude & Codex · panel · 46 px · Claude 81 % (amber) with Fable 93 % (red), Codex 100 % (red)"
+        label: "Claude & Codex · panel · 46 px · Claude 81 % (red, on pace to run out) with Fable 93 % (red), Codex 100 % (red)"
         thickness: 46
         monitor: hot
     }
 
     Panel {
-        label: "Claude & Codex · panel · 46 px · Claude's last check failed, Codex signed out (hidden)"
+        label: "Claude & Codex · panel · 46 px · Claude's last check failed (dot), Codex signed out (hidden)"
         thickness: 46
+        monitor: failed
+        items: ["cpu", "memory", "claude"]
+    }
+
+    Panel {
+        label: "Claude & Codex · panel · 30 px · Claude's last check failed (dot)"
+        thickness: 30
         monitor: failed
         items: ["cpu", "memory", "claude"]
     }
@@ -237,22 +289,22 @@ ColumnLayout {
         spacing: 2 * Kirigami.Units.gridUnit
 
         Frame {
-            label: "Claude · Fable on the inner ring"
+            label: "Claude · Fable on the inner ring, on pace to run out"
             UsagePopup { monitor: section.monitor; item: "claude" }
         }
 
         Frame {
-            label: "Codex"
+            label: "Codex · one limit, lasts to the reset"
             UsagePopup { monitor: section.monitor; item: "codex" }
         }
 
         Frame {
-            label: "Claude · two model limits, none picked"
+            label: "Claude · two model limits, none picked, amber, both last"
             UsagePopup { monitor: several; item: "claude" }
         }
 
         Frame {
-            label: "Claude · full week, an hour left"
+            label: "Claude · 91 % (red), an hour left"
             UsagePopup { monitor: fullWeek; item: "claude" }
         }
     }
@@ -261,7 +313,7 @@ ColumnLayout {
         spacing: 2 * Kirigami.Units.gridUnit
 
         Frame {
-            label: "Claude · 81 % (amber), Fable 93 % (red)"
+            label: "Claude · 81 % (red, on pace to run out), Fable 93 % (red)"
             UsagePopup { monitor: hot; item: "claude" }
         }
 
@@ -278,6 +330,20 @@ ColumnLayout {
         Frame {
             label: "Codex · signed out"
             UsagePopup { monitor: signedOut; item: "codex" }
+        }
+    }
+
+    RowLayout {
+        spacing: 2 * Kirigami.Units.gridUnit
+
+        Frame {
+            label: "Claude · 25 %, Fable 55 % (red only from its pace)"
+            UsagePopup { monitor: fablePace; item: "claude" }
+        }
+
+        Frame {
+            label: "Codex · one limit at 40 %, on pace to run out"
+            UsagePopup { monitor: codexPace; item: "codex" }
         }
     }
 
@@ -310,15 +376,32 @@ ColumnLayout {
             spacing: 2 * Kirigami.Units.gridUnit
 
             Panel {
-                label: "Breeze Light · Claude & Codex · panel · 46 px · amber and red"
+                label: "Breeze Light · Claude & Codex · panel · 46 px · Claude 81 % (red, on pace to run out), Codex 100 % (red)"
                 thickness: 46
                 monitor: hot
             }
 
-            Frame {
-                label: "Breeze Light · Claude"
-                flat: true
-                UsagePopup { monitor: section.monitor; item: "claude" }
+            Panel {
+                label: "Breeze Light · Claude · panel · 46 px · Claude 77 % (amber), lasts to the reset"
+                thickness: 46
+                monitor: several
+                items: ["cpu", "memory", "claude"]
+            }
+
+            RowLayout {
+                spacing: 2 * Kirigami.Units.gridUnit
+
+                Frame {
+                    label: "Breeze Light · Claude · the pace sentence on Fable"
+                    flat: true
+                    UsagePopup { monitor: section.monitor; item: "claude" }
+                }
+
+                Frame {
+                    label: "Breeze Light · Codex · one limit, the pace sentence"
+                    flat: true
+                    UsagePopup { monitor: codexPace; item: "codex" }
+                }
             }
         }
     }
