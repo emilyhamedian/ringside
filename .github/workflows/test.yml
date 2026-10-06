@@ -130,7 +130,8 @@ jobs:
     # as released. Qt 6.6 reports binding loops that Qt 6.11 doesn't, so
     # only this job catches a regression of the fixes for them. Its libplasma
     # ships no importable org.kde.plasma.plasmoid module, so
-    # scripts/test-floor.sh runs the tests that don't need it.
+    # scripts/test-floor.sh puts a stand-in from tests/floor on the import
+    # path.
     container: fedora:40
     steps:
       # Keep the floor check present for docs-only PRs; licensing runs in test.
@@ -162,6 +163,6 @@ jobs:
         if: env.CI_COVERAGE == 'full'
 
       # D-Bus starts ksystemstats when the tests ask for it.
-      - name: Run the tests that load on Plasma 6.0
+      - name: Run the tests and the gallery on Plasma 6.0
         if: env.CI_COVERAGE == 'full'
         run: dbus-run-session -- sh scripts/test-floor.sh
