@@ -17,9 +17,11 @@ import "code/style.js" as Style
 // wider one sets, so their units line up. The value and its unit read in that
 // order either way, as a number keeps its sign; only the marker moves to the
 // other side. Given more room, as a cell holding its width gives them, the
-// readings still end where the rates do and the extra goes before the
-// markers, so each marker stays by its value and side by side the two rates
-// stay together.
+// readings still end where the rates do. Stacked, the extra goes between the
+// markers and the values, where a shorter value already leaves room, so the
+// gaps either side of the rates stay the same; side by side it goes before
+// the first marker, so each marker stays by its value and the two rates stay
+// together.
 GridLayout {
     id: rates
 
@@ -148,8 +150,9 @@ GridLayout {
             // item's width and its implicitWidth reports a loop as the layout
             // resizes the item.
             readonly property real ownWidth: markerWidth + rates.markerGap + valueWidth + (rates.vertical ? 0 : rates.unitGap + unitWidth)
-            // The whole pixels of room the rate has beyond its own, before
-            // its marker. Side by side only the first rate takes any.
+            // The whole pixels of room the rate has beyond its own: stacked,
+            // after its marker; side by side, before it, and only the first
+            // rate takes any.
             readonly property real spare: Math.max(0, Math.floor(width - ownWidth))
 
             Layout.row: rates.singleRow ? 0 : index
@@ -160,7 +163,7 @@ GridLayout {
 
             Item {
                 anchors.left: parent.left
-                anchors.leftMargin: rate.spare
+                anchors.leftMargin: rates.singleRow ? rate.spare : 0
                 width: rate.markerWidth
                 height: parent.height
 

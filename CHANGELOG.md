@@ -44,8 +44,8 @@ follows [Semantic Versioning](https://semver.org/).
   three minutes, so a value that keeps changing width doesn't shuffle the
   panel; when it drops further and stays there for ten to twenty seconds,
   they close up to within a digit of it, and the rest after the wait. Rates
-  do the same but keep that room before their arrows or letters, so their
-  readings always end with the usual gap before the next item.
+  do the same but keep that room between their arrows or letters and their
+  numbers, so the gaps either side of them stay the usual size.
 - The panel countdown shows the days alone ("6d") until the last day, then
   hours and minutes ("23h 5m"). It turns red at 100%, where it says how
   long the limit stays reached.

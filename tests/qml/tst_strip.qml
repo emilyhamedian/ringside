@@ -272,6 +272,13 @@ Item {
             return Math.max(...values.map(v => box(v.parent).right));
         }
 
+        // The left edge, in the strip, of a rate cell's arrows or letters.
+        function markersStart(index) {
+            const rates = all(strip.cellAt(index).contentItem, i => i.reading !== undefined);
+            compare(rates.length, 2);
+            return Math.min(...rates.map(r => box(r.children[0]).x));
+        }
+
         function rateChanges() {
             return [
                 { what: "no traffic", change: () => { monitor.networkDown = 0; monitor.networkUp = 0; } },
@@ -303,10 +310,11 @@ Item {
         // reading takes its room at once, moving the items after it, and a
         // narrower one waits out the settle delay, so traffic that comes and
         // goes moves the panel once. An item moves only when one before it
-        // grew. The room a rate holds sits before its markers, so its readings always end its
-        // cell's padding before the next item, the gap any item leaves, a
-        // quiet disk at the end of the strip included. Settled, each rate
-        // hugs its text.
+        // grew. The room a rate holds sits inside it, before its values, so
+        // its readings always end its cell's padding before the next item,
+        // the gap any item leaves, a quiet disk at the end of the strip
+        // included, and on two lines its markers start that padding after
+        // the item before. Settled, each rate hugs its text.
         function test_ratesHoldTheirWidth(data) {
             monitor.networkBits = data.bits;
             const strip = makePanel(data.thickness, { items: data.items, relayoutWindow: 0, trimDelay: 60000 });
@@ -330,6 +338,10 @@ Item {
                     const after = box(cell).right - readingsEnd(i);
                     verify(after >= cell.padding && after < cell.padding + 1,
                            step.what + ": " + data.items[i] + "'s readings end " + after + " before the next item");
+                    if (strip.twoLines) {
+                        compare(markersStart(i) - box(cell).x, cell.padding,
+                                step.what + ": " + data.items[i] + "'s markers start its padding after the item before");
+                    }
                 });
                 const placed = places();
                 for (let i = 1; i < data.items.length; ++i) {
@@ -987,11 +999,13 @@ Item {
             const texts = visibleTexts(strip);
             verify(!texts.includes("%") && !texts.includes("°"), JSON.stringify(texts));
 
-            // A rate holding its width keeps the room inside, before its
-            // letters, so its readings still end its padding before the next
-            // item, here on their left, and each letter stays by its value.
-            // On one line the second rate stays by the first. The marker
-            // checks above ran on the cell before it held.
+            // A rate holding its width keeps the room inside, so its readings
+            // still end its padding before the next item, here on their left.
+            // On two lines the room goes between the letters and the values,
+            // the letters keeping their padding from the item before; on one
+            // it goes before the first letter, each letter stays by its value
+            // and the second rate stays by the first. The marker checks above
+            // ran on the cell before it held.
             const disk = strip.cellAt(5);
             sizeAfter(strip, () => { monitor.diskRead = 1023 * 1048576; });
             sizeAfter(strip, () => { monitor.diskRead = 0; });
@@ -1000,15 +1014,23 @@ Item {
             const before = Math.min(...values.map(v => box(v.parent).x)) - box(disk).x;
             verify(before >= disk.padding && before < disk.padding + 1, "the held disk's readings end " + before + " from its left end");
             const diskRates = all(disk.contentItem, i => i.reading !== undefined).sort((a, b) => a.index - b.index);
-            const room = box(disk).right - disk.padding - box(diskRates[0].children[0]).right;
-            verify(room > 0 && Math.abs(room - Math.round(room)) < 1e-6, "the room before the first letter, in whole pixels: " + room);
-            diskRates.forEach(r => {
-                const what = "held disk row " + r.index + ": ";
-                const letter = box(r.children[0]);
-                const pair = box(values.find(v => v.parent.parent === r).parent);
-                fuzzyCompare(letter.x - pair.right, Kirigami.Units.smallSpacing, 1e-6, what + "the letter by its value");
-            });
-            if (!strip.twoLines) {
+            const wholeRoom = (room, what) => verify(room > 0 && Math.abs(room - Math.round(room)) < 1e-6, what + ", in whole pixels: " + room);
+            if (strip.twoLines) {
+                diskRates.forEach(r => {
+                    const what = "held disk row " + r.index + ": ";
+                    const letter = box(r.children[0]);
+                    const pair = box(values.find(v => v.parent.parent === r).parent);
+                    compare(box(disk).right - disk.padding, letter.right, what + "the letter its padding from the right end");
+                    wholeRoom(letter.x - pair.right - Kirigami.Units.smallSpacing, what + "the room between the letter and its value");
+                });
+            } else {
+                wholeRoom(box(disk).right - disk.padding - box(diskRates[0].children[0]).right, "the room before the first letter");
+                diskRates.forEach(r => {
+                    const what = "held disk row " + r.index + ": ";
+                    const letter = box(r.children[0]);
+                    const pair = box(values.find(v => v.parent.parent === r).parent);
+                    fuzzyCompare(letter.x - pair.right, Kirigami.Units.smallSpacing, 1e-6, what + "the letter by its value");
+                });
                 compare(box(diskRates[1].children[0]).right, box(diskRates[1]).right, "the second letter at its rate's start");
             }
         }

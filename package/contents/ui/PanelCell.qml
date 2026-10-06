@@ -52,8 +52,8 @@ MouseArea {
     // one moves nothing. Being timed, the trim also skips the in-between
     // widths an update passes through as its readings change one at a time.
     // Until the cell settles a ring's extra room sits after its readings,
-    // and rates keep theirs before their arrows or letters, so their
-    // readings still end one padding before the next item. Whole pixels, so
+    // and rates keep theirs inside, before their values, so their readings
+    // still end one padding before the next item. Whole pixels, so
     // a fraction of one doesn't count as a change.
     readonly property real contentWidth: contentItem ? Math.ceil(contentItem.implicitWidth) : 0
     property real settledWidth: 0
