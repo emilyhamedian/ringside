@@ -779,6 +779,11 @@ Item {
         function test_nameScalesAsATexture() {
             const c = cell();
             const name = nameIn(c);
+            // A 12 pt small font, as the host's test theme has, so the
+            // name is smaller inside two rings than inside one; at the
+            // floor's 7 pt it fits whole in both.
+            name.sizeFactor = 12 / Kirigami.Theme.smallFont.pointSize;
+            tryCompare(name, "shownSize", name.size, 1000);
             verify(!name.layer.enabled);
             const seen = [];
             createTemporaryObject(samplerComponent, gpus, { sample: () => seen.push([name.shownSize !== name.size, name.layer.enabled]) });
