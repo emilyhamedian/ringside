@@ -6,6 +6,82 @@ follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-05
+
+### Added
+
+- A Claude or Codex ring turns red when its weekly limit is on pace to run
+  out before the reset, at the rate it has been used so far; the inner ring
+  does the same for its model's limit. The popup says where the week is
+  heading in one sentence: when a limit runs out at this pace, when one was
+  reached, or how much of the limit the week will use. It appears from a
+  day into the week, or at once for a limit that is running out.
+- The week graph in the Claude and Codex popup has a line at 100%, a floor,
+  a tick at the reset and, for a limit on pace to run out, a dotted line to
+  where it would reach 100%. A single reading shows as a dot, and the
+  marker for now appears only when the last reading is over two hours old.
+- A failed Claude or Codex check shows a small amber dot at the ring's
+  corner, and the tooltip says when it failed, even with the ring's text
+  shown. This replaces the fade, which looked like a sleeping GPU.
+- A panel item with keyboard focus has a line around it in the theme's
+  focus colour.
+
+### Changed
+
+- Panel items are as wide as their text, with the same gap between each,
+  instead of keeping room for their widest readings. When a reading gains a
+  character the items after it move at once; when it loses one they wait
+  three minutes, so a value that keeps changing width doesn't shuffle the
+  panel. Rates keep their widest room at the end of the widget, so they
+  never move the widgets after it.
+- The panel countdown shows the days alone ("6d") until the last day, then
+  hours and minutes, with smaller unit letters. It turns red at 100%, where
+  it says how long the limit stays reached.
+- Popup numbers and the ring's centre percentage use the theme's font with
+  figures of even width instead of a monospace font, which left gaps around
+  the decimal point. Units are smaller, and °C and °F sit against the
+  digits, the disk's caption included. Process names stay monospace.
+- Graphs lose their grid lines. Percentage graphs have a labelled line at
+  100%; rate graphs reach up to their peak, which the caption names, and
+  the disk's peaks move into its captions.
+- Temperature sensors have plain names: chip, chiplet, hotspot and memory
+  instead of Tctl, Tccd, junction and mem.
+- The Claude and Codex popup sets its countdown's units smaller, like the
+  panel's. With one limit it shows no bars, since the ring gives the
+  number, and reads "Weekly limit". The week graph loses its day lines,
+  half line and even-pace diagonal.
+- Popups line up their content on one edge and their headers on shared
+  baselines, with even padding in tiles and matching dividers. The load
+  average shows its three numbers evenly spaced, the network header's
+  rates are larger, "Since boot" puts each arrow before its total,
+  and the GPU popup has no subtitle when it shows two GPUs.
+- Translators are told that CPU, GPU and MEM sit inside a ring in at most
+  three characters.
+
+### Removed
+
+- The Standalone layout, with its Layout and Fold settings and
+  `scripts/add-panel.sh`. A panel set up for it now shows the strip; remove
+  that panel and add Ringside to another one if you'd rather.
+- The Claude helper's fallback that took a Fable limit from a separate
+  field of Anthropic's reply. Model limits now come only from the reply's
+  list of limits, under the names it gives them.
+
+### Fixed
+
+- Ring names and the Claude and Codex marks sit at the ring's centre. At
+  scales such as 125% they could be up to a pixel off: a ring of an odd
+  size was rounded to a whole pixel, the marks were snapped to the
+  screen's pixels, and names were centred with the space below their
+  letters and after the last one.
+- With a right-to-left language, panel rates keep each number before its
+  unit, the panel countdown reads in the same order as the popup's, and
+  the load average no longer has a dot that reads as an Arabic zero.
+- A longer translation of the Memory popup's legend wraps instead of
+  widening the popup past its frame.
+- Screen readers say "unavailable" for a missing rate or load average
+  instead of reading out a dash and a stray unit.
+
 ## [0.2.2] - 2026-10-04
 
 ### Changed
@@ -104,7 +180,8 @@ follows [Semantic Versioning](https://semver.org/).
   and one reader per GPU is shared across widgets so a second Ringside
   doesn't keep it awake.
 
-[Unreleased]: https://github.com/emilyhamedian/ringside/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/emilyhamedian/ringside/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/emilyhamedian/ringside/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/emilyhamedian/ringside/compare/v0.2.0...v0.2.2
 [0.2.0]: https://github.com/emilyhamedian/ringside/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/emilyhamedian/ringside/releases/tag/v0.1.0
