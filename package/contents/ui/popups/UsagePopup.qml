@@ -199,11 +199,12 @@ PopupPage {
                     return pace ? Pace.level(base, pace) : base;
                 }
 
-                // The bar and its percentage follow the reading as a ring does.
+                // The bar and its percentage follow the reading as a ring
+                // does, and at once with one limit, which has no bar.
                 Follower {
                     id: bar
                     target: Number.isFinite(row.reading) ? Math.round(row.reading) : 0
-                    settle: Kirigami.Units.longDuration > 1 ? Kirigami.Units.veryLongDuration : 0
+                    settle: popup.limits.length > 1 && Kirigami.Units.longDuration > 1 ? Kirigami.Units.veryLongDuration : 0
                 }
 
                 Layout.fillWidth: true
