@@ -89,7 +89,7 @@ Rectangle {
 
     // The sample for the panel picture, whose countdown would otherwise
     // change with the time of day it is rendered: the weeks reset 2 days 21
-    // hours and a half from now, which reads "2d 21h".
+    // hours and a half from now, which the panel shows as "2d".
     FakeMonitor {
         id: shown
         readonly property int left: 2 * 86400 + 21 * 3600 + 30 * 60
