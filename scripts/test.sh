@@ -89,8 +89,8 @@ fi
 
 echo
 echo "== APIs newer than Plasma 6.0, Qt 6.6 and KF 6.0 =="
-# CI's floor job runs only the tests that load on Plasma 6.0, and only the
-# paths they reach, so this check stands in for the rest.
+# CI's floor job runs the tests on Plasma 6.0, but only the paths they
+# reach, so this check stands in for the rest.
 # Kirigami.Theme.fixedWidthFont arrived in KF 6.14 and FontMetrics'
 # capitalHeight in Qt 6.9, and before then each reads as undefined, so each
 # needs its fallback straight after it on the same line:

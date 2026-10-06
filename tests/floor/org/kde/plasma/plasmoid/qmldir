@@ -1,0 +1,8 @@
+# SPDX-FileCopyrightText: 2026 Emily Hamedian <me@emily.dev>
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# A stand-in for org.kde.plasma.plasmoid, which libplasma ships as an
+# importable module only from 6.5 on. scripts/test-floor.sh puts it on the
+# import path; later Plasma brings the real one.
+module org.kde.plasma.plasmoid
+singleton Plasmoid 1.0 Plasmoid.qml

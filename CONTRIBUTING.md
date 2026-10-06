@@ -4,7 +4,7 @@
 
 ```bash
 sh scripts/test.sh        # qmllint, the QML tests, the helpers' tests, shellcheck, reuse lint
-sh scripts/test-floor.sh  # the tests that load on Plasma 6.0, which CI runs on Fedora 40
+sh scripts/test-floor.sh  # the tests and the gallery on Plasma 6.0, which CI runs on Fedora 40
 sh scripts/gallery.sh     # renders every view to /tmp/ringside-gallery.png
 sh scripts/pictures.sh    # renders the README's pictures in docs/ from sample readings
 ```
@@ -15,8 +15,8 @@ Apart from `scripts/test-floor.sh`, they need a Plasma 6.5 or later desktop
 `QMLTESTRUNNER`, `QML`), the Plasma and libksysguard QML modules, and
 Python 3.11+. `scripts/test.sh` also runs `shellcheck` and `reuse lint` when
 they're installed, and prints a note when it skips one. `scripts/test-floor.sh`
-runs from Plasma 6.0 on and counts a test that fails for want of
-`org.kde.plasma.plasmoid` as skipped.
+runs from Plasma 6.0 on, with a stand-in for `org.kde.plasma.plasmoid` from
+`tests/floor` on the import path.
 
 CI runs the full suite and gallery on Fedora 44 and the compatibility tests
 on Fedora 40 as released. Main, tags and release branches always run both.
