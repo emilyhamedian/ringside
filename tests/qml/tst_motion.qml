@@ -468,6 +468,22 @@ Item {
             compare(label.opacity, 1);
         }
 
+        // A resize that leaves the label where it was, as a popup's first
+        // layout does, still lets the next readings that move it fade it.
+        function test_ruleLabelFadesAfterAResize() {
+            const rule = createTemporaryObject(ruleComponent, root);
+            const label = rule.children.find(c => c.text !== undefined);
+            rule.width = 300;
+            compare(label.x, 0);
+            wait(10);
+            rule.series = [[{ x: 0, y: 1 }, { x: 300, y: 39 }]];
+            compare(rule.atStart, false);
+            compare(label.x, 0, "still at the start");
+            tryVerify(() => label.opacity < 1, 1000, "fading");
+            tryCompare(label, "x", rule.width - label.implicitWidth, 1000);
+            tryCompare(label, "opacity", 1, 1000);
+        }
+
         // At Plasma's Instant speed a sample is drawn as it arrives.
         function test_instant() {
             const g = createTemporaryObject(graphComponent, root, { values: start, duration: 0 });
