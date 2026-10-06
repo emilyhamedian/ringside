@@ -149,9 +149,7 @@ GridLayout {
             // resizes the item.
             readonly property real ownWidth: markerWidth + rates.markerGap + valueWidth + (rates.vertical ? 0 : rates.unitGap + unitWidth)
             // The whole pixels of room the rate has beyond its own, before
-            // its marker. Side by side only the first rate takes any. Along
-            // a vertical panel it falls after the marker, so the letters
-            // line up at the panel's start.
+            // its marker. Side by side only the first rate takes any.
             readonly property real spare: Math.max(0, Math.floor(width - ownWidth))
 
             Layout.row: rates.singleRow ? 0 : index
@@ -162,7 +160,7 @@ GridLayout {
 
             Item {
                 anchors.left: parent.left
-                anchors.leftMargin: rates.vertical ? 0 : rate.spare
+                anchors.leftMargin: rate.spare
                 width: rate.markerWidth
                 height: parent.height
 
