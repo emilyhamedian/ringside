@@ -9,27 +9,16 @@ import "../code/format.js" as Format
 import "../code/style.js" as Style
 import ".."
 
-// One section per awake GPU, the outer ring's first, the second under a rule
-// and drawn dimmer as its ring is. A powered-down GPU is a single line at the
-// end; nothing here reads it, so opening the popup can't wake it.
+// One section per awake GPU, the outer ring's first, each under a header as
+// in the other popups and the second after a rule. A powered-down GPU is a
+// single line at the end; nothing here reads it, so opening the popup can't
+// wake it.
 PopupPage {
     id: popup
 
     readonly property var slots: [popup.monitor.gpuOuter, popup.monitor.gpuInner].filter(slot => slot.present)
     readonly property var awake: slots.filter(slot => slot.phase !== "asleep")
     readonly property var asleep: slots.filter(slot => slot.phase === "asleep")
-
-    PopupHeader {
-        Layout.bottomMargin: Kirigami.Units.smallSpacing
-        ringShown: false
-        title: i18nc("@title", "GPU")
-        // With two GPUs, each section's own line says which is which.
-        subtitle: {
-            const kind = popup.slots.length === 1 ? popup.slots[0].kind : "";
-            return kind === "discrete" ? i18nc("@info kind of GPU", "Discrete")
-                 : kind === "integrated" ? i18nc("@info kind of GPU", "Integrated") : "";
-        }
-    }
 
     Repeater {
         model: popup.awake
@@ -57,6 +46,7 @@ PopupPage {
             id: sleeper
 
             required property var modelData
+            required property int index
 
             Layout.fillWidth: true
             spacing: 0
@@ -69,7 +59,9 @@ PopupPage {
                 Layout.fillWidth: true
                 Layout.leftMargin: Math.round(Kirigami.Units.largeSpacing * 2)
                 Layout.rightMargin: Layout.leftMargin
-                Layout.topMargin: Kirigami.Units.largeSpacing
+                // Where it opens the page, as far down as a header would start.
+                Layout.topMargin: popup.awake.length > 0 || sleeper.index > 0
+                    ? Kirigami.Units.largeSpacing : Math.round(Kirigami.Units.largeSpacing * 1.75)
                 Layout.bottomMargin: Kirigami.Units.largeSpacing
                 text: i18nc("@info a powered-down GPU: its name, then off", "%1 · off", sleeper.modelData.name)
                 color: Style.dim(Kirigami.Theme.textColor)
@@ -88,10 +80,9 @@ PopupPage {
         required property var slot
         // The slot's temperature label in plain words.
         required property string temperatureName
+        // The inner ring's GPU, set off from the first by a rule.
         property bool inner: false
 
-        readonly property color dim: Style.dim(Kirigami.Theme.textColor)
-        readonly property color tone: inner ? dim : Kirigami.Theme.textColor
         // Intel GPUs publish no temperature, so theirs is left out rather than shown as a dash.
         readonly property bool temperatureShown: slot.reportsTemperature
         readonly property bool hasPower: Number.isFinite(slot.power)
@@ -105,99 +96,37 @@ PopupPage {
             visible: section.inner
         }
 
-        RowLayout {
-            Layout.fillWidth: true
-            Layout.leftMargin: Math.round(Kirigami.Units.largeSpacing * 2)
-            Layout.rightMargin: Layout.leftMargin
-            Layout.topMargin: section.inner ? Math.round(Kirigami.Units.largeSpacing * 1.5) : Kirigami.Units.largeSpacing
-            Layout.bottomMargin: Kirigami.Units.largeSpacing
-            spacing: Math.round(Kirigami.Units.largeSpacing * 1.25)
-
-            RingGauge {
-                Layout.preferredWidth: Math.round(Kirigami.Units.gridUnit * 2.2)
-                Layout.preferredHeight: Layout.preferredWidth
-                strokeWidth: 3.5
-                color: section.tone
-                value: section.slot.usage
-                text: Number.isFinite(value) ? i18nc("@info a percentage", "%1%", Format.percent(value)) : "–"
-                textScale: 0.275
-
-                Accessible.role: Accessible.ProgressBar
-                Accessible.name: section.slot.name
-                Accessible.description: text
+        PopupHeader {
+            ringValue: section.slot.usage
+            title: section.slot.name
+            subtitle: {
+                const slot = section.slot;
+                if (slot.kind === "integrated") {
+                    return i18nc("@info integrated GPU using system memory", "iGPU · shared");
+                }
+                if (slot.kind !== "discrete") {
+                    return "";
+                }
+                const total = Format.bytes(slot.knownVramTotal, true);
+                return total.unit ? i18nc("@info discrete GPU and its memory, e.g. dGPU · 8 GiB",
+                                          "dGPU · %1 %2", total.value, total.unit)
+                                  : i18nc("@info discrete GPU", "dGPU");
             }
-
-            // Stacked rather than on one line as in the mock: real names
-            // ("AMD Radeon 780M Graphics") don't fit beside the descriptor.
-            ColumnLayout {
-                Layout.fillWidth: true
-                spacing: 0
-
-                Text {
-                    Layout.fillWidth: true
-                    text: section.slot.name
-                    color: Kirigami.Theme.textColor
-                    font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.96
-                    font.weight: Font.DemiBold
-                    elide: Text.ElideRight
-                    textFormat: Text.PlainText
-                    horizontalAlignment: Text.AlignLeft
-                }
-
-                Text {
-                    Layout.fillWidth: true
-                    visible: text !== ""
-                    text: {
-                        const slot = section.slot;
-                        if (slot.kind === "integrated") {
-                            return i18nc("@info integrated GPU using system memory", "iGPU · shared");
-                        }
-                        if (slot.kind !== "discrete") {
-                            return "";
-                        }
-                        const total = Format.bytes(slot.knownVramTotal, true);
-                        return total.unit ? i18nc("@info discrete GPU and its memory, e.g. dGPU · 8 GiB",
-                                                  "dGPU · %1 %2", total.value, total.unit)
-                                          : i18nc("@info discrete GPU", "dGPU");
-                    }
-                    color: section.dim
-                    font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.85
-                    elide: Text.ElideRight
-                    textFormat: Text.PlainText
-                    horizontalAlignment: Text.AlignLeft
-                }
+            value: section.temperatureShown ? Format.temperature(section.slot.temperature, section.monitor.fahrenheit) : ""
+            degreeUnit: section.monitor.fahrenheit ? "F" : "C"
+            valueColor: {
+                const level = section.monitor.heat(section.slot.temperature);
+                return level === 2 ? Kirigami.Theme.negativeTextColor
+                     : level === 1 ? Kirigami.Theme.neutralTextColor : Kirigami.Theme.textColor;
             }
-
-            RowLayout {
-                spacing: Math.round(Kirigami.Units.smallSpacing * 1.5)
-
-                Text {
-                    Layout.alignment: Qt.AlignBaseline
-                    visible: text !== "" && section.temperatureShown
-                    text: section.temperatureName
-                    color: section.dim
-                    font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.81
-                    textFormat: Text.PlainText
-                }
-
-                Reading {
-                    Layout.alignment: Qt.AlignBaseline
-                    visible: section.temperatureShown
-                    value: Format.temperature(section.slot.temperature, section.monitor.fahrenheit)
-                    degreeUnit: section.monitor.fahrenheit ? "F" : "C"
-                    color: {
-                        const level = section.monitor.heat(section.slot.temperature);
-                        return level === 2 ? Kirigami.Theme.negativeTextColor
-                             : level === 1 ? Kirigami.Theme.neutralTextColor : Kirigami.Theme.textColor;
-                    }
-                }
-            }
+            caption: section.temperatureName
         }
 
         GridLayout {
             Layout.fillWidth: true
             Layout.leftMargin: Math.round(Kirigami.Units.largeSpacing * 2)
             Layout.rightMargin: Layout.leftMargin
+            Layout.topMargin: Math.round(Kirigami.Units.smallSpacing * 1.5)
             Layout.bottomMargin: Math.round(Kirigami.Units.largeSpacing * 1.5)
             columns: (section.slot.reportsVram ? 1 : 0) + 1 + (section.hasPower ? 1 : 0)
             rowSpacing: Kirigami.Units.largeSpacing
@@ -213,12 +142,8 @@ PopupPage {
 
                 Graph {
                     Layout.fillWidth: true
-                    Layout.preferredHeight: section.inner ? Math.round(Kirigami.Units.gridUnit * 2) : implicitHeight
                     values: section.slot.history
                     length: section.monitor.historyLength
-                    color: section.tone
-                    // Graph scales the fill by the colour's alpha; undo that for the dimmer tone.
-                    fillOpacity: (section.inner ? 0.1 : 0.15) / section.tone.a
                 }
             }
 
