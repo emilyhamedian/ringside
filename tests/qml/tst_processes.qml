@@ -3,14 +3,17 @@
 
 import QtQuick
 import QtTest
+import "../../package/contents/ui/code/format.js" as Format
 import "../../package/contents/ui/code/processes.js" as Processes
 import "../../package/contents/ui/popups"
 
 TestCase {
     name: "Processes"
 
-    // A bare qml runtime has no KI18n; the list's caption finds this on the root.
-    function i18nc(context, text) { return text; }
+    // A bare qml runtime has no KI18n; the list finds this on the root.
+    function i18nc(context, text, ...args) {
+        return text.replace(/%(\d+)/g, (m, n) => n <= args.length ? String(args[n - 1]) : m);
+    }
 
     Component {
         id: liveList
@@ -18,6 +21,18 @@ TestCase {
             key: "memory"
             threads: 1
         }
+    }
+
+    Component {
+        id: sampleList
+        ProcessList {
+            threads: 1
+            sample: []
+        }
+    }
+
+    function init() {
+        failOnWarning(/TypeError|ReferenceError|SyntaxError|is not a function|Unable to assign|Cannot assign|Binding loop/);
     }
 
     // The attribute lists below are cut down from what each libksysguard's
@@ -78,6 +93,22 @@ TestCase {
         tryVerify(() => list.rows.length > 0, 5000);
         verify(list.rows[0].name.length > 0);
         verify(list.rows[0].memory > 0);
+    }
+
+    // Rows arriving in a list that started empty, as the first scan's do,
+    // are read and spoken from their own process.
+    function test_rowsArriveAfterAnEmptyStart_data() {
+        return [{ tag: "usage", spoken: "firefox, " + Format.fixed(8.4, 1) + "%" },
+                { tag: "memory", spoken: "firefox, " + Format.fixed(3.9, 1) + " GiB" }];
+    }
+
+    function test_rowsArriveAfterAnEmptyStart(data) {
+        const list = createTemporaryObject(sampleList, this, { key: data.tag });
+        verify(list);
+        const rows = Array.from(list.children).filter(c => c.entry !== undefined);
+        compare(rows.length, 3);
+        list.sample = [{ name: "firefox", usage: 8.4, memory: 3.9 * 1024 ** 3, count: 1 }];
+        compare(rows.map(r => r.Accessible.name), [data.spoken, "", ""]);
     }
 
     function test_topGroupsRowsSharingAName() {
