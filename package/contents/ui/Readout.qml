@@ -13,20 +13,23 @@ import "code/style.js" as Style
 // the widest, so the gap after the readings is the same for every ring and a
 // reading moves only when it gains or loses a character. A second line with
 // nothing to show keeps its height; on one line it goes, with its dot. Each
-// reading is one text, so mirroring never parts a number from its sign. A
-// countdown sets its units small, "23h 5m", in one styled text so each
-// number keeps its unit. The cell describes the readings to screen readers,
-// so the texts themselves stay out of the accessibility tree.
+// reading is one text, so mirroring never parts a number from its sign. The
+// cell describes the readings to screen readers, so the texts themselves
+// stay out of the accessibility tree.
 GridLayout {
     id: readout
 
     // Words.readout(): { first, level, off, second, heat, parts }.
     required property var lines
-    readonly property bool counted: (lines.parts ?? []).length > 0
-    // The room each line takes. A countdown's is measured by a hidden twin
-    // with every digit at its widest, as styled text has no FontMetrics.
-    readonly property var rooms: [face.room(face.strong, [lines.first]),
-                                  counted ? Math.ceil(widestCount.implicitWidth) : face.room(face.plain, [lines.second])]
+    // The second line as drawn. Mirrored, a countdown's parts, "23h 5m", are
+    // led by a right-to-left mark and so is the space between them, so the
+    // days come first from the right as in the popup, whatever digits the
+    // locale has: Latin or Persian digits after a Latin unit would otherwise
+    // join it in one left-to-right run.
+    readonly property string second: (lines.parts ?? []).length > 0 && LayoutMirroring.enabled
+        ? "\u200f" + lines.parts.map(part => part.value + part.unit).join("\u200f ") : lines.second
+    // The room each line takes.
+    readonly property var rooms: [face.room(face.strong, [lines.first]), face.room(face.plain, [second])]
     property bool oneLine: false
     readonly property alias face: face
     // How far a dim second line, longer than the first, may run past the
@@ -41,20 +44,6 @@ GridLayout {
     readonly property real textWidth: (!oneLine ? Math.max(rooms[0], rooms[1])
                                        : rooms[0] + (secondShown ? dotRoom + rooms[1] + 2 * columnSpacing : 0)) - overhang
     readonly property bool secondShown: !oneLine || lines.second !== ""
-
-    // The countdown's parts as styled text: each number with its unit at the
-    // smallest size, the pairs a thin space apart. Styled text turns a typed
-    // thin space into a full one, so it goes in as a character reference.
-    // Mirrored, a right-to-left mark leads the line and each space, so the
-    // days come first from the right as in the popup, whatever digits the
-    // locale has: Latin or Persian digits after a Latin unit would otherwise
-    // join it in one left-to-right run.
-    function styled(parts, widest) {
-        const escaped = text => String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-        const mark = LayoutMirroring.enabled ? "\u200f" : "";
-        return mark + parts.map(part => escaped(widest ? face.widestDigits(face.plain, part.value) : part.value)
-                                       + '<font size="1">' + escaped(part.unit) + '</font>').join(mark + "&#8201;");
-    }
 
     columns: oneLine ? 3 : 1
     rowSpacing: 0
@@ -99,21 +88,12 @@ GridLayout {
         Layout.preferredHeight: face.lineHeight
         Layout.fillWidth: !readout.oneLine
         horizontalAlignment: Text.AlignLeft
-        text: readout.counted ? readout.styled(readout.lines.parts, false) : readout.lines.second
+        text: readout.second
         color: readout.lines.heat === 2 ? Kirigami.Theme.negativeTextColor
              : readout.lines.heat === 1 ? Kirigami.Theme.neutralTextColor
              : Style.dim(Kirigami.Theme.textColor)
         font: face.plain.font
-        textFormat: readout.counted ? Text.StyledText : Text.PlainText
-        Accessible.ignored: true
-    }
-
-    Text {
-        id: widestCount
-        visible: false
-        text: readout.counted ? readout.styled(readout.lines.parts, true) : ""
-        font: face.plain.font
-        textFormat: Text.StyledText
+        textFormat: Text.PlainText
         Accessible.ignored: true
     }
 }

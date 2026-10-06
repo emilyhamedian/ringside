@@ -433,16 +433,6 @@ Item {
             return root.find(cell, i => i.objectName === name);
         }
 
-        // A countdown's styled text as the words it shows: "23h 5m".
-        function plain(text) {
-            return text.replace(/<[^>]*>/g, "").replace(/&#8201;/g, " ").replace(/\u200f/g, "");
-        }
-
-        // The visible texts in `cell`, a countdown as its words.
-        function shown(cell) {
-            return root.texts(cell).map(plain);
-        }
-
         // The Claude or Codex mark inside the ring.
         function mark(cell) {
             return root.find(cell.children[0], i => i.markName !== undefined);
@@ -469,9 +459,9 @@ Item {
         function test_texts(data) {
             const c = cell(data.tag);
             const gauge = c.children[0];
-            compare(shown(c), [data.percent, data.left].map(root.localized));
+            compare(root.texts(c), [data.percent, data.left].map(root.localized));
             compare(line(c, "first").text, root.localized(data.percent));
-            compare(plain(line(c, "second").text), root.localized(data.left));
+            compare(line(c, "second").text, root.localized(data.left));
             verify(line(c, "second").y >= line(c, "first").y + line(c, "first").height, "the time sits under the percentage");
             compare(gauge.text, "", "no percentage inside the ring");
             const m = mark(c);
@@ -484,7 +474,7 @@ Item {
         // unnamed; with the text off, the ring keeps its mark alone.
         function test_oneLineAndRingOnly() {
             const thin = cell("claude", { twoLines: false });
-            compare(shown(thin), ["52%", "·", "2d"].map(root.localized));
+            compare(root.texts(thin), ["52%", "·", "2d"].map(root.localized));
             compare(line(thin, "second").y, line(thin, "first").y, "one line");
             verify(line(thin, "second").x > line(thin, "first").x);
             verify(!mark(thin).visible, "no mark beside one line");
@@ -514,7 +504,7 @@ Item {
                                     5 * 60, 30, -600]) {
                     claudeAt(percent, left);
                     waitForRendering(c);
-                    const texts = [line(c, "first").text, plain(line(c, "second").text)];
+                    const texts = [line(c, "first").text, line(c, "second").text];
                     const what = texts.join(" ") + " at " + percent + "% with " + left + " s left";
                     for (const name of ["first", "second"]) {
                         verify(line(c, name).contentWidth <= line(c, name).width, line(c, name).text + " overflows its room: " + what);
@@ -566,7 +556,7 @@ Item {
             const dim = String(Style.dim(Kirigami.Theme.textColor));
             for (const twoLines of [true, false]) {
                 const c = cell("claude", { twoLines: twoLines });
-                compare(plain(line(c, "second").text), root.localized(data.shows));
+                compare(line(c, "second").text, root.localized(data.shows));
                 compare(String(line(c, "second").color), data.tone === "dim" ? dim : String(Kirigami.Theme.negativeTextColor));
                 compare(line(c, "first").color, c.children[0].outerTone, "the percentage follows the ring");
                 const dot = root.find(c, i => i.visible && i.text === "·");
@@ -657,7 +647,7 @@ Item {
             const gauge = c.children[0];
             const dot = Array.from(c.children).find(i => i.border !== undefined);
             verify(!dot.visible, "no dot while the checks succeed");
-            const reading = [line(c, "first").text, plain(line(c, "second").text), gauge.outerTone];
+            const reading = [line(c, "first").text, line(c, "second").text, gauge.outerTone];
 
             const entries = monitor.usage.entries;
             monitor.usage.entries = Object.assign({}, entries, {
@@ -665,7 +655,7 @@ Item {
             });
             waitForRendering(c);
             verify(dot.visible, "a dot");
-            compare([line(c, "first").text, plain(line(c, "second").text), gauge.outerTone], reading, "the last reading stays");
+            compare([line(c, "first").text, line(c, "second").text, gauge.outerTone], reading, "the last reading stays");
             compare(c.opacity, 1, "no fade");
             compare(gauge.opacity, 1);
             compare(dot.color, Kirigami.Theme.neutralTextColor);
@@ -762,10 +752,10 @@ Item {
             compare(claude.innerLimit.id, "Fable", "The only limit shows by default");
             compare(claude.children[0].inner, true);
             compare(claude.children[0].innerValue, 78);
-            compare(shown(claude), ["52%", "2d"].map(root.localized));
+            compare(root.texts(claude), ["52%", "2d"].map(root.localized));
             compare(codex.innerLimit, null, "No scoped limit, no inner ring");
             compare(codex.children[0].inner, false);
-            compare(shown(codex), ["24%", "5d"].map(root.localized));
+            compare(root.texts(codex), ["24%", "5d"].map(root.localized));
 
             setEntry("codex", { status: "ok", weekly: { percent: 24 },
                                 scoped: [{ id: "codex_spark", label: "GPT-5.3-Codex-Spark", percent: 5 }] });

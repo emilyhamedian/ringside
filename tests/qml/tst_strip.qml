@@ -31,11 +31,6 @@ Item {
         return substitute(n === 1 ? singular : plural, [n].concat(args));
     }
 
-    // A countdown's styled text as the words it shows: "23h 5m".
-    function plain(text) {
-        return text.replace(/<[^>]*>/g, "").replace(/&#8201;/g, " ").replace(/\u200f/g, "");
-    }
-
     // A name at the smallest size it may shrink to, measured here rather
     // than read from RingName.
     TextMetrics {
@@ -395,7 +390,7 @@ Item {
                 sizeAfter(strip, step.change);
                 checkFits(step.what);
                 if (step.shows) {
-                    verify(visibleTexts(strip).map(root.plain).includes(step.shows), step.what + ": " + JSON.stringify(visibleTexts(strip)));
+                    verify(visibleTexts(strip).includes(step.shows), step.what + ": " + JSON.stringify(visibleTexts(strip)));
                 }
                 const now = widths();
                 for (let i = 0; i < 4; ++i) {
@@ -803,8 +798,8 @@ Item {
             compare(mark.markName, "claude");
             verify(mark.visible, "the Claude mark");
             verify(!visibleTexts(strip).includes("CLAUDE"), JSON.stringify(visibleTexts(strip)));
-            compare([line(1, "first").text, root.plain(line(1, "second").text)], ["52%", "2d"]);
-            compare([line(2, "first").text, root.plain(line(2, "second").text)], ["24%", "5d"]);
+            compare([line(1, "first").text, line(1, "second").text], ["52%", "2d"]);
+            compare([line(2, "first").text, line(2, "second").text], ["24%", "5d"]);
 
             // At the limit both readings turn red, and the wider one takes
             // its room at once.
@@ -812,7 +807,7 @@ Item {
             entries.claude.weekly.percent = 100;
             entries.claude.weekly.resetsAt = monitor.usage.createdAt + 600;
             sizeAfter(strip, () => monitor.usage.entries = entries);
-            compare([line(1, "first").text, root.plain(line(1, "second").text)], ["100%", "10m"]);
+            compare([line(1, "first").text, line(1, "second").text], ["100%", "10m"]);
             compare([line(1, "first").color, line(1, "second").color], [root.hotColor, root.hotColor]);
             checkFits("at the limit");
             checkRow("at the limit");
@@ -827,7 +822,7 @@ Item {
                 const cell = strip.cellAt(i);
                 const readout = find(cell.contentItem, r => r.textWidth !== undefined);
                 const texts = all(readout, t => t.textFormat !== undefined);
-                compare(texts.length, 4, strip.items[i] + ": two lines, the dot and the twin");
+                compare(texts.length, 3, strip.items[i] + ": two lines and the dot");
                 texts.forEach(t => verify(t.Accessible.ignored, strip.items[i] + ": " + t.text + " is left to the cell"));
                 compare(cell.Accessible.role, Accessible.Button);
                 verify(cell.Accessible.description !== "", strip.items[i]);
@@ -835,7 +830,7 @@ Item {
             }
             compare(strip.cellAt(0).Accessible.description, "Usage 23%, temperature 61 °C");
             verify(/resets in 2 days 2\d hours$/.test(strip.cellAt(3).Accessible.description), strip.cellAt(3).Accessible.description);
-            compare(root.plain(line(3, "second").text), "2d", "where the panel shows the days alone");
+            compare(line(3, "second").text, "2d", "where the panel shows the days alone");
         }
 
         // Right to left the strip runs from the right edge, with the rates'

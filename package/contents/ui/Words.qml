@@ -52,10 +52,10 @@ QtObject {
     // use or the time to the weekly reset; empty where there is none, as for
     // Intel GPUs, which publish no temperature. `level` and `heat` choose
     // their colours (see Readout). The integrated GPU's temperature stays in
-    // the words and the popup. A countdown also comes as its `parts`, for
-    // Readout to set the units small. It keeps to the days from a day out,
-    // "6d", and to hours and minutes on the last day, "23h 5m"; the popup and
-    // the words give both. With the limit reached it turns red, as in the
+    // the words and the popup. A countdown also comes as its `parts`, which
+    // Readout orders right to left when mirrored. It keeps to the days from a
+    // day out, "6d", and to hours and minutes on the last day, "23h 5m"; the
+    // popup and the words give both. With the limit reached it turns red, as in the
     // popup, since it then says how long the lock-out lasts. The weekly
     // percentage also turns red while the week is on pace to run out before
     // its reset, projected from when it was read.
