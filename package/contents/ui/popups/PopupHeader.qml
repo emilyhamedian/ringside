@@ -65,7 +65,7 @@ RowLayout {
         strokeWidth: 4
         value: header.ringValue
         minimumLevel: header.ringMinimumLevel
-        text: Number.isFinite(header.ringValue) ? Format.percent(header.ringValue) + "%" : "–"
+        text: Number.isFinite(header.ringValue) ? i18nc("@info a percentage", "%1%", Format.percent(header.ringValue)) : "–"
         // "100%" needs a little more room than "62%".
         textScale: text.length > 3 ? 0.25 : 0.29
     }

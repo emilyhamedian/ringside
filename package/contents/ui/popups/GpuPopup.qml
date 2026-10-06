@@ -119,7 +119,7 @@ PopupPage {
                 strokeWidth: 3.5
                 color: section.tone
                 value: section.slot.usage
-                text: Number.isFinite(value) ? Format.percent(value) + "%" : "–"
+                text: Number.isFinite(value) ? i18nc("@info a percentage", "%1%", Format.percent(value)) : "–"
                 textScale: 0.275
 
                 Accessible.role: Accessible.ProgressBar

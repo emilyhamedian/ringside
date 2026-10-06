@@ -1136,6 +1136,33 @@ Item {
         // A third longer in every string, the page keeps its width and
         // nothing runs past it: long text elides or wraps, and the header's
         // reading keeps its full width while the subtitle gives way.
+        // Percentages and counts go through translation, so a language that
+        // sets "%1 %" or "%%1" sets every one of them alike, and a count
+        // takes the locale's digits: the rings' centres, the per-thread bars'
+        // descriptions and a process that runs several times.
+        function test_numbersAreTranslated() {
+            const sample = normal.processSample;
+            normal.processSample = [{ name: "chrome", usage: 8.4 * 16, memory: 3.9 * 1024 ** 3, count: 12 }].concat(sample.slice(1));
+            root.pseudo = true;
+            try {
+                const translated = t => t.endsWith("ß");
+                const rings = popup => all(popup, i => i.outerTone !== undefined && i.text !== undefined && i.text !== "–");
+                const cpu = load("CpuPopup", normal);
+                verify(rings(cpu).length > 0);
+                rings(cpu).forEach(r => verify(translated(r.text), r.text));
+                const threads = all(cpu, i => i.Accessible.role === Accessible.ProgressBar);
+                verify(threads.length > 0);
+                threads.forEach(b => verify(translated(b.Accessible.description), b.Accessible.description));
+                verify(texts(cpu).some(t => t.startsWith("chrome ×" + Format.whole(12)) && translated(t)), JSON.stringify(texts(cpu)));
+                const gpu = load("GpuPopup", normal);
+                compare(rings(gpu).length, 2, "each GPU's ring");
+                rings(gpu).forEach(r => verify(translated(r.text), r.text));
+            } finally {
+                root.pseudo = false;
+                normal.processSample = sample;
+            }
+        }
+
         function test_longTranslationsFit_data() {
             return [{ tag: "cpu", popup: "CpuPopup", monitor: normal }, { tag: "gpu", popup: "GpuPopup", monitor: normal },
                     { tag: "memory", popup: "MemoryPopup", monitor: normal }, { tag: "network", popup: "NetworkPopup", monitor: normal },

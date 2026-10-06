@@ -104,7 +104,10 @@ ColumnLayout {
                 id: processName
                 Layout.fillWidth: true
                 Layout.alignment: Qt.AlignBaseline
-                text: !row.entry ? " " : row.entry.count > 1 ? row.entry.name + " ×" + row.entry.count : row.entry.name
+                text: !row.entry ? " "
+                    : row.entry.count > 1 ? i18nc("@info a process and how many of it run, e.g. chrome ×12", "%1 ×%2",
+                                                  row.entry.name, Format.whole(row.entry.count))
+                    : row.entry.name
                 color: Kirigami.Theme.textColor
                 font.family: Kirigami.Theme.fixedWidthFont?.family ?? "monospace" // qmllint disable redundant-optional-chaining
                 font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.92
