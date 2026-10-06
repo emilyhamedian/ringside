@@ -31,9 +31,13 @@ Item {
     property bool ceiling: true
     property color color: Kirigami.Theme.textColor
     property real fillOpacity: 0.15
+    // How often the samples come, for the points to come to rest within
+    // half of it and be still before the next one.
+    property int interval: 0
     // How long the points take to ease to a new sample; 0 draws it at once,
     // as at Plasma's Instant speed.
-    property int duration: Kirigami.Units.longDuration > 1 ? Kirigami.Units.longDuration : 0
+    property int duration: Kirigami.Units.longDuration > 1
+        ? Math.min(Kirigami.Units.longDuration, interval > 0 ? interval / 2 : Infinity) : 0
 
     // The samples and top the line shows: set rather than bound, a moment
     // after they change, so that a sample and the top that comes with it

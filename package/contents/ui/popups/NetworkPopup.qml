@@ -46,6 +46,7 @@ PopupPage {
         property real rate: NaN
         property var history: []
         property int length: 60
+        property int interval: 0
         readonly property real peak: History.peak(history)?.value ?? 0
 
         Reading {
@@ -60,6 +61,7 @@ PopupPage {
             Layout.preferredHeight: Math.round(Kirigami.Units.gridUnit * 1.35)
             values: tile.history
             length: tile.length
+            interval: tile.interval
             // Anything under 1 MiB/s stays near the floor rather than filling the graph.
             maximum: Math.max(tile.peak, 1048576)
             ceiling: false
@@ -167,6 +169,7 @@ PopupPage {
                 second: true
                 secondValues: popup.monitor.networkUpHistory
                 length: popup.monitor.historyLength
+                interval: popup.monitor.interval
                 // 1 Mb/s at least, so an idle link doesn't draw its noise at full height.
                 maximum: Math.max(History.peak(throughput.history)?.value ?? 0, 125000)
             }
@@ -256,6 +259,7 @@ PopupPage {
             rate: popup.monitor.diskRead
             history: popup.monitor.diskReadHistory
             length: popup.monitor.historyLength
+            interval: popup.monitor.interval
         }
 
         DiskRate {
@@ -264,6 +268,7 @@ PopupPage {
             rate: popup.monitor.diskWrite
             history: popup.monitor.diskWriteHistory
             length: popup.monitor.historyLength
+            interval: popup.monitor.interval
         }
     }
 }

@@ -78,6 +78,7 @@ PopupPage {
                 Layout.fillWidth: true
                 values: popup.monitor.cpuHistory
                 length: popup.monitor.historyLength
+                interval: popup.monitor.interval
             }
         }
 
