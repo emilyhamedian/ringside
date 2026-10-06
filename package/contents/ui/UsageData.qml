@@ -14,8 +14,9 @@ import "code/reset.js" as Reset
 //
 // A provider that answered or is signed out takes the new entry. One that
 // failed keeps its last reading with lastError and lastErrorAt set, which
-// dims its item; one that fails before its first reading gets no entry, so
-// it stays hidden and the settings page says why from usageStatus.
+// marks its item with a dot; one that fails before its first reading gets
+// no entry, so it stays hidden and the settings page says why from
+// usageStatus.
 Item {
     id: usage
 
