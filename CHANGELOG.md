@@ -40,11 +40,12 @@ follows [Semantic Versioning](https://semver.org/).
 
 - Panel items are as wide as their text, with the same gap between each,
   instead of keeping room for their widest readings. When a reading gains a
-  character the items after it move at once; when it loses one they wait
+  character the items after it move at once. When it loses one they wait
   three minutes, so a value that keeps changing width doesn't shuffle the
-  panel. Rates do the same but keep that room before their arrows or
-  letters, so their readings always end with the usual gap before the next
-  item.
+  panel; when it loses more, they close up to within a digit at once and the
+  rest after the wait. Rates do the same but keep that room before their
+  arrows or letters, so their readings always end with the usual gap before
+  the next item.
 - The panel countdown shows the days alone ("6d") until the last day, then
   hours and minutes ("23h 5m"). It turns red at 100%, where it says how
   long the limit stays reached.
