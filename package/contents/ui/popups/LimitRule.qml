@@ -36,7 +36,8 @@ Item {
     // for the fade. A rule that has just been sized moves it at once.
     property bool shownAtStart: true
     // The width as of the last event: a move that comes with a resize, in
-    // the same event, is part of it.
+    // the same event, is part of it, and so is one made before the rule is
+    // laid out, as its popup opens.
     property real placedWidth: 0
 
     Component.onCompleted: {
@@ -45,7 +46,7 @@ Item {
     }
     onWidthChanged: sized.restart()
     onAtStartChanged: {
-        if (width === placedWidth && Kirigami.Units.longDuration > 1) {
+        if (width > 0 && width === placedWidth && Kirigami.Units.longDuration > 1) {
             move.restart();
         } else {
             move.stop();
