@@ -88,8 +88,13 @@ ColumnLayout {
             required property int index
             readonly property var entry: list.rows[index] || null
             readonly property bool memory: list.key === "memory"
-            readonly property var bytes: entry && memory ? Format.bytes(entry.memory) : null
-            readonly property string value: !entry ? "" : memory ? bytes.value : Format.fixed(entry.usage / Math.max(1, list.threads), 1)
+            // The value's number and unit, both from entry in one binding.
+            // Reading entry beside a property made from it could see the new
+            // row with that property still made from the last, null before
+            // the first scan.
+            readonly property var reading: !entry ? { value: "", unit: "" }
+                : memory ? Format.bytes(entry.memory)
+                : { value: Format.fixed(entry.usage / Math.max(1, list.threads), 1), unit: "%" }
 
             Layout.fillWidth: true
             spacing: Kirigami.Units.largeSpacing
@@ -97,8 +102,8 @@ ColumnLayout {
             Accessible.name: !entry ? ""
                 : i18nc("@info accessible name of a process row: the process, then its CPU share or memory, e.g. firefox, 8.4%",
                         "%1, %2", processName.text,
-                        memory ? i18nc("@info an amount of memory, e.g. 3.9 GiB", "%1 %2", bytes.value, bytes.unit)
-                               : i18nc("@info a percentage", "%1%", value))
+                        memory ? i18nc("@info an amount of memory, e.g. 3.9 GiB", "%1 %2", reading.value, reading.unit)
+                               : i18nc("@info a percentage", "%1%", reading.value))
 
             Text {
                 id: processName
@@ -122,8 +127,8 @@ ColumnLayout {
             // percent sign stays against its number.
             Reading {
                 Layout.alignment: Qt.AlignBaseline
-                value: row.value
-                unit: !row.entry ? "" : row.memory ? row.bytes.unit : "%"
+                value: row.reading.value
+                unit: row.reading.unit
                 unitSpacing: row.memory ? Style.unitGap(pointSize) : 0
                 accessibleIgnored: true
             }
