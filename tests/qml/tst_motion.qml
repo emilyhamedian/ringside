@@ -527,7 +527,8 @@ Item {
             const rules = root.all(loader.item, i => i.shownAtStart !== undefined);
             labels = rules.map(r => r.children.find(c => c.text !== undefined));
             verify(labels.length > 0, "a 100 % label");
-            wait(3 * Kirigami.Units.shortDuration);
+            // A few frames even at Plasma's Instant speed.
+            wait(Math.max(3 * Kirigami.Units.shortDuration, 100));
             verify(seen.length > 0, "frames sampled");
             verify(seen.every(o => o === 1), "never dimmed: " + JSON.stringify(seen));
             rules.forEach(r => compare(r.shownAtStart, r.atStart));
