@@ -76,25 +76,25 @@ PopupPage {
             // Projected from a reading hours old, while checks fail, the
             // run-out can already lie behind now: then it may have happened.
             if (p.runOut <= popup.nowMs / 1000) {
-                return !all ? i18nc("@info at the rate of a reading hours old, a model's limit would already be used up, e.g. At this pace, Fable may have run out Mon 5:50 PM",
-                                    "At this pace, %1 may have run out %2", limit.label, when)
-                     : popup.limits.length > 1 ? i18nc("@info at the rate of a reading hours old, every model's shared weekly limit would already be used up, e.g. At this pace, all models may have run out Mon 5:50 PM",
-                                                       "At this pace, all models may have run out %1", when)
-                     : i18nc("@info at the rate of a reading hours old, the weekly limit would already be used up, e.g. At this pace, the weekly limit may have run out Mon 5:50 PM",
-                             "At this pace, the weekly limit may have run out %1", when);
+                return !all ? i18nc("@info at the rate of a reading hours old, a model's limit would already be used up, e.g. Fable may already have run out Mon 5:50 PM",
+                                    "%1 may already have run out %2", limit.label, when)
+                     : popup.limits.length > 1 ? i18nc("@info at the rate of a reading hours old, every model's shared weekly limit would already be used up, e.g. All models may already have run out Mon 5:50 PM",
+                                                       "All models may already have run out %1", when)
+                     : i18nc("@info at the rate of a reading hours old, the weekly limit would already be used up, e.g. The weekly limit may already have run out Mon 5:50 PM",
+                             "The weekly limit may already have run out %1", when);
             }
             // The shared limit is named too: under the first of several bars,
-            // a bare "runs out" could be read as being about a model.
-            return !all ? i18nc("@info a model's limit runs out before the reset at the rate so far, e.g. At this pace, Fable runs out Tue 3:30 AM",
-                                "At this pace, %1 runs out %2", limit.label, when)
-                 : popup.limits.length > 1 ? i18nc("@info every model's shared weekly limit runs out before the reset at the rate so far, e.g. At this pace, all models run out Wed 12:20 PM",
-                                                   "At this pace, all models run out %1", when)
-                 : i18nc("@info the weekly limit runs out before the reset at the rate so far, e.g. At this pace, the weekly limit runs out Wed 12:20 PM",
-                         "At this pace, the weekly limit runs out %1", when);
+            // a bare "on pace to run out" could be read as being about a model.
+            return !all ? i18nc("@info a model's limit runs out before the reset at the rate so far, e.g. Fable is on pace to run out Tue 3:30 AM",
+                                "%1 is on pace to run out %2", limit.label, when)
+                 : popup.limits.length > 1 ? i18nc("@info every model's shared weekly limit runs out before the reset at the rate so far, e.g. All models are on pace to run out Wed 12:20 PM",
+                                                   "All models are on pace to run out %1", when)
+                 : i18nc("@info the weekly limit runs out before the reset at the rate so far, e.g. The weekly limit is on pace to run out Wed 12:20 PM",
+                         "The weekly limit is on pace to run out %1", when);
         }
         case "lasts":
-            return i18nc("@info the share of the weekly limit used by the reset at the rate so far, e.g. At this pace, 93% by the reset",
-                         "At this pace, %1 by the reset", i18nc("@info a percentage", "%1%", Format.percent(p.atReset)));
+            return i18nc("@info the share of the weekly limit used by the reset at the rate so far, e.g. On pace to use 93% by the reset",
+                         "On pace to use %1 by the reset", i18nc("@info a percentage", "%1%", Format.percent(p.atReset)));
         }
         return "";
     }
