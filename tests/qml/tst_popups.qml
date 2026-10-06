@@ -608,10 +608,13 @@ Item {
         }
 
         // Process values are readings: a dim, smaller unit, the percent sign
-        // against its number, and the values lined up at the row's end.
+        // against its number, and the values lined up at the row's end. A
+        // screen reader hears each row whole, its name and value together.
         function test_processValuesAreReadings_data() {
-            return [{ tag: "cpu", popup: "CpuPopup", units: ["%", "%", "%"], values: ["8.4", "3.1", "2.6"].map(localized) },
-                    { tag: "memory", popup: "MemoryPopup", units: ["GiB", "MiB", "MiB"], values: ["3.9", "620", "410"].map(localized) }];
+            return [{ tag: "cpu", popup: "CpuPopup", units: ["%", "%", "%"], values: ["8.4", "3.1", "2.6"].map(localized),
+                      spoken: ["firefox, 8.4%", "plasmashell, 3.1%", "kwin_wayland, 2.6%"].map(localized) },
+                    { tag: "memory", popup: "MemoryPopup", units: ["GiB", "MiB", "MiB"], values: ["3.9", "620", "410"].map(localized),
+                      spoken: ["firefox, 3.9 GiB", "plasmashell, 620 MiB", "kwin_wayland, 410 MiB"].map(localized) }];
         }
 
         function test_processValuesAreReadings(data) {
@@ -632,6 +635,12 @@ Item {
                         compare(p.suffix.x, p.number.implicitWidth, "the percent sign against its number");
                     }
                     compare(edge(r), edge(values[0]), "lined up");
+                });
+                compare(values.map(r => r.parent.Accessible.name), data.spoken);
+                values.forEach(r => {
+                    compare(r.parent.Accessible.role, Accessible.StaticText);
+                    verify(r.accessibleIgnored, "the value isn't spoken apart from its row");
+                    verify(r.parent.children.every(c => c === r || c.Accessible.ignored), "nor is the name");
                 });
             }
         }
