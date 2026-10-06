@@ -28,6 +28,9 @@ RowLayout {
     property string degreeUnit: ""
     property color valueColor: Kirigami.Theme.textColor
     property string caption: ""
+    // Keeps the caption's line under a headline that has no caption, so the
+    // digits stay level with the title as they are in a header with one.
+    property bool keepsCaptionLine: false
     // In place of value and unit, a row of number and unit pairs set like
     // any other reading: the usage popups' "5d 18h". accessibleValue speaks
     // for the row and its caption together.
@@ -149,8 +152,8 @@ RowLayout {
             // already start at the caption's edge.
             Layout.rightMargin: header.partsShown || header.LayoutMirroring.enabled
                 ? 0 : headline.implicitWidth - headline.numberWidth
-            visible: text !== ""
-            Accessible.ignored: header.partsShown
+            visible: text !== "" || header.keepsCaptionLine
+            Accessible.ignored: header.partsShown || text === ""
             text: header.caption
             color: Style.dim(Kirigami.Theme.textColor)
             font.pointSize: Kirigami.Theme.smallFont.pointSize * 0.98
