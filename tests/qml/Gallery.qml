@@ -49,9 +49,11 @@ Rectangle {
         id: normal
     }
 
+    // Hot, with its top processes still being read.
     FakeMonitor {
         id: hot
         cpuTemperature: 92
+        processSample: []
     }
 
     FakeMonitor {
@@ -443,7 +445,7 @@ Rectangle {
             spacing: 2 * Kirigami.Units.gridUnit
 
             PopupFrame {
-                label: "CPU · 92 °C"
+                label: "CPU · 92 °C · top processes loading"
                 CpuPopup { monitor: hot }
             }
 

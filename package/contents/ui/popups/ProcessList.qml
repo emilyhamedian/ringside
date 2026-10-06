@@ -6,13 +6,17 @@ import QtQuick
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
 import org.kde.ksysguard.process as Process
+import org.kde.plasma.components as PlasmaComponents
 import "../code/format.js" as Format
 import "../code/processes.js" as Processes
 import "../code/style.js" as Style
 import ".."
 
 // The three heaviest processes by CPU or by memory. The process model scans
-// /proc every two seconds, so it only exists while its popup is open.
+// /proc every two seconds, so it only exists while its popup is open. Its
+// first scan, made with it, has each process's memory; a process's CPU share
+// is the time it ran between two scans, so that comes with the second. Until
+// the list has readings, a busy indicator stands in for its rows.
 ColumnLayout {
     id: list
 
@@ -25,6 +29,10 @@ ColumnLayout {
     // scan when set; the preview gallery uses them.
     property var sample: null
     property var rows: sample || []
+    // Set once the scans that bring readings have run, so a list with none
+    // to show, as a quiet machine's CPU list can be, stops waiting.
+    property bool scanned: false
+    readonly property bool loading: rows.length === 0 && !scanned
 
     function refresh() {
         // The columns are the attributes the model took, in order.
@@ -56,19 +64,37 @@ ColumnLayout {
         enabledAttributes: Processes.attributes(model.availableAttributes)
     }
 
-    Timer {
-        interval: 2000
-        running: list.sample === null
-        repeat: true
-        triggeredOnStart: true
-        onTriggered: list.refresh()
+    // The model's first scan runs as it is made, before the connections
+    // below are made, so the list reads it here.
+    Component.onCompleted: {
+        if (sample === null) {
+            refresh();
+        }
     }
 
+    // Each scan as soon as it lands, read once however many rows it changed.
     Connections {
         target: model
-        // The first scan lands a moment after the popup opens.
-        function onModelReset() { list.refresh(); }
-        function onRowsInserted() { if (list.rows.length === 0) list.refresh(); }
+        enabled: list.sample === null
+        function onModelReset() { Qt.callLater(list.refresh); }
+        function onRowsInserted() { Qt.callLater(list.refresh); }
+        function onRowsRemoved() { Qt.callLater(list.refresh); }
+        function onDataChanged() { Qt.callLater(list.refresh); }
+    }
+
+    // The model's timer starts a moment before its first scan, and a tick
+    // less than two seconds after the last scan scans nothing, so its first
+    // tick often goes by and the second scan waits until four seconds.
+    // Asked for its attributes again just after two seconds, the model scans
+    // then, unless a tick just has; either way the readings are in.
+    Timer {
+        interval: 2250
+        running: list.sample === null
+        onTriggered: {
+            model.enabledAttributes = Processes.attributes(model.availableAttributes);
+            list.refresh();
+            list.scanned = true;
+        }
     }
 
     Caption {
@@ -76,62 +102,83 @@ ColumnLayout {
         Layout.fillWidth: true
     }
 
-    // Three rows always, so the popup keeps its height while the first scan runs.
-    Repeater {
-        model: 3
+    // Three rows always, so the popup keeps its height while the first scans
+    // run, with a busy indicator over them until there are readings.
+    Item {
+        Layout.fillWidth: true
+        implicitHeight: rowsColumn.implicitHeight
 
-        // Each row is spoken whole, "firefox, 8.4%", as the value alone
-        // would be read as its number and its unit apart.
-        delegate: RowLayout {
-            id: row
+        ColumnLayout {
+            id: rowsColumn
+            width: parent.width
+            spacing: list.spacing
 
-            required property int index
-            readonly property var entry: list.rows[index] || null
-            readonly property bool memory: list.key === "memory"
-            // The value's number and unit, both from entry in one binding.
-            // Reading entry beside a property made from it could see the new
-            // row with that property still made from the last, null before
-            // the first scan.
-            readonly property var reading: !entry ? { value: "", unit: "" }
-                : memory ? Format.bytes(entry.memory)
-                : { value: Format.fixed(entry.usage / Math.max(1, list.threads), 1), unit: "%" }
+            Repeater {
+                model: 3
 
-            Layout.fillWidth: true
-            spacing: Kirigami.Units.largeSpacing
-            Accessible.role: Accessible.StaticText
-            Accessible.name: !entry ? ""
-                : i18nc("@info accessible name of a process row: the process, then its CPU share or memory, e.g. firefox, 8.4%",
-                        "%1, %2", processName.text,
-                        memory ? i18nc("@info an amount of memory, e.g. 3.9 GiB", "%1 %2", reading.value, reading.unit)
-                               : i18nc("@info a percentage", "%1%", reading.value))
+                // Each row is spoken whole, "firefox, 8.4%", as the value
+                // alone would be read as its number and its unit apart.
+                delegate: RowLayout {
+                    id: row
 
-            Text {
-                id: processName
-                Layout.fillWidth: true
-                Layout.alignment: Qt.AlignBaseline
-                text: !row.entry ? " "
-                    : row.entry.count > 1 ? i18nc("@info a process and how many of it run, e.g. chrome ×12", "%1 ×%2",
-                                                  row.entry.name, Format.whole(row.entry.count))
-                    : row.entry.name
-                color: Kirigami.Theme.textColor
-                font.family: Kirigami.Theme.fixedWidthFont?.family ?? "monospace" // qmllint disable redundant-optional-chaining
-                font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.92
-                elide: Text.ElideRight
-                textFormat: Text.PlainText
-                // Set, so the names move to the other edge in a mirrored layout.
-                horizontalAlignment: Text.AlignLeft
-                Accessible.ignored: true
+                    required property int index
+                    readonly property var entry: list.rows[index] || null
+                    readonly property bool memory: list.key === "memory"
+                    // The value's number and unit, both from entry in one
+                    // binding. Reading entry beside a property made from it
+                    // could see the new row with that property still made
+                    // from the last, null before the first scan.
+                    readonly property var reading: !entry ? { value: "", unit: "" }
+                        : memory ? Format.bytes(entry.memory)
+                        : { value: Format.fixed(entry.usage / Math.max(1, list.threads), 1), unit: "%" }
+
+                    Layout.fillWidth: true
+                    spacing: Kirigami.Units.largeSpacing
+                    Accessible.role: Accessible.StaticText
+                    Accessible.name: !entry ? ""
+                        : i18nc("@info accessible name of a process row: the process, then its CPU share or memory, e.g. firefox, 8.4%",
+                                "%1, %2", processName.text,
+                                memory ? i18nc("@info an amount of memory, e.g. 3.9 GiB", "%1 %2", reading.value, reading.unit)
+                                       : i18nc("@info a percentage", "%1%", reading.value))
+
+                    Text {
+                        id: processName
+                        Layout.fillWidth: true
+                        Layout.alignment: Qt.AlignBaseline
+                        text: !row.entry ? " "
+                            : row.entry.count > 1 ? i18nc("@info a process and how many of it run, e.g. chrome ×12", "%1 ×%2",
+                                                          row.entry.name, Format.whole(row.entry.count))
+                            : row.entry.name
+                        color: Kirigami.Theme.textColor
+                        font.family: Kirigami.Theme.fixedWidthFont?.family ?? "monospace" // qmllint disable redundant-optional-chaining
+                        font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.92
+                        elide: Text.ElideRight
+                        textFormat: Text.PlainText
+                        // Set, so the names move to the other edge in a
+                        // mirrored layout.
+                        horizontalAlignment: Text.AlignLeft
+                        Accessible.ignored: true
+                    }
+
+                    // Set like the tiles' readings, with a smaller, dimmer
+                    // unit; the percent sign stays against its number.
+                    Reading {
+                        Layout.alignment: Qt.AlignBaseline
+                        value: row.reading.value
+                        unit: row.reading.unit
+                        unitSpacing: row.memory ? Style.unitGap(pointSize) : 0
+                        accessibleIgnored: true
+                    }
+                }
             }
+        }
 
-            // Set like the tiles' readings, with a smaller, dimmer unit; the
-            // percent sign stays against its number.
-            Reading {
-                Layout.alignment: Qt.AlignBaseline
-                value: row.reading.value
-                unit: row.reading.unit
-                unitSpacing: row.memory ? Style.unitGap(pointSize) : 0
-                accessibleIgnored: true
-            }
+        PlasmaComponents.BusyIndicator {
+            anchors.centerIn: parent
+            width: Kirigami.Units.iconSizes.smallMedium
+            height: width
+            visible: list.loading
+            Accessible.name: i18nc("@info:status the top processes are being read", "Loading top processes")
         }
     }
 }
