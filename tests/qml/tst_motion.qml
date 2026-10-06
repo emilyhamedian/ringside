@@ -484,6 +484,16 @@ Item {
             tryCompare(label, "opacity", 1, 1000);
         }
 
+        // A graph is still before the next sample, however slow Plasma's
+        // animation speed.
+        function test_easesWithinHalfTheInterval() {
+            const g = createTemporaryObject(graphComponent, root, { values: start, interval: 300 });
+            compare(g.duration, Math.min(Kirigami.Units.longDuration, 150));
+            g.interval = 0;
+            compare(g.duration, Kirigami.Units.longDuration);
+            verify(Kirigami.Units.longDuration > 150, "the test runs at an animation speed the cap shortens");
+        }
+
         // At Plasma's Instant speed a sample is drawn as it arrives.
         function test_instant() {
             const g = createTemporaryObject(graphComponent, root, { values: start, duration: 0 });
