@@ -22,14 +22,16 @@ Item {
     property string value: ""
     property string unit: ""
     // "C" or "F" for a temperature, set as "°C" at the small font's size
-    // close to the digits, since the degree sign brings its own space, with
-    // the letter's top level with theirs. A missing reading's dash gets no
+    // a pixel from the digits, since the degree sign brings its own space,
+    // with the letter's top level with theirs. Up there a digit whose top
+    // falls away, such as a "0" or a "4", leaves a little more room beside
+    // the sign than a "1" or a "7" does. A missing reading's dash gets no
     // unit.
     property string degreeUnit: ""
     property real pointSize: Kirigami.Theme.defaultFont.pointSize
     property color color: Kirigami.Theme.textColor
     property color unitColor: Style.dim(color)
-    property real unitSpacing: degreeUnit !== "" ? Math.round(Kirigami.Theme.smallFont.pointSize * 0.25) : Style.unitGap(pointSize)
+    property real unitSpacing: degreeUnit !== "" ? 1 : Style.unitGap(pointSize)
     // Tabular digits are centred in cells of one width, so a narrow last
     // digit such as "1" would leave the degree sign standing apart. The sign
     // keeps the distance from the last digit's ink that it has after a "0",
