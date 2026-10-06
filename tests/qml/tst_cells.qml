@@ -91,11 +91,6 @@ Item {
         return findAll(item, test)[0] ?? null;
     }
 
-    // A countdown's styled text as the words it shows: "23h 5m".
-    function plain(text) {
-        return text.replace(/<[^>]*>/g, "").replace(/&#8201;/g, " ").replace(/\u200f/g, "");
-    }
-
     // Texts with their digits, in any locale, as "0", so readings that
     // differ only in their digits read the same.
     function shape(texts) {
@@ -142,12 +137,10 @@ Item {
         }
     }
 
-    // The countdown's markup in a text of its own, to compare the drawn one with.
+    // A text of its own, to compare a drawn one with.
     Component {
-        id: styledComponent
-        Text {
-            textFormat: Text.StyledText
-        }
+        id: probeComponent
+        Text {}
     }
 
     Component {
@@ -747,7 +740,7 @@ Item {
             const c = cell(data.item);
             const first = line(c, "first");
             const second = line(c, "second");
-            compare([first.text, root.plain(second.text)], data.lines);
+            compare([first.text, second.text], data.lines);
             compare(String(first.color), root.tone(data.tones[0]), "line 1 colour");
             compare(String(second.color), root.tone(data.tones[1]), "line 2 colour");
             checkFace(first, Font.DemiBold, "line 1");
@@ -810,7 +803,7 @@ Item {
                 monitor.gpuOuter.phase = "asleep";
                 settle();
             }
-            compare(root.texts(c).map(root.plain), data.texts);
+            compare(root.texts(c), data.texts);
             verify(!nameIn(c).visible);
             const middle = centreY(gauge(c), c);
             const shown = root.findAll(c, i => i.visible && typeof i.text === "string" && i.text !== "");
@@ -829,8 +822,8 @@ Item {
         }
 
         // Mirrored, the countdown's first part is rightmost, read first as in
-        // the popup's header, whatever digits the locale has. Each part is
-        // drawn as a link, so linkAt() says which one lies where.
+        // the popup's header, whatever digits the locale has. A probe draws
+        // each part as a link, so linkAt() says which one lies where.
         function test_mirroredCountdownReadsFromTheRight(data) {
             const holder = keep(mirrorComponent.createObject(root));
             const parts = [{ value: data.digits("23"), unit: "h" }, { value: data.digits("5"), unit: "m" }];
@@ -839,8 +832,8 @@ Item {
             }));
             waitForRendering(readout);
             const second = line(readout, "second");
-            const probe = keep(styledComponent.createObject(holder, { font: second.font, y: 50, width: 200 }));
-            probe.text = second.text.split("&#8201;").map((part, i) => '<a href="' + i + '">' + part + "</a>").join("&#8201;");
+            const probe = keep(probeComponent.createObject(holder, { font: second.font, y: 50, width: 200, textFormat: Text.StyledText }));
+            probe.text = second.text.split(" ").map((part, i) => '<a href="' + i + '">' + part + "</a>").join(" ");
             waitForRendering(probe);
             const order = [];
             for (let x = 0; x < probe.width; x += 0.5) {
@@ -852,7 +845,7 @@ Item {
             compare(order.join(","), "1,0", "the parts from left to right");
         }
 
-        function test_countdownMarkup_data() {
+        function test_countdownText_data() {
             const rows = [];
             for (const [what, left, parts] of [["days", 6 * day + 23 * 3600, [[6, "d"]]],
                                                ["last day", 23 * 3600 + 5 * 60, [[23, "h"], [5, "m"]]],
@@ -864,41 +857,31 @@ Item {
             return rows;
         }
 
-        // A countdown is one styled text: each number with its unit at the
-        // smallest size, the pairs a thin space apart, so the units read
-        // smaller than the digits and the line stays short. Mirrored, a
-        // right-to-left mark leads it and each space, so the days come first
-        // from the right.
-        // A hidden twin with every digit at its widest keeps its room.
-        function test_countdownMarkup(data) {
+        // A countdown is plain text in the face of the other second lines,
+        // its units as large as its digits, as in "11.2G" or "61°", and its
+        // parts a space apart. Mirrored, a right-to-left mark leads it and
+        // the space, so the days come first from the right. Its room counts
+        // every digit as the widest, as every line's does.
+        function test_countdownText(data) {
             setWeek("claude", [52, data.left]);
             const holder = data.mirrored ? keep(mirrorComponent.createObject(root)) : root;
             const c = keep(usageComponent.createObject(holder, { monitor: monitor, item: "claude" }));
             waitForRendering(c);
             const second = line(c, "second");
-            const markup = data.parts.map(([value, unit]) => root.digits(value) + '<font size="1">' + unit + '</font>');
-            compare(second.textFormat, Text.StyledText);
             const mark = data.mirrored ? "\u200f" : "";
-            compare(second.text, mark + markup.join(mark + "&#8201;"));
+            compare(second.textFormat, Text.PlainText);
+            compare(second.text, mark + data.parts.map(([value, unit]) => root.digits(value) + unit).join(mark + " "));
             verify(second.contentWidth <= second.width, second.contentWidth + " in " + second.width);
 
-            // Drawn, the units are smaller and the thin space is thin.
-            const probe = keep(styledComponent.createObject(root, { font: second.font, text: second.text }));
-            const width = second.implicitWidth;
-            compare(probe.implicitWidth, width, "the probe draws as the line does");
-            probe.text = markup.map(m => m.replace('<font size="1">', "<font>")).join("&#8201;");
-            verify(probe.implicitWidth > width, "full-size units take " + probe.implicitWidth + ", small ones " + width);
-            if (data.parts.length > 1) {
-                probe.text = markup.join(" ");
-                verify(probe.implicitWidth > width, "a space takes " + probe.implicitWidth + ", a thin one " + width);
-            }
-
             const readout = root.find(c, i => i.textWidth !== undefined);
-            const twin = root.find(readout, i => i !== second && i.textFormat === Text.StyledText);
-            verify(!twin.visible, "the twin is hidden");
-            compare(root.shape([twin.text]), root.shape([second.text]), "the twin differs only in its digits");
-            compare(readout.rooms[1], Math.ceil(twin.implicitWidth), "the twin keeps the room");
-            verify(twin.implicitWidth >= width, "the widest digits take " + twin.implicitWidth + ", these " + width);
+            const face = readout.face.plain.font;
+            compare([second.font.family, second.font.pointSize, second.font.weight], [face.family, face.pointSize, face.weight],
+                    "the face of a temperature or memory line");
+            compare(readout.rooms[1], readout.face.room(readout.face.plain, [second.text]), "the room of its widest digits");
+            const probe = keep(probeComponent.createObject(root, { font: second.font, textFormat: Text.PlainText,
+                                                                   text: readout.face.widestDigits(readout.face.plain, second.text) }));
+            verify(readout.rooms[1] >= Math.ceil(probe.implicitWidth), "the widest digits take " + probe.implicitWidth + " in " + readout.rooms[1]);
+            compare(root.findAll(readout, i => i.textFormat !== undefined).length, 3, "the two lines and the dot, nothing hidden to measure");
         }
 
         function test_widthFollowsCharacters_data() {
@@ -1298,7 +1281,7 @@ Item {
         // reaches furthest.
         function test_roomIsTheTextsWidth() {
             const face = keep(faceComponent.createObject(root));
-            const probe = keep(styledComponent.createObject(root, { textFormat: Text.PlainText }));
+            const probe = keep(probeComponent.createObject(root, { textFormat: Text.PlainText }));
             const texts = ["b/s", "Mb/s", "kb/s", "KiB/s", "MiB/s", "B/s", root.decimal(99.9), root.digits(1000),
                            root.digits(27) + "%", root.digits(100) + "%", root.digits(61) + "°", "R", "W", "off", "f", "–"];
             let exact = 0;
