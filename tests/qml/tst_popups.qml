@@ -1274,6 +1274,17 @@ Item {
             }
         }
 
+        // The second GPU's usage graph is drawn as the first's and the CPU's
+        // are, at full strength and height, since it has a header of its own.
+        function test_gpuGraphsMatchTheCpu() {
+            const look = g => JSON.stringify([g.height, String(g.color), g.fillOpacity]);
+            const cpu = graphs(load("CpuPopup", normal));
+            compare(cpu.length, 1);
+            const gpu = graphs(load("GpuPopup", normal)).filter(g => g.visible);
+            compare(gpu.length, 2);
+            gpu.forEach((g, n) => compare(look(g), look(cpu[0]), "GPU " + (n + 1)));
+        }
+
         // A long name elides in its header at the page widths a popup
         // takes, short of the temperature, which keeps its full width.
         function test_gpuLongNamesFit_data() {
