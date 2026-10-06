@@ -56,6 +56,8 @@ Item {
         when: windowShown
 
         property string source: ""
+        // The applet the test made, if any.
+        property Item applet: null
 
         // main.qml's source with `from` replaced, which has to be there.
         function swap(text, from, to) {
@@ -74,13 +76,22 @@ Item {
             source = swap(text, /^    Monitor \{$/m, "    FakeMonitor {");
         }
 
-        // Destroying the applet after a test deletes its monitor before
-        // the strip, whose bindings then read from null; any other script
-        // error fails.
         function init() {
-            failOnWarning(/TypeError: (?!Cannot read property '\w+' of null)|ReferenceError|SyntaxError|is not a function|Unable to assign|Cannot assign|Binding loop|recursive rearrange/);
+            failOnWarning(/TypeError|ReferenceError|SyntaxError|is not a function|Unable to assign|Cannot assign|Binding loop|recursive rearrange/);
             Plasmoid.configuration = { ringsOnly: [] };
             Plasmoid.status = PlasmaCore.Types.PassiveStatus;
+        }
+
+        // The applet goes with its panel after the test, deleting its
+        // monitor before the strip, whose cells would then read from null.
+        // With every item hidden first, the cells go while the monitor is
+        // still there.
+        function cleanup() {
+            if (applet) {
+                strip(applet).monitor.enabledItems = [];
+                settle();
+                applet = null;
+            }
         }
 
         // A panel `thickness` across, `vertical` or not, holding the applet
@@ -90,7 +101,7 @@ Item {
             Plasmoid.location = vertical ? PlasmaCore.Types.RightEdge : PlasmaCore.Types.BottomEdge;
             const p = createTemporaryObject(panelComponent, root,
                                             vertical ? { width: thickness, height: 900 } : { width: 1700, height: thickness });
-            const applet = Qt.createQmlObject(source, p, Qt.resolvedUrl("../../package/contents/ui/main.qml"));
+            applet = Qt.createQmlObject(source, p, Qt.resolvedUrl("../../package/contents/ui/main.qml"));
             verify(applet, "main.qml loads");
             settle();
             return applet;
