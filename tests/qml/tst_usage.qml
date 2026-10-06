@@ -1310,6 +1310,23 @@ Item {
             compare(sentence(rows(popup)[0]).text, "At this pace, the weekly limit runs out " + words.weekdayTime(said, weekly));
         }
 
+        // Ten minutes on the clock the time is shown in: in a zone a quarter
+        // hour off the hour, such as Nepal's, a run-out on the UTC grid would
+        // always read as five past.
+        function test_runOutRoundsOnTheWallClock() {
+            const usage = monitor.usage;
+            const weekly = usage.window(60, 4 * usage.day, [[3, 0], [0, 60]]);
+            const systemOffset = -new Date(weekly.resetsAt * 1000).getTimezoneOffset() * 60;
+            const offset = systemOffset === 20700 ? 31500 : 20700;
+            weekly.clockZone = { offset: offset, abbreviation: "NPT" };
+            setClaude({ weekly: weekly, scoped: [] });
+            const popup = load("claude");
+            const p = popup.paces[0];
+            compare(p.state, "out");
+            const said = Math.round((p.runOut + offset) / 600) * 600 - offset;
+            compare(sentence(rows(popup)[0]).text, "At this pace, the weekly limit runs out " + words.weekdayTime(said, weekly));
+        }
+
         // A run-out before the reset raises a limit's level to red, never
         // lowers it: the row's percentage and bar, and the header's ring for
         // the shared week.

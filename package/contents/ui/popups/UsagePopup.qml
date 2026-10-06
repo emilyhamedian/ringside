@@ -63,12 +63,16 @@ PopupPage {
                                : i18nc("@info a model's limit is used up, e.g. Fable limit reached", "%1 limit reached", limit.label));
         }
         case "out": {
-            // To ten minutes: a projection to the minute claims more than it
-            // knows. Rounded up, it could land on the reset or after it, so
-            // there it rounds down, and stays at least a minute before it.
-            const nearest = Math.round(p.runOut / 600) * 600;
-            const when = words.weekdayTime(nearest <= limit.resetsAt - 60 ? nearest : Math.floor(p.runOut / 600) * 600,
-                                           popup.weekly);
+            // To ten minutes on the clock it is shown in, which in a zone
+            // such as Nepal's is not the UTC grid: a projection to the minute
+            // claims more than it knows. Rounded up, it could land on the
+            // reset or after it, so there it rounds down, and stays at least a
+            // minute before it.
+            const second = Math.floor(p.runOut);
+            const clock = words.zonedDate(second, popup.weekly);
+            const down = second - (clock.getMinutes() * 60 + clock.getSeconds()) % 600;
+            const nearest = p.runOut - down >= 300 ? down + 600 : down;
+            const when = words.weekdayTime(nearest <= limit.resetsAt - 60 ? nearest : down, popup.weekly);
             // Projected from a reading hours old, while checks fail, the
             // run-out can already lie behind now: then it may have happened.
             if (p.runOut <= popup.nowMs / 1000) {
