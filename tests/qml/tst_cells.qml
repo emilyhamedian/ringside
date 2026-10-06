@@ -1061,6 +1061,12 @@ Item {
                     const unitAt = unit.mapToItem(c, Qt.point(0, 0)).x;
                     compare(valueAt - markerEnd, Kirigami.Units.smallSpacing, what + ": the marker's gap");
                     compare(unitAt - (valueAt + value.width), c.unitGap, what + ": the unit's gap");
+                    // Side by side, a letter's marker is as wide as the
+                    // letter, so "R" leaves no gap before the disk's rates.
+                    if (data.item === "disk" && data.singleRow) {
+                        const letter = root.find(marker, i => i.visible && typeof i.text === "string");
+                        verify(letter.mapToItem(marker, Qt.point(0, 0)).x < 1, what + ": " + letter.text + " fills its marker");
+                    }
                 }
                 if (!data.singleRow) {
                     compare(values[0].mapToItem(c, Qt.point(values[0].width, 0)).x, values[1].mapToItem(c, Qt.point(values[1].width, 0)).x,
