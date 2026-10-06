@@ -1055,6 +1055,46 @@ Item {
             verify(Math.min(...widths) < Math.max(...widths), "short rates take less room: " + widths.join(", "));
         }
 
+        function test_ratesKeepSpareRoomInside_data() {
+            return [{ tag: "network two rows", item: "network", singleRow: false },
+                    { tag: "network one row", item: "network", singleRow: true },
+                    { tag: "disk two rows", item: "disk", singleRow: false },
+                    { tag: "disk one row", item: "disk", singleRow: true }];
+        }
+
+        // Given more room than their text needs, as a cell holding its width
+        // gives them, the rates keep it between each marker and its value in
+        // whole pixels: each marker stays at its rate's start, the first at
+        // the rates' start, the readings end at the rate's end, the last at
+        // the rates' end, and stacked values and units still line up.
+        function test_ratesKeepSpareRoomInside(data) {
+            const c = cell(data.item, { singleRow: data.singleRow });
+            const rates = root.findAll(c, i => i.reading !== undefined).sort((a, b) => a.index - b.index);
+            // The strip gives a cell whole pixels.
+            c.width = Math.ceil(c.implicitWidth) + 40;
+            settle();
+            compare(rates[0].mapToItem(c, Qt.point(0, 0)).x, 0, "the first rate at the start");
+            const ends = [];
+            for (const rate of rates) {
+                const marker = rate.children[0];
+                compare(marker.mapToItem(c, Qt.point(0, 0)).x, rate.mapToItem(c, Qt.point(0, 0)).x, "the marker at the rate's start");
+                const value = root.find(rate, i => i.visible && i.horizontalAlignment === Text.AlignRight);
+                const pair = value.parent;
+                const gap = value.mapToItem(c, Qt.point(0, 0)).x - marker.mapToItem(c, Qt.point(marker.width, 0)).x - Kirigami.Units.smallSpacing;
+                verify(gap > 0 && Math.abs(gap - Math.round(gap)) < 1e-6, "room after the marker, in whole pixels: " + gap);
+                const end = pair.mapToItem(c, Qt.point(pair.width, 0)).x;
+                const rateEnd = rate.mapToItem(c, Qt.point(rate.width, 0)).x;
+                verify(end > rateEnd - 1 && end <= rateEnd, "the readings end at the rate's end: " + end + ", " + rateEnd);
+                ends.push(end);
+            }
+            verify(ends[1] > c.width - 1 && ends[1] <= c.width, "the last readings end at the rates' end: " + ends[1] + " in " + c.width);
+            if (!data.singleRow) {
+                compare(ends[0], ends[1], "stacked, the values and units end at one edge");
+                const units = rates.map((r, row) => root.find(r, i => i.visible && i.text === c.lines[row].unit && i.horizontalAlignment !== Text.AlignRight));
+                compare(units[0].mapToItem(c, Qt.point(0, 0)).x, units[1].mapToItem(c, Qt.point(0, 0)).x, "the units line up");
+            }
+        }
+
         function test_ratesShareTheGrid_data() {
             return [{ tag: "38", thickness: 38, ring: 34, twoLines: true },
                     { tag: "46", thickness: 46, ring: 42, twoLines: true },

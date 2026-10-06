@@ -16,7 +16,9 @@ import "code/style.js" as Style
 // gains or loses a character. Stacked, the two values end at the edge the
 // wider one sets, so their units line up. The value and its unit read in that
 // order either way, as a number keeps its sign; only the marker moves to the
-// other side.
+// other side. Given more room, as a cell holding its width gives them, each
+// rate keeps the extra between its marker and its value, so the readings
+// still end where the rates do.
 GridLayout {
     id: rates
 
@@ -141,9 +143,18 @@ GridLayout {
             readonly property real unitWidth: rates.vertical ? 0
                                             : rates.singleRow ? drawn.room(drawn.plain, [reading.unit]) : rates.unitsWidth
 
+            // Its implicit width, kept apart: a binding that reads both an
+            // item's width and its implicitWidth reports a loop as the layout
+            // resizes the item.
+            readonly property real ownWidth: markerWidth + rates.markerGap + valueWidth + (rates.vertical ? 0 : rates.unitGap + unitWidth)
+            // The whole pixels of room the rate has beyond its own, which
+            // sit after the marker.
+            readonly property real spare: Math.max(0, Math.floor(width - ownWidth))
+
             Layout.row: rates.singleRow ? 0 : index
             Layout.column: rates.singleRow ? index : 0
-            implicitWidth: markerWidth + rates.markerGap + valueWidth + (rates.vertical ? 0 : rates.unitGap + unitWidth)
+            Layout.fillWidth: true
+            implicitWidth: ownWidth
             implicitHeight: rates.vertical ? value.implicitHeight : rates.rowHeight
 
             Item {
@@ -172,13 +183,13 @@ GridLayout {
                 }
             }
 
-            // The value and its unit, never mirrored, beside the marker; the
-            // layout's rounding up to a whole pixel falls after them. Placed
-            // by x, since with mirroring off its own anchors would read left
-            // to right.
+            // The value and its unit, never mirrored, after the marker and
+            // any spare room; the layout's rounding up to a whole pixel falls
+            // after them. Placed by x, since with mirroring off its own
+            // anchors would read left to right.
             Item {
-                x: rate.LayoutMirroring.enabled ? parent.width - rate.markerWidth - rates.markerGap - width
-                                                : rate.markerWidth + rates.markerGap
+                x: rate.LayoutMirroring.enabled ? parent.width - rate.markerWidth - rates.markerGap - rate.spare - width
+                                                : rate.markerWidth + rates.markerGap + rate.spare
                 width: rate.valueWidth + (unit.visible ? rates.unitGap + rate.unitWidth : 0)
                 height: parent.height
                 LayoutMirroring.enabled: false

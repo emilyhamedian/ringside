@@ -95,9 +95,12 @@ GridLayout {
                         Items.isUsage(entry.modelData) && strip.monitor.usage.entry(entry.modelData)?.status].join()
             onActivated: strip.activated(entry.modelData, cell)
 
-            // Along a horizontal panel the content keeps to the cell's start,
-            // so room the cell holds on to, and the cell's rounding up to a
-            // whole pixel, fall after it. Along a vertical one it is centred.
+            // Along a horizontal panel a ring's content keeps to the cell's
+            // start, so room the cell holds on to, and the cell's rounding up
+            // to a whole pixel, fall after it. Rates take the cell's room and
+            // keep what it holds between their markers and values, so their
+            // readings end the cell's padding before the next item, the gap
+            // any item leaves. Along a vertical panel the content is centred.
             // Both in whole pixels, rounding as the ring cells' own layout
             // does, so a ring's readings and the rates land on the same rows.
             Loader {
@@ -154,6 +157,7 @@ GridLayout {
                     vertical: strip.vertical
                     singleRow: !strip.vertical && !strip.twoLines
                     availableWidth: strip.vertical ? cell.width - 2 * Kirigami.Units.smallSpacing : Infinity
+                    width: strip.vertical ? implicitWidth : Math.max(implicitWidth, cell.width - 2 * cell.padding)
 
                     Binding {
                         target: cell

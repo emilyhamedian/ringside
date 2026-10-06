@@ -34,8 +34,9 @@ follows [Semantic Versioning](https://semver.org/).
   instead of keeping room for their widest readings. When a reading gains a
   character the items after it move at once; when it loses one they wait
   three minutes, so a value that keeps changing width doesn't shuffle the
-  panel. Rates do the same, so an idle disk at the end of the widget leaves
-  the usual gap after it.
+  panel. Rates do the same but keep that room between the arrow or letter
+  and the number, so their readings always end with the usual gap before
+  the next item.
 - The panel countdown shows the days alone ("6d") until the last day, then
   hours and minutes ("23h 5m"). It turns red at 100%, where it says how
   long the limit stays reached.
