@@ -637,14 +637,18 @@ Item {
             compare(cell("claude", { textShown: false }).children[0].outerTone, gauge.outerTone, "the ring alone keeps its level");
         }
 
+        // The rings of thin panels too: a strip 18 to 24 px thick has rings
+        // of 15 to 20 px.
         function test_failedCheckShowsADot_data() {
             return [{ tag: "34", ring: 34 }, { tag: "22", ring: 22 }, { tag: "52", ring: 52 },
-                    { tag: "34 mirrored", ring: 34, mirrored: true }];
+                    { tag: "34 mirrored", ring: 34, mirrored: true }, { tag: "15", ring: 15 }, { tag: "16", ring: 16 },
+                    { tag: "18", ring: 18 }, { tag: "20", ring: 20 }, { tag: "16 mirrored", ring: 16, mirrored: true }];
         }
 
         // A failed check keeps the last reading and puts a small dot in the
         // ring's corner above the readings, clear of the arc and still while
-        // the ring breathes. The words say when the check failed.
+        // the ring breathes; on a small ring it sits out from the corner as
+        // far as that takes. The words say when the check failed.
         function test_failedCheckShowsADot(data) {
             claudeAt(95, lastHours);
             const c = cell("claude", { ring: data.ring });
@@ -673,14 +677,19 @@ Item {
             verify(gauge.pulsing && dot.parent === c, "outside the breathing face");
 
             const at = dot.mapToItem(gauge, Qt.point(0, 0));
-            compare(at.y, 0, "at the top");
-            compare(at.x, data.mirrored ? 0 : gauge.width - dot.width, data.mirrored ? "at the left, above the readings" : "at the right");
+            const outset = -at.y;
+            verify(outset >= 0 && outset < 1, "at the top, or just above it: " + outset);
+            if (data.ring >= 22) {
+                compare(outset, 0, "in the corner");
+            }
+            compare(at.x, data.mirrored ? -outset : gauge.width - dot.width + outset,
+                    data.mirrored ? "at the left, above the readings" : "at the right");
             verify(data.mirrored ? line(c, "first").mapToItem(gauge, Qt.point(0, 0)).x < 0
                                  : line(c, "first").mapToItem(gauge, Qt.point(0, 0)).x > gauge.width, "the readings on its side");
             const r = dot.width / 2;
             const clear = Math.hypot(at.x + r - gauge.width / 2, at.y + r - gauge.height / 2) - r;
             const arc = outerArc(c);
-            verify(clear >= arc.radius + arc.strokeWidth / 2, "clear of the arc: " + clear + " from the centre, the arc to "
+            verify(clear >= arc.radius + arc.strokeWidth / 2 - 1e-9, "clear of the arc: " + clear + " from the centre, the arc to "
                    + (arc.radius + arc.strokeWidth / 2));
             verify(c.accessibleDescription.indexOf(". Last check failed at ") > 0, c.accessibleDescription);
 
