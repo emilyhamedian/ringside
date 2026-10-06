@@ -27,9 +27,13 @@ if [ -z "${QML:-}" ]; then
 fi
 
 rm -f "$out"
+# The status is kept rather than tested by set -e, so a failed load still
+# prints its log.
+rc=0
 log=$(QT_FORCE_STDERR_LOGGING=1 QT_QPA_PLATFORMTHEME=kde QT_QUICK_BACKEND=software \
-    "$QML" -platform offscreen tests/qml/Gallery.qml -- --snapshot "$out" 2>&1)
+    "$QML" -platform offscreen tests/qml/Gallery.qml -- --snapshot "$out" 2>&1) || rc=$?
 printf '%s\n' "$log" >&2
+[ "$rc" -eq 0 ] || { echo "gallery.sh: $QML exited with status $rc" >&2; exit 1; }
 [ -s "$out" ] || { echo "gallery.sh: no image written to $out" >&2; exit 1; }
 # A script error still leaves an image, with a part missing.
 if printf '%s\n' "$log" | grep -qE 'TypeError|ReferenceError|SyntaxError|Binding loop'; then

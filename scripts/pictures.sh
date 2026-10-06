@@ -28,9 +28,17 @@ scheme=$(find /usr/share/color-schemes -name BreezeDark.colors | head -n 1)
 [ -n "$scheme" ] || { echo "pictures.sh: Breeze Dark's colour scheme isn't installed" >&2; exit 1; }
 cp "$scheme" "$home/config/kdeglobals"
 
+# The status is kept rather than tested by set -e, so a failed load still
+# prints its log.
+rc=0
 log=$(XDG_CONFIG_HOME="$home/config" XDG_CACHE_HOME="$home/cache" QT_FORCE_STDERR_LOGGING=1 \
     QT_QPA_PLATFORMTHEME=kde QT_QUICK_BACKEND=software QT_SCALE_FACTOR=2 \
-    "$QML" -platform offscreen tests/qml/Pictures.qml -- --out "$home/shots" 2>&1)
+    "$QML" -platform offscreen tests/qml/Pictures.qml -- --out "$home/shots" 2>&1) || rc=$?
+if [ "$rc" -ne 0 ]; then
+    printf '%s\n' "$log" >&2
+    echo "pictures.sh: $QML exited with status $rc" >&2
+    exit 1
+fi
 if printf '%s\n' "$log" | grep -qE 'TypeError|ReferenceError|SyntaxError|Binding loop'; then
     printf '%s\n' "$log" >&2
     echo "pictures.sh: script errors while rendering (above)" >&2
