@@ -17,8 +17,9 @@ set -u
 
 cd "$(dirname "$0")/.." || exit 1
 
-# Without a terminal, Qt sends its log output to the journal.
-export QT_FORCE_STDERR_LOGGING=1
+# Without a terminal, Qt sends its log output to the journal. tst_main
+# reads main.qml's source, which Qt allows only when asked.
+export QT_FORCE_STDERR_LOGGING=1 QML_XHR_ALLOW_FILE_READ=1
 
 find_tool() {
     for tool in /usr/lib/qt6/bin/"$1" /usr/lib64/qt6/bin/"$1"; do
