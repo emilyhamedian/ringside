@@ -29,6 +29,23 @@ function points(samples, length, width, height, max, top) {
     }));
 }
 
+// Whether `after` is `before` with one sample pushed, as push() makes it:
+// { dropped } with the sample that fell off the left, undefined while the
+// history grows in, or null for any other change.
+function arrival(before, after, length) {
+    const same = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
+    if (!before || !after || before.length === 0) {
+        return null;
+    }
+    if (after.length === before.length + 1 && same(after.slice(0, -1), before)) {
+        return { dropped: undefined };
+    }
+    if (after.length === before.length && before.length >= Math.max(1, length) && same(after.slice(0, -1), before.slice(1))) {
+        return { dropped: before[0] };
+    }
+    return null;
+}
+
 // The newest of the largest samples as { index, value }, or null when there
 // are none.
 function peak(samples) {
