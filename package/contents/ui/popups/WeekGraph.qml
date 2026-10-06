@@ -20,8 +20,8 @@ import "../code/pace.js" as Pace
 // end, and a run-out it brings fades in once the line has landed. A run-out
 // that goes fades out where it was, the marker for now and a first
 // reading's dot fade in and out, and a week that starts over while the
-// popup is open fades out the last week's line. Any other change is drawn
-// at once.
+// popup is open fades out the last week's line, run-out and marker. Any
+// other change is drawn at once.
 Item {
     id: graph
 
@@ -86,9 +86,15 @@ Item {
         const series = runOutSeries === "second" ? secondDrawn : mainDrawn;
         return series.length > 0 ? [series[series.length - 1], runOutEnd] : [];
     }
-    // Last week's line, fading out under the new week's.
+    // The marker for now as drawn, kept where it was as it fades out.
+    property bool markerShown: stale
+    property real markerShownX: markerX
+    // Last week, fading out under the new one: its lines, and its run-out
+    // and marker if it had them.
     property var ghostMain: []
     property var ghostSecond: []
+    property var ghostRunOut: []
+    property real ghostMarkerX: -1
     property real ghostOpacity: 0
     // Where a first reading's dot was, for it to fade out there.
     property point mainDotAt
@@ -139,9 +145,20 @@ Item {
         const second = change(seenSecond, secondWindow);
         if (duration > 0 && seenMain && window && seenMain.resetsAt !== window.resetsAt && seenMain.history.length > 0) {
             const end = seenMain.resetsAt;
-            ghostMain = pointsOn(seenMain.history, end - seenMain.windowSeconds, end);
-            ghostSecond = seenSecond ? pointsOn(seenSecond.history, end - seenMain.windowSeconds, end) : [];
+            const begin = end - seenMain.windowSeconds;
+            ghostMain = pointsOn(seenMain.history, begin, end);
+            ghostSecond = seenSecond ? pointsOn(seenSecond.history, begin, end) : [];
+            const series = runOutSeries === "second" ? ghostSecond : ghostMain;
+            ghostRunOut = runOutOpacity > 0 && series.length > 0
+                ? [series[series.length - 1], Qt.point((shownRunOutAt - begin) / (end - begin) * width, yAt(100))] : [];
+            ghostMarkerX = markerShown ? markerShownX : -1;
+            // The new week's own run-out and marker fade in once placed.
+            fadeIn.stop();
+            fadeOut.stop();
+            runOutOpacity = 0;
+            runOutShown = false;
             ghostFade.restart();
+            markerShown = false;
         }
         if (duration > 0 && main !== "other" && second !== "other" && (main === "grew" || second === "grew")) {
             // The points afresh: the bindings on the windows may not have
@@ -159,6 +176,26 @@ Item {
         }
         seenMain = seen(window);
         seenSecond = seen(secondWindow);
+    }
+
+    // The run-out and the marker follow the readings a moment later, with
+    // motion, once they have all landed: the projection and the marker
+    // change with the windows, the poll time and the clock, one after the
+    // other.
+    function place() {
+        if (duration > 0) {
+            placing.restart();
+        } else {
+            placeRunOut();
+            placeMarker();
+        }
+    }
+
+    function placeMarker() {
+        if (stale) {
+            markerShownX = markerX;
+        }
+        markerShown = stale;
     }
 
     // The run-out follows its projection, fading in once the line has
@@ -195,16 +232,9 @@ Item {
     }
     onWindowChanged: poll()
     onSecondWindowChanged: poll()
-    // The projection changes with the windows and the poll time, one after
-    // the other, so with motion it is placed a moment later, once the
-    // drawing it waits for has started.
-    onProjectionChanged: {
-        if (duration > 0) {
-            placing.restart();
-        } else {
-            placeRunOut();
-        }
-    }
+    onProjectionChanged: place()
+    onStaleChanged: place()
+    onMarkerXChanged: place()
     onMainPointsChanged: if (mainPoints.length > 0) mainDotAt = mainPoints[0]
     onSecondPointsChanged: if (secondPoints.length > 0) secondDotAt = secondPoints[0]
     // A resized graph draws its line whole at once.
@@ -214,7 +244,10 @@ Item {
     Timer {
         id: placing
         interval: 0
-        onTriggered: graph.placeRunOut()
+        onTriggered: {
+            graph.placeRunOut();
+            graph.placeMarker();
+        }
     }
 
     NumberAnimation { id: drawing; target: graph; property: "drawClock"; from: 0; to: 1; duration: 2 * graph.duration }
@@ -297,17 +330,21 @@ Item {
         color: rule.lineColor
     }
 
-    Rectangle {
-        visible: opacity > 0
-        opacity: graph.stale ? 1 : 0
-        x: graph.markerX
+    component Marker: Rectangle {
         y: rule.ruleY
         width: 1
         height: graph.height - rule.ruleY
         color: Qt.alpha(graph.color, 0.45 * graph.color.a)
+    }
+
+    // At a new week the marker goes with the last week's lines.
+    Marker {
+        visible: opacity > 0
+        opacity: graph.markerShown ? 1 : 0
+        x: graph.markerShownX
 
         Behavior on opacity {
-            enabled: graph.duration > 0
+            enabled: graph.duration > 0 && !ghostFade.running
             NumberAnimation { duration: graph.duration }
         }
     }
@@ -386,27 +423,17 @@ Item {
         }
     }
 
-    Lines {
-        visible: graph.ghostOpacity > 0
-        opacity: graph.ghostOpacity
-        main: graph.ghostMain
-        second: graph.ghostSecond
-    }
-
-    Lines {
-        visible: graph.mainDrawn.length > 1 || graph.secondDrawn.length > 1
-        main: graph.mainDrawn
-        second: graph.secondDrawn
-    }
-
     // The run-out: round dots in the colour of a limit running out, from
     // the series' last point to a dot on the 100 % rule where it runs out,
     // so it reads as a projection rather than as more readings.
-    Shape {
+    component RunOut: Shape {
+        id: runOut
+
+        property var path: []
+
         anchors.fill: parent
         preferredRendererType: Shape.CurveRenderer
-        visible: graph.runOutOpacity > 0 && graph.runOutDrawn.length > 0
-        opacity: graph.runOutOpacity
+        visible: path.length > 0
 
         ShapePath {
             strokeColor: Kirigami.Theme.negativeTextColor
@@ -417,14 +444,54 @@ Item {
             // dot, with about two dots' room between it and the next.
             dashPattern: [0.01, 3]
             fillColor: "transparent"
-            PathPolyline { path: graph.runOutDrawn }
+            PathPolyline { path: runOut.path }
         }
     }
 
-    Dot {
+    component RunOutEnd: Dot {
+        color: Kirigami.Theme.negativeTextColor
+    }
+
+    Item {
+        anchors.fill: parent
+        visible: opacity > 0
+        opacity: graph.ghostOpacity
+
+        Lines {
+            main: graph.ghostMain
+            second: graph.ghostSecond
+        }
+
+        RunOut {
+            path: graph.ghostRunOut
+        }
+
+        RunOutEnd {
+            visible: graph.ghostRunOut.length > 1
+            at: graph.ghostRunOut[1] ?? Qt.point(0, 0)
+        }
+
+        Marker {
+            visible: graph.ghostMarkerX >= 0
+            x: graph.ghostMarkerX
+        }
+    }
+
+    Lines {
+        visible: graph.mainDrawn.length > 1 || graph.secondDrawn.length > 1
+        main: graph.mainDrawn
+        second: graph.secondDrawn
+    }
+
+    RunOut {
+        visible: graph.runOutOpacity > 0 && path.length > 0
+        opacity: graph.runOutOpacity
+        path: graph.runOutDrawn
+    }
+
+    RunOutEnd {
         visible: graph.runOutOpacity > 0
         opacity: graph.runOutOpacity
         at: graph.runOutEnd
-        color: Kirigami.Theme.negativeTextColor
     }
 }
