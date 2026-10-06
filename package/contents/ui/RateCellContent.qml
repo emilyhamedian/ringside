@@ -17,9 +17,9 @@ import "code/style.js" as Style
 // wider one sets, so their units line up. The value and its unit read in that
 // order either way, as a number keeps its sign; only the marker moves to the
 // other side. Given more room, as a cell holding its width gives them, the
-// readings still end where the rates do: stacked, each rate keeps the extra
-// between its marker and its value, so the units still line up; side by
-// side, it goes between the two rates, so each marker stays by its value.
+// readings still end where the rates do and the extra goes before the
+// markers, so each marker stays by its value and side by side the two rates
+// stay together.
 GridLayout {
     id: rates
 
@@ -148,20 +148,21 @@ GridLayout {
             // item's width and its implicitWidth reports a loop as the layout
             // resizes the item.
             readonly property real ownWidth: markerWidth + rates.markerGap + valueWidth + (rates.vertical ? 0 : rates.unitGap + unitWidth)
-            // The whole pixels of room the rate has beyond its own: after
-            // the marker when stacked, before it side by side, where only
-            // the second rate takes any.
+            // The whole pixels of room the rate has beyond its own, before
+            // its marker. Side by side only the first rate takes any. Along
+            // a vertical panel it falls after the marker, so the letters
+            // line up at the panel's start.
             readonly property real spare: Math.max(0, Math.floor(width - ownWidth))
 
             Layout.row: rates.singleRow ? 0 : index
             Layout.column: rates.singleRow ? index : 0
-            Layout.fillWidth: !rates.singleRow || index === 1
+            Layout.fillWidth: !rates.singleRow || index === 0
             implicitWidth: ownWidth
             implicitHeight: rates.vertical ? value.implicitHeight : rates.rowHeight
 
             Item {
                 anchors.left: parent.left
-                anchors.leftMargin: rates.singleRow ? rate.spare : 0
+                anchors.leftMargin: rates.vertical ? 0 : rate.spare
                 width: rate.markerWidth
                 height: parent.height
 

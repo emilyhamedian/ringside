@@ -44,9 +44,11 @@ MouseArea {
     // at once, but shrinks back only once the content has stayed narrower
     // for settleDelay, and then to its width at that moment, so a reading
     // that keeps crossing between widths, 9 % and 10 %, moves the items
-    // after it once rather than on every update. Until then the extra room
-    // sits after the content. Whole pixels, so a fraction of one doesn't
-    // count as a change.
+    // after it once rather than on every update. Until then a ring's extra
+    // room sits after its readings, and rates keep theirs before their
+    // arrows or letters, so their readings still end one padding before the
+    // next item. Whole pixels, so a fraction of one doesn't count as a
+    // change.
     readonly property real contentWidth: contentItem ? Math.ceil(contentItem.implicitWidth) : 0
     property real settledWidth: 0
     property int settleDelay: 3 * 60 * 1000
