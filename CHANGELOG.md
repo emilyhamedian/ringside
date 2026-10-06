@@ -45,8 +45,9 @@ follows [Semantic Versioning](https://semver.org/).
   where it could take four.
 - Popup numbers and the ring's centre percentage use the theme's font with
   figures of even width instead of a monospace font, which left gaps around
-  the decimal point. Units are smaller, and °C and °F sit against the
-  digits, the disk's caption included. Process names stay monospace.
+  the decimal point. Units are smaller. °C and °F sit close to the digits:
+  raised level with their top in the CPU and GPU headers, on the same line
+  in the disk's caption. Process names stay monospace.
 - Graphs lose their grid lines. Percentage graphs have a labelled line at
   100%; rate graphs reach up to their peak, which the caption names, or to
   1 Mb/s (1 MiB/s for a disk) when the peak is lower, and the disk's peaks
@@ -60,8 +61,11 @@ follows [Semantic Versioning](https://semver.org/).
 - Popups line up their content on one edge and their headers on shared
   baselines, with even padding in tiles and matching dividers. The load
   average shows its three numbers evenly spaced, the network header's
-  rates are larger, "Since boot" puts each arrow before its total,
-  and the GPU popup has no subtitle when it shows two GPUs.
+  rates are larger, and "Since boot" puts each arrow before its total.
+- Each GPU in the GPU popup opens with the header the CPU and Claude popups
+  use: its usage ring, its name, its kind and memory, and its temperature.
+  A second GPU follows after a rule with a header of its own, and a
+  sleeping GPU stays one line.
 - Translators are told that CPU, GPU and MEM sit inside a ring in at most
   three characters.
 
