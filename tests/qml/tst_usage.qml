@@ -1190,32 +1190,32 @@ Item {
                     // Fable: 78 % four days and three hours in.
                     const w = u.entries.claude.scoped[0];
                     const start = w.resetsAt - w.windowSeconds;
-                    return "At this pace, Fable runs out " + wallClock(u, start + (u.createdAt - start) * 100 / 78, 600);
+                    return "Fable is on pace to run out " + wallClock(u, start + (u.createdAt - start) * 100 / 78, 600);
                 } },
                 { tag: "allOutFirst", row: 0,
                   weekly: window(60, 4 * day, [[3, 0], [2, 20], [1, 40], [0, 60]]),
                   scoped: [{ id: "Fable", label: "Fable", w: window(30, 4 * day, [[3, 0], [0, 30]]) }],
-                  expect: u => "At this pace, all models run out " + wallClock(u, u.createdAt + 2 * day, 600) },
+                  expect: u => "All models are on pace to run out " + wallClock(u, u.createdAt + 2 * day, 600) },
                 // With both limits on course to run out, the sooner one is said.
                 { tag: "bothOutModelSooner", row: 1,
                   weekly: window(60, 4 * day, [[3, 0], [0, 60]]),
                   scoped: [{ id: "Fable", label: "Fable", w: window(90, 4 * day, [[3, 0], [0, 90]]) }],
-                  expect: u => "At this pace, Fable runs out " + wallClock(u, u.createdAt - 3 * day + 3 * day * 100 / 90, 600) },
+                  expect: u => "Fable is on pace to run out " + wallClock(u, u.createdAt - 3 * day + 3 * day * 100 / 90, 600) },
                 { tag: "bothOutWeekSooner", row: 0,
                   weekly: window(85, 4 * day, [[3, 0], [0, 85]]),
                   scoped: [{ id: "Fable", label: "Fable", w: window(60, 4 * day, [[3, 0], [0, 60]]) }],
-                  expect: u => "At this pace, all models run out " + wallClock(u, u.createdAt - 3 * day + 3 * day * 100 / 85, 600) },
+                  expect: u => "All models are on pace to run out " + wallClock(u, u.createdAt - 3 * day + 3 * day * 100 / 85, 600) },
                 // A run-out still ahead outranks a model's limit already reached.
                 { tag: "outBeforeModelReached", row: 0,
                   weekly: window(60, 4 * day, [[3, 0], [0, 60]]),
                   scoped: [{ id: "Fable", label: "Fable", w: window(100, 4 * day, [[3, 0], [1, 100], [0, 100]]) }],
-                  expect: u => "At this pace, all models run out " + wallClock(u, u.createdAt + 2 * day, 600) },
+                  expect: u => "All models are on pace to run out " + wallClock(u, u.createdAt + 2 * day, 600) },
                 { tag: "oneLimitOut", row: 0,
                   weekly: window(60, 4 * day, [[3, 0], [2, 20], [1, 40], [0, 60]]), scoped: [],
-                  expect: u => "At this pace, the weekly limit runs out " + wallClock(u, u.createdAt + 2 * day, 600) },
+                  expect: u => "The weekly limit is on pace to run out " + wallClock(u, u.createdAt + 2 * day, 600) },
                 { tag: "lasts", row: 0,
                   weekly: window(30, 4 * day, [[3, 0], [0, 30]]), scoped: [],
-                  expect: u => root.localized("At this pace, 70% by the reset") },
+                  expect: u => root.localized("On pace to use 70% by the reset") },
                 { tag: "everyModelLockedOut", row: 0,
                   weekly: window(100, 2 * day, [[3, 50], [2, 100], [0, 100]]),
                   expect: u => "Limit reached " + wallClock(u, u.createdAt - 2 * day, 60) },
@@ -1228,7 +1228,7 @@ Item {
                 // A runaway first day already warns.
                 { tag: "runawayFirstDay", row: 0,
                   weekly: window(70, 7 * day - 18 * 3600, [[0.75, 0], [0, 70]]), scoped: [],
-                  expect: u => "At this pace, the weekly limit runs out "
+                  expect: u => "The weekly limit is on pace to run out "
                       + wallClock(u, u.createdAt - 18 * 3600 + day * 100 / 70, 600) },
                 // A quiet one has nothing to say, and never says it is too early.
                 { tag: "quietFirstDay", row: -1,
@@ -1239,17 +1239,17 @@ Item {
                 // already passed: it may have happened, not still to come.
                 { tag: "staleRunOutPast", row: 0, ago: 2 * day,
                   weekly: window(60, 3 * day, [[4, 0], [2, 60]]), scoped: [],
-                  expect: u => "At this pace, the weekly limit may have run out "
+                  expect: u => "The weekly limit may already have run out "
                       + wallClock(u, u.createdAt - 4 * day + 2 * day * 100 / 60, 600) },
                 { tag: "staleModelRunOutPast", row: 1, ago: 2 * day,
                   weekly: window(20, 3 * day, [[4, 0], [2, 20]]),
                   scoped: [{ id: "Fable", label: "Fable", w: window(60, 3 * day, [[4, 0], [2, 60]]) }],
-                  expect: u => "At this pace, Fable may have run out "
+                  expect: u => "Fable may already have run out "
                       + wallClock(u, u.createdAt - 4 * day + 2 * day * 100 / 60, 600) },
                 { tag: "staleAllRunOutPast", row: 0, ago: 2 * day,
                   weekly: window(60, 3 * day, [[4, 0], [2, 60]]),
                   scoped: [{ id: "Fable", label: "Fable", w: window(20, 3 * day, [[4, 0], [2, 20]]) }],
-                  expect: u => "At this pace, all models may have run out "
+                  expect: u => "All models may already have run out "
                       + wallClock(u, u.createdAt - 4 * day + 2 * day * 100 / 60, 600) }
             ];
         }
@@ -1324,7 +1324,7 @@ Item {
             compare(popup.paces[0].runOut, weekly.resetsAt - data.before);
             const said = mark + data.said;
             verify(said <= weekly.resetsAt - 60);
-            compare(sentence(rows(popup)[0]).text, "At this pace, the weekly limit runs out " + words.weekdayTime(said, weekly));
+            compare(sentence(rows(popup)[0]).text, "The weekly limit is on pace to run out " + words.weekdayTime(said, weekly));
         }
 
         // Ten minutes on the clock the time is shown in: in a zone a quarter
@@ -1341,7 +1341,7 @@ Item {
             const p = popup.paces[0];
             compare(p.state, "out");
             const said = Math.round((p.runOut + offset) / 600) * 600 - offset;
-            compare(sentence(rows(popup)[0]).text, "At this pace, the weekly limit runs out " + words.weekdayTime(said, weekly));
+            compare(sentence(rows(popup)[0]).text, "The weekly limit is on pace to run out " + words.weekdayTime(said, weekly));
         }
 
         // A run-out before the reset raises a limit's level to red, never
@@ -1382,7 +1382,7 @@ Item {
             const shown = root.texts(load("claude"));
             verify(shown.includes("Run claude in a terminal to sign in."), JSON.stringify(shown));
             verify(!shown.includes("All models") && !shown.includes("until reset"), JSON.stringify(shown));
-            verify(!shown.some(t => t.startsWith("At this pace")), JSON.stringify(shown));
+            verify(!shown.some(t => /on pace|run out|by the reset/i.test(t)), JSON.stringify(shown));
             monitor.usage.entries = {};
             monitor.usage.helperError = "python3 was not found on the Plasma session's PATH.";
             verify(root.texts(load("codex")).includes(monitor.usage.helperError));
