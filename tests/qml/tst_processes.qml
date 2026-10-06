@@ -177,17 +177,24 @@ Item {
             verify(!indicatorOf(list).visible);
         }
 
-        // After that the list reads each scan as it lands, every two
-        // seconds, with no timer of its own.
+        // After that the list reads each scan as the model reports it, with
+        // no timer of its own. A scan on a quiet machine can change nothing,
+        // so the test reports changes itself, three in a row: the list reads
+        // each on the next turn of the event loop, where a timer reading
+        // every two seconds would catch one at most.
         function test_listFollowsTheScans() {
             failOnWarning(/QModelIndex/);
             const list = createTemporaryObject(liveList, root);
             verify(list);
             tryVerify(() => list.scanned, 5000);
+            const model = modelOf(list);
             spy.target = list;
             spy.signalName = "rowsChanged";
-            // Fails the test if no read comes.
-            spy.wait(4500);
+            for (let change = 1; change <= 3; ++change) {
+                const reads = spy.count;
+                model.dataChanged(model.index(0, 0), model.index(0, 0));
+                tryVerify(() => spy.count > reads, 500, "read change " + change);
+            }
             verify(list.rows.length > 0);
         }
 
