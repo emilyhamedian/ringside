@@ -455,7 +455,7 @@ Item {
         // the reading's width and the caption under it hold still as the
         // temperature changes, in the CPU header and in a GPU row.
         function test_temperatureDigitsHoldStill() {
-            const where = (r, popup) => parts(r).number.mapToItem(popup, 0, 0).x;
+            const where = (r, popup) => parts(r).number.mapToItem(popup, Qt.point(0, 0)).x;
             const cpu = [];
             const gpu = [];
             for (const t of [59, 60, 61, 62, 71]) {
@@ -466,7 +466,7 @@ Item {
                 const headline = readings(header).find(r => r.visible && r.degreeUnit !== "");
                 const caption = shownText(header, header.caption);
                 verify(headline && caption);
-                cpu.push([where(headline, popup), headline.implicitWidth, caption.mapToItem(popup, 0, 0).x].join(" "));
+                cpu.push([where(headline, popup), headline.implicitWidth, caption.mapToItem(popup, Qt.point(0, 0)).x].join(" "));
                 const gpuPopup = load("GpuPopup", normal);
                 const row = readings(gpuPopup).find(r => r.visible && r.degreeUnit !== "" && r.value === Format.temperature(t, false));
                 verify(row, "the GPU row at " + t);
@@ -523,8 +523,8 @@ Item {
             verify(headline);
             const caption = Array.from(headline.parent.children).find(i => i.visible && typeof i.text === "string" && i.text !== "");
             verify(caption);
-            const digits = headline.mapToItem(popup, 0, 0).x;
-            const left = caption.mapToItem(popup, 0, 0).x;
+            const digits = headline.mapToItem(popup, Qt.point(0, 0)).x;
+            const left = caption.mapToItem(popup, Qt.point(0, 0)).x;
             if (data.mirrored) {
                 fuzzyCompare(left, digits, 1);
             } else {
@@ -596,7 +596,7 @@ Item {
                 compare(String(t.color), String(Style.dim(Kirigami.Theme.textColor)));
                 compare(t.y + t.baselineOffset, first[0].y + first[0].baselineOffset, "on the reading's baseline");
             });
-            const x = i => i.mapToItem(tile, 0, 0).x;
+            const x = i => i.mapToItem(tile, Qt.point(0, 0)).x;
             const order = [first[0], rest[0], rest[1]];
             if (data.mirrored) {
                 order.reverse();
@@ -623,7 +623,7 @@ Item {
                 const values = readings(list);
                 compare(values.map(r => r.value), data.values);
                 compare(values.map(r => r.unit), data.units);
-                const edge = r => r.mapToItem(list, 0, 0).x + (mirrored ? 0 : r.width);
+                const edge = r => r.mapToItem(list, Qt.point(0, 0)).x + (mirrored ? 0 : r.width);
                 values.forEach(r => {
                     const p = parts(r);
                     compare(p.suffix.font.pointSize, Style.unitPointSize(r.pointSize, Kirigami.Theme.smallFont.pointSize), r.value);
@@ -779,7 +779,7 @@ Item {
                 verify(captions.some(c => c.truncated), "some note is cut short: " + captions.map(c => c.text).join(", "));
                 for (const c of captions) {
                     const tile = ancestor(c, i => i.graphNote !== undefined);
-                    const left = c.mapToItem(tile, 0, 0).x;
+                    const left = c.mapToItem(tile, Qt.point(0, 0)).x;
                     const drawn = c.elide !== Text.ElideNone ? c.width : Math.max(c.width, c.contentWidth);
                     verify(left >= tile.horizontalPadding - 0.5 && left + drawn <= tile.width - tile.horizontalPadding + 0.5,
                            c.text + " at " + left + " to " + (left + drawn) + " in a tile " + tile.width + " wide");
@@ -856,7 +856,7 @@ Item {
             waitForRendering(popup);
             tryVerify(() => entries[0].y === entries[2].y, 1000, "one line");
             // The bar's own mapping would include its mirroring flip.
-            const left = i => i.parent.mapToItem(popup, i.x, 0).x;
+            const left = i => i.parent.mapToItem(popup, Qt.point(i.x, 0)).x;
             const right = i => left(i) + i.width;
             // In reading order, each entry's far edge to the next one's near edge.
             const [start, end] = data.mirrored ? [right, left] : [left, right];
@@ -890,7 +890,7 @@ Item {
         }
 
         function baselineY(text, popup) {
-            return text.mapToItem(popup, 0, text.baselineOffset).y;
+            return text.mapToItem(popup, Qt.point(0, text.baselineOffset)).y;
         }
 
         // The header's two columns centre on the ring each by its own height;
@@ -932,7 +932,7 @@ Item {
                 fuzzyCompare(tile.capHeight, probe.tightBoundingRect.height, 1, tile.caption + " cap height");
                 const leading = fontProbe.ascent - tile.capHeight;
                 verify(leading / 2 > 1, "enough leading to tell: " + leading);
-                const capTop = caption.mapToItem(tile, 0, caption.baselineOffset).y - tile.capHeight;
+                const capTop = caption.mapToItem(tile, Qt.point(0, caption.baselineOffset)).y - tile.capHeight;
                 // Rounding to whole pixels is the only slack.
                 fuzzyCompare(capTop, tile.verticalPadding + leading / 2, 0.5, tile.caption + " cap top");
                 const column = caption.parent;
@@ -955,7 +955,7 @@ Item {
         function test_contentEdges(data) {
             const popup = load(data.popup, normal, data.mirrored);
             const edge = Math.round(Kirigami.Units.largeSpacing * 2);
-            const left = i => i.mapToItem(popup, 0, 0).x;
+            const left = i => i.mapToItem(popup, Qt.point(0, 0)).x;
             const right = i => left(i) + i.width;
             const spanning = [headerOf(popup)]
                 .concat(all(popup, i => i.visible && i.key !== undefined && i.threads !== undefined))
@@ -991,7 +991,7 @@ Item {
             compare(found.length, 1);
             const edge = Math.round(Kirigami.Units.largeSpacing * 2);
             const divider = found[0];
-            compare(divider.mapToItem(popup, 0, 0).x, edge);
+            compare(divider.mapToItem(popup, Qt.point(0, 0)).x, edge);
             compare(divider.width, popup.width - 2 * edge);
             compare(String(divider.color), String(Qt.alpha(Kirigami.Theme.textColor, 0.08)));
         }
@@ -1023,7 +1023,7 @@ Item {
             compare(values.length, 2);
             const arrows = all(rates, i => i.up !== undefined && i.color !== undefined);
             compare(arrows.map(a => a.up), [false, true]);
-            const x = i => i.mapToItem(popup, 0, 0).x;
+            const x = i => i.mapToItem(popup, Qt.point(0, 0)).x;
             const down = Format.rate(normal.networkDown, data.bits);
             const up = Format.rate(normal.networkUp, data.bits);
             compare(values.map(r => r.value + " " + r.unit), [down.value + " " + down.unit, up.value + " " + up.unit]);
@@ -1141,7 +1141,7 @@ Item {
                 verify(texts(popup).some(t => t.endsWith("ß")), "the pseudo-locale is on");
                 compare(popup.implicitWidth, width, "the page keeps its width");
                 compare(popup.width, width);
-                const left = i => i.mapToItem(popup, 0, 0).x;
+                const left = i => i.mapToItem(popup, Qt.point(0, 0)).x;
                 all(popup, i => i.visible && typeof i.text === "string" && i.text !== "" && i.contentWidth !== undefined)
                     .forEach(t => {
                         const drawn = t.elide !== Text.ElideNone || t.wrapMode !== Text.NoWrap ? t.width : Math.max(t.width, t.contentWidth);

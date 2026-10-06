@@ -141,7 +141,7 @@ Item {
         function test_mouse() {
             const page = make().page;
             const up = button(page, "Move Memory up");
-            const pt = up.mapToItem(null, up.width / 2, up.height / 2);
+            const pt = up.mapToItem(null, Qt.point(up.width / 2, up.height / 2));
             mouseClick(up);
             compare(page.cfg_itemOrder, ["cpu", "memory", "gpu", "network", "disk", "claude", "codex"]);
             mouseClick(button(page, "Move Memory up"));
