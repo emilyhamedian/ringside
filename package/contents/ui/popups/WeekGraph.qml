@@ -14,8 +14,8 @@ import "../code/pace.js" as Pace
 // ring, is dashed, as in Graph. The line ends at the last poll, so the empty
 // stretch to its right is the time left; only when the last poll is hours
 // old does a marker say where now is. A limit on course to run out before
-// the reset gets a dotted line on to where it reaches 100 %, the time the
-// pace sentence under the bars names.
+// the reset gets a line of red dots on to where it reaches 100 %, the time
+// the pace sentence under the bars names.
 Item {
     id: graph
 
@@ -187,28 +187,36 @@ Item {
         }
     }
 
-    // The run-outs, dotted in their series' colours.
+    // The run-outs: round dots in the colour of a limit running out, from
+    // the series' last point to a dot on the 100 % rule where it runs out,
+    // so they read as a projection rather than as more readings.
     Shape {
         anchors.fill: parent
         preferredRendererType: Shape.CurveRenderer
         visible: graph.mainRunOut.length > 0 || graph.secondRunOut.length > 0
 
         ShapePath {
-            strokeColor: graph.mainRunOut.length > 0 ? graph.color : "transparent"
+            strokeColor: Kirigami.Theme.negativeTextColor
             strokeWidth: 1.5
             strokeStyle: ShapePath.DashLine
-            dashPattern: [1, 2]
+            capStyle: ShapePath.RoundCap
+            // In stroke widths: the round caps of a dash this short make a
+            // dot, with about two dots' room between it and the next.
+            dashPattern: [0.01, 3]
             fillColor: "transparent"
-            PathPolyline { path: graph.mainRunOut }
+            PathMultiline { paths: [graph.mainRunOut, graph.secondRunOut] }
         }
+    }
 
-        ShapePath {
-            strokeColor: graph.secondRunOut.length > 0 ? Qt.alpha(graph.color, 0.55 * graph.color.a) : "transparent"
-            strokeWidth: 1.5
-            strokeStyle: ShapePath.DashLine
-            dashPattern: [1, 2]
-            fillColor: "transparent"
-            PathPolyline { path: graph.secondRunOut }
-        }
+    Dot {
+        visible: graph.mainRunOut.length > 0
+        at: graph.mainRunOut.length > 0 ? graph.mainRunOut[1] : Qt.point(0, 0)
+        color: Kirigami.Theme.negativeTextColor
+    }
+
+    Dot {
+        visible: graph.secondRunOut.length > 0
+        at: graph.secondRunOut.length > 0 ? graph.secondRunOut[1] : Qt.point(0, 0)
+        color: Kirigami.Theme.negativeTextColor
     }
 }
