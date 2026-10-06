@@ -47,8 +47,9 @@ Item {
     // capitals, and hinting rounds each height to whole pixels.
     readonly property real figureHeight: -figureSample.tightBoundingRect.y
     readonly property real capHeight: -capSample.tightBoundingRect.y
-    // How far the unit's baseline sits above the digits'.
-    readonly property real degreeLift: degreeUnit !== "" ? figureHeight - capHeight : 0
+    // How far the unit's baseline sits above the digits', in whole pixels of
+    // the screen, so that the two rows of glyphs round the same way.
+    readonly property real degreeLift: degreeUnit !== "" ? Math.round((figureHeight - capHeight) * ratio) / ratio : 0
     // The locale's ten digits, and how the scan drew them and the degree
     // sign, once it is in.
     readonly property string digits: degreeUnit !== "" ? Array.from({ length: 10 }, (_, i) => Format.whole(i)).join("") : ""
