@@ -229,6 +229,11 @@ Item {
     }
 
     Component {
+        id: signalSpyComponent
+        SignalSpy {}
+    }
+
+    Component {
         id: blockComponent
         Item {
             implicitWidth: 50
@@ -1191,6 +1196,28 @@ Item {
             compare(c.slack, 80 - 10 - outside);
             c.reservedWidth = 10;
             compare(c.slack, 0);
+        }
+
+        // A reading that keeps crossing between widths after a wider one,
+        // 9 % and 10 % after 100 %, ends the hold at the widest it showed
+        // during it, whichever it shows as the hold ends: the items after it
+        // move once, not down to the narrow one and straight back.
+        function test_settleTakesTheWidestDuringTheHold() {
+            const block = keep(blockComponent.createObject(root));
+            const c = keep(panelCellComponent.createObject(root, { contentItem: block, settleDelay: 400, relayoutWindow: 1 }));
+            const outside = 2 * Kirigami.Units.largeSpacing;
+            wait(20);
+            block.implicitWidth = 60;
+            compare(c.implicitWidth, 60 + outside);
+            const moves = keep(signalSpyComponent.createObject(root, { target: c, signalName: "implicitWidthChanged" }));
+            for (const width of [40, 50, 40, 50, 40]) {
+                block.implicitWidth = width;
+                wait(50);
+            }
+            compare(c.implicitWidth, 60 + outside, "holding");
+            tryCompare(c, "implicitWidth", 50 + outside, 2000, "settles at the widest seen in the hold");
+            wait(100);
+            compare(moves.count, 1, "moved once");
         }
 
         // Font features have to reach both what measures and what draws, or
