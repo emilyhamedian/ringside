@@ -31,6 +31,12 @@ QtObject {
     signal systemMonitorRequested()
     signal configureRequested()
 
+    // What main.qml gives and takes from Monitor.
+    property var config: null
+    property string openPopup: ""
+    property var enabledItems: ["cpu", "gpu", "memory", "network", "disk"]
+    readonly property bool systemShown: true
+
     // The Claude and Codex readings, as Monitor.usage.
     property FakeUsage usage: FakeUsage {}
 

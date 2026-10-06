@@ -1,0 +1,8 @@
+# SPDX-FileCopyrightText: 2026 Emily Hamedian <me@emily.dev>
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# What main.qml takes from org.kde.plasma.plasmoid, for tst_main.qml, which
+# loads main.qml with its import pointed here: Plasma gives the real ones
+# only to an applet it runs.
+singleton Plasmoid 1.0 Plasmoid.qml
+PlasmoidItem 1.0 PlasmoidItem.qml
