@@ -292,34 +292,47 @@ Item {
 
         // Rates hug their text, and the room their widest readings need and
         // don't use now sits after the last item, so however rates change the
-        // strip keeps its width and nothing after it moves. Rates with no
-        // ring after them follow their text at once; rates between rings
-        // hold their width as rings do.
+        // strip keeps its width and nothing after it moves. A rate in the
+        // last place follows its text at once; any other holds its width as
+        // rings do, so an item after it moves only when a rate before it
+        // grows, the network's rates as they come moving the disk's no more
+        // than a ring's readings move the next ring.
         function test_ratesNeverMoveTheTray(data) {
             monitor.networkBits = data.bits;
             const strip = makePanel(data.thickness, { items: data.items, relayoutWindow: 0 });
             const width = strip.implicitWidth;
             const rates = data.items.map((item, i) => i).filter(i => !root.ringItems.includes(data.items[i]));
-            const trailing = i => data.items.slice(i + 1).every(item => !root.ringItems.includes(item));
-            let before = rates.map(i => strip.cellAt(i).implicitWidth);
+            const trailing = i => i === data.items.length - 1;
+            const widths = () => data.items.map((item, i) => strip.cellAt(i).implicitWidth);
+            const places = () => data.items.map((item, i) => box(strip.cellAt(i)).x);
+            let before = widths();
+            let at = places();
             let moved = 0;
             checkRow("at first");
             for (const step of rateChanges()) {
                 compare(sizeAfter(strip, step.change).width, width, step.what);
                 checkRow(step.what);
                 checkFits(step.what);
-                rates.forEach((index, n) => {
+                rates.forEach(index => {
                     const cell = strip.cellAt(index);
                     const tight = cell.contentWidth + 2 * cell.padding;
                     verify(cell.implicitWidth <= cell.reservedWidth, step.what + ": " + cell.item + " within its reserve");
                     if (trailing(index)) {
                         compare(cell.implicitWidth, tight, step.what + ": " + cell.item + " at the end hugs its text");
                     } else {
-                        compare(cell.implicitWidth, Math.max(tight, before[n]), step.what + ": " + cell.item + " between rings holds");
+                        compare(cell.implicitWidth, Math.max(tight, before[index]), step.what + ": " + cell.item + " before another item holds");
                     }
-                    moved += cell.implicitWidth !== before[n] ? 1 : 0;
+                    moved += cell.implicitWidth !== before[index] ? 1 : 0;
                 });
-                before = rates.map(i => strip.cellAt(i).implicitWidth);
+                const now = widths();
+                const placed = places();
+                for (let i = 1; i < data.items.length; ++i) {
+                    if (!now.slice(0, i).some((w, j) => w > before[j])) {
+                        compare(placed[i], at[i], step.what + ": " + data.items[i] + " stays put, as nothing before it grew");
+                    }
+                }
+                before = now;
+                at = placed;
             }
             verify(moved > 0, "the rates changed width");
 

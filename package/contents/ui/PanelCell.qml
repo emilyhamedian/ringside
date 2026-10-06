@@ -24,7 +24,7 @@ MouseArea {
     // once.
     property string layoutKey: ""
     // Whether the cell keeps its width through a shrink (see shownWidth).
-    // The strip lets the rates at its end go, as their room is kept after
+    // The strip lets a rate in the last place go, as its room is kept after
     // the last item.
     property bool holdsWidth: true
     // The width the cell needs for the widest readings it can show, where
