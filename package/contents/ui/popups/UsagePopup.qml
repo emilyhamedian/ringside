@@ -205,6 +205,8 @@ PopupPage {
                     id: bar
                     target: Number.isFinite(row.reading) ? Math.round(row.reading) : 0
                     settle: popup.limits.length > 1 && Kirigami.Units.longDuration > 1 ? Kirigami.Units.veryLongDuration : 0
+                    // A quarter of a pixel of the bar.
+                    precision: 25 / Math.max(1, track.width)
                 }
 
                 Layout.fillWidth: true
@@ -250,6 +252,7 @@ PopupPage {
                     }
 
                     Rectangle {
+                        id: track
                         Layout.fillWidth: true
                         implicitHeight: Math.round(Kirigami.Units.smallSpacing * 1.5)
                         radius: height / 2
