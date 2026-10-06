@@ -1220,6 +1220,34 @@ Item {
             }
         }
 
+        // A run-out is said to ten minutes, but never at or after the reset
+        // it comes before: one that would round up past the reset, or into
+        // its last minute, rounds down.
+        function test_runOutBeforeTheReset_data() {
+            // The reset is `past` seconds after a ten-minute mark two days
+            // out, and the week runs out `before` seconds ahead of it.
+            return [{ tag: "rounds up past the reset", past: 420, before: 90, said: 0 },
+                    { tag: "rounds up into its last minute", past: 30, before: 70, said: -600 },
+                    { tag: "rounds down", past: 420, before: 200, said: 0 },
+                    { tag: "rounds up", past: 900, before: 590, said: 600 }];
+        }
+
+        function test_runOutBeforeTheReset(data) {
+            const usage = monitor.usage;
+            const mark = Math.ceil(usage.createdAt / 600) * 600 + 2 * usage.day;
+            const weekly = Object.assign(usage.window(50, 0, []), { resetsAt: mark + data.past });
+            // At 50 %, polled as long after the week began as the run-out
+            // falls before its end.
+            const start = weekly.resetsAt - weekly.windowSeconds;
+            setClaude({ weekly: weekly, scoped: [], fetchedAt: start + (weekly.windowSeconds - data.before) / 2 });
+            const popup = load("claude");
+            compare(popup.paces[0].state, "out");
+            compare(popup.paces[0].runOut, weekly.resetsAt - data.before);
+            const said = mark + data.said;
+            verify(said <= weekly.resetsAt - 60);
+            compare(sentence(rows(popup)[0]).text, "At this pace, the weekly limit runs out " + words.weekdayTime(said, weekly));
+        }
+
         // A run-out before the reset raises a limit's level to red, never
         // lowers it: the row's percentage and bar, and the header's ring for
         // the shared week.
