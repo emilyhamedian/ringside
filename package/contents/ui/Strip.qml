@@ -25,10 +25,12 @@ GridLayout {
     property string openItem: ""
     // Plasmoid.location, for the tooltips.
     property int location: PlasmaCore.Types.Floating
-    // How long a cell keeps its width after its readings narrow, and how
-    // long after a change of layout it takes its new width at once (see
-    // PanelCell); writable for the tests.
+    // How long a cell keeps its width after its readings narrow, how often
+    // it trims that room to a digit, and how long after a change of layout
+    // it takes its new width at once (see PanelCell); writable for the
+    // tests.
     property int settleDelay: 3 * 60 * 1000
+    property int trimDelay: 10 * 1000
     property int relayoutWindow: 500
 
     signal activated(string item, Item cell)
@@ -87,6 +89,7 @@ GridLayout {
             open: strip.openItem === entry.modelData
             vertical: strip.vertical
             settleDelay: strip.settleDelay
+            trimDelay: strip.trimDelay
             relayoutWindow: strip.relayoutWindow
             layoutKey: [entry.textShown, strip.vertical, strip.thickness, strip.twoLines,
                         Kirigami.Theme.defaultFont.family, Kirigami.Theme.defaultFont.pointSize,

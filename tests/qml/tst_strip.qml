@@ -301,16 +301,16 @@ Item {
 
         // Rates hold their width as rings do, wherever they sit: a wider
         // reading takes its room at once, moving the items after it, and a
-        // narrower one keeps up to a digit of room until it has lasted the
-        // settle delay, so traffic that comes and goes moves the panel once.
-        // An item moves only when one before it changed width. The room a
+        // narrower one waits out the settle delay, so traffic that comes and
+        // goes moves the panel once. An item moves only when one before it
+        // changed width. The room a
         // rate holds sits before its markers, so its readings always end its
         // cell's padding before the next item, the gap any item leaves, a
         // quiet disk at the end of the strip included. Settled, each rate
         // hugs its text.
         function test_ratesHoldTheirWidth(data) {
             monitor.networkBits = data.bits;
-            const strip = makePanel(data.thickness, { items: data.items, relayoutWindow: 0 });
+            const strip = makePanel(data.thickness, { items: data.items, relayoutWindow: 0, trimDelay: 60000 });
             const rates = data.items.map((item, i) => i).filter(i => !root.ringItems.includes(data.items[i]));
             const tight = i => strip.cellAt(i).contentWidth + 2 * strip.cellAt(i).padding;
             const widths = () => data.items.map((item, i) => strip.cellAt(i).implicitWidth);
@@ -325,8 +325,7 @@ Item {
                 checkFits(step.what);
                 const now = widths();
                 rates.forEach(i => {
-                    compare(now[i], Math.max(tight(i), Math.min(before[i], tight(i) + strip.cellAt(i).digitWidth)),
-                            step.what + ": " + data.items[i] + " holds");
+                    compare(now[i], Math.max(tight(i), before[i]), step.what + ": " + data.items[i] + " holds");
                     held = held || now[i] > tight(i);
                     const cell = strip.cellAt(i);
                     const after = box(cell).right - readingsEnd(i);
@@ -344,9 +343,9 @@ Item {
             }
             verify(held, "a rate holds room it no longer needs");
 
-            // The last step leaves the disk quiet, holding a digit of the room
-            // of its widest readings, and then once that has lasted the
-            // delay, as wide as its text. Either way its text ends its padding before
+            // The last step leaves the disk quiet, holding the room of its
+            // widest readings, and then once that has lasted the delay, as
+            // wide as its text. Either way its text ends its padding before
             // the next item, or the strip's end.
             const diskAt = data.items.indexOf("disk");
             const disk = strip.cellAt(diskAt);
@@ -385,12 +384,12 @@ Item {
         }
 
         // A ring's cell takes a wider reading's room at once, moving the
-        // items after it, but keeps up to a digit of it through a narrower
-        // one until that has lasted the settle delay, so a reading that comes
-        // and goes moves the panel once. Each change shows the reading it sets, so the
+        // items after it, but keeps its width through a narrower one until
+        // that has lasted the settle delay, so a reading that comes and goes
+        // moves the panel once. Each change shows the reading it sets, so the
         // widest ones are really drawn (100%, 302°, 1023M, "off"), and fits.
         function test_ringsGrowAtOnceAndShrinkAfterTheHold(data) {
-            const strip = makePanel(data.thickness, { items: ["cpu", "gpu", "memory", "claude", "network", "disk"], relayoutWindow: 0 });
+            const strip = makePanel(data.thickness, { items: ["cpu", "gpu", "memory", "claude", "network", "disk"], relayoutWindow: 0, trimDelay: 60000 });
             // Layout only: the GPU's readings change at once (see tst_motion).
             strip.cellAt(1).contentItem.animated = false;
             const widths = () => strip.items.map((item, i) => strip.cellAt(i).implicitWidth);
@@ -438,16 +437,8 @@ Item {
                     verify(visibleTexts(strip).includes(step.shows), step.what + ": " + JSON.stringify(visibleTexts(strip)));
                 }
                 const now = widths();
-                // A step that changes two readings can pass through a
-                // narrower width on the way, and the cell keeps a digit more
-                // than that, so a narrower one is held to a bound.
                 for (let i = 0; i < 4; ++i) {
-                    const held = Math.max(tight(i), Math.min(before[i], tight(i) + strip.cellAt(i).digitWidth));
-                    if (step.layout || tight(i) >= before[i]) {
-                        compare(now[i], tight(i), step.what + ": " + strip.items[i]);
-                    } else {
-                        verify(now[i] >= tight(i) && now[i] <= held, step.what + ": " + strip.items[i] + " " + now[i] + " within " + [tight(i), held]);
-                    }
+                    compare(now[i], step.layout ? tight(i) : Math.max(before[i], tight(i)), step.what + ": " + strip.items[i]);
                 }
                 checkRow(step.what);
                 before = now;
@@ -495,16 +486,17 @@ Item {
             checkRow("a new layout");
         }
 
-        // A burst that dies down leaves a digit of room at most while the
-        // cell holds, as on the owner's panel: the disk back to 0 B/s after
-        // 353 KiB/s, by steady network rates. A reading one digit narrower
-        // keeps all of its room, so 12 B/s and 0 B/s don't jiggle the panel.
+        // A burst that dies down leaves a digit of room at most once the
+        // trim delay has passed, as on the owner's panel: the disk back to
+        // 0 B/s after 353 KiB/s, by steady network rates. A reading one digit
+        // narrower keeps all of its room, so 12 B/s and 0 B/s don't jiggle
+        // the panel.
         function test_heldRoomIsADigitAtMost() {
             monitor.networkDown = 337e3 / 8;
             monitor.networkUp = 62.1e3 / 8;
             monitor.diskRead = 0;
             monitor.diskWrite = 0;
-            const strip = makePanel(46, { items: ["cpu", "network", "disk"], relayoutWindow: 0 });
+            const strip = makePanel(46, { items: ["cpu", "network", "disk"], relayoutWindow: 0, trimDelay: 300 });
             const disk = strip.cellAt(2);
             const quiet = disk.implicitWidth;
             compare(quiet, disk.contentWidth + 2 * disk.padding, "quiet, it hugs its text");
@@ -515,13 +507,44 @@ Item {
             verify(twelve > quiet, "12 B/s is wider");
             sizeAfter(strip, () => { monitor.diskRead = 0; });
             compare(disk.implicitWidth, twelve, "a digit narrower, it keeps its room");
+            wait(2 * strip.trimDelay);
+            compare(disk.implicitWidth, twelve, "through the trims too");
 
             sizeAfter(strip, () => { monitor.diskRead = 353 * 1024; });
             verify(disk.implicitWidth > quiet + disk.digitWidth, "353 KiB/s is wider by more than a digit");
+            const burst = disk.implicitWidth;
             sizeAfter(strip, () => { monitor.diskRead = 0; });
-            compare(disk.implicitWidth, quiet + disk.digitWidth, "back to 0 B/s, it keeps a digit of room");
+            compare(disk.implicitWidth, burst, "back to 0 B/s, it holds for a moment");
+            tryCompare(disk, "implicitWidth", quiet + disk.digitWidth, 3000, "then keeps a digit of room");
             strip.settleDelay = 300;
             tryCompare(disk, "implicitWidth", quiet, 3000, "and none after the hold");
+        }
+
+        // A disk that keeps going quiet and coming back within the trim delay
+        // keeps its room, so the items after it stay put; once it stays
+        // quiet they close up to within a digit.
+        function test_comingBackKeepsTheRoom() {
+            monitor.networkDown = 337e3 / 8;
+            monitor.networkUp = 62.1e3 / 8;
+            monitor.diskRead = 0;
+            monitor.diskWrite = 0;
+            const strip = makePanel(46, { items: ["cpu", "disk", "network"], relayoutWindow: 0, trimDelay: 600 });
+            const disk = strip.cellAt(1);
+            const quiet = disk.implicitWidth;
+            sizeAfter(strip, () => { monitor.diskRead = 4 * 1024; });
+            const busy = disk.implicitWidth;
+            verify(busy > quiet + disk.digitWidth, "4 KiB/s is wider by more than a digit");
+            const at = box(strip.cellAt(2)).x;
+            const width = strip.implicitWidth;
+            for (let i = 0; i < 16; ++i) {
+                sizeAfter(strip, () => { monitor.diskRead = i % 2 ? 4 * 1024 : 0; });
+                wait(100);
+                compare(box(strip.cellAt(2)).x, at, "reading " + i + ": the network stays put");
+                compare(strip.implicitWidth, width, "reading " + i + ": so does the strip's end");
+            }
+            sizeAfter(strip, () => { monitor.diskRead = 0; });
+            tryCompare(disk, "implicitWidth", quiet + disk.digitWidth, 3000, "quiet, it keeps a digit");
+            verify(box(strip.cellAt(2)).x < at, "and the network closes up");
         }
 
         // Bits or bytes is a change of layout, so a held cell takes its new

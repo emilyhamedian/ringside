@@ -14,8 +14,8 @@ pair of rates. Items are as wide as their text, with the same gap between
 each. When a reading gains a character, the items after it move over at
 once; when it loses one, they wait three minutes before closing up, so a
 value that keeps changing width doesn't shuffle the panel. A reading that
-drops by more, as traffic dies down, leaves a digit's gap at most while
-they wait.
+drops further and stays there, as when traffic dies down, leaves at most a
+digit of extra space after ten to twenty seconds.
 
 Click an item for its popup: history graphs, per-thread load, top
 processes, VRAM, clocks, power, swap, memory pressure and disk activity.
