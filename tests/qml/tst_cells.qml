@@ -7,7 +7,7 @@ import org.kde.kirigami as Kirigami
 import "../../package/contents/ui"
 import "../../package/contents/ui/code/style.js" as Style
 
-// The inline panel's cells on their own, with FakeMonitor's readings: the
+// The panel's cells on their own, with FakeMonitor's readings: the
 // ring and its stroke, the name or mark inside it, the readings beside it in
 // every state, their faces and colours, the width each line takes, and the
 // rates on the same lines. It names no Strip, popup or settings page, so it
