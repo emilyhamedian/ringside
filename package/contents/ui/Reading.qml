@@ -83,7 +83,9 @@ Item {
         if (glyph === undefined) {
             return trailingRoom(lastDigit);
         }
-        const row = y => scan.baseline + y * unitScale - degreeLift * scanScale;
+        // The unit's top is level with the digits', so the sign's rows sit
+        // as far below the digits' top as below an "H"'s, at its size.
+        const row = y => scan.figureTop + y * unitScale;
         const last = Math.min(glyph.rows.length, Math.ceil(row(scan.degree.bottom)));
         let reach = -1;
         for (let y = Math.max(0, Math.floor(row(scan.degree.top))); y < last; ++y) {
@@ -146,10 +148,10 @@ Item {
         sourceComponent: Canvas {
             readonly property string face: "64px \"" + number.font.family + "\", sans-serif"
             // In the scan's image pixels: how many to a Canvas pixel, the
-            // ten digits' width in Canvas pixels, the baseline's row, each
-            // digit's advance and rightmost ink per row (-1 for none), and
-            // where the degree sign's ink starts, from its origin and from
-            // the baseline.
+            // ten digits' width in Canvas pixels, the row of a "1"'s top,
+            // each digit's advance and rightmost ink per row (-1 for none),
+            // and where the degree sign's ink starts after its origin and
+            // its rows from an "H"'s top.
             property var scan: null
 
             visible: false
@@ -193,11 +195,7 @@ Item {
                 const pixels = Math.max(...draw(() => context.fillRect(4, 4, 48, 8)).map(([left, right]) => left < 0 ? 0 : right - left + 1)) / 48;
                 const sign = draw(() => context.fillText("°", 4, 72));
                 const signRows = sign.map(([left], y) => left < 0 ? -1 : y).filter(y => y >= 0);
-                if (pixels === 0 || signRows.length === 0) {
-                    scan = null;
-                    return;
-                }
-                const baseline = 72 * pixels;
+                const capTop = draw(() => context.fillText("H", 4, 72)).findIndex(([left]) => left >= 0);
                 const glyphs = {};
                 for (const digit of Array.from(reading.digits)) {
                     glyphs[digit] = {
@@ -205,15 +203,20 @@ Item {
                         rows: draw(() => context.fillText(digit, 4, 72)).map(([, right]) => right)
                     };
                 }
+                const figureTop = glyphs[Format.whole(1)]?.rows.findIndex(right => right >= 0) ?? -1;
+                if (pixels === 0 || signRows.length === 0 || capTop < 0 || figureTop < 0) {
+                    scan = null;
+                    return;
+                }
                 scan = {
                     pixels: pixels,
                     digitsWidth: context.measureText(reading.digits).width,
-                    baseline: baseline,
+                    figureTop: figureTop,
                     glyphs: glyphs,
                     degree: {
                         left: Math.min(...signRows.map(y => sign[y][0])) - 4 * pixels,
-                        top: signRows[0] - baseline,
-                        bottom: signRows[signRows.length - 1] + 1 - baseline
+                        top: signRows[0] - capTop,
+                        bottom: signRows[signRows.length - 1] + 1 - capTop
                     }
                 };
             }
