@@ -604,6 +604,29 @@ Item {
             tryCompare(dot, "opacity", 1, 1000);
         }
 
+        // A reset time that jitters by a second between polls is the same
+        // week: the new stretch draws on, the run-out stays, and no last
+        // week fades out, with a reading or without one.
+        function test_jitteredResetIsTheSameWeek() {
+            const history = [[start, 0], [start + 3 * day, 60]];
+            const g = make({ window: window(history, 60), pollAt: start + 3 * day, nowMs: (start + 3 * day) * 1000 });
+            compare(g.runOutOpacity, 1);
+            const seen = [];
+            createTemporaryObject(samplerComponent, weeks, { sample: () => seen.push([g.ghostOpacity, g.runOutOpacity]) });
+            const grown = history.concat([[start + 3 * day + 3600, 61]]);
+            g.window = Object.assign(window(grown, 61), { resetsAt: start + week + 1 });
+            compare(g.ghostMain, []);
+            compare(g.ghostOpacity, 0);
+            compare(g.runOutOpacity, 1);
+            verify(g.drawClock < 1, "the new stretch draws on");
+            tryVerify(() => g.drawClock === 1, 2000, "drawn on");
+            g.window = window(grown, 61);
+            compare(g.drawClock, 1, "nothing new to draw");
+            wait(2 * Kirigami.Units.longDuration);
+            verify(seen.length > 3);
+            verify(seen.every(([ghost, runOut]) => ghost === 0 && runOut === 1), JSON.stringify(seen));
+        }
+
         // At Plasma's Instant speed every change is drawn at once.
         function test_instant() {
             const g = make({ duration: 0 });
