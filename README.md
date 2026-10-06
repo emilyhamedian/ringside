@@ -122,8 +122,8 @@ amber dot sits at the ring's corner and the tooltip says when.
 
 The popup lists every weekly limit and when each resets, and a graph of the
 week so far, which fills in as Ringside keeps checking. The graph has a line
-at 100% and a tick at the reset, and a limit on pace to run out gets a dotted
-line to where it would reach 100%. From a day into the week, or sooner if a
+at 100% and a tick at the reset, and a limit on pace to run out gets a line
+of red dots to where it would reach 100%. From a day into the week, or sooner if a
 limit is running out, a sentence says where it is heading: "At this pace, 88%
 by the reset", or "At this pace, Fable runs out Thu 8:20 PM". Reset times
 follow the time zone of Plasma's Digital Clock.

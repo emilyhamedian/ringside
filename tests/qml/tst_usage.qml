@@ -3,6 +3,7 @@
 
 import QtQuick
 import QtTest
+import QtQuick.Shapes
 import org.kde.kirigami as Kirigami
 import "../../package/contents/ui"
 import "../../package/contents/ui/popups"
@@ -1700,9 +1701,11 @@ Item {
             compare(String(tick.color), String(r.lineColor));
         }
 
-        // A dotted line from the last point to 100 % at the run-out, only for
-        // a limit on course to run out before the reset. It joins the rule's
-        // series, so the "100%" label keeps clear of it.
+        // Round dots from the last point to 100 % at the run-out, ending in a
+        // dot on the rule, only for a limit on course to run out before the
+        // reset, in the red of a limit running out: a projection, not more
+        // readings. It joins the rule's series, so the "100%" label keeps
+        // clear of it.
         function test_projectionOnlyWhenOut_data() {
             return [
                 { tag: "out", percent: 60, at: start + 3 * day, runOut: start + 5 * day },
@@ -1713,17 +1716,38 @@ Item {
             ];
         }
 
+        // The run-outs' Shape and its one path.
+        function runOutPath(g) {
+            const shape = g.children.find(i => i.data !== undefined
+                && Array.from(i.data).some(p => p.capStyle === ShapePath.RoundCap));
+            return shape ? { shape: shape, path: Array.from(shape.data).find(p => p.capStyle !== undefined) } : null;
+        }
+
+        // A run-out's end: a dot centred on 100 % where it runs out.
+        function endDot(g, end) {
+            return rectangles(g).find(i => i.radius > 0 && Math.abs(i.x + i.width / 2 - end.x) < 1e-9
+                                         && Math.abs(i.y + i.height / 2 - end.y) < 1e-9);
+        }
+
         function test_projectionOnlyWhenOut(data) {
             const g = make([[start, 0], [data.at, data.percent]], data);
-            const dotted = g.children.find(i => i.data !== undefined
-                && Array.from(i.data).some(p => p.dashPattern !== undefined && p.dashPattern[0] === 1));
+            const dotted = runOutPath(g);
             verify(dotted);
+            const red = String(Kirigami.Theme.negativeTextColor);
+            compare(String(dotted.path.strokeColor), red);
+            compare(dotted.path.strokeStyle, ShapePath.DashLine);
+            verify(dotted.path.dashPattern[0] < 0.1 && dotted.path.dashPattern[1] >= 2.5,
+                   "round caps on dashes this short are dots, apart: " + dotted.path.dashPattern);
             if (data.runOut === undefined) {
                 compare(g.mainRunOut.length, 0);
-                verify(!dotted.visible);
+                verify(!dotted.shape.visible);
+                verify(!rectangles(g).some(i => i.radius > 0), "no end dot");
                 return;
             }
-            verify(dotted.visible);
+            verify(dotted.shape.visible);
+            const end = endDot(g, g.mainRunOut[1]);
+            verify(end, "a dot where it runs out");
+            compare(String(end.color), red);
             compare(g.mainRunOut.length, 2);
             const last = g.mainPoints[g.mainPoints.length - 1];
             compare([g.mainRunOut[0].x, g.mainRunOut[0].y], [last.x, last.y]);
@@ -1740,6 +1764,8 @@ Item {
             compare(g.mainRunOut.length, 0);
             compare(g.secondRunOut.length, 2);
             fuzzyCompare(g.secondRunOut[1].x, 3 * day * 100 / 70 / week * g.width, 1e-9);
+            verify(runOutPath(g).shape.visible);
+            compare(String(endDot(g, g.secondRunOut[1]).color), String(Kirigami.Theme.negativeTextColor));
         }
 
         // The label sits at the right end, where the week is still to come,
@@ -1762,11 +1788,13 @@ Item {
             const p = g.mainPoints[0];
             fuzzyCompare(dot.x + dot.width / 2, p.x, 1e-9);
             fuzzyCompare(dot.y + dot.height / 2, p.y, 1e-9);
-            const line = make([[start, 0], [start + day, 20]], { percent: 20, at: start + day });
+            // A week that lasts, so no run-out ends in a dot either.
+            const line = make([[start, 0], [start + day, 10]], { percent: 10, at: start + day });
             verify(!rectangles(line).some(i => i.radius > 0), "a line has no dot");
 
             // The same for the model's limit, in its dashed line's colour.
-            line.secondWindow = { resetsAt: start + week, windowSeconds: week, percent: 30, history: [[start + day, 30]] };
+            line.secondWindow = { resetsAt: start + week, windowSeconds: week, percent: 10, history: [[start + day, 10]] };
+            compare(line.secondRunOut.length, 0);
             compare(line.secondPoints.length, 1);
             const second = rectangles(line).find(i => i.radius > 0);
             verify(second, "the model's single reading is a dot");
