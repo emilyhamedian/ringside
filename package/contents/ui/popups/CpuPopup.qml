@@ -184,7 +184,7 @@ PopupPage {
 
                         Accessible.role: Accessible.ProgressBar
                         Accessible.name: i18nc("@info accessible name of a thread's usage bar", "Thread %1", modelData + 1)
-                        Accessible.description: Format.percent(usage) + "%"
+                        Accessible.description: i18nc("@info a percentage", "%1%", Format.percent(usage))
 
                         Sensors.Sensor {
                             id: sensor

@@ -84,6 +84,8 @@ follows [Semantic Versioning](https://semver.org/).
   instead of reading out a dash and a stray unit.
 - Claude and Codex times, such as when the week resets or when a check
   failed, no longer show seconds in the C locale on Qt 6.6.
+- A top process that runs several times shows its count in the locale's
+  digits, and popup percentages follow the translation's percent format.
 
 ## [0.2.2] - 2026-10-04
 
