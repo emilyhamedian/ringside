@@ -93,11 +93,17 @@ Item {
 
     // A failed last check: a dot in the gauge's corner above the readings,
     // outside the circle, ringed in the background colour so it stands apart
-    // from the arc. It stays still while the ring breathes. The cell's
+    // from the arc. A small ring leaves too little corner for it, so there
+    // it sits out along the diagonal as far as that takes, into the cell's
+    // margin. It stays still while the ring breathes. The cell's
     // description says when the check failed.
     Rectangle {
+        readonly property real outset: Math.max(0, (gauge.reach + width / 2) / Math.SQRT2 - (gauge.width - width) / 2)
+
         anchors.top: gauge.top
         anchors.right: gauge.right
+        anchors.topMargin: -outset
+        anchors.rightMargin: -outset
         width: Math.max(4, Math.round(content.ring / 6))
         height: width
         radius: width / 2

@@ -37,6 +37,8 @@ Item {
     property bool pulsing: false
     default property alias centre: face.data
 
+    // How far the outer ring reaches from the middle.
+    readonly property real reach: outer.radius + strokeWidth / 2
     // The clear width in the middle, a pixel in from the innermost ring, for
     // a name or mark there.
     readonly property real centreWidth: Math.max(0, 2 * ((inner ? innerRadius - innerStrokeWidth / 2
