@@ -199,11 +199,22 @@ Item {
         // It comes to rest on the target once within its precision, sooner
         // the coarser that is, and at once where that is more than the change.
         function test_restsWithinItsPrecision() {
-            const followers = [0.05, 0.5, 5].map(p => createTemporaryObject(followerComponent, testCase, { precision: p }));
-            const [fine, coarse, loose] = followers.map(f => trace(f));
-            followers.forEach(f => { f.target = 11; });
-            tryVerify(() => followers.every(f => !f.moving), 2000);
-            followers.forEach(f => compare(f.shown, 11));
+            // Stepped at 60 Hz by hand: a slow frame on a busy runner takes
+            // the exact step over it and could land them all at once.
+            const steps = precision => {
+                const f = createTemporaryObject(followerComponent, testCase, { precision: precision });
+                f.target = 11;
+                f.frames.stop();
+                const values = [];
+                while (f.shown !== 11 && values.length < 600) {
+                    f.advance(1 / 60);
+                    values.push(f.shown);
+                }
+                compare(f.shown, 11);
+                compare(f.velocity, 0);
+                return values;
+            };
+            const [fine, coarse, loose] = [0.05, 0.5, 5].map(steps);
             verify(coarse.length < fine.length, "fewer frames: " + coarse.length + " against " + fine.length);
             verify(coarse.every((v, i) => v <= 11 && (i === 0 || v >= coarse[i - 1])), JSON.stringify(coarse));
             compare(loose, [11]);
