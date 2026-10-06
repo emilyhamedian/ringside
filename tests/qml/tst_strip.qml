@@ -258,6 +258,20 @@ Item {
             }
         }
 
+        // The right edge, in the strip, of a rate cell's furthest text.
+        function textEnd(index) {
+            const texts = all(strip.cellAt(index).contentItem, i => i.visible && typeof i.text === "string" && i.text !== "");
+            return Math.max(...texts.map(t => box(t).right));
+        }
+
+        // The right edge, in the strip, of a rate cell's values and units as
+        // laid out, which its furthest text reaches to within a pixel.
+        function readingsEnd(index) {
+            const values = all(strip.cellAt(index).contentItem, i => i.visible && i.horizontalAlignment === Text.AlignRight);
+            compare(values.length, 2);
+            return Math.max(...values.map(v => box(v.parent).right));
+        }
+
         function rateChanges() {
             return [
                 { what: "no traffic", change: () => { monitor.networkDown = 0; monitor.networkUp = 0; } },
@@ -289,9 +303,10 @@ Item {
         // reading takes its room at once, moving the items after it, and a
         // narrower one waits out the settle delay, so traffic that comes and
         // goes moves the panel once. An item moves only when one before it
-        // grew. Settled, each rate hugs its text, so a quiet disk at the end
-        // of the strip leaves only its cell's padding after its text, the
-        // gap any item leaves.
+        // grew. The room a rate holds sits between its markers and values,
+        // so its readings always end its cell's padding before the next
+        // item, the gap any item leaves, a quiet disk at the end of the strip
+        // included. Settled, each rate hugs its text.
         function test_ratesHoldTheirWidth(data) {
             monitor.networkBits = data.bits;
             const strip = makePanel(data.thickness, { items: data.items, relayoutWindow: 0 });
@@ -311,6 +326,10 @@ Item {
                 rates.forEach(i => {
                     compare(now[i], Math.max(tight(i), before[i]), step.what + ": " + data.items[i] + " holds");
                     held = held || now[i] > tight(i);
+                    const cell = strip.cellAt(i);
+                    const after = box(cell).right - readingsEnd(i);
+                    verify(after >= cell.padding && after < cell.padding + 1,
+                           step.what + ": " + data.items[i] + "'s readings end " + after + " before the next item");
                 });
                 const placed = places();
                 for (let i = 1; i < data.items.length; ++i) {
@@ -323,17 +342,27 @@ Item {
             }
             verify(held, "a rate holds room it no longer needs");
 
-            // The last step leaves the disk quiet. Once that has lasted the
-            // delay, every rate is as wide as its text.
+            // The last step leaves the disk quiet, holding the room of its
+            // widest readings, and then once that has lasted the delay, as
+            // wide as its text. Either way its text ends its padding before
+            // the next item, or the strip's end.
+            const diskAt = data.items.indexOf("disk");
+            const disk = strip.cellAt(diskAt);
+            const quiet = Format.rate(0, false).value;
+            const checkQuietDisk = what => {
+                compare(rateRows(diskAt).map(t => t.text), [quiet, quiet], what);
+                const end = diskAt === data.items.length - 1 ? strip.implicitWidth : box(disk).right;
+                const after = end - textEnd(diskAt);
+                verify(after >= disk.padding && after < disk.padding + 1, what + ": after the quiet disk's text, its padding: " + after);
+            };
+            verify(disk.implicitWidth > tight(diskAt), "the quiet disk holds");
+            checkQuietDisk("held");
             strip.settleDelay = 300;
             rates.forEach(i => tryCompare(strip.cellAt(i), "implicitWidth", tight(i), 3000, data.items[i] + " settles"));
             verify(waitForPolish(strip), "laid out");
             checkRow("settled");
-            const disk = strip.cellAt(data.items.indexOf("disk"));
-            compare(rateRows(data.items.indexOf("disk")).map(t => t.text), [Format.rate(0, false).value, Format.rate(0, false).value]);
-            const after = box(disk).right - box(disk.contentItem).right;
-            verify(after >= disk.padding && after < disk.padding + 1, "after the quiet disk's text, its padding: " + after);
-            if (data.items[data.items.length - 1] === "disk") {
+            checkQuietDisk("settled");
+            if (diskAt === data.items.length - 1) {
                 compare(strip.implicitWidth, box(disk).right, "the strip ends with the disk");
             }
 
@@ -855,7 +884,7 @@ Item {
         }
 
         function test_mirrored(data) {
-            const strip = makeStrip({ thickness: data.thickness, height: data.thickness }, mirroredComponent);
+            const strip = makeStrip({ thickness: data.thickness, height: data.thickness, relayoutWindow: 0 }, mirroredComponent);
             for (let i = 1; i < strip.items.length; ++i) {
                 compare(box(strip.cellAt(i)).right, box(strip.cellAt(i - 1)).x, strip.items[i] + " left of " + strip.items[i - 1]);
             }
@@ -894,6 +923,21 @@ Item {
             compare([line(2, "first").text, line(2, "second").text], ["42%", "13.4G"]);
             const texts = visibleTexts(strip);
             verify(!texts.includes("%") && !texts.includes("°"), JSON.stringify(texts));
+
+            // A rate holding its width keeps the room between its letters and
+            // values, so its readings still end its padding before the next
+            // item, here on their left, and each letter stays at its rate's
+            // start, the first at the cell's.
+            const disk = strip.cellAt(5);
+            sizeAfter(strip, () => { monitor.diskRead = 1023 * 1048576; });
+            sizeAfter(strip, () => { monitor.diskRead = 0; });
+            verify(disk.implicitWidth > disk.contentWidth + 2 * disk.padding, "the disk holds");
+            const values = all(disk.contentItem, i => i.visible && i.horizontalAlignment === Text.AlignRight);
+            const before = Math.min(...values.map(v => box(v.parent).x)) - box(disk).x;
+            verify(before >= disk.padding && before < disk.padding + 1, "the held disk's readings end " + before + " from its left end");
+            const diskRates = all(disk.contentItem, i => i.reading !== undefined).sort((a, b) => a.index - b.index);
+            diskRates.forEach(r => compare(box(r.children[0]).right, box(r).right, "disk row " + r.index + ": the letter at the rate's start"));
+            compare(box(disk).right - box(diskRates[0]).right, disk.padding, "the first at the cell's start");
         }
 
         function test_hiddenTextShowsTooltipAndHeat() {
