@@ -13,9 +13,10 @@ import "../../package/contents/ui/code/history.js" as History
 // and bends when another arrives mid-move, its colour turns as it passes 75
 // and 90 %, and the number in a popup's ring counts with it; a history
 // graph's points ease to a new sample in their slots; a week graph's new
-// stretch draws on and its run-out, marker and old week fade. A duration of
-// 0, as Plasma's Instant animation speed gives, puts everything in place at
-// once.
+// stretch draws on and its run-out, marker and old week fade; a second GPU's
+// ring fades its track in and then draws its arc in, and goes the other way
+// round, and its popup section fades in and out. A duration of 0, as
+// Plasma's Instant animation speed gives, puts everything in place at once.
 // The test runner's Kirigami units are the defaults, at speed 1.
 Item {
     id: root
@@ -97,6 +98,28 @@ Item {
         WeekGraph {
             width: 700
             height: 100
+        }
+    }
+
+    Component {
+        id: monitorComponent
+        FakeMonitor {}
+    }
+
+    Component {
+        id: gpuCellComponent
+        RingCellContent {
+            item: "gpu"
+            ring: 46
+            textShown: true
+            twoLines: true
+        }
+    }
+
+    Component {
+        id: popupHost
+        Loader {
+            width: 400
         }
     }
 
@@ -233,7 +256,7 @@ Item {
         // A reading that prints the same whole percent leaves the arc
         // where it is; one that prints another moves it there.
         function test_wholePercentsOnly() {
-            const gauge = createTemporaryObject(gaugeComponent, rings, { value: 40.2 });
+            const gauge = createTemporaryObject(gaugeComponent, root, { value: 40.2 });
             const arc = outerArc(gauge);
             compare(arc.percent, 40);
             gauge.value = 40.4;
@@ -249,7 +272,7 @@ Item {
         // frame it reaches 75 and red on the frame it reaches 90, not when
         // the reading arrives. The reading's own colour changes at once.
         function test_colourTurnsAtTheCrossing() {
-            const gauge = createTemporaryObject(gaugeComponent, rings);
+            const gauge = createTemporaryObject(gaugeComponent, root);
             const arc = outerArc(gauge);
             compare(String(arc.color), String(root.tone(0)));
             const seen = frames(gauge);
@@ -269,7 +292,7 @@ Item {
         // Back down from 95 to 88 the arc never passes 90 on the way, so it
         // turns amber only as it leaves 90.
         function test_noFlashOnTheWayDown() {
-            const gauge = createTemporaryObject(gaugeComponent, rings, { value: 95 });
+            const gauge = createTemporaryObject(gaugeComponent, root, { value: 95 });
             const seen = frames(gauge);
             gauge.value = 88;
             tryCompare(outerArc(gauge), "percent", 88, 2000);
@@ -281,7 +304,7 @@ Item {
         // The header ring's number counts through the percentages the arc
         // passes, in its colour, and ends on the reading.
         function test_numberCountsWithTheArc() {
-            const header = createTemporaryObject(headerComponent, rings);
+            const header = createTemporaryObject(headerComponent, root);
             const gauge = root.all(header, i => i.drawnValue !== undefined)[0];
             const middle = root.all(gauge, i => i.text === "40%" && i.font !== undefined)[0];
             verify(middle, "40% in the middle");
@@ -302,7 +325,7 @@ Item {
 
         // A system popup's ring is still before the next reading.
         function test_settleWithinHalfTheInterval() {
-            const header = createTemporaryObject(headerComponent, rings, { interval: 500 });
+            const header = createTemporaryObject(headerComponent, root, { interval: 500 });
             const gauge = root.all(header, i => i.drawnValue !== undefined)[0];
             compare(gauge.settle, Math.min(Kirigami.Units.veryLongDuration, 250));
             header.interval = 0;
@@ -313,7 +336,7 @@ Item {
         // At Plasma's Instant speed the arc, its colour and the number are
         // in place in the same frame, as before the follower.
         function test_instant() {
-            const header = createTemporaryObject(headerComponent, rings);
+            const header = createTemporaryObject(headerComponent, root);
             const gauge = root.all(header, i => i.drawnValue !== undefined)[0];
             gauge.settle = 0;
             const middle = root.all(gauge, i => i.text === "40%" && i.font !== undefined)[0];
@@ -347,7 +370,7 @@ Item {
         // from the height it had in its slot, the newest from the last
         // reading, and comes to rest on the new samples.
         function test_easesInPlace() {
-            const g = createTemporaryObject(graphComponent, graphs, { values: start });
+            const g = createTemporaryObject(graphComponent, root, { values: start });
             const before = xy(g.mainDrawn);
             compare(before, rest(g, start));
             const next = History.push(start, 90, 12);
@@ -364,7 +387,7 @@ Item {
         // A rate's new top comes with its sample and eases in with it, so the
         // line meets the peak its caption names as it comes to rest.
         function test_newTopEasesWithTheSample() {
-            const g = createTemporaryObject(graphComponent, graphs, { values: start, maximum: 100 });
+            const g = createTemporaryObject(graphComponent, root, { values: start, maximum: 100 });
             const before = xy(g.mainDrawn);
             const next = History.push(start, 180, 12);
             g.values = next;
@@ -378,7 +401,7 @@ Item {
         // A sample mid-ease starts from where the line is drawn, between
         // where the last one eased from and to, not from either end.
         function test_aSampleMidEaseStartsWhereTheLineIs() {
-            const g = createTemporaryObject(graphComponent, graphs, { values: start });
+            const g = createTemporaryObject(graphComponent, root, { values: start });
             const first = History.push(start, 95, 12);
             g.values = first;
             tryVerify(() => g.progress > 0.2 && g.progress < 0.8, 2000, "half way");
@@ -399,7 +422,7 @@ Item {
         // While the history grows in, each sample moves a slot left and the
         // new one grows out of the old end.
         function test_growingIn() {
-            const g = createTemporaryObject(graphComponent, graphs, { values: [30, 60] });
+            const g = createTemporaryObject(graphComponent, root, { values: [30, 60] });
             const before = xy(g.mainDrawn);
             g.values = [30, 60, 20];
             tryVerify(() => g.mainFrom.length > 0, 1000, "easing");
@@ -412,7 +435,7 @@ Item {
         // such as a cleared history, are drawn at once, with no frames.
         function test_noEasingWhereNothingMoves() {
             const flat = Array(12).fill(0);
-            const g = createTemporaryObject(graphComponent, graphs, { values: flat });
+            const g = createTemporaryObject(graphComponent, root, { values: flat });
             g.values = History.push(flat, 0, 12);
             wait(50);
             compare(g.mainFrom, []);
@@ -425,7 +448,7 @@ Item {
         // New readings that move the 100 % label to the other end fade it
         // out there and back in at its new end; a resize moves it at once.
         function test_ruleLabelFadesToItsOtherEnd() {
-            const rule = createTemporaryObject(ruleComponent, graphs);
+            const rule = createTemporaryObject(ruleComponent, root);
             const label = rule.children.find(c => c.text !== undefined);
             compare(label.x, 0);
             rule.series = [[{ x: 0, y: 1 }, { x: 200, y: 39 }]];
@@ -447,7 +470,7 @@ Item {
 
         // At Plasma's Instant speed a sample is drawn as it arrives.
         function test_instant() {
-            const g = createTemporaryObject(graphComponent, graphs, { values: start, duration: 0 });
+            const g = createTemporaryObject(graphComponent, root, { values: start, duration: 0 });
             const next = History.push(start, 90, 12);
             g.values = next;
             compare(xy(g.mainDrawn), rest(g, next));
@@ -475,7 +498,7 @@ Item {
 
         // Two days in at 20 %, on course to last the week.
         function make(options) {
-            return createTemporaryObject(weekComponent, weeks, Object.assign({
+            return createTemporaryObject(weekComponent, root, Object.assign({
                 window: window([[start, 0], [start + 2 * day, 20]], 20),
                 projected: "main",
                 pollAt: start + 2 * day,
@@ -587,6 +610,227 @@ Item {
             poll(g);
             g.destroy();
             wait(50);
+        }
+    }
+
+    TestCase {
+        id: gpus
+        name: "GpuMotion"
+        when: windowShown
+
+        property var monitor: null
+        property var made: []
+
+        function init() {
+            failOnWarning(/TypeError|ReferenceError|SyntaxError|is not a function|Unable to assign|Cannot assign|Binding loop/);
+            monitor = monitorComponent.createObject(gpus);
+        }
+
+        // What reads the monitor goes first.
+        function cleanup() {
+            made.forEach(o => o.destroy());
+            made = [];
+            wait(0);
+            monitor.destroy();
+        }
+
+        function cell() {
+            const c = gpuCellComponent.createObject(root, { monitor: monitor });
+            made.push(c);
+            return c;
+        }
+
+        function gauge(c) {
+            return root.all(c, i => i.centreWidth !== undefined)[0];
+        }
+
+        function innerArc(g) {
+            return root.all(g, i => i.playReset !== undefined).sort((a, b) => a.radius - b.radius)[0];
+        }
+
+        function nameIn(c) {
+            return root.all(c, i => i.room !== undefined && i.fits !== undefined)[0];
+        }
+
+        function line(c, which) {
+            return root.all(c, i => i.objectName === which)[0];
+        }
+
+        // The middle with one ring and with two, at rest.
+        function rooms(g) {
+            const single = Math.max(0, 2 * (g.reach - 2 * g.strokeWidth / 2 - 1));
+            const dual = Math.max(0, 2 * (g.innerRadius - g.innerStrokeWidth / 2 - 1));
+            return { single: single, dual: dual };
+        }
+
+        // The second GPU wakes: the name makes room at once, the inner track
+        // fades in, and only then does the arc draw in to its reading.
+        function test_secondRingFadesInThenDrawsIn() {
+            monitor.gpuInner.phase = "asleep";
+            const c = cell();
+            const g = gauge(c);
+            const arc = innerArc(g);
+            const room = rooms(g);
+            compare(g.centreWidth, room.single);
+            verify(!arc.visible);
+            const seen = [];
+            createTemporaryObject(samplerComponent, gpus, { sample: () => seen.push([g.innerShown, arc.percent]) });
+            monitor.gpuInner.phase = "live";
+            compare(g.centreWidth, room.dual, "the name makes room at once");
+            compare(g.innerShown, 0, "the track starts out");
+            tryCompare(arc, "percent", 3, 2000);
+            compare(g.innerShown, 1);
+            verify(seen.some(([shown]) => shown > 0 && shown < 1), "the track fades in");
+            verify(seen.every(([shown, percent]) => shown === 1 || percent === 0), "no arc until the track is in: " + JSON.stringify(seen));
+        }
+
+        // The second GPU sleeps: the arc unwinds first, then the track fades
+        // out, the name taking its room back half way, and the cell is as
+        // it is with one ring.
+        function test_secondRingUnwindsThenFadesOut() {
+            monitor.gpuInner.usage = 40;
+            const c = cell();
+            const g = gauge(c);
+            const arc = innerArc(g);
+            const room = rooms(g);
+            compare(arc.percent, 40);
+            const seen = [];
+            createTemporaryObject(samplerComponent, gpus, { sample: () => seen.push([arc.percent, g.innerShown, g.centreWidth]) });
+            monitor.gpuInner.phase = "asleep";
+            compare(g.innerShown, 1, "the track stays while the arc unwinds");
+            tryCompare(g, "innerShown", 0, 2000);
+            verify(!arc.visible);
+            compare(g.centreWidth, room.single);
+            verify(seen.every(([percent, shown]) => percent < 0.5 || shown === 1), "the track waits for the arc: " + JSON.stringify(seen));
+            verify(seen.every(([, shown, width]) => width === (shown >= 0.5 ? room.dual : room.single)), "the room comes back half way");
+            verify(seen.some(([percent]) => percent > 0.5 && percent < 39.5), "unwinding");
+            tryCompare(nameIn(c), "shownSize", nameIn(c).size, 1000, "the name grows to its size");
+        }
+
+        // A change back mid-fade turns the track round where it is.
+        function test_reversesCleanly() {
+            monitor.gpuInner.phase = "asleep";
+            const c = cell();
+            const g = gauge(c);
+            monitor.gpuInner.phase = "live";
+            tryVerify(() => g.innerShown > 0.3 && g.innerShown < 0.9, 2000, "fading in");
+            const seen = [];
+            createTemporaryObject(samplerComponent, gpus, { sample: () => seen.push(g.innerShown) });
+            const shown = g.innerShown;
+            monitor.gpuInner.phase = "asleep";
+            compare(g.innerShown, shown, "no jump");
+            tryCompare(g, "innerShown", 0, 2000);
+            verify(seen.every((v, i) => i === 0 || v <= seen[i - 1] + 1e-9), "straight back out: " + JSON.stringify(seen));
+            compare(innerArc(g).percent, 0, "and the arc never started");
+        }
+
+        // A hand-off to the integrated GPU fades the readings out, changes
+        // them and fades them back in; ordinary readings change at once.
+        function test_readingsFadeToAnotherGpu() {
+            const c = cell();
+            const readout = line(c, "first").parent;
+            compare(line(c, "first").text, "12%");
+            monitor.gpuOuter.usage = 15;
+            compare(line(c, "first").text, "15%", "a reading changes at once");
+            monitor.gpuOuter.phase = "asleep";
+            compare(line(c, "first").text, "15%", "held as it fades");
+            tryVerify(() => readout.opacity < 1, 1000, "fading out");
+            tryCompare(line(c, "first"), "text", "3%", 1000);
+            tryCompare(readout, "opacity", 1, 1000);
+            compare(line(c, "second").text, "41°");
+        }
+
+        // At Plasma's Instant speed the ring, the name and the readings are
+        // as they will be at once.
+        function test_instant() {
+            const c = cell();
+            c.animated = false;
+            const g = gauge(c);
+            g.settle = 0;
+            const room = rooms(g);
+            monitor.gpuInner.phase = "asleep";
+            compare(g.innerShown, 0);
+            compare(g.centreWidth, room.single);
+            monitor.gpuInner.phase = "live";
+            compare(g.innerShown, 1);
+            compare(innerArc(g).percent, 3);
+            compare(g.centreWidth, room.dual);
+            monitor.gpuOuter.phase = "asleep";
+            compare(line(c, "first").text, "3%");
+            compare(line(c, "first").parent.opacity, 1);
+        }
+
+        function load() {
+            const loader = popupHost.createObject(root);
+            made.push(loader);
+            loader.setSource(Qt.resolvedUrl("../../package/contents/ui/popups/GpuPopup.qml"), { monitor: monitor });
+            const popup = loader.item;
+            waitForRendering(popup);
+            return popup;
+        }
+
+        function sections(popup) {
+            return root.all(popup, i => i.awake !== undefined && i.first !== undefined);
+        }
+
+        function visibleTexts(popup) {
+            return root.all(popup, i => typeof i.text === "string" && i.text !== "" && i.visible
+                            && (function () { for (let p = i; p; p = p.parent) { if (!p.visible) return false; } return true; })())
+                .map(i => i.text);
+        }
+
+        // A GPU going to sleep fades its section out with its last readings,
+        // then gives way to its line at the end: the popup changes height
+        // once. Waking, the section opens at once and fades in.
+        function test_popupSectionFadesOutThenIn() {
+            const popup = load();
+            const [outer, inner] = sections(popup);
+            const heights = [];
+            popup.implicitHeightChanged.connect(() => heights.push(popup.implicitHeight));
+            const before = popup.implicitHeight;
+            monitor.gpuOuter.phase = "asleep";
+            verify(outer.visible);
+            verify(outer.slot.usage === 12, "keeping its last reading");
+            verify(!visibleTexts(popup).some(t => t.endsWith(" · off")), "no line yet");
+            tryVerify(() => outer.opacity < 1, 1000, "fading out");
+            compare(outer.slot.temperature, 48);
+            tryCompare(outer, "visible", false, 1000);
+            verify(visibleTexts(popup).includes("AMD Radeon RX 7700S · off"));
+            verify(inner.first, "the integrated GPU's section now opens the page");
+            compare(heights.length, 1, "one change of height: " + JSON.stringify(heights));
+            heights.length = 0;
+            monitor.gpuOuter.phase = "live";
+            verify(outer.visible, "open at once");
+            verify(outer.opacity < 1, "and fading in");
+            verify(!inner.first);
+            verify(!visibleTexts(popup).some(t => t.endsWith(" · off")));
+            tryCompare(outer, "opacity", 1, 1000);
+            compare(popup.implicitHeight, before);
+            compare(heights.length, 1, "one change of height: " + JSON.stringify(heights));
+        }
+
+        // Waking again before the section has gone, it fades back up and the
+        // popup keeps its height.
+        function test_popupSectionTurnsBack() {
+            const popup = load();
+            const outer = sections(popup)[0];
+            const before = popup.implicitHeight;
+            monitor.gpuOuter.phase = "asleep";
+            tryVerify(() => outer.opacity < 0.9, 1000, "fading out");
+            monitor.gpuOuter.phase = "live";
+            tryCompare(outer, "opacity", 1, 1000);
+            wait(Kirigami.Units.longDuration);
+            verify(outer.visible);
+            compare(popup.implicitHeight, before);
+        }
+
+        function test_popupInstant() {
+            const popup = load();
+            popup.animated = false;
+            const outer = sections(popup)[0];
+            monitor.gpuOuter.phase = "asleep";
+            verify(!outer.visible);
+            verify(visibleTexts(popup).includes("AMD Radeon RX 7700S · off"));
         }
     }
 }

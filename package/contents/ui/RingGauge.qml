@@ -10,8 +10,10 @@ import "code/format.js" as Format
 // thinner, dimmer ring inside it for a second reading: the integrated GPU
 // under the discrete one, or a model's limit inside a weekly one. NaN draws
 // the track alone. Each arc moves to a new reading over `settle`, and turns
-// amber as it passes 75 % and red as it passes 90 % of its own reading.
-// Children sit in the middle, over the rings.
+// amber as it passes 75 % and red as it passes 90 % of its own reading. An
+// inner ring that comes fades its track in, then draws its arc in; one that
+// goes unwinds its arc, then fades its track out. Children sit in the
+// middle, over the rings.
 // Assistive technology sees a progress bar from 0 to 100 with the outer
 // reading as its value; the caller gives it a name.
 Item {
@@ -49,12 +51,28 @@ Item {
         ? Math.min(Kirigami.Units.veryLongDuration, interval > 0 ? interval / 2 : Infinity) : 0
     default property alias centre: face.data
 
+    // The inner ring is held while it comes or until its arc has unwound,
+    // and its track is shown, 0 to 1, fading in or out as it is held or let
+    // go; its arc is drawn once the track is in. The arc is watched only
+    // when the arcs move: at Plasma's Instant speed it follows the reading
+    // at once, and these would then depend on each other in a circle.
+    readonly property bool innerHeld: inner || settle > 0 && innerFollower.shown >= 0.5
+    property real innerShown: innerHeld ? 1 : 0
+    readonly property bool innerDrawn: inner && innerShown === 1
+
+    Behavior on innerShown {
+        enabled: gauge.settle > 0
+        NumberAnimation { duration: Kirigami.Units.longDuration; easing.type: Easing.InOutCubic }
+    }
+
     // How far the outer ring reaches from the middle.
     readonly property real reach: outer.radius + strokeWidth / 2
     // The clear width in the middle, a pixel in from the innermost ring, for
-    // a name or mark there.
-    readonly property real centreWidth: Math.max(0, 2 * ((inner ? innerRadius - innerStrokeWidth / 2
-                                                                : outer.radius - strokeWidth / 2) - 1))
+    // a name or mark there: inside the inner ring as soon as it is held, so
+    // a name makes room as it comes, and until its track is half gone, so a
+    // name takes the room back only as it goes.
+    readonly property real centreWidth: Math.max(0, 2 * ((innerHeld || innerShown >= 0.5 ? innerRadius - innerStrokeWidth / 2
+                                                                                        : outer.radius - strokeWidth / 2) - 1))
     // The readings' colours, for the readings beside the ring.
     readonly property color outerTone: tone(Math.max(Format.level(value), minimumLevel))
     readonly property color innerTone: tone(Math.max(Format.level(innerValue), innerMinimumLevel))
@@ -103,19 +121,20 @@ Item {
 
     // Each arc follows the whole percent its reading prints, so a reading
     // that doesn't change the number doesn't move the arc. A reset animation
-    // draws the arc itself, and the follower keeps to the reading meanwhile.
+    // draws the arc itself, and the follower keeps to the reading meanwhile;
+    // a hidden ring keeps to it too.
     Follower {
         id: outerFollower
         target: Math.round(gauge.clamped(gauge.value))
-        settle: gauge.settle
+        settle: gauge.visible ? gauge.settle : 0
         enabled: !outer.animating
     }
 
     Follower {
         id: innerFollower
-        target: Math.round(gauge.clamped(gauge.innerValue))
-        settle: gauge.settle
-        enabled: gauge.inner && !innerArc.animating
+        target: gauge.innerDrawn ? Math.round(gauge.clamped(gauge.innerValue)) : 0
+        settle: gauge.visible ? gauge.settle : 0
+        enabled: gauge.innerShown > 0 && !innerArc.animating
     }
 
     // Qt reports these as the progress bar's range.
@@ -174,7 +193,8 @@ Item {
         RingArc {
             id: innerArc
             anchors.fill: parent
-            visible: gauge.inner
+            visible: gauge.innerShown > 0
+            opacity: gauge.innerShown
             radius: gauge.innerRadius
             strokeWidth: gauge.innerStrokeWidth
             percent: innerFollower.shown

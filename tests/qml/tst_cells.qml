@@ -374,6 +374,7 @@ Item {
         // one, too large to name a 34 px ring; Breeze has 8 pt beside 10.
         // The name's own scale stands in for Breeze's size.
         function breezeSized(c) {
+            nameIn(c).animated = false;
             nameIn(c).sizeFactor = 8 / Kirigami.Theme.smallFont.pointSize;
             settle();
             return c;
@@ -584,6 +585,7 @@ Item {
                 const c = cell(k.item, { ring: data.ring });
                 const g = gauge(c);
                 const name = nameIn(c);
+                name.animated = false;
                 compare(g.inner, k.inner === true, k.item + " inner ring");
                 for (const factor of [1, 8 / Kirigami.Theme.smallFont.pointSize]) {
                     name.sizeFactor = factor;
@@ -769,6 +771,8 @@ Item {
             };
             const awake = measure();
             compare(line(c, "second").text, degrees(48));
+            // Layout only: the readings change at once (see tst_motion).
+            c.animated = false;
             monitor.gpuInner.present = false;
             monitor.gpuOuter.phase = "asleep";
             settle();
@@ -799,6 +803,7 @@ Item {
             apply(data.item, data);
             const c = breezeSized(cell(data.item, { ring: 26, twoLines: false }));
             if (data.asleep) {
+                c.animated = false;
                 monitor.gpuInner.present = false;
                 monitor.gpuOuter.phase = "asleep";
                 settle();

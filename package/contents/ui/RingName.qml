@@ -13,7 +13,9 @@ import "code/style.js" as Style
 // mark. It sits in the clear middle, inside the inner ring when one is drawn,
 // the name shrinking to fit. Where even its smallest readable size would not
 // fit, or the caller turns it off, it is left out; the tooltip and the popup
-// still name the item.
+// still name the item. As an inner ring comes or goes, the name eases from
+// its old size to its new one, and fades out or in where it stops or starts
+// fitting.
 Item {
     id: name
 
@@ -24,6 +26,24 @@ Item {
     // stand in for Breeze's 8 pt small font with their own theme's larger one.
     property real sizeFactor: 1
     property bool active: true
+    // Off draws a new size, and a name that comes or goes, at once, as at
+    // Plasma's Instant speed. The tests turn it off to check layouts.
+    property bool animated: Kirigami.Units.longDuration > 1
+    // The size laid out, a name's pixel size or a mark's, and the one
+    // drawn, eased from the last: the name is laid out once at its new
+    // size and scaled from the old one.
+    readonly property real size: usage ? markSize : label.fontInfo.pixelSize
+    property real shownSize: size
+
+    Behavior on shownSize {
+        enabled: name.animated && name.shownSize > 0
+        NumberAnimation { duration: Kirigami.Units.longDuration; easing.type: Easing.InOutCubic }
+    }
+
+    Behavior on opacity {
+        enabled: name.animated
+        NumberAnimation { duration: Kirigami.Units.shortDuration }
+    }
 
     readonly property bool usage: Items.isUsage(item)
     readonly property real minimumPointSize: Kirigami.Theme.smallFont.pointSize * 0.7 * sizeFactor
@@ -38,7 +58,15 @@ Item {
                                        : smallest.advanceWidth <= chord
 
     anchors.fill: parent
-    visible: active && fits
+    opacity: active && fits ? 1 : 0
+    visible: opacity > 0
+    // About the ring's centre, where the label's capitals and the mark sit.
+    transform: Scale {
+        origin.x: name.width / 2
+        origin.y: name.height / 2
+        xScale: name.size > 0 ? name.shownSize / name.size : 1
+        yScale: xScale
+    }
     // The cell's description names the item.
     Accessible.ignored: true
 
