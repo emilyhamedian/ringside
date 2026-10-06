@@ -55,10 +55,10 @@ QtObject {
     // the words and the popup. A countdown also comes as its `parts`, which
     // Readout orders right to left when mirrored. It keeps to the days from a
     // day out, "6d", and to hours and minutes on the last day, "23h 5m"; the
-    // popup and the words give both. With the limit reached it turns red, as in the
-    // popup, since it then says how long the lock-out lasts. The weekly
-    // percentage also turns red while the week is on pace to run out before
-    // its reset, projected from when it was read.
+    // popup and the words give both. With the limit reached it turns red, as
+    // in the popup, since it then says how long the lock-out lasts. The
+    // weekly percentage also turns red while the week is on pace to run out
+    // before its reset, projected from when it was read.
     function readout(item, nowMs) {
         const percent = value => Number.isFinite(value) ? i18nc("@info:status a percentage", "%1%", Format.percent(value)) : "–";
         const temperature = celsius => Format.temperatureValid(celsius)
