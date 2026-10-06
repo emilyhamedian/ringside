@@ -460,9 +460,9 @@ Item {
         }
 
         // The temperature unit is as small as the caption under it and sits
-        // a little apart from the digits, its top level with theirs, in the
-        // CPU and GPU headers alike. At one size it is as far from the ink
-        // after a tabular "1" (61, 41) as after any other digit (60, 48).
+        // a pixel from the digits, its top level with theirs, in the CPU and
+        // GPU headers alike. At one size it is as far from the ink after a
+        // tabular "1" (61, 41) as after any other digit (60, 48).
         function test_temperatureUnitSizeAndGap_data() {
             return [{ tag: "celsius", fahrenheit: false, unit: "°C" }, { tag: "fahrenheit", fahrenheit: true, unit: "°F" }];
         }
@@ -481,7 +481,7 @@ Item {
                     compare(p.suffix.font.pointSize, Kirigami.Theme.smallFont.pointSize, tag);
                     const gap = p.suffix.x - (p.number.x + p.number.implicitWidth);
                     const inkGap = gap + trailingRoom(p.number);
-                    verify(r.unitSpacing >= 2, tag + " has a gap of " + r.unitSpacing);
+                    compare(r.unitSpacing, 1, tag);
                     verify(inkGap >= r.unitSpacing && inkGap <= r.unitSpacing + 3, tag + " is " + inkGap + " from the ink");
                     inkGaps[popup].push(inkGap);
                     compare(r.implicitWidth, p.number.implicitWidth + r.unitSpacing + p.suffix.implicitWidth, tag);
