@@ -33,8 +33,8 @@ follows [Semantic Versioning](https://semver.org/).
   same. Graph points ease to their new heights, the week graph draws each
   new stretch of line and fades in its run-out, and a second GPU's ring and
   its popup section fade in and out. The motion follows Plasma's animation
-  speed and is over before the next reading; with animations set to
-  Instant, readings change at once as before.
+  speed, and with animations set to Instant readings change at once, as
+  before.
 
 ### Changed
 
