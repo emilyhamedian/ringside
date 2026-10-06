@@ -15,7 +15,7 @@ Shape {
     required property real strokeWidth
     required property color color
     required property color trackColor
-    // 0 to 100.
+    // 0 to 100, drawn as given: RingGauge moves it.
     property real percent: 0
 
     // What is actually drawn. These normally track the properties above; a
@@ -120,14 +120,6 @@ Shape {
             radiusY: arc.radius
             startAngle: -90 + 3.6 * arc.tail
             sweepAngle: 3.6 * (arc.head - arc.tail)
-
-            Behavior on sweepAngle {
-                enabled: !arc.animating
-                NumberAnimation {
-                    duration: Kirigami.Units.longDuration
-                    easing.type: Easing.OutCubic
-                }
-            }
         }
     }
 }

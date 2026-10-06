@@ -56,6 +56,7 @@ Item {
              : content.item === "memory" ? content.monitor.memoryPercent : content.primary.usage
         innerValue: content.gpuInner.usage
         minimumLevel: content.textShown ? 0 : content.monitor.heat(content.hottest)
+        interval: content.monitor.interval
         // The cell's description covers it.
         Accessible.ignored: true
 

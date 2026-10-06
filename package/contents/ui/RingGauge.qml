@@ -9,8 +9,9 @@ import "code/format.js" as Format
 // A progress ring filling clockwise from twelve o'clock, with an optional
 // thinner, dimmer ring inside it for a second reading: the integrated GPU
 // under the discrete one, or a model's limit inside a weekly one. NaN draws
-// the track alone. Each ring turns amber from 75 % and red from 90 % of its
-// own reading. Children sit in the middle, over the rings.
+// the track alone. Each arc moves to a new reading over `settle`, and turns
+// amber as it passes 75 % and red as it passes 90 % of its own reading.
+// Children sit in the middle, over the rings.
 // Assistive technology sees a progress bar from 0 to 100 with the outer
 // reading as its value; the caller gives it a name.
 Item {
@@ -35,6 +36,17 @@ Item {
     property real textScale: 0.33
     // Breathes, as a Claude or Codex ring does close to its limit.
     property bool pulsing: false
+    // How often the readings come, where that is often enough for the
+    // rings to settle within half of it and be still before the next one;
+    // 0 for readings minutes apart.
+    property int interval: 0
+    // How long the arcs take to reach a new reading. They follow it
+    // critically damped, so they never pass it, and a reading that arrives
+    // while they move bends the motion rather than starting it over. 0
+    // moves them at once, as at Plasma's Instant speed, where Kirigami's
+    // durations are a millisecond or two rather than none.
+    property real settle: Kirigami.Units.longDuration > 1
+        ? Math.min(Kirigami.Units.veryLongDuration, interval > 0 ? interval / 2 : Infinity) : 0
     default property alias centre: face.data
 
     // How far the outer ring reaches from the middle.
@@ -43,9 +55,24 @@ Item {
     // a name or mark there.
     readonly property real centreWidth: Math.max(0, 2 * ((inner ? innerRadius - innerStrokeWidth / 2
                                                                 : outer.radius - strokeWidth / 2) - 1))
+    // The readings' colours, for the readings beside the ring.
     readonly property color outerTone: tone(Math.max(Format.level(value), minimumLevel))
-    readonly property int innerLevel: Math.max(Format.level(innerValue), innerMinimumLevel)
-    readonly property color innerTone: tone(innerLevel)
+    readonly property color innerTone: tone(Math.max(Format.level(innerValue), innerMinimumLevel))
+    // The outer reading as drawn, for a number in the middle that counts
+    // with the arc.
+    readonly property real drawnValue: outerFollower.shown
+    // The levels of the readings as drawn, so an arc changes colour as it
+    // passes 75 or 90 % rather than when the reading arrives. The arcs head
+    // for the whole percent a reading prints, so its fraction is added back:
+    // at rest this is the reading's own level, and a ring at 74.6 % stays
+    // below amber as the reading beside it does.
+    readonly property int drawnLevel: Math.max(Format.level(drawn(outerFollower, value)), minimumLevel)
+    readonly property int drawnInnerLevel: Math.max(Format.level(drawn(innerFollower, innerValue)), innerMinimumLevel)
+
+    function drawn(follower, reading) {
+        const percent = clamped(reading);
+        return Number.isFinite(reading) ? follower.shown + percent - Math.round(percent) : NaN;
+    }
 
     function tone(level) {
         return level === 2 ? Kirigami.Theme.negativeTextColor
@@ -72,6 +99,23 @@ Item {
             innerArc.playReset(clamped(innerReset.from), innerColor(Math.max(Format.level(innerReset.from), innerMinimumLevel)),
                                innerReset.early);
         }
+    }
+
+    // Each arc follows the whole percent its reading prints, so a reading
+    // that doesn't change the number doesn't move the arc. A reset animation
+    // draws the arc itself, and the follower keeps to the reading meanwhile.
+    Follower {
+        id: outerFollower
+        target: Math.round(gauge.clamped(gauge.value))
+        settle: gauge.settle
+        enabled: !outer.animating
+    }
+
+    Follower {
+        id: innerFollower
+        target: Math.round(gauge.clamped(gauge.innerValue))
+        settle: gauge.settle
+        enabled: gauge.inner && !innerArc.animating
     }
 
     // Qt reports these as the progress bar's range.
@@ -121,8 +165,8 @@ Item {
             anchors.fill: parent
             radius: (Math.min(gauge.width, gauge.height) - gauge.strokeWidth) / 2 - 0.5
             strokeWidth: gauge.strokeWidth
-            percent: gauge.clamped(gauge.value)
-            color: gauge.outerTone
+            percent: outerFollower.shown
+            color: gauge.tone(gauge.drawnLevel)
             // The track keeps the base colour whatever the level.
             trackColor: Qt.alpha(gauge.color, 0.16 * gauge.color.a)
         }
@@ -133,8 +177,8 @@ Item {
             visible: gauge.inner
             radius: gauge.innerRadius
             strokeWidth: gauge.innerStrokeWidth
-            percent: gauge.clamped(gauge.innerValue)
-            color: gauge.innerColor(gauge.innerLevel)
+            percent: innerFollower.shown
+            color: gauge.innerColor(gauge.drawnInnerLevel)
             trackColor: Qt.alpha(gauge.color, 0.22 * 0.55 * gauge.color.a)
         }
 
@@ -149,7 +193,7 @@ Item {
             y: parent.height / 2 + gauge.figureHeight / 2 - baselineOffset
             visible: gauge.text !== "" && !gauge.inner && gauge.width >= 24
             text: gauge.text
-            color: gauge.outerTone
+            color: outer.color
             font.family: Kirigami.Theme.defaultFont.family
             font.features: ({ "tnum": 1 })
             font.pixelSize: Math.round(gauge.width * gauge.textScale)

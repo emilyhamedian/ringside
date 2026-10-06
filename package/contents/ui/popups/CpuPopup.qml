@@ -35,6 +35,7 @@ PopupPage {
 
     PopupHeader {
         ringValue: popup.monitor.cpuUsage
+        interval: popup.monitor.interval
         title: i18nc("@title", "CPU")
         subtitle: {
             const m = popup.monitor;

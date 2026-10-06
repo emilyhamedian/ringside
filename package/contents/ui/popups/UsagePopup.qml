@@ -177,22 +177,33 @@ PopupPage {
         spacing: Kirigami.Units.largeSpacing
 
         Repeater {
-            model: popup.limits
+            // Counted, as PopupHeader counts its parts, so a row keeps its
+            // bar as the readings change and the bar can move to them.
+            model: popup.limits.length
 
             delegate: ColumnLayout {
                 id: row
 
-                required property var modelData
                 required property int index
+                readonly property var limit: popup.limits[index] ?? ({ id: "", label: "", percent: NaN, resetsAt: NaN })
+                readonly property real reading: Math.max(0, Math.min(100, limit.percent))
                 // A model's limit that resets apart from the week says when.
-                readonly property string resets: modelData.id !== "" && popup.weekly
-                    && Math.abs(modelData.resetsAt - popup.weekly.resetsAt) >= 60
-                    ? words.countdown(modelData.resetsAt, popup.nowMs) : ""
-                // Raised, never lowered, by a run-out before the reset.
+                readonly property string resets: limit.id !== "" && popup.weekly
+                    && Math.abs(limit.resetsAt - popup.weekly.resetsAt) >= 60
+                    ? words.countdown(limit.resetsAt, popup.nowMs) : ""
+                // The level of the bar as drawn, as RingGauge.drawnLevel has
+                // it, raised, never lowered, by a run-out before the reset.
                 readonly property int level: {
-                    const base = Format.level(modelData.percent);
+                    const base = Format.level(Number.isFinite(reading) ? bar.shown + reading - Math.round(reading) : NaN);
                     const pace = popup.paces[index];
                     return pace ? Pace.level(base, pace) : base;
+                }
+
+                // The bar and its percentage follow the reading as a ring does.
+                Follower {
+                    id: bar
+                    target: Number.isFinite(row.reading) ? Math.round(row.reading) : 0
+                    settle: Kirigami.Units.longDuration > 1 ? Kirigami.Units.veryLongDuration : 0
                 }
 
                 Layout.fillWidth: true
@@ -204,8 +215,8 @@ PopupPage {
                     spacing: Kirigami.Units.smallSpacing
 
                     Accessible.role: Accessible.ProgressBar
-                    Accessible.name: row.modelData.label
-                    Accessible.description: words.percentText(row.modelData.percent)
+                    Accessible.name: row.limit.label
+                    Accessible.description: words.percentText(row.limit.percent)
 
                     RowLayout {
                         Layout.fillWidth: true
@@ -213,7 +224,7 @@ PopupPage {
 
                         Text {
                             Layout.fillWidth: true
-                            text: row.modelData.label
+                            text: row.limit.label
                             color: Kirigami.Theme.textColor
                             elide: Text.ElideRight
                             textFormat: Text.PlainText
@@ -229,7 +240,7 @@ PopupPage {
                         }
 
                         Text {
-                            text: i18nc("@info a percentage", "%1%", Format.percent(row.modelData.percent))
+                            text: i18nc("@info a percentage", "%1%", Format.percent(Number.isFinite(row.reading) ? bar.shown : NaN))
                             color: popup.tone(row.level)
                             font.family: Kirigami.Theme.defaultFont.family
                             font.features: ({ "tnum": 1 })
@@ -245,7 +256,7 @@ PopupPage {
 
                         Rectangle {
                             anchors.left: parent.left
-                            width: parent.width * Math.max(0, Math.min(100, row.modelData.percent)) / 100
+                            width: parent.width * bar.shown / 100
                             height: parent.height
                             radius: parent.radius
                             color: popup.tone(row.level)
