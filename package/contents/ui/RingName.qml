@@ -20,6 +20,8 @@ Item {
     required property string item
     // RingGauge.centreWidth: the clear width inside the innermost ring.
     required property real room
+    // Scales the name's font. The package never sets it: the tests do, to
+    // stand in for Breeze's 8 pt small font with their own theme's larger one.
     property real sizeFactor: 1
     property bool active: true
 
