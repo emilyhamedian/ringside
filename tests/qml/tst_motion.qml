@@ -379,7 +379,7 @@ Item {
             tryVerify(() => g.mainFrom.length > 0, 1000, "easing");
             compare(xy(g.mainFrom), before, "each point from its slot's old height");
             verify(g.progress < 1);
-            tryCompare(g, "progress", 1, 2000);
+            tryVerify(() => g.progress === 1, 2000, "eased");
             compare(xy(g.mainDrawn), rest(g, next));
             compare(xy(g.mainPoints), rest(g, next), "at rest where the samples put it");
         }
@@ -394,7 +394,7 @@ Item {
             g.maximum = 180;
             tryVerify(() => g.mainFrom.length > 0, 1000, "easing");
             compare(xy(g.mainFrom), before, "from the line drawn at the old top");
-            tryCompare(g, "progress", 1, 2000);
+            tryVerify(() => g.progress === 1, 2000, "eased");
             compare(xy(g.mainDrawn), rest(g, next, 180));
         }
 
@@ -427,7 +427,7 @@ Item {
             g.values = [30, 60, 20];
             tryVerify(() => g.mainFrom.length > 0, 1000, "easing");
             compare(xy(g.mainFrom), before.concat([before[1]]));
-            tryCompare(g, "progress", 1, 2000);
+            tryVerify(() => g.progress === 1, 2000, "eased");
             compare(xy(g.mainDrawn), rest(g, [30, 60, 20]));
         }
 
@@ -530,7 +530,7 @@ Item {
             compare(end(g.mainDrawn), old, "from the old end");
             verify(g.drawClock < 1);
             compare(g.projection.length, 2, "on course to run out");
-            tryCompare(g, "drawClock", 1, 2000);
+            tryVerify(() => g.drawClock === 1, 2000, "drawn on");
             compare(end(g.mainDrawn), end(g.mainPoints), "on the new reading");
             tryCompare(g, "runOutOpacity", 1, 2000);
             verify(seen.length > 3);
@@ -549,7 +549,7 @@ Item {
             const from = [g.mainFrom.x, g.mainFrom.y];
             verify(from[0] > old[0] && from[0] < target[0], "between the old end and the one it drew to: " + from);
             compare(end(g.mainDrawn), from, "no jump");
-            tryCompare(g, "drawClock", 1, 2000);
+            tryVerify(() => g.drawClock === 1, 2000, "drawn on");
             compare(end(g.mainDrawn), end(g.mainPoints));
         }
 
@@ -578,13 +578,25 @@ Item {
         }
 
         // A week that starts over while the popup is open: the last week's
-        // line fades out as the new week's first reading fades in as a dot.
+        // line, run-out and marker for now fade out together as the new
+        // week's first reading fades in as a dot.
         function test_newWeekFadesTheOldOneOut() {
-            const g = make();
+            const g = make({ window: window([[start, 0], [start + 3 * day, 60]], 60), pollAt: start + 3 * day,
+                             nowMs: (start + 3 * day + 3 * 3600) * 1000 });
+            compare(g.runOutOpacity, 1);
+            verify(g.markerShown);
             const old = g.mainPoints.map(p => [p.x, p.y]);
+            const runOut = g.projection.map(p => [p.x, p.y]);
+            const markerX = g.markerShownX;
             g.window = { resetsAt: start + 2 * week, windowSeconds: week, percent: 1, history: [[start + week + 3600, 1]] };
+            g.pollAt = start + week + 3600;
+            g.nowMs = g.pollAt * 1000;
             compare(g.ghostMain.map(p => [p.x, p.y]), old);
+            compare(g.ghostRunOut.map(p => [p.x, p.y]), runOut);
+            compare(g.ghostMarkerX, markerX);
             compare(g.ghostOpacity, 1);
+            compare(g.runOutOpacity, 0, "the new week's own run-out starts out");
+            verify(!g.markerShown, "and so does its marker");
             const dot = g.children.find(i => i.shown !== undefined && i.color === g.color);
             verify(dot.shown);
             verify(dot.opacity < 1, "the new week's dot fades in");
