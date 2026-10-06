@@ -13,9 +13,9 @@ import "../code/pace.js" as Pace
 // The main series is filled; a second one, the model limit on the inner
 // ring, is dashed, as in Graph. The line ends at the last poll, so the empty
 // stretch to its right is the time left; only when the last poll is hours
-// old does a marker say where now is. A limit on course to run out before
-// the reset gets a line of red dots on to where it reaches 100 %, the time
-// the pace sentence under the bars names.
+// old does a marker say where now is. The limit the pace sentence under the
+// bars names, when it is on course to run out before the reset, gets a line
+// of red dots on to where it reaches 100 %, at the time the sentence gives.
 Item {
     id: graph
 
@@ -33,6 +33,9 @@ Item {
     property real pollAt: NaN
     property color color: Kirigami.Theme.textColor
     property real fillOpacity: 0.15
+    // The series whose run-out is drawn, "main" or "second", or "" for none:
+    // the limit the popup's pace sentence names, so the two agree.
+    property string projected: ""
 
     // The time axis, in epoch seconds.
     readonly property real end: window && Number.isFinite(window.resetsAt) ? window.resetsAt : NaN
@@ -41,11 +44,9 @@ Item {
 
     readonly property var mainPoints: points(window)
     readonly property var secondPoints: points(secondWindow)
-    // Each window's projection, as the popup's sentence reads it.
-    readonly property var mainPace: Pace.ofWindow(window, pollAt, nowMs / 1000)
-    readonly property var secondPace: Pace.ofWindow(secondWindow, pollAt, nowMs / 1000)
-    readonly property var mainRunOut: runOut(mainPoints, mainPace)
-    readonly property var secondRunOut: runOut(secondPoints, secondPace)
+    readonly property var projection: projected === "main" ? runOut(mainPoints, window)
+                                    : projected === "second" ? runOut(secondPoints, secondWindow)
+                                    : []
 
     // Two hours are about 4 px of a week: within that, the line's end
     // already shows now. Later than that, checks have been failing, which
@@ -74,8 +75,10 @@ Item {
     }
 
     // From a series' last point to where its limit runs out, while the pace
-    // says it will before the reset; otherwise no segment.
-    function runOut(series, pace) {
+    // says it will before the reset, as the popup's sentence reads it;
+    // otherwise no segment.
+    function runOut(series, source) {
+        const pace = Pace.ofWindow(source, pollAt, nowMs / 1000);
         if (series.length === 0 || pace.state !== "out") {
             return [];
         }
@@ -92,7 +95,7 @@ Item {
         // The week so far lies to the left; the right end is still to come,
         // though late in the week the marker for now can stand there.
         preferEnd: true
-        series: [graph.mainPoints, graph.secondPoints, graph.mainRunOut, graph.secondRunOut,
+        series: [graph.mainPoints, graph.secondPoints, graph.projection,
                  graph.stale ? [Qt.point(graph.markerX, rule.ruleY), Qt.point(graph.markerX, graph.height)] : []]
     }
 
@@ -187,13 +190,13 @@ Item {
         }
     }
 
-    // The run-outs: round dots in the colour of a limit running out, from
+    // The run-out: round dots in the colour of a limit running out, from
     // the series' last point to a dot on the 100 % rule where it runs out,
-    // so they read as a projection rather than as more readings.
+    // so it reads as a projection rather than as more readings.
     Shape {
         anchors.fill: parent
         preferredRendererType: Shape.CurveRenderer
-        visible: graph.mainRunOut.length > 0 || graph.secondRunOut.length > 0
+        visible: graph.projection.length > 0
 
         ShapePath {
             strokeColor: Kirigami.Theme.negativeTextColor
@@ -204,19 +207,13 @@ Item {
             // dot, with about two dots' room between it and the next.
             dashPattern: [0.01, 3]
             fillColor: "transparent"
-            PathMultiline { paths: [graph.mainRunOut, graph.secondRunOut] }
+            PathPolyline { path: graph.projection }
         }
     }
 
     Dot {
-        visible: graph.mainRunOut.length > 0
-        at: graph.mainRunOut.length > 0 ? graph.mainRunOut[1] : Qt.point(0, 0)
-        color: Kirigami.Theme.negativeTextColor
-    }
-
-    Dot {
-        visible: graph.secondRunOut.length > 0
-        at: graph.secondRunOut.length > 0 ? graph.secondRunOut[1] : Qt.point(0, 0)
+        visible: graph.projection.length > 0
+        at: graph.projection.length > 0 ? graph.projection[1] : Qt.point(0, 0)
         color: Kirigami.Theme.negativeTextColor
     }
 }

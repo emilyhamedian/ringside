@@ -1421,6 +1421,38 @@ Item {
             compare(popup.pollAt, usage.entries.claude.weekly.history[usage.entries.claude.weekly.history.length - 1][0]);
         }
 
+        // The graph draws the run-out the pace sentence names and no other.
+        // With the week and Fable both on course to run out, it is the
+        // sooner one the sentence gives; when that is a model limit the
+        // graph has no line for, it draws none. Each week began 4.1 days ago.
+        function test_graphDrawsTheRunOutSaid_data() {
+            return [{ tag: "modelSooner", weekly: 62, scoped: [["Fable", 78]], said: 1, drawn: true },
+                    { tag: "weekSooner", weekly: 85, scoped: [["Fable", 60]], said: 0, drawn: true },
+                    { tag: "offTheRing", weekly: 30, scoped: [["Fable", 90], ["Opus", 70]], inner: "Opus", said: 1, drawn: false }];
+        }
+
+        function test_graphDrawsTheRunOutSaid(data) {
+            const usage = monitor.usage;
+            const left = 2 * usage.day + 21 * 3600;
+            usage.innerChoices = { claude: data.inner ?? "", codex: "" };
+            setClaude({ weekly: usage.window(data.weekly, left, [[4.125, 0], [0, data.weekly]]),
+                        scoped: data.scoped.map(([id, percent]) => Object.assign({ id: id, label: id },
+                                                                                 usage.window(percent, left, [[4.125, 0], [0, percent]]))) });
+            const popup = load("claude");
+            verify(popup.paces.every(p => p.state === "out" || p.state === "lasts"), JSON.stringify(popup.paces));
+            compare(popup.paceEvent.index, data.said);
+            verify(sentence(rows(popup)[data.said]).visible);
+            const g = graph(popup);
+            const red = String(Kirigami.Theme.negativeTextColor);
+            const ends = g.children.filter(i => i.visible && i.radius > 0 && String(i.color) === red);
+            if (!data.drawn) {
+                compare(ends.length, 0, "no run-out drawn");
+                return;
+            }
+            compare(ends.length, 1, "one run-out drawn");
+            fuzzyCompare(ends[0].x + ends[0].width / 2, g.xAt(popup.paces[data.said].runOut), 1e-6);
+        }
+
         function test_emptyHistory() {
             const usage = monitor.usage;
             setClaude({ weekly: usage.window(0, 6 * usage.day, []), scoped: [] });
@@ -1428,7 +1460,7 @@ Item {
             verify(g.placed);
             compare(g.mainPoints.length, 0);
             verify(!g.stale);
-            compare(g.mainRunOut.length, 0);
+            compare(g.projection.length, 0);
         }
 
         function test_fullWeek() {
@@ -1707,11 +1739,13 @@ Item {
         }
 
         // A week from `start` read at `at` (epoch seconds) with `percent`
-        // and `history`, seen at `now`.
+        // and `history`, seen at `now`, drawing the run-out of the series
+        // `projected` names.
         function make(history, options) {
             const o = options ?? {};
             return createTemporaryObject(graphComponent, root, {
                 window: { resetsAt: start + week, windowSeconds: week, percent: o.percent ?? NaN, history: history },
+                projected: o.projected ?? "",
                 pollAt: o.at ?? NaN,
                 nowMs: (o.now ?? o.at ?? start + day) * 1000
             });
@@ -1807,7 +1841,7 @@ Item {
         }
 
         function test_projectionOnlyWhenOut(data) {
-            const g = make([[start, 0], [data.at, data.percent]], data);
+            const g = make([[start, 0], [data.at, data.percent]], Object.assign({ projected: "main" }, data));
             const dotted = runOutPath(g);
             verify(dotted);
             const red = String(Kirigami.Theme.negativeTextColor);
@@ -1816,33 +1850,51 @@ Item {
             verify(dotted.path.dashPattern[0] < 0.1 && dotted.path.dashPattern[1] >= 2.5,
                    "round caps on dashes this short are dots, apart: " + dotted.path.dashPattern);
             if (data.runOut === undefined) {
-                compare(g.mainRunOut.length, 0);
+                compare(g.projection.length, 0);
                 verify(!dotted.shape.visible);
                 verify(!rectangles(g).some(i => i.radius > 0), "no end dot");
                 return;
             }
             verify(dotted.shape.visible);
-            const end = endDot(g, g.mainRunOut[1]);
+            const end = endDot(g, g.projection[1]);
             verify(end, "a dot where it runs out");
             compare(String(end.color), red);
-            compare(g.mainRunOut.length, 2);
+            compare(g.projection.length, 2);
             const last = g.mainPoints[g.mainPoints.length - 1];
-            compare([g.mainRunOut[0].x, g.mainRunOut[0].y], [last.x, last.y]);
-            fuzzyCompare(g.mainRunOut[1].x, (data.runOut - start) / week * g.width, 1e-9);
-            fuzzyCompare(g.mainRunOut[1].y, rule(g).limitY, 1e-9);
-            verify(rule(g).series.some(s => s.length === 2 && s[1].x === g.mainRunOut[1].x && s[1].y === g.mainRunOut[1].y),
+            compare([g.projection[0].x, g.projection[0].y], [last.x, last.y]);
+            fuzzyCompare(g.projection[1].x, (data.runOut - start) / week * g.width, 1e-9);
+            fuzzyCompare(g.projection[1].y, rule(g).limitY, 1e-9);
+            verify(rule(g).series.some(s => s.length === 2 && s[1].x === g.projection[1].x && s[1].y === g.projection[1].y),
                    "the run-out is among the rule's series");
         }
 
-        function test_secondLimitRunsOutToo() {
-            const g = make([[start, 0], [start + 3 * day, 30]], { percent: 30, at: start + 3 * day });
-            g.secondWindow = { resetsAt: start + week, windowSeconds: week, percent: 70,
-                               history: [[start, 0], [start + 3 * day, 70]] };
-            compare(g.mainRunOut.length, 0);
-            compare(g.secondRunOut.length, 2);
-            fuzzyCompare(g.secondRunOut[1].x, 3 * day * 100 / 70 / week * g.width, 1e-9);
+        // With both limits on course to run out, only the named one's run-out
+        // is drawn, from its own line; naming neither draws none.
+        function test_onlyTheNamedRunOut_data() {
+            return [{ tag: "main", runOut: start + 3 * day * 100 / 60 },
+                    { tag: "second", runOut: start + 3 * day * 100 / 70 },
+                    { tag: "none" }];
+        }
+
+        function test_onlyTheNamedRunOut(data) {
+            const at = start + 3 * day;
+            const g = make([[start, 0], [at, 60]], { percent: 60, at: at, projected: data.runOut ? data.tag : "" });
+            g.secondWindow = { resetsAt: start + week, windowSeconds: week, percent: 70, history: [[start, 0], [at, 70]] };
+            const ends = rectangles(g).filter(i => i.radius > 0);
+            if (data.runOut === undefined) {
+                compare(g.projection.length, 0);
+                verify(!runOutPath(g).shape.visible);
+                compare(ends.length, 0, "no end dot");
+                return;
+            }
+            const series = data.tag === "main" ? g.mainPoints : g.secondPoints;
+            const last = series[series.length - 1];
+            compare(g.projection.length, 2);
+            compare([g.projection[0].x, g.projection[0].y], [last.x, last.y]);
+            fuzzyCompare(g.projection[1].x, (data.runOut - start) / week * g.width, 1e-9);
             verify(runOutPath(g).shape.visible);
-            compare(String(endDot(g, g.secondRunOut[1]).color), String(Kirigami.Theme.negativeTextColor));
+            compare(ends.length, 1, "one end dot");
+            verify(endDot(g, g.projection[1]), "where the named limit runs out");
         }
 
         // The label sits at the right end, where the week is still to come,
@@ -1852,8 +1904,8 @@ Item {
             const lasting = make([[start, 0], [at, 40]], { percent: 40, at: at });
             verify(!rule(lasting).atStart);
             const late = 3 * day * 100 / (week - 2 * 3600);
-            const running = make([[start, 0], [at, late]], { percent: late, at: at });
-            compare(running.mainRunOut.length, 2);
+            const running = make([[start, 0], [at, late]], { percent: late, at: at, projected: "main" });
+            compare(running.projection.length, 2);
             verify(rule(running).atStart);
         }
 
@@ -1866,12 +1918,12 @@ Item {
             fuzzyCompare(dot.x + dot.width / 2, p.x, 1e-9);
             fuzzyCompare(dot.y + dot.height / 2, p.y, 1e-9);
             // A week that lasts, so no run-out ends in a dot either.
-            const line = make([[start, 0], [start + day, 10]], { percent: 10, at: start + day });
+            const line = make([[start, 0], [start + day, 10]], { percent: 10, at: start + day, projected: "second" });
             verify(!rectangles(line).some(i => i.radius > 0), "a line has no dot");
 
             // The same for the model's limit, in its dashed line's colour.
             line.secondWindow = { resetsAt: start + week, windowSeconds: week, percent: 10, history: [[start + day, 10]] };
-            compare(line.secondRunOut.length, 0);
+            compare(line.projection.length, 0);
             compare(line.secondPoints.length, 1);
             const second = rectangles(line).find(i => i.radius > 0);
             verify(second, "the model's single reading is a dot");
