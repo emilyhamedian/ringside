@@ -5,13 +5,13 @@ import QtQuick
 import QtTest
 import org.kde.kirigami as Kirigami
 import "../../package/contents/ui"
+import "../../package/contents/ui/code/format.js" as Format
 
 // The panel strip with FakeMonitor's readings: rings follow the panel's
 // thickness inside the hover wash, with the item's name inside them and their
-// readings on the rows the rates use; cells grow at once and shrink after a
-// hold, rates never change its width, a thin vertical panel's rates fit,
-// mirrored layouts read right to left, and every cell describes its readings
-// in words.
+// readings on the rows the rates use; cells, rates included, grow at once and
+// shrink after a hold, a thin vertical panel's rates fit, mirrored layouts
+// read right to left, and every cell describes its readings in words.
 Item {
     id: root
     width: 1200
@@ -249,10 +249,10 @@ Item {
             return sum;
         }
 
-        // The cells sit side by side from the strip's start, and the rates'
-        // slack after the last of them.
+        // The cells sit side by side from the strip's start, with nothing
+        // after the last of them.
         function checkRow(what) {
-            compare(strip.implicitWidth, cellsWidth() + strip.rateSlack, what + ": the cells and the rates' slack");
+            compare(strip.implicitWidth, cellsWidth(), what + ": the cells and nothing more");
             for (let i = 1; i < strip.items.length; ++i) {
                 compare(box(strip.cellAt(i)).x, box(strip.cellAt(i - 1)).right, what + ": " + strip.items[i] + " follows " + strip.items[i - 1]);
             }
@@ -272,7 +272,7 @@ Item {
             ];
         }
 
-        function test_ratesNeverMoveTheTray_data() {
+        function test_ratesHoldTheirWidth_data() {
             const rows = [];
             for (const [order, items] of [["rates last", ["cpu", "gpu", "memory", "network", "disk"]],
                                           ["rates between", ["cpu", "network", "gpu", "disk", "memory", "claude"]]]) {
@@ -285,41 +285,33 @@ Item {
             return rows;
         }
 
-        // Rates hug their text, and the room their widest readings need and
-        // don't use now sits after the last item, so however rates change the
-        // strip keeps its width and nothing after it moves. A rate in the
-        // last place follows its text at once; any other holds its width as
-        // rings do, so an item after it moves only when a rate before it
-        // grows, the network's rates as they come moving the disk's no more
-        // than a ring's readings move the next ring.
-        function test_ratesNeverMoveTheTray(data) {
+        // Rates hold their width as rings do, wherever they sit: a wider
+        // reading takes its room at once, moving the items after it, and a
+        // narrower one waits out the settle delay, so traffic that comes and
+        // goes moves the panel once. An item moves only when one before it
+        // grew. Settled, each rate hugs its text, so a quiet disk at the end
+        // of the strip leaves only its cell's padding after its text, the
+        // gap any item leaves.
+        function test_ratesHoldTheirWidth(data) {
             monitor.networkBits = data.bits;
             const strip = makePanel(data.thickness, { items: data.items, relayoutWindow: 0 });
-            const width = strip.implicitWidth;
             const rates = data.items.map((item, i) => i).filter(i => !root.ringItems.includes(data.items[i]));
-            const trailing = i => i === data.items.length - 1;
+            const tight = i => strip.cellAt(i).contentWidth + 2 * strip.cellAt(i).padding;
             const widths = () => data.items.map((item, i) => strip.cellAt(i).implicitWidth);
             const places = () => data.items.map((item, i) => box(strip.cellAt(i)).x);
             let before = widths();
             let at = places();
-            let moved = 0;
+            let held = false;
             checkRow("at first");
             for (const step of rateChanges()) {
-                compare(sizeAfter(strip, step.change).width, width, step.what);
+                sizeAfter(strip, step.change);
                 checkRow(step.what);
                 checkFits(step.what);
-                rates.forEach(index => {
-                    const cell = strip.cellAt(index);
-                    const tight = cell.contentWidth + 2 * cell.padding;
-                    verify(cell.implicitWidth <= cell.reservedWidth, step.what + ": " + cell.item + " within its reserve");
-                    if (trailing(index)) {
-                        compare(cell.implicitWidth, tight, step.what + ": " + cell.item + " at the end hugs its text");
-                    } else {
-                        compare(cell.implicitWidth, Math.max(tight, before[index]), step.what + ": " + cell.item + " before another item holds");
-                    }
-                    moved += cell.implicitWidth !== before[index] ? 1 : 0;
-                });
                 const now = widths();
+                rates.forEach(i => {
+                    compare(now[i], Math.max(tight(i), before[i]), step.what + ": " + data.items[i] + " holds");
+                    held = held || now[i] > tight(i);
+                });
                 const placed = places();
                 for (let i = 1; i < data.items.length; ++i) {
                     if (!now.slice(0, i).some((w, j) => w > before[j])) {
@@ -329,12 +321,32 @@ Item {
                 before = now;
                 at = placed;
             }
-            verify(moved > 0, "the rates changed width");
+            verify(held, "a rate holds room it no longer needs");
 
-            // The slack follows the items shown: here as many, one rate fewer.
-            strip.items = data.items.map(item => item === "disk" ? "codex" : item);
+            // The last step leaves the disk quiet. Once that has lasted the
+            // delay, every rate is as wide as its text.
+            strip.settleDelay = 300;
+            rates.forEach(i => tryCompare(strip.cellAt(i), "implicitWidth", tight(i), 3000, data.items[i] + " settles"));
+            verify(waitForPolish(strip), "laid out");
+            checkRow("settled");
+            const disk = strip.cellAt(data.items.indexOf("disk"));
+            compare(rateRows(data.items.indexOf("disk")).map(t => t.text), [Format.rate(0, false).value, Format.rate(0, false).value]);
+            const after = box(disk).right - box(disk.contentItem).right;
+            verify(after >= disk.padding && after < disk.padding + 1, "after the quiet disk's text, its padding: " + after);
+            if (data.items[data.items.length - 1] === "disk") {
+                compare(strip.implicitWidth, box(disk).right, "the strip ends with the disk");
+            }
+
+            // A change of layout takes the rates' new widths at once.
+            strip.settleDelay = 60000;
+            sizeAfter(strip, () => { monitor.diskRead = 88.8 * 1048576; monitor.networkDown = 88.8e6 / 8; });
+            sizeAfter(strip, () => { monitor.diskRead = 0; monitor.networkDown = 0; });
+            rates.forEach(i => verify(strip.cellAt(i).implicitWidth > tight(i), data.items[i] + " holds"));
+            strip.thickness = data.thickness + 1;
+            strip.height = data.thickness + 1;
             waitForRendering(strip);
-            checkRow("the disk swapped for Codex");
+            rates.forEach(i => compare(strip.cellAt(i).implicitWidth, tight(i), data.items[i] + " in the new layout"));
+            checkRow("a new layout");
         }
 
         function test_ringsGrowAtOnceAndShrinkAfterTheHold_data() {
@@ -449,7 +461,6 @@ Item {
         function test_unitsAndFontAreLayout() {
             const strip = makePanel(46, { items: ["cpu", "network", "claude"], relayoutWindow: 0 });
             const network = strip.cellAt(1);
-            verify(network.holdsWidth, "a rate mid-strip holds");
             const tight = () => network.contentWidth + 2 * network.padding;
             sizeAfter(strip, () => { monitor.networkDown = 88.8e6 / 8; });
             sizeAfter(strip, () => { monitor.networkDown = 999 / 8; });
@@ -564,8 +575,7 @@ Item {
                     compare(box(strip.cellAt(i)).x, box(strip.cellAt(i - 1)).right, items[i] + " follows " + items[i - 1]);
                 }
             }
-            compare(strip.implicitWidth, sum + strip.rateSlack);
-            verify(strip.rateSlack > 0, "the rates keep room for wider readings");
+            compare(strip.implicitWidth, sum);
             const rectangles = all(strip, isRectangle);
             const dots = rectangles.filter(r => r.parent.accessibleDescription !== undefined);
             compare(dots.length, 1);
@@ -833,8 +843,8 @@ Item {
             compare(line(3, "second").text, "2d", "where the panel shows the days alone");
         }
 
-        // Right to left the strip runs from the right edge, with the rates'
-        // slack at the left end; each item's content keeps to the cell's
+        // Right to left the strip runs from the right edge to the left one;
+        // each item's content keeps to the cell's
         // start, each reading on the ring's left, hugging it; on one line the
         // ring's own reading comes first, nearest the ring. A reading is one
         // text, so a number never parts from its sign. A rate's arrow or
@@ -850,7 +860,7 @@ Item {
                 compare(box(strip.cellAt(i)).right, box(strip.cellAt(i - 1)).x, strip.items[i] + " left of " + strip.items[i - 1]);
             }
             compare(box(strip.cellAt(0)).right, strip.width, "from the right edge");
-            compare(box(strip.cellAt(strip.items.length - 1)).x, strip.rateSlack, "the slack at the left end");
+            compare(box(strip.cellAt(strip.items.length - 1)).x, 0, "to the left edge");
             for (let i = 0; i < 4; ++i) {
                 const cell = strip.cellAt(i);
                 const gauge = box(gaugeAt(i));

@@ -23,15 +23,6 @@ MouseArea {
     // signed-out account. When it changes the cell takes its new width at
     // once.
     property string layoutKey: ""
-    // Whether the cell keeps its width through a shrink (see shownWidth).
-    // The strip lets a rate in the last place go, as its room is kept after
-    // the last item.
-    property bool holdsWidth: true
-    // The width the cell needs for the widest readings it can show, where
-    // that is known; the room it leaves of that is its slack, which the
-    // strip keeps at its end so the cell's changes don't move what follows.
-    property real reservedWidth: 0
-    readonly property real slack: Math.max(0, reservedWidth - implicitWidth)
     // Between the wash and the panel's edges, across a horizontal panel.
     readonly property real inset: vertical ? 0 : Math.round(Kirigami.Units.smallSpacing / 2)
     // Between the content and the cell's ends. Along a horizontal panel two
@@ -58,14 +49,13 @@ MouseArea {
     // count as a change.
     readonly property real contentWidth: contentItem ? Math.ceil(contentItem.implicitWidth) : 0
     property real settledWidth: 0
-    readonly property real shownWidth: holdsWidth ? Math.max(contentWidth, settledWidth) : contentWidth
     property int settleDelay: 3 * 60 * 1000
     // A change of layout reaches the content's width a frame or two later,
     // once the layouts in it are polished; for this long after one, and
     // after the cell is made, a narrower content applies at once.
     property int relayoutWindow: 500
 
-    implicitWidth: (vertical ? (contentItem ? contentItem.implicitWidth : 0) : shownWidth) + 2 * padding
+    implicitWidth: (vertical ? (contentItem ? contentItem.implicitWidth : 0) : Math.max(contentWidth, settledWidth)) + 2 * padding
     implicitHeight: (contentItem ? contentItem.implicitHeight : 0) + 2 * (vertical ? Kirigami.Units.smallSpacing : inset)
     hoverEnabled: true
     activeFocusOnTab: true

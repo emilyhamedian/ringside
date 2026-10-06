@@ -134,7 +134,7 @@ Item {
         }
 
         function strip(applet) {
-            return find(applet, i => i.cellAt !== undefined && i.rateSlack !== undefined);
+            return find(applet, i => i.cellAt !== undefined && i.ringsOnly !== undefined);
         }
 
         function popup(applet) {
