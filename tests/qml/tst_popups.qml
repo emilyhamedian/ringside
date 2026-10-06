@@ -1241,6 +1241,39 @@ Item {
             });
         }
 
+        // Each GPU's temperature takes the level colours at 75 °C and 90 °C,
+        // judged in Celsius whatever unit it is shown in, and stays the text
+        // colour with highlighting off.
+        function test_gpuTemperatureTakesTheLevelColours_data() {
+            return [{ tag: "74", celsius: 74, tone: "text" }, { tag: "75", celsius: 75, tone: "neutral" },
+                    { tag: "90", celsius: 90, tone: "negative" }, { tag: "90 plain", celsius: 90, plain: true, tone: "text" },
+                    { tag: "50 in Fahrenheit", celsius: 50, fahrenheit: true, tone: "text" },
+                    { tag: "96 in Fahrenheit", celsius: 96, fahrenheit: true, tone: "negative" }];
+        }
+
+        function test_gpuTemperatureTakesTheLevelColours(data) {
+            const expected = data.tone === "negative" ? Kirigami.Theme.negativeTextColor
+                           : data.tone === "neutral" ? Kirigami.Theme.neutralTextColor : Kirigami.Theme.textColor;
+            normal.highlightTemperatures = !data.plain;
+            normal.fahrenheit = !!data.fahrenheit;
+            normal.gpuOuter.temperature = data.celsius;
+            normal.gpuInner.temperature = data.celsius;
+            try {
+                const headers = all(load("GpuPopup", normal), i => i.visible && i.partsShown !== undefined);
+                compare(headers.length, 2);
+                headers.forEach(h => {
+                    const headline = readings(h).find(r => r.visible);
+                    compare(headline.value, Format.temperature(data.celsius, !!data.fahrenheit), h.title);
+                    compare(String(parts(headline).number.color), String(expected), h.title + ": the digits as drawn");
+                });
+            } finally {
+                normal.highlightTemperatures = true;
+                normal.fahrenheit = false;
+                normal.gpuOuter.temperature = Qt.binding(() => normal.gpuOuter.awake ? 48 : NaN);
+                normal.gpuInner.temperature = Qt.binding(() => normal.gpuInner.awake ? 41 : NaN);
+            }
+        }
+
         // A long name elides in its header at the page widths a popup
         // takes, short of the temperature, which keeps its full width.
         function test_gpuLongNamesFit_data() {
