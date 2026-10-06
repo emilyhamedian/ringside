@@ -69,6 +69,16 @@ PopupPage {
             const nearest = Math.round(p.runOut / 600) * 600;
             const when = words.weekdayTime(nearest <= limit.resetsAt - 60 ? nearest : Math.floor(p.runOut / 600) * 600,
                                            popup.weekly);
+            // Projected from a reading hours old, while checks fail, the
+            // run-out can already lie behind now: then it may have happened.
+            if (p.runOut <= popup.nowMs / 1000) {
+                return !all ? i18nc("@info at the rate of a reading hours old, a model's limit would already be used up, e.g. At this pace, Fable may have run out Mon 5:50 PM",
+                                    "At this pace, %1 may have run out %2", limit.label, when)
+                     : popup.limits.length > 1 ? i18nc("@info at the rate of a reading hours old, every model's shared weekly limit would already be used up, e.g. At this pace, all models may have run out Mon 5:50 PM",
+                                                       "At this pace, all models may have run out %1", when)
+                     : i18nc("@info at the rate of a reading hours old, the weekly limit would already be used up, e.g. At this pace, the weekly limit may have run out Mon 5:50 PM",
+                             "At this pace, the weekly limit may have run out %1", when);
+            }
             // The shared limit is named too: under the first of several bars,
             // a bare "runs out" could be read as being about a model.
             return !all ? i18nc("@info a model's limit runs out before the reset at the rate so far, e.g. At this pace, Fable runs out Tue 3:30 AM",

@@ -1217,7 +1217,23 @@ Item {
                 { tag: "quietFirstDay", row: -1,
                   weekly: window(5, 7 * day - 3 * 3600, [[0.1, 2], [0, 5]]), scoped: [], expect: u => "" },
                 { tag: "resetPassed", row: -1,
-                  weekly: window(40, -60, [[3, 10], [0, 40]]), scoped: [], expect: u => "" }
+                  weekly: window(40, -60, [[3, 10], [0, 40]]), scoped: [], expect: u => "" },
+                // Projected from a reading two days old, the run-out has
+                // already passed: it may have happened, not still to come.
+                { tag: "staleRunOutPast", row: 0, ago: 2 * day,
+                  weekly: window(60, 3 * day, [[4, 0], [2, 60]]), scoped: [],
+                  expect: u => "At this pace, the weekly limit may have run out "
+                      + wallClock(u, u.createdAt - 4 * day + 2 * day * 100 / 60, 600) },
+                { tag: "staleModelRunOutPast", row: 1, ago: 2 * day,
+                  weekly: window(20, 3 * day, [[4, 0], [2, 20]]),
+                  scoped: [{ id: "Fable", label: "Fable", w: window(60, 3 * day, [[4, 0], [2, 60]]) }],
+                  expect: u => "At this pace, Fable may have run out "
+                      + wallClock(u, u.createdAt - 4 * day + 2 * day * 100 / 60, 600) },
+                { tag: "staleAllRunOutPast", row: 0, ago: 2 * day,
+                  weekly: window(60, 3 * day, [[4, 0], [2, 60]]),
+                  scoped: [{ id: "Fable", label: "Fable", w: window(20, 3 * day, [[4, 0], [2, 20]]) }],
+                  expect: u => "At this pace, all models may have run out "
+                      + wallClock(u, u.createdAt - 4 * day + 2 * day * 100 / 60, 600) }
             ];
         }
 
@@ -1234,6 +1250,10 @@ Item {
             if (data.scoped) {
                 changes.scoped = data.scoped.map(s => Object.assign({ id: s.id, label: s.label },
                                                                     usage.window(s.w.percent, s.w.left, s.w.points)));
+            }
+            if (data.ago !== undefined) {
+                Object.assign(changes, { fetchedAt: usage.createdAt - data.ago, lastError: "HTTP Error 500",
+                                         lastErrorAt: usage.createdAt - 600 });
             }
             setClaude(changes);
             const popup = load("claude");
