@@ -9,8 +9,9 @@ import "../code/style.js" as Style
 // A percentage graph's top: a faint rule at 100 % with "100%" at one end,
 // fills its graph and goes under the data. The label sits at the left end,
 // where a graph's oldest data usually lies low, or at the right end with
-// preferEnd, and moves to the other end when a line would run through it.
-// The graph maps 100 % to limitY.
+// preferEnd, and moves to the other end when a line would run through it:
+// faded out and back in, while the line eases to the readings that moved
+// it. The graph maps 100 % to limitY.
 Item {
     id: rule
 
@@ -31,6 +32,32 @@ Item {
     readonly property bool atStart: preferEnd
         ? clearOf(0, span) && !clearOf(width - span, width)
         : clearOf(0, span) || !clearOf(width - span, width)
+    // Where the label is drawn: set rather than bound, so the move can wait
+    // for the fade. A rule that has just been sized moves it at once.
+    property bool shownAtStart: true
+    property real placedWidth: 0
+
+    Component.onCompleted: {
+        shownAtStart = atStart;
+        placedWidth = width;
+    }
+    onAtStartChanged: {
+        if (width === placedWidth && Kirigami.Units.longDuration > 1) {
+            move.restart();
+        } else {
+            move.stop();
+            label.opacity = 1;
+            shownAtStart = atStart;
+        }
+        placedWidth = width;
+    }
+
+    SequentialAnimation {
+        id: move
+        NumberAnimation { target: label; property: "opacity"; to: 0; duration: Kirigami.Units.shortDuration; easing.type: Easing.InOutQuad }
+        ScriptAction { script: rule.shownAtStart = rule.atStart }
+        NumberAnimation { target: label; property: "opacity"; to: 1; duration: Kirigami.Units.shortDuration; easing.type: Easing.InOutQuad }
+    }
 
     // Whether every series stays below the label between x0 and x1, counting
     // segments that cross either end.
@@ -46,7 +73,7 @@ Item {
     }
 
     Rectangle {
-        x: rule.atStart ? rule.span : 0
+        x: rule.shownAtStart ? rule.span : 0
         y: rule.ruleY
         width: Math.max(0, rule.width - rule.span)
         height: 1
@@ -55,7 +82,7 @@ Item {
 
     Text {
         id: label
-        x: rule.atStart ? 0 : rule.width - implicitWidth
+        x: rule.shownAtStart ? 0 : rule.width - implicitWidth
         // Centres the digits' ink, not the line box, on the rule.
         y: Math.round(rule.limitY - (baselineOffset + ink.tightBoundingRect.y + ink.tightBoundingRect.height / 2))
         text: i18nc("@info a percentage", "%1%", Format.percent(100))

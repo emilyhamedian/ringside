@@ -7,12 +7,14 @@ import org.kde.kirigami as Kirigami
 import "../../package/contents/ui"
 import "../../package/contents/ui/popups"
 import "../../package/contents/ui/code/format.js" as Format
+import "../../package/contents/ui/code/history.js" as History
 
 // How readings move: a ring's arc follows a new reading without passing it
 // and bends when another arrives mid-move, its colour turns as it passes 75
-// and 90 %, and the number in a popup's ring counts with it. A duration of 0,
-// as Plasma's Instant animation speed gives, puts everything in place at
-// once. The test runner's Kirigami units are the defaults, at speed 1.
+// and 90 %, and the number in a popup's ring counts with it; a history
+// graph's points ease to a new sample in their slots. A duration of 0, as
+// Plasma's Instant animation speed gives, puts everything in place at once.
+// The test runner's Kirigami units are the defaults, at speed 1.
 Item {
     id: root
     width: 600
@@ -68,6 +70,23 @@ Item {
             width: 400
             ringValue: 40
             title: "CPU"
+        }
+    }
+
+    Component {
+        id: graphComponent
+        Graph {
+            width: 220
+            height: 60
+            length: 12
+        }
+    }
+
+    Component {
+        id: ruleComponent
+        LimitRule {
+            width: 200
+            height: 40
         }
     }
 
@@ -292,6 +311,138 @@ Item {
             compare(outerArc(gauge).percent, 92);
             compare(String(outerArc(gauge).color), String(root.tone(2)));
             compare(middle.text, "92%");
+        }
+    }
+
+    TestCase {
+        id: graphs
+        name: "GraphMotion"
+        when: windowShown
+
+        readonly property var start: [20, 35, 30, 50, 45, 60, 40, 55, 70, 65, 50, 60]
+
+        function init() {
+            failOnWarning(/TypeError|ReferenceError|SyntaxError|is not a function|Unable to assign|Cannot assign|Binding loop/);
+        }
+
+        function xy(points) {
+            return points.map(p => [p.x, p.y]);
+        }
+
+        function rest(g, values, maximum) {
+            return xy(History.points(values, g.length, g.width, g.height, maximum ?? g.maximum, g.topY));
+        }
+
+        // A new sample: nothing is drawn ahead of it, then every point eases
+        // from the height it had in its slot, the newest from the last
+        // reading, and comes to rest on the new samples.
+        function test_easesInPlace() {
+            const g = createTemporaryObject(graphComponent, graphs, { values: start });
+            const before = xy(g.mainDrawn);
+            compare(before, rest(g, start));
+            const next = History.push(start, 90, 12);
+            g.values = next;
+            compare(xy(g.mainDrawn), before, "nothing drawn ahead of the easing");
+            tryVerify(() => g.mainFrom.length > 0, 1000, "easing");
+            compare(xy(g.mainFrom), before, "each point from its slot's old height");
+            verify(g.progress < 1);
+            tryCompare(g, "progress", 1, 2000);
+            compare(xy(g.mainDrawn), rest(g, next));
+            compare(xy(g.mainPoints), rest(g, next), "at rest where the samples put it");
+        }
+
+        // A rate's new top comes with its sample and eases in with it, so the
+        // line meets the peak its caption names as it comes to rest.
+        function test_newTopEasesWithTheSample() {
+            const g = createTemporaryObject(graphComponent, graphs, { values: start, maximum: 100 });
+            const before = xy(g.mainDrawn);
+            const next = History.push(start, 180, 12);
+            g.values = next;
+            g.maximum = 180;
+            tryVerify(() => g.mainFrom.length > 0, 1000, "easing");
+            compare(xy(g.mainFrom), before, "from the line drawn at the old top");
+            tryCompare(g, "progress", 1, 2000);
+            compare(xy(g.mainDrawn), rest(g, next, 180));
+        }
+
+        // A sample mid-ease starts from where the line is drawn, between
+        // where the last one eased from and to, not from either end.
+        function test_aSampleMidEaseStartsWhereTheLineIs() {
+            const g = createTemporaryObject(graphComponent, graphs, { values: start });
+            const first = History.push(start, 95, 12);
+            g.values = first;
+            tryVerify(() => g.progress > 0.2 && g.progress < 0.8, 2000, "half way");
+            const from = xy(g.mainFrom);
+            const to = rest(g, first);
+            g.values = History.push(first, 10, 12);
+            tryVerify(() => g.mainFrom.length > 0 && g.mainFrom[0].y !== from[0][1], 1000, "easing again");
+            const again = xy(g.mainFrom);
+            let between = 0;
+            for (let i = 0; i < again.length; ++i) {
+                const [low, high] = [Math.min(from[i][1], to[i][1]), Math.max(from[i][1], to[i][1])];
+                verify(again[i][1] >= low - 1e-9 && again[i][1] <= high + 1e-9, "slot " + i + " in reach");
+                between += again[i][1] > low && again[i][1] < high ? 1 : 0;
+            }
+            verify(between > again.length / 2, "drawn part way: " + between + " of " + again.length);
+        }
+
+        // While the history grows in, each sample moves a slot left and the
+        // new one grows out of the old end.
+        function test_growingIn() {
+            const g = createTemporaryObject(graphComponent, graphs, { values: [30, 60] });
+            const before = xy(g.mainDrawn);
+            g.values = [30, 60, 20];
+            tryVerify(() => g.mainFrom.length > 0, 1000, "easing");
+            compare(xy(g.mainFrom), before.concat([before[1]]));
+            tryCompare(g, "progress", 1, 2000);
+            compare(xy(g.mainDrawn), rest(g, [30, 60, 20]));
+        }
+
+        // A sample that changes nothing drawn, and any change but a sample,
+        // such as a cleared history, are drawn at once, with no frames.
+        function test_noEasingWhereNothingMoves() {
+            const flat = Array(12).fill(0);
+            const g = createTemporaryObject(graphComponent, graphs, { values: flat });
+            g.values = History.push(flat, 0, 12);
+            wait(50);
+            compare(g.mainFrom, []);
+            compare(g.progress, 1);
+            g.values = [];
+            tryCompare(g, "mainDrawn", []);
+            compare(g.progress, 1);
+        }
+
+        // New readings that move the 100 % label to the other end fade it
+        // out there and back in at its new end; a resize moves it at once.
+        function test_ruleLabelFadesToItsOtherEnd() {
+            const rule = createTemporaryObject(ruleComponent, graphs);
+            const label = rule.children.find(c => c.text !== undefined);
+            compare(label.x, 0);
+            rule.series = [[{ x: 0, y: 1 }, { x: 200, y: 39 }]];
+            compare(rule.atStart, false, "decided at once");
+            compare(label.x, 0, "still at the start");
+            tryVerify(() => label.opacity < 1, 1000, "fading");
+            compare(label.x, 0, "while it fades out");
+            tryCompare(label, "x", rule.width - label.implicitWidth, 1000);
+            tryCompare(label, "opacity", 1, 1000);
+
+            rule.series = [[{ x: 0, y: 1 }, { x: 180, y: 1 }]];
+            tryCompare(label, "x", 0, 1000);
+            tryCompare(label, "opacity", 1, 1000);
+            rule.width = 400;
+            compare(rule.atStart, false);
+            compare(label.x, rule.width - label.implicitWidth, "resized: moved at once");
+            compare(label.opacity, 1);
+        }
+
+        // At Plasma's Instant speed a sample is drawn as it arrives.
+        function test_instant() {
+            const g = createTemporaryObject(graphComponent, graphs, { values: start, duration: 0 });
+            const next = History.push(start, 90, 12);
+            g.values = next;
+            compare(xy(g.mainDrawn), rest(g, next));
+            g.maximum = 180;
+            compare(xy(g.mainDrawn), rest(g, next, 180));
         }
     }
 }
