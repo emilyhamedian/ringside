@@ -18,20 +18,27 @@ Rectangle {
     // About the graph's scale, after the span or in the detail's place:
     // "THROUGHPUT · 60 s · peak 24.8 Mb/s", "READ · peak 18.5 MiB/s".
     property string graphNote: ""
+    // The text the content ends on, such as a reading, if it doesn't end on
+    // a graph: its line has room for descenders below its ink.
+    property Item foot: null
     default property alias content: body.data
 
     readonly property real horizontalPadding: Math.round(Kirigami.Units.largeSpacing * 1.5)
     readonly property real verticalPadding: Math.round(Kirigami.Units.largeSpacing * 1.25)
     // The caption's line box has room for accents over its capitals. Half
-    // of that comes off the top padding, so the capitals sit about as far
-    // from the top as the content's foot from the bottom.
+    // of that comes off the top padding; the ink at the foot, a graph's
+    // floor or a text's baseline, sits as far from the bottom as the
+    // capitals then sit from the top. Worked out from the fonts, never from
+    // the content's layout, so the tile's height can't feed back into it.
     readonly property real topTrim: caption.visible ? Math.round((captionMetrics.ascent - capHeight) / 2) : 0
+    readonly property real inkInset: verticalPadding + (caption.visible ? captionMetrics.ascent - capHeight - topTrim : 0)
+    readonly property real bottomPadding: Math.max(0, Math.round(inkInset - (foot ? foot.implicitHeight - foot.baselineOffset : 0)))
     // capitalHeight needs Qt 6.9; the ink of "H" stands in before that.
     readonly property real capHeight: captionMetrics.capitalHeight ?? capSample.tightBoundingRect.height // qmllint disable missing-property
 
     Layout.fillWidth: true
     implicitWidth: column.implicitWidth + 2 * horizontalPadding
-    implicitHeight: column.implicitHeight + 2 * verticalPadding - topTrim
+    implicitHeight: column.implicitHeight + verticalPadding - topTrim + bottomPadding
     radius: Kirigami.Units.smallSpacing
     color: Qt.alpha(Kirigami.Theme.textColor, 0.05)
 

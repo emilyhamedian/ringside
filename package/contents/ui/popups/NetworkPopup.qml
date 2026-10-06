@@ -158,6 +158,7 @@ PopupPage {
             caption: i18nc("@title:group", "Throughput")
             graphSeconds: popup.monitor.historySeconds
             graphNote: popup.peakNote(throughput.history, popup.monitor.networkBits)
+            foot: downNote
 
             Graph {
                 Layout.fillWidth: true
@@ -176,6 +177,7 @@ PopupPage {
                 spacing: Math.round(Kirigami.Units.largeSpacing * 1.75)
 
                 Note {
+                    id: downNote
                     Layout.minimumWidth: implicitWidth
                     text: i18nc("@label graph legend, the solid line", "— Down")
                 }

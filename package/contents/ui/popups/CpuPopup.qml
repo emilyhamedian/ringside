@@ -82,8 +82,10 @@ PopupPage {
 
         Tile {
             caption: i18nc("@title:group", "Frequency")
+            foot: frequencyReading
 
             Reading {
+                id: frequencyReading
                 readonly property var f: Format.frequency(popup.sensorValue(frequency))
                 value: f.value
                 unit: f.unit
@@ -93,6 +95,7 @@ PopupPage {
 
         Tile {
             caption: i18nc("@title:group", "Load average")
+            foot: lastMinute
 
             // The last minute large, then the 5 and 15 minute averages dimmer,
             // evenly spaced and in reading order under mirroring too. The
@@ -107,6 +110,7 @@ PopupPage {
                                                        popup.sensorValue(load15))
 
                 Reading {
+                    id: lastMinute
                     Layout.alignment: Qt.AlignBaseline
                     value: Format.load(popup.sensorValue(load1))
                     pointSize: load.pointSize

@@ -226,8 +226,10 @@ PopupPage {
                 id: vram
                 visible: section.slot.reportsVram
                 caption: i18nc("@title:group video memory", "VRAM")
+                foot: vramReading
 
                 Reading {
+                    id: vramReading
                     // An integrated GPU's share of system memory has no meaningful total.
                     // The known size stands in while a resting GPU's readings are held.
                     readonly property bool ofTotal: section.slot.kind === "discrete"
@@ -241,8 +243,10 @@ PopupPage {
 
             Tile {
                 caption: i18nc("@title:group GPU core clock", "Clock")
+                foot: clockReading
 
                 Reading {
+                    id: clockReading
                     readonly property var f: Format.frequency(section.slot.clock)
                     value: f.value
                     unit: f.unit
@@ -253,8 +257,10 @@ PopupPage {
             Tile {
                 visible: section.hasPower
                 caption: i18nc("@title:group GPU power draw", "Power")
+                foot: powerReading
 
                 Reading {
+                    id: powerReading
                     readonly property var w: Format.watts(section.slot.power)
                     value: w.value
                     unit: w.unit

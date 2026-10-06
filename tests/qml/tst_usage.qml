@@ -1150,6 +1150,24 @@ Item {
             compare(left + tile.width, popup.width - edge);
         }
 
+        // The week's tile ends on its legend's baseline with a model limit,
+        // on the graph's floor without one; either sits as far from the
+        // tile's bottom as the caption's capitals from its top.
+        function test_weekTilePadding_data() {
+            return [{ tag: "legend", item: "claude", legend: true }, { tag: "graph", item: "codex", legend: false }];
+        }
+        function test_weekTilePadding(data) {
+            const popup = load(data.item);
+            const tile = root.find(popup, i => i.visible && i.graphNote !== undefined);
+            compare(tile.foot !== null, data.legend);
+            const caption = root.find(tile, i => i.label !== undefined && i.detail !== undefined);
+            const capTop = caption.mapToItem(tile, Qt.point(0, caption.baselineOffset)).y - tile.capHeight;
+            const graph = root.find(tile, i => i.mainPoints !== undefined);
+            const foot = data.legend ? tile.height - tile.foot.mapToItem(tile, Qt.point(0, tile.foot.baselineOffset)).y
+                                     : tile.height - graph.mapToItem(tile, Qt.point(0, graph.height)).y;
+            fuzzyCompare(foot, capTop, 1, "the foot's ink " + foot + " from the bottom, the capitals " + capTop + " from the top");
+        }
+
         // Every model's limit gets a row, whichever the ring shows.
         function test_severalLimits() {
             const usage = monitor.usage;

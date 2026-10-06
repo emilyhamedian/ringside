@@ -280,6 +280,7 @@ PopupPage {
 
         Tile {
             caption: i18nc("@title:group the current weekly window", "This week")
+            foot: popup.innerLimit !== null ? allModels : null
             detail: {
                 const date = words.resetDate(popup.weekly);
                 return date ? i18nc("@title:group after THIS WEEK: when the week starts over, e.g. · resets Sun 7:00 AM EDT",
@@ -301,6 +302,7 @@ PopupPage {
                 spacing: Math.round(Kirigami.Units.largeSpacing * 1.75)
 
                 Caption {
+                    id: allModels
                     Layout.minimumWidth: implicitWidth
                     text: i18nc("@label graph legend, the solid line", "— All models")
                 }
