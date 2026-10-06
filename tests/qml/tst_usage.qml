@@ -28,6 +28,12 @@ Item {
     function i18np(s, p, n, ...args) { return substitute(n === 1 ? s : p, [n].concat(args)); }
     function i18ncp(c, s, p, n, ...args) { return substitute(n === 1 ? s : p, [n].concat(args)); }
 
+    // A C-locale expectation in the digits and decimal mark Format uses
+    // for the test's locale: "52%" is "٥٢%" under Arabic.
+    function localized(text) {
+        return text.replace(/\d+(?:\.(\d+))?/g, (m, decimals) => Format.fixed(Number(m), decimals ? decimals.length : 0));
+    }
+
     function stub(scenario) {
         return decodeURIComponent(Qt.resolvedUrl("data/fake-usage-" + scenario + ".py").toString().replace(/^file:\/\//, ""));
     }
@@ -462,9 +468,9 @@ Item {
         function test_texts(data) {
             const c = cell(data.tag);
             const gauge = c.children[0];
-            compare(shown(c), [data.percent, data.left]);
-            compare(line(c, "first").text, data.percent);
-            compare(plain(line(c, "second").text), data.left);
+            compare(shown(c), [data.percent, data.left].map(root.localized));
+            compare(line(c, "first").text, root.localized(data.percent));
+            compare(plain(line(c, "second").text), root.localized(data.left));
             verify(line(c, "second").y >= line(c, "first").y + line(c, "first").height, "the time sits under the percentage");
             compare(gauge.text, "", "no percentage inside the ring");
             const m = mark(c);
@@ -477,7 +483,7 @@ Item {
         // unnamed; with the text off, the ring keeps its mark alone.
         function test_oneLineAndRingOnly() {
             const thin = cell("claude", { twoLines: false });
-            compare(shown(thin), ["52%", "·", "2d"]);
+            compare(shown(thin), ["52%", "·", "2d"].map(root.localized));
             compare(line(thin, "second").y, line(thin, "first").y, "one line");
             verify(line(thin, "second").x > line(thin, "first").x);
             verify(!mark(thin).visible, "no mark beside one line");
@@ -559,7 +565,7 @@ Item {
             const dim = String(Style.dim(Kirigami.Theme.textColor));
             for (const twoLines of [true, false]) {
                 const c = cell("claude", { twoLines: twoLines });
-                compare(plain(line(c, "second").text), data.shows);
+                compare(plain(line(c, "second").text), root.localized(data.shows));
                 compare(String(line(c, "second").color), data.tone === "dim" ? dim : String(Kirigami.Theme.negativeTextColor));
                 compare(line(c, "first").color, c.children[0].outerTone, "the percentage follows the ring");
                 const dot = root.find(c, i => i.visible && i.text === "·");
@@ -681,13 +687,16 @@ Item {
             verify(!dot.visible, "gone with the next good check");
         }
 
+        // The percentages in the locale's digits; the stand-in i18ncp
+        // leaves the days and hours as they are given.
         function test_descriptions() {
-            compare(cell("claude").accessibleDescription, "52% used, Fable 78%, resets in 2 days 21 hours");
-            compare(cell("codex").accessibleDescription, "24% used, resets in 5 days 4 hours");
+            const p = root.localized;
+            compare(cell("claude").accessibleDescription, p("52%") + " used, Fable " + p("78%") + ", resets in 2 days 21 hours");
+            compare(cell("codex").accessibleDescription, p("24%") + " used, resets in 5 days 4 hours");
             monitor.usage.innerChoices = { claude: "none", codex: "" };
-            compare(cell("claude").accessibleDescription, "52% used, resets in 2 days 21 hours");
+            compare(cell("claude").accessibleDescription, p("52%") + " used, resets in 2 days 21 hours");
             claudeAt(40, 3600);
-            compare(cell("claude").accessibleDescription, "40% used, resets in 1 hour");
+            compare(cell("claude").accessibleDescription, p("40%") + " used, resets in 1 hour");
             monitor.usage.entries = { claude: { status: "signed_out" } };
             compare(cell("claude").accessibleDescription, "Signed out");
         }
@@ -743,33 +752,33 @@ Item {
             compare(claude.innerLimit.id, "Fable", "The only limit shows by default");
             compare(claude.children[0].inner, true);
             compare(claude.children[0].innerValue, 78);
-            compare(shown(claude), ["52%", "2d"]);
+            compare(shown(claude), ["52%", "2d"].map(root.localized));
             compare(codex.innerLimit, null, "No scoped limit, no inner ring");
             compare(codex.children[0].inner, false);
-            compare(shown(codex), ["24%", "5d"]);
+            compare(shown(codex), ["24%", "5d"].map(root.localized));
 
             setEntry("codex", { status: "ok", weekly: { percent: 24 },
                                 scoped: [{ id: "codex_spark", label: "GPT-5.3-Codex-Spark", percent: 5 }] });
             compare(codex.innerLimit.id, "codex_spark", "A new limit is picked up");
             compare(codex.children[0].inner, true);
             compare(codex.children[0].innerValue, 5);
-            compare(root.texts(codex), ["24%", "–"]);
+            compare(root.texts(codex), ["24%", "–"].map(root.localized));
 
             const fable = { id: "Fable", label: "Fable", percent: 78 };
             const sonnet = { id: "Sonnet", label: "Sonnet", percent: 9 };
             setEntry("claude", { status: "ok", weekly: { percent: 62 }, scoped: [fable, sonnet] });
             compare(claude.innerLimit, null, "Several and none picked: all models only");
             compare(claude.children[0].inner, false);
-            compare(root.texts(claude), ["62%", "–"]);
+            compare(root.texts(claude), ["62%", "–"].map(root.localized));
             monitor.usage.innerChoices = { claude: "Sonnet", codex: "" };
             compare(claude.innerLimit.id, "Sonnet");
             compare(claude.children[0].inner, true);
             compare(claude.children[0].innerValue, 9);
-            compare(root.texts(claude), ["62%", "–"]);
+            compare(root.texts(claude), ["62%", "–"].map(root.localized));
             monitor.usage.innerChoices = { claude: "none", codex: "" };
             compare(claude.innerLimit, null);
             compare(claude.children[0].inner, false);
-            compare(root.texts(claude), ["62%", "–"]);
+            compare(root.texts(claude), ["62%", "–"].map(root.localized));
             monitor.usage.innerChoices = { claude: "Sonnet", codex: "" };
             setEntry("claude", { status: "ok", weekly: { percent: 62 }, scoped: [fable] });
             compare(claude.innerLimit, null, "A picked limit that goes away leaves one circle");
@@ -849,12 +858,6 @@ Item {
             return page;
         }
 
-        // A C-locale expectation in the digits and decimal mark Format uses
-        // for the test's locale: "52%" is "٥٢%" under Arabic.
-        function localized(text) {
-            return text.replace(/\d+(?:\.(\d+))?/g, (m, decimals) => Format.fixed(Number(m), decimals ? decimals.length : 0));
-        }
-
         function graph(popup) {
             return root.find(popup, i => i.mainPoints !== undefined);
         }
@@ -926,14 +929,14 @@ Item {
         function test_innerLimit() {
             const popup = load("claude");
             const shown = root.texts(popup);
-            for (const text of ["Claude", "Weekly limits", "until reset", "All models", "Fable", localized("52%"), localized("78%"),
+            for (const text of ["Claude", "Weekly limits", "until reset", "All models", "Fable", root.localized("52%"), root.localized("78%"),
                                 "— All models", "- - Fable"]) {
                 verify(shown.includes(text), text + " in " + JSON.stringify(shown));
             }
             verify(shown.some(t => /^THIS WEEK · resets .+ EDT$/.test(t)), JSON.stringify(shown));
             verify(!shown.some(t => t.startsWith("resets in")), "Fable resets with the week");
             verify(!shown.includes("Open System Monitor"), "the footer has the gear alone");
-            compare(countdown(popup).map(r => [r.value, r.unit]), [[localized("2"), "d"], [localized("21"), "h"]]);
+            compare(countdown(popup).map(r => [r.value, r.unit]), [[root.localized("2"), "d"], [root.localized("21"), "h"]]);
             compare(graph(popup).mainPoints.length, 17);
             compare(graph(popup).secondPoints.length, 17);
             compare(graph(popup).pollAt, monitor.usage.createdAt);
@@ -947,7 +950,7 @@ Item {
                 if (i.outerTone !== undefined) {
                     return;
                 }
-                if (i.text === localized("52%") && i.font !== undefined) {
+                if (i.text === root.localized("52%") && i.font !== undefined) {
                     found.push(i);
                 }
                 i.children.forEach(collect);
@@ -975,11 +978,11 @@ Item {
             });
             popup.nowMs += 3600 * 1000;
             const after = countdown(popup);
-            compare(after.map(r => r.value + r.unit), ["2d", "20h"].map(localized));
+            compare(after.map(r => r.value + r.unit), ["2d", "20h"].map(root.localized));
             verify(after[0] === before[0] && after[1] === before[1], "the same Readings, not new ones");
             compare(row.Accessible.name, "2 days 20 hours until reset");
             popup.nowMs = (monitor.usage.entries.claude.weekly.resetsAt - 300) * 1000;
-            compare(countdown(popup).map(r => r.value + r.unit), [localized("5m")]);
+            compare(countdown(popup).map(r => r.value + r.unit), [root.localized("5m")]);
             popup.nowMs = (monitor.usage.entries.claude.weekly.resetsAt + 60) * 1000;
             compare(countdown(popup).length, 0);
             verify(root.texts(header(popup)).includes("–"), "a passed reset reads as a dash");
@@ -993,7 +996,7 @@ Item {
             const usage = monitor.usage;
             setClaude({ weekly: usage.window(30, 5 * usage.day + 18 * 3600 + 30, []) });
             const [days, hours] = countdown(load("claude"));
-            compare([days.value + days.unit, hours.value + hours.unit], ["5d", "18h"].map(localized));
+            compare([days.value + days.unit, hours.value + hours.unit], ["5d", "18h"].map(root.localized));
             for (const r of [days, hours]) {
                 const [number, unit] = r.children.filter(c => typeof c.text === "string");
                 spaceProbe.font = unit.font;
@@ -1049,7 +1052,7 @@ Item {
             const popup = load("codex");
             const shown = root.texts(popup);
             verify(shown.includes("Codex") && shown.includes("Weekly limit"), JSON.stringify(shown));
-            compare(countdown(popup).map(r => r.value + r.unit), ["5d", "4h"].map(localized));
+            compare(countdown(popup).map(r => r.value + r.unit), ["5d", "4h"].map(root.localized));
             verify(!shown.some(t => t.startsWith("- - ")), "no dashed series without an inner ring");
         }
 
@@ -1139,7 +1142,7 @@ Item {
             setClaude({ scoped: [Object.assign({ id: "Fable", label: "Fable" }, usage.window(78, 2 * usage.day + 21 * 3600, [])),
                                  Object.assign({ id: "Sonnet", label: "Sonnet" }, usage.window(12, 4 * usage.day, []))] });
             const shown = root.texts(load("claude"));
-            for (const text of ["All models", "Fable", "Sonnet", "78%", "12%", "resets in 4d 0h"].map(localized)) {
+            for (const text of ["All models", "Fable", "Sonnet", "78%", "12%", "resets in 4d 0h"].map(root.localized)) {
                 verify(shown.includes(text), text + " in " + JSON.stringify(shown));
             }
             verify(!shown.some(t => t.startsWith("- - ")), "two limits and no choice: no inner ring");
@@ -1181,7 +1184,7 @@ Item {
                   expect: u => "At this pace, the weekly limit runs out " + wallClock(u, u.createdAt + 2 * day, 600) },
                 { tag: "lasts", row: 0,
                   weekly: window(30, 4 * day, [[3, 0], [0, 30]]), scoped: [],
-                  expect: u => localized("At this pace, 70% by the reset") },
+                  expect: u => root.localized("At this pace, 70% by the reset") },
                 { tag: "everyModelLockedOut", row: 0,
                   weekly: window(100, 2 * day, [[3, 50], [2, 100], [0, 100]]),
                   expect: u => "Limit reached " + wallClock(u, u.createdAt - 2 * day, 60) },
@@ -1282,10 +1285,10 @@ Item {
             let popup = load("claude");
             let [all, fable] = rows(popup);
             compare(fable.level, 2);
-            compare(String(rowText(fable, localized("78%")).color), red);
+            compare(String(rowText(fable, root.localized("78%")).color), red);
             compare(String(fill(fable).color), red);
             compare(all.level, 0);
-            compare(String(rowText(all, localized("52%")).color), plain);
+            compare(String(rowText(all, root.localized("52%")).color), plain);
             compare(String(fill(all).color), plain);
             compare(header(popup).ringMinimumLevel, 0);
             compare(String(ring(popup).outerTone), plain);
@@ -1295,7 +1298,7 @@ Item {
             popup = load("claude");
             [all, fable] = rows(popup);
             compare(all.level, 2);
-            compare(String(rowText(all, localized("60%")).color), red);
+            compare(String(rowText(all, root.localized("60%")).color), red);
             compare(header(popup).ringMinimumLevel, 2);
             compare(String(ring(popup).outerTone), red);
 
@@ -1325,7 +1328,7 @@ Item {
             verify(note !== null);
             verify(note.text.endsWith(": <b>HTTP Error 500</b>"), note.text);
             compare(note.textFormat, Text.PlainText);
-            verify(root.texts(popup).includes(localized("52%")), "the last reading stays");
+            verify(root.texts(popup).includes(root.localized("52%")), "the last reading stays");
         }
 
         // The pace is measured to the poll the reading came from, so a
@@ -1361,7 +1364,7 @@ Item {
             const g = graph(popup);
             compare(g.mainPoints.length, history.length);
             verify(g.mainPoints[0].x >= 0 && g.mainPoints[g.mainPoints.length - 1].x <= g.width);
-            compare(countdown(popup).map(r => r.value + r.unit), ["1h", "0m"].map(localized));
+            compare(countdown(popup).map(r => r.value + r.unit), ["1h", "0m"].map(root.localized));
         }
     }
 
@@ -1774,7 +1777,7 @@ Item {
                          history: [[start, 0], [start + week / 2, 50]] };
             verify(!g.LayoutMirroring.enabled);
             compare(g.mainPoints[0].x, 0);
-            const label = root.find(rule(g), i => i.text === popups.localized("100%"));
+            const label = root.find(rule(g), i => i.text === root.localized("100%"));
             compare(label.x, g.width - label.implicitWidth);
         }
     }
