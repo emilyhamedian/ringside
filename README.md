@@ -25,8 +25,9 @@ lower. Temperature sensors go by plain names such as chip and hotspot.
 
 - **CPU**: usage and temperature.
 - **GPU**: a discrete GPU on the outer ring and an integrated one on the inner
-  ring, with the outer one's temperature; the popup shows both. With one GPU
-  there is one ring.
+  ring, with the outer one's temperature. The popup gives each GPU its own
+  header with its usage, name, memory and temperature, and a sleeping one a
+  single line. With one GPU there is one ring.
 - **Memory**: usage and the amount in use.
 - **Network**: download and upload rates.
 - **Disk**: read and write rates. Off by default; the network popup shows disk
