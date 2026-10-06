@@ -92,7 +92,7 @@ scripts/install.sh
 
 ## Claude and Codex
 
-![The Claude popup: the weekly limit, the Fable limit in red with a sentence saying when it runs out at this pace, and a graph of this week's usage](docs/usage.png)
+![The Claude popup: the weekly limit, the Fable limit in red with a sentence saying when it runs out at this pace, and a graph of this week's usage with red dots from the Fable line to where it reaches 100%](docs/usage.png)
 
 Turn them on under *Configure Ringside… → Panel Items*. Each shows while its
 command-line tool is signed in on this machine; if one doesn't appear, its row
