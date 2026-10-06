@@ -135,6 +135,13 @@ Item {
         }
     }
 
+    Component {
+        id: readoutComponent
+        Readout {
+            lines: ({ first: "40%", level: 0, second: "", heat: 0, parts: [] })
+        }
+    }
+
     // The countdown's markup in a text of its own, to compare the drawn one with.
     Component {
         id: styledComponent
@@ -814,6 +821,37 @@ Item {
             }
         }
 
+        function test_mirroredCountdownReadsFromTheRight_data() {
+            const set = zero => text => text.replace(/[0-9]/g, d => String.fromCharCode(zero + Number(d)));
+            return [{ tag: "Arabic-Indic digits, as in Egypt", digits: set(0x660) },
+                    { tag: "Latin digits, as in Israel", digits: set(0x30) },
+                    { tag: "Extended Arabic-Indic digits, as in Iran", digits: set(0x6f0) }];
+        }
+
+        // Mirrored, the countdown's first part is rightmost, read first as in
+        // the popup's header, whatever digits the locale has. Each part is
+        // drawn as a link, so linkAt() says which one lies where.
+        function test_mirroredCountdownReadsFromTheRight(data) {
+            const holder = keep(mirrorComponent.createObject(root));
+            const parts = [{ value: data.digits("23"), unit: "h" }, { value: data.digits("5"), unit: "m" }];
+            const readout = keep(readoutComponent.createObject(holder, {
+                lines: { first: "40%", level: 0, second: "", heat: 0, parts: parts }
+            }));
+            waitForRendering(readout);
+            const second = line(readout, "second");
+            const probe = keep(styledComponent.createObject(holder, { font: second.font, y: 50, width: 200 }));
+            probe.text = second.text.split("&#8201;").map((part, i) => '<a href="' + i + '">' + part + "</a>").join("&#8201;");
+            waitForRendering(probe);
+            const order = [];
+            for (let x = 0; x < probe.width; x += 0.5) {
+                const link = probe.linkAt(x, probe.height / 2);
+                if (link !== "" && order[order.length - 1] !== link) {
+                    order.push(link);
+                }
+            }
+            compare(order.join(","), "1,0", "the parts from left to right");
+        }
+
         function test_countdownMarkup_data() {
             const rows = [];
             for (const [what, left, parts] of [["days", 6 * day + 23 * 3600, [[6, "d"]]],
@@ -829,7 +867,8 @@ Item {
         // A countdown is one styled text: each number with its unit at the
         // smallest size, the pairs a thin space apart, so the units read
         // smaller than the digits and the line stays short. Mirrored, a
-        // right-to-left mark leads it, so the days come first from the right.
+        // right-to-left mark leads it and each space, so the days come first
+        // from the right.
         // A hidden twin with every digit at its widest keeps its room.
         function test_countdownMarkup(data) {
             setWeek("claude", [52, data.left]);
@@ -839,7 +878,8 @@ Item {
             const second = line(c, "second");
             const markup = data.parts.map(([value, unit]) => root.digits(value) + '<font size="1">' + unit + '</font>');
             compare(second.textFormat, Text.StyledText);
-            compare(second.text, (data.mirrored ? "\u200f" : "") + markup.join("&#8201;"));
+            const mark = data.mirrored ? "\u200f" : "";
+            compare(second.text, mark + markup.join(mark + "&#8201;"));
             verify(second.contentWidth <= second.width, second.contentWidth + " in " + second.width);
 
             // Drawn, the units are smaller and the thin space is thin.

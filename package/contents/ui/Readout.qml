@@ -45,14 +45,15 @@ GridLayout {
     // The countdown's parts as styled text: each number with its unit at the
     // smallest size, the pairs a thin space apart. Styled text turns a typed
     // thin space into a full one, so it goes in as a character reference.
-    // Mirrored, a leading right-to-left mark sets the line's direction, so
-    // the days come first from the right as in the popup, whatever script
-    // the units are in.
+    // Mirrored, a right-to-left mark leads the line and each space, so the
+    // days come first from the right as in the popup, whatever digits the
+    // locale has: Latin or Persian digits after a Latin unit would otherwise
+    // join it in one left-to-right run.
     function styled(parts, widest) {
         const escaped = text => String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-        return (LayoutMirroring.enabled ? "\u200f" : "")
-            + parts.map(part => escaped(widest ? face.widestDigits(face.plain, part.value) : part.value)
-                                + '<font size="1">' + escaped(part.unit) + '</font>').join("&#8201;");
+        const mark = LayoutMirroring.enabled ? "\u200f" : "";
+        return mark + parts.map(part => escaped(widest ? face.widestDigits(face.plain, part.value) : part.value)
+                                       + '<font size="1">' + escaped(part.unit) + '</font>').join(mark + "&#8201;");
     }
 
     columns: oneLine ? 3 : 1
