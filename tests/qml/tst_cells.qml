@@ -1068,11 +1068,12 @@ Item {
         }
 
         // Given more room than their text needs, as a cell holding its width
-        // gives them, the rates keep it inside in whole pixels, before their
-        // markers: each marker keeps its usual gap to its value, each rate's
-        // readings end at its end and the last at the rates' end. Stacked,
-        // the markers, values and units still line up. Side by side only the
-        // first rate takes the room, so the two rates stay together.
+        // gives them, the rates keep it inside in whole pixels, and each
+        // rate's readings end at its end and the last at the rates' end.
+        // Stacked, the room goes between the markers, which stay at the
+        // start, and the values, and the markers, values and units still line
+        // up. Side by side it goes before the first marker, each marker keeps
+        // its usual gap to its value, and the two rates stay together.
         function test_ratesKeepSpareRoomInside(data) {
             const c = cell(data.item, { singleRow: data.singleRow });
             const rates = root.findAll(c, i => i.reading !== undefined).sort((a, b) => a.index - b.index);
@@ -1090,11 +1091,16 @@ Item {
                 const marker = rate.children[0];
                 const value = root.find(rate, i => i.visible && i.horizontalAlignment === Text.AlignRight);
                 const pair = value.parent;
-                fuzzyCompare(x(value) - right(marker), Kirigami.Units.smallSpacing, 1e-6, what + "the marker by its value");
-                if (data.singleRow && rate.index === 1) {
+                if (!data.singleRow) {
                     compare(x(marker), x(rate), what + "the marker at the rate's start");
+                    inWholePixels(x(value) - right(marker) - Kirigami.Units.smallSpacing, what + "room between the marker and its value");
                 } else {
-                    inWholePixels(x(marker) - x(rate), what + "room before the marker");
+                    fuzzyCompare(x(value) - right(marker), Kirigami.Units.smallSpacing, 1e-6, what + "the marker by its value");
+                    if (rate.index === 1) {
+                        compare(x(marker), x(rate), what + "the marker at the rate's start");
+                    } else {
+                        inWholePixels(x(marker) - x(rate), what + "room before the marker");
+                    }
                 }
                 const end = right(pair);
                 verify(end > right(rate) - 1 && end <= right(rate), what + "the readings end at the rate's end: " + end + ", " + right(rate));
