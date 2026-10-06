@@ -10,8 +10,16 @@ and Codex usage limits if you want them.
 ![Ringside in a panel: CPU, GPU and memory rings with their names inside, each with its usage over its temperature or the memory in use, a Claude ring with its weekly usage over the time to its reset, then network rates](docs/panel.png)
 
 Each item is a ring with its name inside and its readings beside it, or a
-pair of rates. Click one for its popup: history graphs, per-thread load, top
+pair of rates. Items are as wide as their text, with the same gap between
+each. When a reading gains a character, the items after it move over at
+once; when it loses one, they wait three minutes before closing up, so a
+value that keeps changing width doesn't shuffle the panel.
+
+Click an item for its popup: history graphs, per-thread load, top
 processes, VRAM, clocks, power, swap, memory pressure and disk activity.
+Percentage graphs have a line at 100%; rate graphs reach up to their peak,
+which the caption names. Temperature sensors go by plain names such as chip
+and hotspot.
 
 ![The CPU, GPU, memory and network popups](docs/popups.png)
 
@@ -101,11 +109,24 @@ under *Panel Items* says why.
 - **Codex** needs the [Codex CLI](https://github.com/openai/codex) signed in.
   Ringside runs `codex app-server` to ask for the limits.
 
-The ring shows the weekly limit for all models. If your plan also has a
-per-model weekly limit, the inner ring shows it; choose which under *Sensors*.
-The popup lists every weekly limit, when each resets, and a graph of the week so far,
-which fills in as Ringside keeps checking. Reset times follow the time zone of
-Plasma's Digital Clock.
+The ring shows the weekly limit for all models, over the time left until it
+resets: the days alone ("6d") until the last day, then hours and minutes.
+At 100% that time turns red, since it's how long the limit stays reached. If
+your plan also has a per-model weekly limit, the inner ring shows it; choose
+which under *Sensors*. Model limits are the ones Anthropic's usage reply
+lists, under the names it gives them, such as Fable.
+
+A ring also turns red when its limit is on pace to run out before the reset,
+at the rate it has been used so far. When the last check failed, a small
+amber dot sits at the ring's corner and the tooltip says when.
+
+The popup lists every weekly limit and when each resets, and a graph of the
+week so far, which fills in as Ringside keeps checking. The graph has a line
+at 100% and a tick at the reset, and a limit on pace to run out gets a dotted
+line to where it would reach 100%. From a day into the week, or sooner if a
+limit is running out, a sentence says where it is heading: "At this pace, 88%
+by the reset", or "At this pace, Fable runs out Thu 8:20 PM". Reset times
+follow the time zone of Plasma's Digital Clock.
 
 ## Discrete GPUs on laptops
 
