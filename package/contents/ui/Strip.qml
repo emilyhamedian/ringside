@@ -84,9 +84,10 @@ GridLayout {
         required property int index
         readonly property alias cell: cell
         readonly property bool textShown: !strip.isRing(modelData) || !strip.vertical && !strip.ringsOnly.includes(modelData)
-        // Rates with no ring after them: their changes move nothing but the
-        // room kept at the strip's end, so they needn't hold their width.
-        readonly property bool trailingRate: !strip.isRing(modelData) && strip.items.slice(index + 1).every(k => !strip.isRing(k))
+        // A rate in the last place: its changes move nothing but the room
+        // kept at the strip's end, so it needn't hold its width. Any other
+        // item, a rate included, would move the ones after it.
+        readonly property bool trailingRate: !strip.isRing(modelData) && index === strip.items.length - 1
 
         Layout.fillWidth: strip.vertical
         Layout.fillHeight: !strip.vertical
