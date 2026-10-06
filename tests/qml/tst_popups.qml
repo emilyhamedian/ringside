@@ -131,6 +131,13 @@ Item {
         diskWriteHistory: Array(historyLength).fill(8000)
     }
 
+    // An upload, a backup say, above every download in view.
+    FakeMonitor {
+        id: uploading
+        networkUp: 2.4e6
+        networkUpHistory: bursts(networkUp, 9e6, 3)
+    }
+
     // Just opened: no rate has a sample yet.
     FakeMonitor {
         id: fresh
@@ -147,6 +154,11 @@ Item {
 
     FontMetrics {
         id: fontProbe
+    }
+
+    // What a Text that elides draws of its text.
+    TextMetrics {
+        id: elideProbe
     }
 
     Component {
@@ -723,6 +735,71 @@ Item {
             } finally {
                 normal.networkBits = true;
                 fresh.networkBits = true;
+            }
+        }
+
+        // Throughput tops out at the higher of its two series, and its
+        // caption names that peak, the upload's when it is the higher.
+        function test_throughputPeakCoversUpload() {
+            const up = Math.max(...uploading.networkUpHistory);
+            verify(up > Math.max(...uploading.networkDownHistory), "the upload peaks higher");
+            const g = graphs(load("NetworkPopup", uploading))[0];
+            compare(g.maximum, up);
+            const top = g.secondPoints.reduce((m, p) => Math.min(m, p.y), Infinity);
+            fuzzyCompare(top, g.topY, 0.001, "the upload's peak lands at the top");
+            verify(g.mainPoints.every(p => p.y > top), "the download stays under it");
+            const r = Format.rate(up, uploading.networkBits);
+            verify(tileCaption(g).text.endsWith(" · peak " + r.value + " " + r.unit), tileCaption(g).text);
+        }
+
+        function test_rateCaptionsKeepTheirLabel_data() {
+            const rows = [];
+            // A 360 px page at gridUnit 18, as at 1.25 with Breeze, and the
+            // 280 px of gridUnit 14, here in the larger font.
+            for (const width of [Kirigami.Units.gridUnit * 20, Math.round(Kirigami.Units.gridUnit * 20 * 14 / 18)]) {
+                rows.push({ tag: width + " px", width: width, mirrored: false });
+                rows.push({ tag: width + " px mirrored", width: width, mirrored: true });
+            }
+            return rows;
+        }
+
+        // A third longer in every string, the rate tiles' captions stay
+        // inside their tiles at the page widths a popup takes: where a peak
+        // note doesn't fit, it is cut short, never the label before it.
+        function test_rateCaptionsKeepTheirLabel(data) {
+            root.pseudo = true;
+            try {
+                const loader = createTemporaryObject(data.mirrored ? mirroredHost : host, root, { width: data.width });
+                loader.setSource(Qt.resolvedUrl("../../package/contents/ui/popups/NetworkPopup.qml"), { monitor: normal });
+                const popup = loader.item;
+                waitForRendering(popup);
+                compare(popup.width, data.width);
+                const captions = graphs(popup).map(tileCaption);
+                compare(captions.length, 3);
+                verify(captions.some(c => c.truncated), "some note is cut short: " + captions.map(c => c.text).join(", "));
+                for (const c of captions) {
+                    const tile = ancestor(c, i => i.graphNote !== undefined);
+                    const left = c.mapToItem(tile, 0, 0).x;
+                    const drawn = c.elide !== Text.ElideNone ? c.width : Math.max(c.width, c.contentWidth);
+                    verify(left >= tile.horizontalPadding - 0.5 && left + drawn <= tile.width - tile.horizontalPadding + 0.5,
+                           c.text + " at " + left + " to " + (left + drawn) + " in a tile " + tile.width + " wide");
+                    // Where even the label and an ellipsis are wider than
+                    // the caption, nothing can keep the label whole; at the
+                    // page's own width every label fits.
+                    const label = c.label.toLocaleUpperCase();
+                    elideProbe.font = c.font;
+                    elideProbe.text = label + "…";
+                    if (elideProbe.advanceWidth > c.width) {
+                        verify(data.width < Kirigami.Units.gridUnit * 20, label + " is " + elideProbe.advanceWidth + " wide in " + c.width);
+                        continue;
+                    }
+                    elideProbe.text = c.text;
+                    elideProbe.elide = c.elide;
+                    elideProbe.elideWidth = c.width;
+                    verify(elideProbe.elidedText.startsWith(label), "the label whole in " + elideProbe.elidedText);
+                }
+            } finally {
+                root.pseudo = false;
             }
         }
 

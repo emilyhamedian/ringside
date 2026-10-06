@@ -59,6 +59,12 @@ Item {
         return null;
     }
 
+    // The width of a space in a text's font.
+    TextMetrics {
+        id: spaceProbe
+        text: " "
+    }
+
     Component {
         id: configComponent
         QtObject {
@@ -978,6 +984,25 @@ Item {
             compare(countdown(popup).length, 0);
             verify(root.texts(header(popup)).includes("–"), "a passed reset reads as a dash");
             verify(!root.texts(header(popup)).includes("until reset"));
+        }
+
+        // Each unit sits against its number, "5d 18h" and not "5 d 18 h":
+        // the gap inside a pair is under half a space at the unit's size,
+        // and the pairs stand at least a space apart.
+        function test_countdownUnitsAreTight() {
+            const usage = monitor.usage;
+            setClaude({ weekly: usage.window(30, 5 * usage.day + 18 * 3600 + 30, []) });
+            const [days, hours] = countdown(load("claude"));
+            compare([days.value + days.unit, hours.value + hours.unit], ["5d", "18h"].map(localized));
+            for (const r of [days, hours]) {
+                const [number, unit] = r.children.filter(c => typeof c.text === "string");
+                spaceProbe.font = unit.font;
+                const gap = unit.mapToItem(r, 0, 0).x - number.mapToItem(r, number.width, 0).x;
+                verify(gap >= 0 && gap < spaceProbe.advanceWidth / 2, r.value + r.unit + ": " + gap + " px against a space of "
+                       + spaceProbe.advanceWidth);
+            }
+            const between = hours.mapToItem(days.parent, 0, 0).x - days.mapToItem(days.parent, days.width, 0).x;
+            verify(between >= spaceProbe.advanceWidth, "the pairs " + between + " px apart");
         }
 
         // The pairs follow the popup's direction, the largest unit first in
