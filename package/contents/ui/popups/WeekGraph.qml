@@ -6,6 +6,7 @@ import QtQuick
 import QtQuick.Shapes
 import org.kde.kirigami as Kirigami
 import "../code/pace.js" as Pace
+import "../code/reset.js" as Reset
 
 // A weekly limit's use through its window: time from the window's start to
 // its reset across, 0 to 100 % up, between a faint floor and the labelled
@@ -125,13 +126,14 @@ Item {
                       : null;
     }
 
-    // "same", "grew" by one reading in the same window, or "other".
+    // "same", "grew" by one reading in the same window, or "other". A reset
+    // time that jitters between reports is the same window, as in reset.js.
     function change(was, source) {
         if (!was || !source) {
             return !was && !source ? "same" : "other";
         }
         const history = Array.from(source.history ?? []);
-        const kept = was.resetsAt === source.resetsAt
+        const kept = Math.abs(source.resetsAt - was.resetsAt) <= Reset.MOVED_BY
             && was.history.every((p, i) => i < history.length && p[0] === history[i][0] && p[1] === history[i][1]);
         return !kept ? "other" : history.length === was.history.length ? "same"
              : history.length === was.history.length + 1 ? "grew" : "other";
@@ -143,7 +145,7 @@ Item {
     function poll() {
         const main = change(seenMain, window);
         const second = change(seenSecond, secondWindow);
-        if (duration > 0 && seenMain && window && seenMain.resetsAt !== window.resetsAt && seenMain.history.length > 0) {
+        if (duration > 0 && seenMain && window && window.resetsAt > seenMain.resetsAt + Reset.MOVED_BY && seenMain.history.length > 0) {
             const end = seenMain.resetsAt;
             const begin = end - seenMain.windowSeconds;
             ghostMain = pointsOn(seenMain.history, begin, end);
