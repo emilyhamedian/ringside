@@ -151,8 +151,10 @@ PopupPage {
             Layout.columnSpan: pressure.visible ? 1 : 2
             caption: i18nc("@title:group", "Swap")
             detail: popup.monitor.swapLabel ? "(" + popup.monitor.swapLabel + ")" : ""
+            foot: swapReading
 
             Reading {
+                id: swapReading
                 // NaN before the first reading, 0 without swap.
                 readonly property bool none: !(popup.monitor.swapTotal > 0)
                 readonly property var swap: Format.bytesOf(popup.monitor.swapUsed, popup.monitor.swapTotal)
@@ -169,8 +171,10 @@ PopupPage {
             visible: Number.isFinite(popup.monitor.memoryPressure)
             caption: i18nc("@title:group memory pressure", "Pressure")
             detail: i18nc("@title:group pressure stall information, averaged over 10 seconds", "(PSI 10 s)")
+            foot: pressureReading
 
             Reading {
+                id: pressureReading
                 value: Format.fixed(popup.monitor.memoryPressure, 2)
                 pointSize: Kirigami.Theme.defaultFont.pointSize * 1.38
             }

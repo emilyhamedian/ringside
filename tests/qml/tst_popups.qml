@@ -920,8 +920,9 @@ Item {
         }
 
         // A tile's caption sits half its line's leading closer to the top
-        // than the padding alone would put it, so its capitals are about as
-        // far from the top as the content from the bottom.
+        // than the padding alone would put it, and the ink at its foot, a
+        // graph's floor or the baseline of the text it ends on, as far from
+        // the bottom as its capitals are from the top.
         function test_tilePadding_data() {
             return [{ tag: "cpu", popup: "CpuPopup" }, { tag: "gpu", popup: "GpuPopup" },
                     { tag: "memory", popup: "MemoryPopup" }, { tag: "network", popup: "NetworkPopup" }];
@@ -945,7 +946,16 @@ Item {
                 // Rounding to whole pixels is the only slack.
                 fuzzyCompare(capTop, tile.verticalPadding + leading / 2, 0.5, tile.caption + " cap top");
                 const column = caption.parent;
-                compare(tile.height - (column.y + column.height), tile.verticalPadding, tile.caption + " bottom");
+                const last = Array.from(column.children[1].children).filter(c => c.visible).pop();
+                let foot;
+                if (tile.foot) {
+                    verify(all(last, i => i === tile.foot).length === 1, tile.caption + ": the foot is the text it ends on");
+                    foot = tile.height - tile.foot.mapToItem(tile, Qt.point(0, tile.foot.baselineOffset)).y;
+                } else {
+                    verify(last.values !== undefined || last.maxColumns !== undefined, tile.caption + " ends on a graph or names its foot");
+                    foot = tile.height - (column.y + column.height);
+                }
+                fuzzyCompare(foot, capTop, 1, tile.caption + ": the foot's ink " + foot + " from the bottom, the capitals " + capTop + " from the top");
             });
         }
 
