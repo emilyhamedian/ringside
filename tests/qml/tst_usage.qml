@@ -1424,7 +1424,8 @@ Item {
         // The graph draws the run-out the pace sentence names and no other.
         // With the week and Fable both on course to run out, it is the
         // sooner one the sentence gives; when that is a model limit the
-        // graph has no line for, it draws none. Each week began 4.1 days ago.
+        // graph has no line for, it draws none. Each week began four days
+        // and three hours ago.
         function test_graphDrawsTheRunOutSaid_data() {
             return [{ tag: "modelSooner", weekly: 62, scoped: [["Fable", 78]], said: 1, drawn: true },
                     { tag: "weekSooner", weekly: 85, scoped: [["Fable", 60]], said: 0, drawn: true },
