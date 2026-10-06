@@ -1272,8 +1272,7 @@ Item {
         }
 
         // Through a hold the cell keeps the widest it showed, whatever its
-        // content passes through within a digit of that; the hold ends at
-        // the content's width then.
+        // content passes through; the hold ends at the content's width then.
         // Ended any wider, the cell would keep the difference as a gap until
         // its content next changed, as nothing would start another hold.
         function test_settleEndsAtTheContentWidth() {

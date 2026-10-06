@@ -303,8 +303,7 @@ Item {
         // reading takes its room at once, moving the items after it, and a
         // narrower one waits out the settle delay, so traffic that comes and
         // goes moves the panel once. An item moves only when one before it
-        // changed width. The room a
-        // rate holds sits before its markers, so its readings always end its
+        // grew. The room a rate holds sits before its markers, so its readings always end its
         // cell's padding before the next item, the gap any item leaves, a
         // quiet disk at the end of the strip included. Settled, each rate
         // hugs its text.
@@ -334,8 +333,8 @@ Item {
                 });
                 const placed = places();
                 for (let i = 1; i < data.items.length; ++i) {
-                    if (!now.slice(0, i).some((w, j) => w !== before[j])) {
-                        compare(placed[i], at[i], step.what + ": " + data.items[i] + " stays put, as nothing before it changed width");
+                    if (!now.slice(0, i).some((w, j) => w > before[j])) {
+                        compare(placed[i], at[i], step.what + ": " + data.items[i] + " stays put, as nothing before it grew");
                     }
                 }
                 before = now;
