@@ -484,6 +484,29 @@ Item {
             tryCompare(label, "opacity", 1, 1000);
         }
 
+        // A popup opens with its 100 % labels where the readings put them,
+        // without a fade, however the rule's first readings and its first
+        // width arrive as the popup is made.
+        function test_ruleLabelStillAsAPopupOpens_data() {
+            return [{ tag: "cpu", popup: "CpuPopup" }, { tag: "memory", popup: "MemoryPopup" }, { tag: "gpu", popup: "GpuPopup" }];
+        }
+        function test_ruleLabelStillAsAPopupOpens(data) {
+            // Made before the monitor, so it goes first.
+            const loader = createTemporaryObject(popupHost, root);
+            const monitor = createTemporaryObject(monitorComponent, graphs);
+            let labels = [];
+            const seen = [];
+            createTemporaryObject(samplerComponent, graphs, { sample: () => labels.forEach(l => seen.push(l.opacity)) });
+            loader.setSource(Qt.resolvedUrl("../../package/contents/ui/popups/" + data.popup + ".qml"), { monitor: monitor });
+            const rules = root.all(loader.item, i => i.shownAtStart !== undefined);
+            labels = rules.map(r => r.children.find(c => c.text !== undefined));
+            verify(labels.length > 0, "a 100 % label");
+            wait(3 * Kirigami.Units.shortDuration);
+            verify(seen.length > 0, "frames sampled");
+            verify(seen.every(o => o === 1), "never dimmed: " + JSON.stringify(seen));
+            rules.forEach(r => compare(r.shownAtStart, r.atStart));
+        }
+
         // A graph is still before the next sample, however slow Plasma's
         // animation speed.
         function test_easesWithinHalfTheInterval() {
