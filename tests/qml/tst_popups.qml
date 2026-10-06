@@ -94,6 +94,13 @@ Item {
         gpuInner.knownVramTotal: NaN
     }
 
+    // A CPU that names no temperature sensor, and no memory reading yet.
+    FakeMonitor {
+        id: uncaptioned
+        cpuTemperatureLabel: ""
+        memoryUsed: NaN
+    }
+
     // A subtitle longer than the header has room for.
     FakeMonitor {
         id: longModel
@@ -1276,6 +1283,26 @@ Item {
                     compare(JSON.stringify(gpu[n][key]), JSON.stringify(expected), "GPU " + (n + 1) + ": " + key);
                 }
             });
+        }
+
+        // A headline with no caption under it sits where it does with one,
+        // level with the title, and the header keeps its height.
+        function test_headlineWithoutCaptionStaysLevel_data() {
+            return [{ tag: "cpu", popup: "CpuPopup" }, { tag: "memory", popup: "MemoryPopup" }];
+        }
+
+        function test_headlineWithoutCaptionStaysLevel(data) {
+            const place = monitor => {
+                const header = all(load(data.popup, monitor), i => i.visible && i.partsShown !== undefined)[0];
+                const headline = readings(header).find(r => r.visible);
+                return { caption: header.caption, height: header.height,
+                         baseline: headline.mapToItem(header, Qt.point(0, headline.baselineOffset)).y };
+            };
+            const captioned = place(normal);
+            const bare = place(uncaptioned);
+            verify(captioned.caption !== "" && bare.caption === "", JSON.stringify([captioned.caption, bare.caption]));
+            compare(bare.baseline, captioned.baseline, "the headline's baseline");
+            compare(bare.height, captioned.height, "the header's height");
         }
 
         // Each GPU's temperature takes the level colours at 75 °C and 90 °C,
