@@ -781,7 +781,8 @@ Item {
             monitor = monitorComponent.createObject(gpus);
         }
 
-        // What reads the monitor goes first.
+        // What reads the monitor goes first. A sampler, made on the cell it
+        // reads, goes with it, so no frame reads a cell that has gone.
         function cleanup() {
             made.forEach(o => o.destroy());
             made = [];
@@ -829,7 +830,7 @@ Item {
             compare(g.centreWidth, room.single);
             verify(!arc.visible);
             const seen = [];
-            createTemporaryObject(samplerComponent, gpus, { sample: () => seen.push([g.innerShown, arc.percent]) });
+            createTemporaryObject(samplerComponent, c, { sample: () => seen.push([g.innerShown, arc.percent]) });
             monitor.gpuInner.phase = "live";
             compare(g.centreWidth, room.dual, "the name makes room at once");
             compare(g.innerShown, 0, "the track starts out");
@@ -850,7 +851,7 @@ Item {
             const room = rooms(g);
             compare(arc.percent, 40);
             const seen = [];
-            createTemporaryObject(samplerComponent, gpus, { sample: () => seen.push([arc.percent, g.innerShown, g.centreWidth]) });
+            createTemporaryObject(samplerComponent, c, { sample: () => seen.push([arc.percent, g.innerShown, g.centreWidth]) });
             monitor.gpuInner.phase = "asleep";
             compare(g.innerShown, 1, "the track stays while the arc unwinds");
             tryCompare(g, "innerShown", 0, 2000);
@@ -874,7 +875,7 @@ Item {
             tryCompare(name, "shownSize", name.size, 1000);
             verify(!name.layer.enabled);
             const seen = [];
-            createTemporaryObject(samplerComponent, gpus, { sample: () => seen.push([name.shownSize !== name.size, name.layer.enabled]) });
+            createTemporaryObject(samplerComponent, c, { sample: () => seen.push([name.shownSize !== name.size, name.layer.enabled]) });
             monitor.gpuInner.phase = "asleep";
             tryVerify(() => name.shownSize !== name.size, 2000, "scaling");
             tryCompare(name, "shownSize", name.size, 2000);
@@ -889,7 +890,7 @@ Item {
             const c = cell();
             const name = nameIn(c);
             const seen = [];
-            createTemporaryObject(samplerComponent, gpus, { sample: () => seen.push([name.shownSize, name.size, name.opacity]) });
+            createTemporaryObject(samplerComponent, c, { sample: () => seen.push([name.shownSize, name.size, name.opacity]) });
             const sizes = [];
             const fitted = [];
             for (const ring of [22, 46, 30, 60, 46]) {
@@ -913,7 +914,7 @@ Item {
             monitor.gpuInner.phase = "live";
             tryVerify(() => g.innerShown > 0.3 && g.innerShown < 0.9, 2000, "fading in");
             const seen = [];
-            createTemporaryObject(samplerComponent, gpus, { sample: () => seen.push(g.innerShown) });
+            createTemporaryObject(samplerComponent, c, { sample: () => seen.push(g.innerShown) });
             const shown = g.innerShown;
             monitor.gpuInner.phase = "asleep";
             compare(g.innerShown, shown, "no jump");
