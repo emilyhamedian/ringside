@@ -482,7 +482,7 @@ Rectangle {
             }
         }
 
-        // Claude and Codex, inline and in their popups.
+        // Claude and Codex, in the panel and in their popups.
         UsageGallery {
             monitor: normal
         }
