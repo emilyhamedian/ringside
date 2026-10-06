@@ -124,15 +124,27 @@ Item {
         color: Qt.alpha(graph.color, 0.45 * graph.color.a)
     }
 
-    // A first reading has no line yet; it shows as a dot.
-    Rectangle {
-        visible: graph.mainPoints.length === 1
+    // A small round mark centred on a point.
+    component Dot: Rectangle {
+        property point at
         width: 3
         height: 3
         radius: 1.5
-        x: graph.mainPoints.length === 1 ? graph.mainPoints[0].x - 1.5 : 0
-        y: graph.mainPoints.length === 1 ? graph.mainPoints[0].y - 1.5 : 0
+        x: at.x - 1.5
+        y: at.y - 1.5
+    }
+
+    // A first reading has no line yet; it shows as a dot, for either series.
+    Dot {
+        visible: graph.mainPoints.length === 1
+        at: graph.mainPoints.length === 1 ? graph.mainPoints[0] : Qt.point(0, 0)
         color: graph.color
+    }
+
+    Dot {
+        visible: graph.secondPoints.length === 1
+        at: graph.secondPoints.length === 1 ? graph.secondPoints[0] : Qt.point(0, 0)
+        color: Qt.alpha(graph.color, 0.55 * graph.color.a)
     }
 
     Shape {

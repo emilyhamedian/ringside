@@ -1764,6 +1764,16 @@ Item {
             fuzzyCompare(dot.y + dot.height / 2, p.y, 1e-9);
             const line = make([[start, 0], [start + day, 20]], { percent: 20, at: start + day });
             verify(!rectangles(line).some(i => i.radius > 0), "a line has no dot");
+
+            // The same for the model's limit, in its dashed line's colour.
+            line.secondWindow = { resetsAt: start + week, windowSeconds: week, percent: 30, history: [[start + day, 30]] };
+            compare(line.secondPoints.length, 1);
+            const second = rectangles(line).find(i => i.radius > 0);
+            verify(second, "the model's single reading is a dot");
+            const q = line.secondPoints[0];
+            fuzzyCompare(second.x + second.width / 2, q.x, 1e-9);
+            fuzzyCompare(second.y + second.height / 2, q.y, 1e-9);
+            fuzzyCompare(second.color.a, 0.55 * line.color.a, 0.01);
         }
 
         // Within two hours the line's end shows now; past that a marker does.
