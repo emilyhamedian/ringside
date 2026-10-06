@@ -39,13 +39,28 @@ Item {
     // the same event, is part of it, and so is one made before the rule is
     // laid out, as its popup opens.
     property real placedWidth: 0
+    // Keeps the label where it is, as the week graph does while last week
+    // fades out under a new one; it moves, if it should, once let go.
+    property bool held: false
 
     Component.onCompleted: {
         shownAtStart = atStart;
         placedWidth = width;
     }
     onWidthChanged: sized.restart()
+    // The event that holds the label may have started a move already.
+    onHeldChanged: {
+        if (held) {
+            move.stop();
+            label.opacity = 1;
+        } else if (shownAtStart !== atStart) {
+            move.restart();
+        }
+    }
     onAtStartChanged: {
+        if (held) {
+            return;
+        }
         if (width > 0 && width === placedWidth && Kirigami.Units.longDuration > 1) {
             move.restart();
         } else {

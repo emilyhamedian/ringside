@@ -304,6 +304,8 @@ Item {
         // The week so far lies to the left; the right end is still to come,
         // though late in the week the marker for now can stand there.
         preferEnd: true
+        // Last week isn't in the series, so the label waits for it to go.
+        held: ghostFade.running
         series: [graph.mainPoints, graph.secondPoints, graph.projection,
                  graph.stale ? [Qt.point(graph.markerX, rule.ruleY), Qt.point(graph.markerX, graph.height)] : []]
     }

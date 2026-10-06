@@ -686,6 +686,33 @@ Item {
             tryCompare(dot, "opacity", 1, 1000);
         }
 
+        // An early reset while a run-out to the right end is shown: the
+        // 100 % label, at the left clear of that run-out, stays there whole
+        // while the last week fades out, and only then moves to the right
+        // for the new week.
+        function test_newWeekHoldsTheLabelUntilTheOldOneHasGone() {
+            const g = make({ window: window([[start, 0], [start + 3 * day, 44]], 44), pollAt: start + 3 * day,
+                             nowMs: (start + 3 * day) * 1000 });
+            const rule = root.all(g, i => i.shownAtStart !== undefined)[0];
+            const label = rule.children.find(c => c.text !== undefined);
+            compare(g.runOutOpacity, 1);
+            verify(rule.shownAtStart, "clear of the run-out");
+            const seen = [];
+            createTemporaryObject(samplerComponent, weeks, { sample: () => seen.push([g.ghostOpacity, rule.shownAtStart, label.opacity]) });
+            g.window = { resetsAt: start + 2 * week, windowSeconds: week, percent: 1, history: [[start + week + 3600, 1]] };
+            g.pollAt = start + week + 3600;
+            g.nowMs = g.pollAt * 1000;
+            verify(!rule.atStart, "the new week alone would have it at the right");
+            tryCompare(g, "ghostOpacity", 0, 2000);
+            tryCompare(rule, "shownAtStart", false, 1000);
+            tryCompare(label, "opacity", 1, 1000);
+            const held = seen.filter(([ghost]) => ghost > 0);
+            verify(held.length > 3);
+            verify(held.every(([, atStart, opacity]) => atStart && opacity === 1), "held: " + JSON.stringify(held));
+            const dips = seen.filter(([, , opacity], i) => opacity < 1 && (i === 0 || seen[i - 1][2] === 1));
+            compare(dips.length, 1, "moved once: " + JSON.stringify(seen));
+        }
+
         // A reset time that jitters by a second between polls is the same
         // week: the new stretch draws on, the run-out stays, and no last
         // week fades out, with a reading or without one.
