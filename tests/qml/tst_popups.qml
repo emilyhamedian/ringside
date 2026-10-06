@@ -452,10 +452,17 @@ Item {
             return glyph.advanceWidth - glyph.tightBoundingRect.x - glyph.tightBoundingRect.width;
         }
 
+        // Where a Text's ink starts, down from its reading's top.
+        function inkTop(text) {
+            glyph.font = text.font;
+            glyph.text = text.text;
+            return text.y + text.baselineOffset + glyph.tightBoundingRect.y;
+        }
+
         // The temperature unit is as small as the caption under it and sits
-        // against the digits, in the CPU and GPU headers alike. At one
-        // size it is as far from the ink after a tabular "1" (61, 41) as
-        // after any other digit (60, 48).
+        // a little apart from the digits, its top level with theirs, in the
+        // CPU and GPU headers alike. At one size it is as far from the ink
+        // after a tabular "1" (61, 41) as after any other digit (60, 48).
         function test_temperatureUnitSizeAndGap_data() {
             return [{ tag: "celsius", fahrenheit: false, unit: "°C" }, { tag: "fahrenheit", fahrenheit: true, unit: "°F" }];
         }
@@ -474,10 +481,11 @@ Item {
                     compare(p.suffix.font.pointSize, Kirigami.Theme.smallFont.pointSize, tag);
                     const gap = p.suffix.x - (p.number.x + p.number.implicitWidth);
                     const inkGap = gap + trailingRoom(p.number);
-                    verify(inkGap >= 0 && inkGap <= 3, tag + " is " + inkGap + " from the ink");
+                    verify(r.unitSpacing >= 2, tag + " has a gap of " + r.unitSpacing);
+                    verify(inkGap >= r.unitSpacing && inkGap <= r.unitSpacing + 3, tag + " is " + inkGap + " from the ink");
                     inkGaps[popup].push(inkGap);
                     compare(r.implicitWidth, p.number.implicitWidth + r.unitSpacing + p.suffix.implicitWidth, tag);
-                    compare(p.suffix.y + p.suffix.baselineOffset, p.number.y + p.number.baselineOffset, tag + " shares the baseline");
+                    fuzzyCompare(inkTop(p.suffix), inkTop(p.number), 0.5, tag + " level with the digits' top");
                 });
             }
             for (const gaps of [inkGaps.CpuPopup, inkGaps.GpuPopup]) {
@@ -538,6 +546,35 @@ Item {
             const other = make({ unit: "GHz" });
             compare(other.font.pointSize, Style.unitPointSize(pointSize, small));
             verify(other.font.pointSize > degree.font.pointSize, other.font.pointSize + " against " + degree.font.pointSize);
+        }
+
+        // A degree unit hangs from the top of the digits at any size, inside
+        // the number's line, where another unit sits on their baseline. A
+        // "7" and a "1" have flat tops, which hinting leaves where they are;
+        // a round digit's overshoot can round to a pixel more at this size.
+        function test_degreeUnitHangsFromTheDigits_data() {
+            return [{ tag: "celsius", unit: "C" }, { tag: "fahrenheit", unit: "F" }];
+        }
+
+        function test_degreeUnitHangsFromTheDigits(data) {
+            const small = Kirigami.Theme.smallFont.pointSize;
+            const make = properties => {
+                const loader = createTemporaryObject(host, root);
+                loader.setSource(Qt.resolvedUrl("../../package/contents/ui/Reading.qml"),
+                                 Object.assign({ value: Format.temperature(71, false), pointSize: 3 * small }, properties));
+                compare(loader.status, Loader.Ready);
+                return loader.item;
+            };
+            const r = make({ degreeUnit: data.unit });
+            const p = parts(r);
+            fuzzyCompare(inkTop(p.suffix), inkTop(p.number), 0.5, "level with the digits' top");
+            const baseline = p.number.y + p.number.baselineOffset;
+            verify(p.suffix.y + p.suffix.baselineOffset < baseline - small,
+                   "raised from the baseline: " + (p.suffix.y + p.suffix.baselineOffset) + " against " + baseline);
+            verify(p.suffix.y >= 0, "inside the line, at " + p.suffix.y);
+            compare(r.implicitHeight, p.number.implicitHeight);
+            const other = parts(make({ unit: "GHz" }));
+            compare(other.suffix.y + other.suffix.baselineOffset, other.number.y + other.number.baselineOffset, "a unit on the baseline");
         }
 
         // A missing temperature is a bare dash.
