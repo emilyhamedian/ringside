@@ -83,12 +83,17 @@ Item {
         }
 
         // The applet goes with its panel after the test, deleting its
-        // monitor before the strip, whose cells would then read from null.
-        // With every item hidden first, the cells go while the monitor is
-        // still there.
+        // monitor before the strip, whose cells would then read from null,
+        // and on Qt 6.6 deleting the CPU popup's page in an order that has
+        // its load averages read from null. So every item is hidden first,
+        // and the popup's page left to unload as it does a moment after the
+        // popup closes.
         function cleanup() {
             if (applet) {
+                const p = popup(applet);
+                p.visible = false;
                 strip(applet).monitor.enabledItems = [];
+                tryVerify(() => p.mainItem.item === null, 2000, "the popup's page unloaded");
                 settle();
                 applet = null;
             }
