@@ -253,6 +253,10 @@ PopupPage {
                     }
                 }
 
+                // Wrapped, so its height follows the popup's width: on Qt
+                // 6.6 a host that sized the popup straight from the Loader's
+                // preferred size, rather than a resize later as AppletPopup
+                // does, reports a binding loop on preferredHeight.
                 Text {
                     Layout.fillWidth: true
                     visible: text !== ""
