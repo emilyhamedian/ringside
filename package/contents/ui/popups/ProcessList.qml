@@ -80,16 +80,28 @@ ColumnLayout {
     Repeater {
         model: 3
 
+        // Each row is spoken whole, "firefox, 8.4%", as the value alone
+        // would be read as its number and its unit apart.
         delegate: RowLayout {
             id: row
 
             required property int index
             readonly property var entry: list.rows[index] || null
+            readonly property bool memory: list.key === "memory"
+            readonly property var bytes: entry && memory ? Format.bytes(entry.memory) : null
+            readonly property string value: !entry ? "" : memory ? bytes.value : Format.fixed(entry.usage / Math.max(1, list.threads), 1)
 
             Layout.fillWidth: true
             spacing: Kirigami.Units.largeSpacing
+            Accessible.role: Accessible.StaticText
+            Accessible.name: !entry ? ""
+                : i18nc("@info accessible name of a process row: the process, then its CPU share or memory, e.g. firefox, 8.4%",
+                        "%1, %2", processName.text,
+                        memory ? i18nc("@info an amount of memory, e.g. 3.9 GiB", "%1 %2", bytes.value, bytes.unit)
+                               : i18nc("@info a percentage", "%1%", value))
 
             Text {
+                id: processName
                 Layout.fillWidth: true
                 Layout.alignment: Qt.AlignBaseline
                 text: !row.entry ? " " : row.entry.count > 1 ? row.entry.name + " ×" + row.entry.count : row.entry.name
@@ -100,18 +112,17 @@ ColumnLayout {
                 textFormat: Text.PlainText
                 // Set, so the names move to the other edge in a mirrored layout.
                 horizontalAlignment: Text.AlignLeft
+                Accessible.ignored: true
             }
 
             // Set like the tiles' readings, with a smaller, dimmer unit; the
             // percent sign stays against its number.
             Reading {
-                readonly property bool memory: list.key === "memory"
-                readonly property var b: row.entry && memory ? Format.bytes(row.entry.memory) : null
-
                 Layout.alignment: Qt.AlignBaseline
-                value: !row.entry ? "" : memory ? b.value : Format.fixed(row.entry.usage / Math.max(1, list.threads), 1)
-                unit: !row.entry ? "" : memory ? b.unit : "%"
-                unitSpacing: memory ? Style.unitGap(pointSize) : 0
+                value: row.value
+                unit: !row.entry ? "" : row.memory ? row.bytes.unit : "%"
+                unitSpacing: row.memory ? Style.unitGap(pointSize) : 0
+                accessibleIgnored: true
             }
         }
     }
