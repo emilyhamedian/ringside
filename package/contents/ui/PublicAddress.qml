@@ -9,7 +9,8 @@ import "code/publicaddress.js" as Lookup
 // with the other Ringside widgets (see code/publicaddress.js).
 //
 // Nothing is sent unless the setting is "on", this widget's network popup
-// is open, the service in the settings is valid and there is a connection.
+// is open, the service in the settings is valid and there is a route for a
+// family it asks.
 // A check goes out when the popup opens, unless any Ringside widget made one
 // in the last minute, and when the route changes while it stays open, but
 // never sooner than a minute after the last. Nothing else polls.
@@ -25,7 +26,9 @@ Item {
     property var egress: null
     // Without route facts (no `ip`), a local address stands for a connection.
     property string localAddress: ""
-    property string userAgent: "ringside"
+    // The widget's version, for the User-Agent.
+    property string version: ""
+    readonly property string userAgent: version !== "" ? "ringside/" + version : "ringside"
 
     // For the tests: how a request is made, the clock, and the two waits.
     property var makeRequest: () => new XMLHttpRequest()
@@ -38,6 +41,10 @@ Item {
     readonly property string setting: facts.setting
     readonly property var service: facts.service
     readonly property string serviceKey: facts.key
+    // The service as the popup names it: its host, or both hosts.
+    readonly property string serviceName: service.hosts.length === 2
+        ? i18nc("@info two services' host names", "%1 and %2", service.hosts[0], service.hosts[1])
+        : service.hosts[0] ?? ""
     readonly property bool connected: facts.connected
     readonly property string route: facts.route
     readonly property bool eligible: facts.eligible
@@ -49,13 +56,15 @@ Item {
         return serviceKey !== "" ? Lookup.peek(serviceKey) : null;
     }
 
-    // prompt, off, invalid, offline, checking, shown or failed. A result
+    // prompt, off, invalid, offline, unrouted (connected, but not for the
+    // one family the service asks), checking, shown or failed. A result
     // from before a route change stays shown, with the route it was asked
     // under, until the next check replaces it.
     readonly property string status: setting === "" ? "prompt"
         : setting !== "on" ? "off"
         : !service.valid ? "invalid"
         : egress !== null && !connected ? "offline"
+        : egress !== null && facts.families.length === 0 ? "unrouted"
         : record === null || record.busy || record.result === null ? "checking"
         : record.result.v4 !== "" || record.result.v6 !== "" ? "shown"
         : "failed"
@@ -78,7 +87,7 @@ Item {
         const routed = egress !== null && egress.known === true;
         // The families to ask: those with a URL and, where the routes are known, a route.
         const families = ["v4", "v6"].filter(f => service[f] !== "" && (!routed || egress[f].device !== ""));
-        const connected = routed ? families.length > 0 : localAddress !== "";
+        const connected = routed ? egress.v4.device !== "" || egress.v6.device !== "" : localAddress !== "";
         return {
             setting: setting,
             service: service,
@@ -86,7 +95,7 @@ Item {
             families: families,
             connected: connected,
             route: routed ? egress.v4.device + " " + egress.v6.device : "",
-            eligible: key !== "" && open && egress !== null && connected
+            eligible: key !== "" && open && egress !== null && connected && families.length > 0
         };
     }
 
@@ -135,16 +144,19 @@ Item {
         timeout.restart();
         for (const s of sent) {
             const request = s.request;
+            const url = now.service[s.family];
             request.onreadystatechange = () => {
-                // An address fits in 64 characters; a reply running far past
-                // that is not one, however long it goes on.
+                // A reply running far past an address's length is not one.
+                // abort() only stops Ringside listening: Qt keeps reading
+                // whatever the service goes on sending.
                 if (request.readyState === XMLHttpRequest.LOADING && String(request.responseText).length > 4096) {
                     request.abort();
                 } else if (request.readyState === XMLHttpRequest.DONE) {
-                    checker.settle(s, request.status === 200 ? Lookup.address(request.responseText, s.family) : "");
+                    const trusted = request.status === 200 && Lookup.cameFrom(String(request.responseURL), url);
+                    checker.settle(s, trusted ? Lookup.address(request.responseText, s.family) : "");
                 }
             };
-            request.open("GET", now.service[s.family]);
+            request.open("GET", url);
             request.setRequestHeader("User-Agent", userAgent);
             // "*" rather than the languages Qt would send from the locale.
             request.setRequestHeader("Accept-Language", "*");

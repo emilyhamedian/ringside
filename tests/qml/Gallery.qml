@@ -77,6 +77,11 @@ Rectangle {
     }
 
     PublicFake {
+        id: publicLongVpn
+        publicState: "longvpn"
+    }
+
+    PublicFake {
         id: publicLeak
         publicState: "longleak"
     }
@@ -319,6 +324,25 @@ Rectangle {
         }
     }
 
+    // Set once the window has drawn its first frame.
+    property bool drawn: false
+    Connections {
+        target: gallery.Window.window
+        enabled: !gallery.drawn
+        function onFrameSwapped() {
+            gallery.drawn = true;
+        }
+    }
+
+    // A popup built once the window has drawn, as the tests build them.
+    // Built before it, Qt 6.6 lays out a wrapping line in the network popup
+    // twice over and warns of a polish loop, though it ends up right.
+    component AfterFirstFrame: Loader {
+        default property Component popup
+        active: gallery.drawn
+        sourceComponent: popup
+    }
+
     // A popup on the theme's dialog background, sized to its implicit size
     // as AppletPopup sizes its main item.
     component PopupFrame: ColumnLayout {
@@ -558,27 +582,44 @@ Rectangle {
 
             PopupFrame {
                 label: "Network · public address, the one-time question"
-                NetworkPopup { monitor: publicPrompt }
+                AfterFirstFrame {
+                    NetworkPopup { monitor: publicPrompt }
+                }
             }
 
             PopupFrame {
                 label: "Network · public IPv4 and IPv6"
-                NetworkPopup { monitor: publicBoth }
+                AfterFirstFrame {
+                    NetworkPopup { monitor: publicBoth }
+                }
             }
 
             PopupFrame {
                 label: "Network · through a VPN, just turned on"
-                NetworkPopup { monitor: publicVpn }
+                AfterFirstFrame {
+                    NetworkPopup { monitor: publicVpn }
+                }
+            }
+
+            PopupFrame {
+                label: "Network · a long IPv6 through the VPN"
+                AfterFirstFrame {
+                    NetworkPopup { monitor: publicLongVpn }
+                }
             }
 
             PopupFrame {
                 label: "Network · a long IPv6 going around the VPN"
-                NetworkPopup { monitor: publicLeak }
+                AfterFirstFrame {
+                    NetworkPopup { monitor: publicLeak }
+                }
             }
 
             PopupFrame {
                 label: "Network · public address unreachable"
-                NetworkPopup { monitor: publicFailed }
+                AfterFirstFrame {
+                    NetworkPopup { monitor: publicFailed }
+                }
             }
         }
 

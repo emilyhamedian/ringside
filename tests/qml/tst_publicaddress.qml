@@ -158,7 +158,7 @@ Item {
             const made = [];
             const make = () => {
                 const r = {
-                    readyState: 0, status: 0, responseText: "", method: "", url: "", headers: {},
+                    readyState: 0, status: 0, responseText: "", responseURL: "", method: "", url: "", headers: {},
                     sent: false, aborted: false, onreadystatechange: null,
                     open(method, url) { this.method = method; this.url = url; this.readyState = 1; },
                     setRequestHeader(name, value) { this.headers[name] = value; },
@@ -171,8 +171,10 @@ Item {
                             this.onreadystatechange();
                         }
                     },
-                    answer(status, body) {
+                    // `from`: the URL the request ended at, after any redirect.
+                    answer(status, body, from) {
                         this.status = status;
+                        this.responseURL = from ?? this.url;
                         this.responseText = body;
                         this.readyState = 3;
                         this.onreadystatechange();
@@ -210,10 +212,10 @@ Item {
             return { checker: checker, config: c, made: fake.made, make: fake.make };
         }
 
-        function answer(made, family, status, body) {
+        function answer(made, family, status, body, from) {
             const r = made.find(m => !m.aborted && m.readyState !== 4 && (family === "v6") === /-6\.|api6\./.test(m.url));
             verify(r, "a " + family + " request under way");
-            r.answer(status, body);
+            r.answer(status, body, from);
         }
 
         function timer(object, name) {
@@ -346,6 +348,11 @@ Item {
                 { tag: "IPv4 with a newline", body: "203.0.113.7\n", family: "v4", address: "203.0.113.7" },
                 { tag: "IPv4 in white space", body: " \t198.51.100.24\r\n", family: "v4", address: "198.51.100.24" },
                 { tag: "IPv4 edges", body: "255.255.255.0", family: "v4", address: "255.255.255.0" },
+                { tag: "IPv4 unspecified", body: "0.0.0.0", family: "v4", address: "" },
+                { tag: "IPv4 in 0.0.0.0/8", body: "0.1.2.3", family: "v4", address: "" },
+                { tag: "IPv4 loopback", body: "127.0.0.1", family: "v4", address: "" },
+                { tag: "IPv4 elsewhere in 127.0.0.0/8", body: "127.200.1.1", family: "v4", address: "" },
+                { tag: "IPv4 starting 10", body: "10.0.0.1", family: "v4", address: "10.0.0.1" },
                 { tag: "IPv4 part over 255", body: "256.1.1.1", family: "v4", address: "" },
                 { tag: "IPv4 leading zero", body: "01.2.3.4", family: "v4", address: "" },
                 { tag: "IPv4 three parts", body: "1.2.3", family: "v4", address: "" },
@@ -361,6 +368,10 @@ Item {
                 { tag: "IPv6 in capitals", body: "2001:DB8::1C", family: "v6", address: "2001:db8::1c" },
                 { tag: "IPv6 in full", body: "2001:db8:85a3:4d1c:9d2e:51f4:c8a3:7e61", family: "v6",
                   address: "2001:db8:85a3:4d1c:9d2e:51f4:c8a3:7e61" },
+                { tag: "IPv6 unspecified", body: "::", family: "v6", address: "" },
+                { tag: "IPv6 unspecified in full", body: "0:0:0:0:0:0:0:0", family: "v6", address: "" },
+                { tag: "IPv6 loopback", body: "::1", family: "v6", address: "" },
+                { tag: "IPv6 ::2", body: "::2", family: "v6", address: "::2" },
                 { tag: "IPv6 nine groups", body: "1:2:3:4:5:6:7:8:9", family: "v6", address: "" },
                 { tag: "IPv6 seven groups", body: "1:2:3:4:5:6:7", family: "v6", address: "" },
                 { tag: "IPv6 two gaps", body: "2001::db8::1", family: "v6", address: "" },
@@ -378,6 +389,22 @@ Item {
         }
         function test_address(data) {
             compare(Lookup.address(data.body, data.family), data.address);
+        }
+
+        function test_cameFrom_data() {
+            const asked = "https://ip.example/v4";
+            return [
+                { tag: "as asked", from: asked, asked: asked, ok: true },
+                { tag: "another path on the host", from: "https://IP.example:443/other", asked: asked, ok: true },
+                { tag: "plain http", from: "http://ip.example/v4", asked: asked, ok: false },
+                { tag: "another host", from: "https://elsewhere.example/v4", asked: asked, ok: false },
+                { tag: "a subdomain", from: "https://a.ip.example/v4", asked: asked, ok: false },
+                { tag: "nothing", from: "", asked: asked, ok: false },
+                { tag: "undefined", from: "undefined", asked: asked, ok: false }
+            ];
+        }
+        function test_cameFrom(data) {
+            compare(Lookup.cameFrom(data.from, data.asked), data.ok);
         }
 
         function test_egressReport() {
@@ -426,7 +453,7 @@ Item {
                 { tag: "no route", props: { egress: route("", "") }, status: "offline" },
                 { tag: "no ip and no local address", props: { egress: { known: false }, localAddress: "" }, status: "offline" },
                 { tag: "custom family without a route", props: { egress: route("", "enp5s0") },
-                  config: { publicAddressUrl4: "https://only4.example/ip" }, status: "offline" },
+                  config: { publicAddressUrl4: "https://only4.example/ip" }, status: "unrouted" },
                 { tag: "invalid custom URL", config: { publicAddressUrl4: "http://insecure.example/ip" }, status: "invalid" },
                 { tag: "invalid beside a valid one", config: { publicAddressUrl4: "https://me:pw@a.example/",
                                                               publicAddressUrl6: "https://b.example/" }, status: "invalid" }
@@ -452,7 +479,7 @@ Item {
         }
 
         function test_asksIpifyByDefault() {
-            const set = checker({ userAgent: "ringside/9.9.9" });
+            const set = checker({ version: "9.9.9" });
             compare(set.made.map(r => r.url), ["https://api.ipify.org", "https://api6.ipify.org"]);
             for (const r of set.made) {
                 compare(r.method, "GET");
@@ -559,6 +586,18 @@ Item {
             compare(set.checker.record.route, "wg0 enp5s0");
         }
 
+        // A clock set back reads as a long time since, not as a check to come.
+        function test_clockSteppedBack() {
+            const set = checker({}, own("clockback"));
+            answer(set.made, "v4", 200, "203.0.113.7");
+            answer(set.made, "v6", 200, "2001:db8::1c");
+            root.now -= 3600000;
+            set.checker.open = false;
+            set.checker.open = true;
+            compare(set.made.length, 4, "asked at once");
+            compare(timer(set.checker, "wait").running, false);
+        }
+
         function test_noPolling() {
             const set = checker({ clock: () => Date.now(), floorMs: 150 }, own("nopoll"));
             answer(set.made, "v4", 200, "203.0.113.7");
@@ -607,6 +646,23 @@ Item {
             if (data.body !== "") {
                 verify(shown.indexOf(data.body) < 0, "the reply never shows: " + shown);
             }
+        }
+
+        // Qt follows a redirect itself; an answer that ends up anywhere but
+        // https at the host asked is dropped, whatever it says.
+        function test_redirectedReplyFails_data() {
+            return [
+                { tag: "to plain http", from: "http://redirect-http.example/ip", ok: false },
+                { tag: "to another host", from: "https://elsewhere.example/ip", ok: false },
+                { tag: "within the host", from: "https://redirect-%1.example/other", ok: true }
+            ];
+        }
+        function test_redirectedReplyFails(data) {
+            const tag = data.tag.replace(/ /g, "-");
+            const set = checker({}, own("redirect-" + tag, false));
+            answer(set.made, "v4", 200, "203.0.113.7", data.from.replace("%1", tag));
+            compare(set.checker.status, data.ok ? "shown" : "failed");
+            compare(set.checker.record.result.v4, data.ok ? "203.0.113.7" : "");
         }
 
         function test_endlessReplyAborted() {
@@ -691,7 +747,7 @@ Item {
             const page = popup(set.monitor);
             compare(header(page).detail, "");
             const shown = visibleTexts(page).join("\n");
-            verify(shown.indexOf("Show the address websites see? Ringside would ask ipify.org each time this popup opens, so ipify.org sees your address.") >= 0, shown);
+            verify(shown.indexOf("Show the address websites see? Ringside would ask ipify.org when this popup opens or the connection changes, at most once a minute, so ipify.org sees your address.") >= 0, shown);
             const buttons = all(block(page), i => i instanceof Kirigami.LinkButton && i.visible);
             compare(buttons.map(b => b.Accessible.name), ["Show it", "No thanks"]);
             for (const b of buttons) {
@@ -713,11 +769,20 @@ Item {
             answer(set.made, "v6", 200, "2001:db8::1c");
             const page = popup(set.monitor);
             compare(header(page).detail, "");
-            compare(addressLines(page).map(l => l.spoken), [
+            const lines = addressLines(page);
+            compare(lines.map(l => l.Accessible.name), [
                 "Local address 192.168.99.123 on enp195s0f3u1",
                 "Public address 198.51.100.24 through VPN wg0-mullvad",
                 "Public address 2001:db8::1c through enp5s0"
             ]);
+            for (const line of lines) {
+                compare(line.Accessible.role, Accessible.StaticText);
+                const parts = all(line, i => i instanceof Text || i.source !== undefined);
+                verify(parts.length > 0);
+                for (const part of parts) {
+                    verify(part.Accessible.ignored, "read as part of the line: " + (part.text ?? part.source));
+                }
+            }
             const shields = all(page, i => i.source === "network-vpn-symbolic" && i.visible);
             compare(shields.length, 1, "one tunnel");
             const warning = all(page, i => i.source === "data-warning-symbolic" && i.visible);
@@ -758,6 +823,10 @@ Item {
                 { tag: "offline", props: { egress: route("", "") }, config: {}, text: "Waiting for a connection" },
                 { tag: "invalid", props: {}, config: { publicAddressUrl4: "http://a.example/" },
                   text: "Check the address service in the settings" },
+                { tag: "IPv4 only, without an IPv4 route", props: { egress: route("", "enp195s0f3u1") },
+                  config: { publicAddressUrl4: "https://a.example/" }, text: "No IPv4 connection" },
+                { tag: "IPv6 only, without an IPv6 route", props: { egress: route("enp195s0f3u1", "") },
+                  config: { publicAddressUrl6: "https://b.example/" }, text: "No IPv6 connection" },
                 { tag: "checking, two hosts", props: {},
                   config: { publicAddressUrl4: "https://a.example/", publicAddressUrl6: "https://b.example/" },
                   text: "Asking a.example and b.example…" }
@@ -766,7 +835,9 @@ Item {
         function test_otherStatesInThePopup(data) {
             const set = shownIn(data.props, data.config);
             const page = popup(set.monitor);
-            verify(visibleTexts(page).includes(data.text), visibleTexts(page));
+            const shown = visibleTexts(page);
+            verify(shown.includes(data.text), shown);
+            verify(!shown.includes("Waiting for a connection") || data.tag === "offline", shown);
             compare(header(page).detail, "");
         }
 
@@ -784,6 +855,7 @@ Item {
                 const texts = all(line, i => i instanceof Text && i.visible && i.text !== " · ");
                 for (const t of texts) {
                     verify(!t.truncated, t.text + " fits, so it isn't cut short");
+                    compare(t.effectiveHorizontalAlignment, Text.AlignLeft, t.text + " starts where its slot does");
                 }
                 const address = texts.find(t => t.text === line.address);
                 const via = texts.find(t => t.text === line.via);
@@ -799,6 +871,42 @@ Item {
                     fuzzyCompare(start, 0, 1, "against the left edge: " + line.spoken);
                 }
             }
+        }
+
+        // An interface that won't fit beside a long address goes under it,
+        // whole, rather than being cut to nothing.
+        function test_longAddressPutsTheInterfaceUnder_data() {
+            return [{ tag: "leftToRight", mirrored: false }, { tag: "rightToLeft", mirrored: true }];
+        }
+        function test_longAddressPutsTheInterfaceUnder(data) {
+            const set = shownIn({ egress: route("enp195s0f3u1", "wg0-mullvad", false, true) }, own("longvia" + data.mirrored));
+            answer(set.made, "v4", 200, "198.51.100.24");
+            answer(set.made, "v6", 200, "dddd:dddd:dddd:dddd:dddd:dddd:dddd:dddd");
+            const page = popup(set.monitor, data.mirrored);
+            const line = addressLines(page).find(l => l.address.indexOf("dddd") === 0);
+            compare(line.Accessible.name, "Public address dddd:dddd:dddd:dddd:dddd:dddd:dddd:dddd through VPN wg0-mullvad");
+            const visible = i => {
+                for (let p = i; p && p !== line; p = p.parent) {
+                    if (!p.visible) {
+                        return false;
+                    }
+                }
+                return true;
+            };
+            const texts = all(line, i => i instanceof Text && visible(i));
+            const address = texts.find(t => t.text === line.address);
+            const via = texts.find(t => t.text === "wg0-mullvad");
+            verify(via, "the interface is shown");
+            verify(!via.truncated && via.width >= via.implicitWidth - 1, "in full: " + via.width);
+            verify(via.mapToItem(line, Qt.point(0, 0)).y > address.mapToItem(line, Qt.point(0, 0)).y, "on the line under the address");
+            compare(texts.filter(t => t.text === " · ").length, 0, "no dot leading the second line");
+            verify(all(line, i => i.source === "network-vpn-symbolic" && visible(i)).length === 1, "the shield goes with it");
+            for (const t of texts) {
+                const x = t.mapToItem(line, Qt.point(0, 0)).x;
+                verify(x >= -1 && x + t.width <= line.width + 1, t.text + " inside the line");
+            }
+            const ipv4 = addressLines(page).find(l => l.address === "198.51.100.24");
+            compare(ipv4.roomy, true, "a short address keeps its interface beside it");
         }
 
         // ---- The settings ----
@@ -891,6 +999,10 @@ Item {
                 monitor.openPopup = open;
                 compare(egress().length, 0, "with " + (open || "nothing") + " open");
             }
+            // Route facts alone don't send while the network popup is closed.
+            monitor.egress = route("eth9", "eth9");
+            compare(fake.made.length, 0, "nothing sent with the popup closed");
+            monitor.egress = null;
             monitor.openPopup = "network";
             compare(egress().length, 1, JSON.stringify(polled()));
             tryVerify(() => monitor.egress !== null, 10000, "the stub's routes arrive");

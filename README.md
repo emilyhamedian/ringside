@@ -180,11 +180,15 @@ say so: the popup asks once, and the checkbox on General changes your answer.
 When it is on, Ringside asks [ipify.org](https://www.ipify.org) each time the
 network popup opens, at most once a minute, and again when the route changes
 while the popup is open. Nothing is asked while the popup is closed or there
-is no connection, and the answer is kept only in memory.
+is no connection, and the answer is kept only in memory. Each request is an
+HTTPS GET whose User-Agent names Ringside and its version, and it sends no
+languages; the service sees your address, as any website does.
 
 To use another service, give its https addresses for IPv4 and IPv6 on
 General. With either set, only those are asked; leave one empty to skip that
-family. The service has to answer with the address alone, as plain text.
+family. The service has to answer with the address alone, as plain text, and
+from its own host: an answer redirected to another host or to http is
+ignored.
 
 ## Settings
 
@@ -207,8 +211,9 @@ Monitor. A shell script,
 [`ringside-info.sh`](package/contents/code/ringside-info.sh), adds what
 ksystemstats doesn't publish, such as the CPU model, memory type, GPU names and
 whether the discrete GPU is asleep. It reads `/proc`, `/sys` and udev's
-database as your user, and, for the public address, asks `ip route get`
-which interface reaches the internet, which sends nothing.
+database as your user, and, every 3 seconds while the network popup shows the
+public address, asks `ip route get` which interface reaches the internet,
+which sends nothing.
 
 The Claude and Codex items run
 [`usage.py`](package/contents/code/usage.py). It sends your Claude Code login

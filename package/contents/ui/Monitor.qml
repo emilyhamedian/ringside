@@ -430,7 +430,7 @@ Item {
         open: monitor.openPopup === "network"
         egress: monitor.egress
         localAddress: monitor.networkAddress
-        userAgent: monitor.version !== "" ? "ringside/" + monitor.version : "ringside"
+        version: monitor.version
     }
 
     UsageData {

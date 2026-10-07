@@ -21,8 +21,8 @@ Mainly the two helpers Ringside runs:
   does, holding the same lock, so the two never race on the single-use
   refresh token.
 - `package/contents/code/ringside-info.sh` reads `/proc`, `/sys` and udev's
-  database as your user. While the public address is shown it runs
-  `ip route get` and `ip -6 route get` for a fixed public address, a lookup
+  database as your user. Every 3 seconds while the network popup shows the
+  public address it runs `ip route get` and `ip -6 route get` for a fixed public address, a lookup
   in the kernel's routing tables that sends nothing, and reads the type of
   the interface found in `/sys/class/net`.
 
@@ -41,6 +41,11 @@ Mainly the two helpers Ringside runs:
   `Accept-Language: *`, not your languages. The service sees your address,
   as any website does. Answers stay in memory. Qt keeps any cookie the
   service sets until Plasma restarts and sends it back with later requests.
+  Qt follows a redirect, to another host or to plain http alike, with the
+  same headers; Ringside then ignores any answer that didn't
+  come over HTTPS from the host it asked. A reply longer than an address is
+  ignored too, but Qt has no way to stop reading it, so a service that
+  never stops sending keeps doing so until Plasma restarts.
 - The Claude item sends your Claude Code login only to Anthropic
   (`api.anthropic.com`, and `platform.claude.com` to renew an expired
   token). Each check's result, even an error or a sign-out, is kept for

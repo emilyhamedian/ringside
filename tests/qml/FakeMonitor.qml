@@ -101,7 +101,6 @@ QtObject {
     // Monitor.publicAddress (PublicAddress.qml), or null, which the popup
     // reads as switched off; the tests and the gallery give it a real one.
     property var publicAddress: null
-    property var egress: null
 
     property string diskDevice: "nvme0n1"
     property string volumeLabel: "/"

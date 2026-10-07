@@ -10,7 +10,7 @@
 // shared: a check one widget made within the last minute serves them all.
 // Nothing here is ever written to disk or to the configuration.
 
-var IPIFY = { name: "ipify.org", v4: "https://api.ipify.org", v6: "https://api6.ipify.org" };
+const IPIFY = { name: "ipify.org", v4: "https://api.ipify.org", v6: "https://api6.ipify.org" };
 
 const FAMILIES = ["v4", "v6"];
 
@@ -50,18 +50,35 @@ function isIPv6(text) {
     return g !== null && !(g.slice(0, 5).every(x => x === 0) && g[5] === 0xffff);
 }
 
+// The unspecified and loopback addresses, and the rest of 0.0.0.0/8 and
+// 127.0.0.0/8: no website sees a computer by one of these.
+function isNowhere(text, family) {
+    if (family === "v4") {
+        return /^(0|127)\./.test(text);
+    }
+    const g = groups6(text);
+    return g.slice(0, 7).every(x => x === 0) && g[7] <= 1;
+}
+
 // The address in a service's reply for one family ("v4" or "v6"), or ""
 // when the reply is anything else: surrounding white space aside, it has
 // to be the address alone, so no other text a service sends is ever shown.
+// The patterns leave no room for anything longer than an address.
 function address(body, family) {
     const text = typeof body === "string" ? body.trim() : "";
-    if (text === "" || text.length > 64) {
+    const valid = family === "v4" ? isIPv4(text) : family === "v6" && isIPv6(text);
+    if (!valid || isNowhere(text, family)) {
         return "";
     }
-    if (family === "v4") {
-        return isIPv4(text) ? text : "";
-    }
-    return family === "v6" && isIPv6(text) ? text.toLowerCase() : "";
+    return family === "v6" ? text.toLowerCase() : text;
+}
+
+// Whether a reply came over https from the host that was asked. Qt follows
+// a redirect before the reply is seen, to another host or to plain http
+// alike, so the URL the request ended at is the one to check.
+function cameFrom(responseUrl, asked) {
+    const h = host(responseUrl);
+    return h !== "" && h === host(asked);
 }
 
 // The host of an https:// URL, in lower case, or "" for anything else: a

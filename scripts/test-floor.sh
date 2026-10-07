@@ -49,7 +49,7 @@ done
 echo
 echo "== scripts/gallery.sh =="
 # Every popup in every state the gallery shows, which fails on a binding
-# loop or a script error.
+# or polish loop or a script error.
 shots=$(mktemp -d)
 trap 'rm -rf "$shots"' EXIT
 sh scripts/gallery.sh "$shots/gallery.png" || failed=1

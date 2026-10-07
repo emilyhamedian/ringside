@@ -195,8 +195,9 @@ ConfigPage {
             text: !page.service.valid
                 ? i18nc("@info", "Shows the address websites see under the local one in the Network popup. Ringside asks nothing until the addresses below are fixed.")
                 : page.service.custom
-                ? i18nc("@info %1 is the service asked, such as ip.example.org", "Shows the address websites see under the local one in the Network popup. Ringside asks only %1, at the addresses below, each time that popup opens, at most once a minute. The service sees your address, as every website does.", page.serviceName)
-                : i18nc("@info", "Shows the address websites see under the local one in the Network popup. Ringside asks api.ipify.org and api6.ipify.org each time that popup opens, at most once a minute. ipify.org sees your address, as every website does, and says it keeps no logs.")
+                ? i18nc("@info %1 is the service asked, such as ip.example.org", "Shows the address websites see under the local one in the Network popup. Ringside asks only %1, at the addresses below, when that popup opens or the connection changes, at most once a minute. The service sees your address, as every website does.", page.serviceName)
+                : i18nc("@info %1 and %2 are the service's host names", "Shows the address websites see under the local one in the Network popup. Ringside asks %1 and %2 when that popup opens or the connection changes, at most once a minute. ipify.org sees your address, as every website does.",
+                        Lookup.host(Lookup.IPIFY.v4), Lookup.host(Lookup.IPIFY.v6))
         }
 
         UrlField {
@@ -216,7 +217,7 @@ ConfigPage {
         }
 
         Note {
-            text: i18nc("@info", "Leave both empty for ipify.org. With either set, only that service is asked, and a field left empty isn't checked. The service has to answer with the address alone, as plain text.")
+            text: i18nc("@info", "Leave both empty for ipify.org. With either set, only that service is asked, and a field left empty isn't checked. The service has to answer with the address alone, as plain text, without redirecting to another host or to http.")
         }
     }
 }

@@ -11,8 +11,10 @@ import "../code/style.js" as Style
 // pair: a VPN that carries the traffic shows its interface by the public
 // address, and one that doesn't shows the same public address as without it.
 // `info` is the public lookup as the network popup puts it:
-//   state     "prompt", "checking", "shown", "failed", "offline" or "invalid"
+//   state     "prompt", "checking", "shown", "failed", "offline", "unrouted"
+//             or "invalid"
 //   service   the service's name, such as "ipify.org"
+//   unrouted  in that state, the family ("v4" or "v6") without a route
 //   v4, v6    { address, via, tunnel } or null; via is set only when the
 //             request left through another interface than the local one
 //   note      { text, warn } under the addresses, or null
@@ -34,39 +36,96 @@ GridLayout {
     columnSpacing: Kirigami.Units.largeSpacing
     rowSpacing: 0
 
-    // An address, then where it left from when that says something: the
-    // interface goes last, so on a long line it's the part to lose. The pair
-    // stays left to right under RTL, as the header's address line does, and
-    // sits on the right there. Read out as one phrase.
-    component AddressLine: RowLayout {
+    // An address, then where it left from when that says something. The
+    // pair stays left to right under RTL, as the header's address line does,
+    // and sits on the right there. Where the interface doesn't fit beside a
+    // long address, it goes on a line of its own under it. Read out as one
+    // phrase.
+    component AddressLine: ColumnLayout {
         id: line
 
         property string address: ""
         property string via: ""
         property bool tunnel: false
         property string spoken: ""
+        // Until it is laid out, a line counts as having room, so the usual
+        // short line isn't split and joined again on its way in.
+        readonly property bool roomy: via === "" || width <= 0 || width >= addressText.implicitWidth + inline.fullWidth
 
         Layout.fillWidth: true
         LayoutMirroring.enabled: false
+        LayoutMirroring.childrenInherit: true
         spacing: 0
         Accessible.role: Accessible.StaticText
         Accessible.name: spoken
 
-        Item {
-            visible: block.LayoutMirroring.enabled
+        RowLayout {
             Layout.fillWidth: true
+            spacing: 0
+            Item {
+                visible: block.LayoutMirroring.enabled
+                Layout.fillWidth: true
+            }
+            Text {
+                id: addressText
+                Layout.alignment: Qt.AlignBaseline
+                text: line.address
+                color: Kirigami.Theme.textColor
+                font.pointSize: block.valuePointSize
+                font.features: ({ "tnum": 1 })
+                textFormat: Text.PlainText
+                Accessible.ignored: true
+            }
+            Via {
+                id: inline
+                visible: line.via !== "" && line.roomy
+                dotted: true
+                name: line.via
+                tunnel: line.tunnel
+            }
+            Item {
+                visible: !block.LayoutMirroring.enabled
+                Layout.fillWidth: true
+            }
         }
-        Text {
-            Layout.alignment: Qt.AlignBaseline
-            text: line.address
-            color: Kirigami.Theme.textColor
-            font.pointSize: block.valuePointSize
-            font.features: ({ "tnum": 1 })
-            textFormat: Text.PlainText
-            Accessible.ignored: true
+        RowLayout {
+            visible: line.via !== "" && !line.roomy
+            Layout.fillWidth: true
+            spacing: 0
+            Item {
+                visible: block.LayoutMirroring.enabled
+                Layout.fillWidth: true
+            }
+            Via {
+                name: line.via
+                tunnel: line.tunnel
+            }
+            Item {
+                visible: !block.LayoutMirroring.enabled
+                Layout.fillWidth: true
+            }
         }
+    }
+
+    // " · ", the shield for a tunnel, and the interface's name, cut short
+    // only when it is wider than the whole line.
+    component Via: RowLayout {
+        id: via
+
+        property string name: ""
+        property bool tunnel: false
+        property bool dotted: false
+        // The width it takes in full, visible or not.
+        readonly property real fullWidth: (dotted ? dot.implicitWidth : 0)
+            + (tunnel ? shield.Layout.preferredWidth + shield.Layout.rightMargin : 0) + nameText.Layout.preferredWidth
+
+        Layout.alignment: Qt.AlignBaseline
+        baselineOffset: nameText.y + nameText.baselineOffset
+        spacing: 0
+
         Text {
-            visible: line.via !== ""
+            id: dot
+            visible: via.dotted
             Layout.alignment: Qt.AlignBaseline
             text: " · "
             color: block.dimColor
@@ -75,7 +134,8 @@ GridLayout {
             Accessible.ignored: true
         }
         Kirigami.Icon {
-            visible: line.tunnel
+            id: shield
+            visible: via.tunnel
             Layout.preferredWidth: Kirigami.Units.iconSizes.small
             Layout.preferredHeight: Kirigami.Units.iconSizes.small
             Layout.rightMargin: Math.round(Kirigami.Units.smallSpacing / 2)
@@ -86,24 +146,20 @@ GridLayout {
             Accessible.ignored: true
         }
         Text {
-            visible: line.via !== ""
+            id: nameText
             Layout.fillWidth: true
             // Whole pixels up: a layout rounding a fractional width down
             // would elide a name that fits.
             Layout.preferredWidth: Math.ceil(implicitWidth)
             Layout.maximumWidth: Layout.preferredWidth
             Layout.alignment: Qt.AlignBaseline
-            text: line.via
+            text: via.name
             color: block.dimColor
             font.pointSize: block.valuePointSize
             elide: Text.ElideRight
             textFormat: Text.PlainText
             horizontalAlignment: Text.AlignLeft
             Accessible.ignored: true
-        }
-        Item {
-            visible: !block.LayoutMirroring.enabled
-            Layout.fillWidth: true
         }
     }
 
@@ -180,6 +236,10 @@ GridLayout {
             text: i18nc("@info", "Waiting for a connection")
         }
         Plain {
+            visible: block.info.state === "unrouted"
+            text: block.info.unrouted === "v4" ? i18nc("@info", "No IPv4 connection") : i18nc("@info", "No IPv6 connection")
+        }
+        Plain {
             visible: block.info.state === "invalid"
             color: Kirigami.Theme.textColor
             text: i18nc("@info", "Check the address service in the settings")
@@ -190,7 +250,7 @@ GridLayout {
             visible: block.info.state === "prompt"
             color: Kirigami.Theme.textColor
             text: i18nc("@info %1 is the service asked, such as ipify.org",
-                        "Show the address websites see? Ringside would ask %1 each time this popup opens, so %1 sees your address.",
+                        "Show the address websites see? Ringside would ask %1 when this popup opens or the connection changes, at most once a minute, so %1 sees your address.",
                         block.info.service ?? "")
         }
         RowLayout {
