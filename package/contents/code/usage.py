@@ -156,9 +156,12 @@ ROLLING_SLACK = 120
 # seconds, so the CLI has no reason to spend the refresh token itself.
 CLI_TOKEN_MARGIN = 15 * 60
 CLAUDE_MODEL = "haiku"
-# The Codex models known to be its smallest, newest first; one is passed
-# only while the CLI's own model list offers it, else the CLI picks.
-CODEX_MODELS = ("gpt-6-luna", "gpt-5.6-luna")
+# Codex sends with the newest Luna model the CLI's own model list offers,
+# at the lightest reasoning effort it lists; these when the list can't say.
+CODEX_MODEL = "gpt-6-luna"
+CODEX_EFFORT = "low"
+# Reasoning efforts, lightest first.
+EFFORTS = ("minimal", "low", "medium", "high", "xhigh", "max")
 CODEX_MODEL_CACHE = CODEX_AUTH.parent / "models_cache.json"
 PROMPT = "Hi"
 PREFLIGHT_TIMEOUT = 20
@@ -1370,25 +1373,37 @@ def send_claude(binary):
 
 
 def codex_model():
-    """The first of CODEX_MODELS the CLI's model list offers, or None for the
-    CLI's default. The list is the CLI's own cache; anything odd in it
-    means the default."""
+    """The model and reasoning effort to send with: of the gpt-<version>-luna
+    models the CLI lists for choosing, the highest version, at the lightest
+    effort it supports. The list is the CLI's own cache, so a model or a
+    list that can't be read counts as not listed."""
     try:
-        listed = {model["slug"] for model in read_json(CODEX_MODEL_CACHE)["models"]
-                  if model.get("visibility") == "list"}
-    except (OSError, ValueError, KeyError, TypeError, AttributeError):
-        return None
-    return next((slug for slug in CODEX_MODELS if slug in listed), None)
+        models = read_json(CODEX_MODEL_CACHE)["models"]
+    except (OSError, ValueError, KeyError, TypeError):
+        models = []
+    newest, newest_version = None, ()
+    for model in models if isinstance(models, list) else []:
+        slug = model.get("slug") if isinstance(model, dict) else None
+        luna = re.fullmatch(r"gpt-([0-9]+(?:\.[0-9]+)*)-luna", slug) if isinstance(slug, str) else None
+        if luna and model.get("visibility") == "list":
+            version = tuple(int(part) for part in luna[1].split("."))
+            if version > newest_version:
+                newest, newest_version = model, version
+    if newest is None:
+        return CODEX_MODEL, CODEX_EFFORT
+    levels = newest.get("supported_reasoning_levels")
+    listed = [level.get("effort") for level in levels if isinstance(level, dict)] if isinstance(levels, list) else []
+    return newest["slug"], next((effort for effort in EFFORTS if effort in listed), CODEX_EFFORT)
 
 
 def codex_command(binary):
     """One turn that keeps no session, needs no git repository, loads none of
     the user's config or rules, can only read, and thinks as little as the
     model allows."""
-    model = codex_model()
+    model, effort = codex_model()
     return [binary, "exec", "--ephemeral", "--skip-git-repo-check", "--ignore-user-config", "--ignore-rules",
             "--sandbox", "read-only", "--color", "never", "--json", "--cd", str(WORK_DIR),
-            "--config", 'model_reasoning_effort="low"', *(["--model", model] if model else []), PROMPT]
+            "--config", f'model_reasoning_effort="{effort}"', "--model", model, PROMPT]
 
 
 def send_codex(binary):
