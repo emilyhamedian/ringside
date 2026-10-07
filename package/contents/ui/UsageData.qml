@@ -54,8 +54,9 @@ Item {
     // The switch positions asked for and not yet reported back, per id.
     property var starterWanted: ({})
     // Per id, the --start runs in a row that gave no report or left the
-    // starter due: { count, at, retryAt, error }. Kept while reports show
-    // the starter on and due.
+    // starter due: { count, at, retryAt, error, state }, state being the
+    // starter's when it failed. Kept while reports show the starter on and
+    // due, or in that state with next no later than the retry.
     property var startFailures: ({})
     // Per id, the switch change that didn't take: { on, error }. Shown
     // until the switch is turned again or reported where it was asked.
@@ -143,7 +144,8 @@ Item {
         const failures = Object.assign({}, startFailures);
         failedIds.forEach(id => {
             const count = (failures[id]?.count ?? 0) + 1;
-            failures[id] = { count: count, at: now, retryAt: now + Math.min(300 * 2 ** (count - 1), 5 * 3600), error: error };
+            failures[id] = { count: count, at: now, retryAt: now + Math.min(300 * 2 ** (count - 1), 5 * 3600), error: error,
+                             state: starters[id]?.state ?? null };
         });
         startFailures = failures;
     }
@@ -253,16 +255,19 @@ Item {
         }
         entries = merged;
         statuses = latest;
-        // A failed start ends once the starter is off or no longer due. A
-        // starter still due, even at a later time, as when the helper can't
-        // save its state and reports every starter due at once, keeps its
-        // back-off.
+        // A failed start ends once the starter is off, moves to another
+        // state or comes due after the retry. A starter still due, even at
+        // a later time, as when the helper can't save its state and reports
+        // every starter due at once, keeps its back-off. So does one the
+        // helper claimed five minutes for before the --start died, which
+        // reports its old state with that claim as next.
         const now = Date.now() / 1000;
         const failures = {};
         for (const id in startFailures) {
             const s = starting[id];
-            if (s?.enabled && Number.isFinite(s.next) && s.next <= now) {
-                failures[id] = startFailures[id];
+            const f = startFailures[id];
+            if (s?.enabled && Number.isFinite(s.next) && (s.next <= now || s.state === f.state && s.next <= f.retryAt)) {
+                failures[id] = f;
             }
         }
         starters = starting;
