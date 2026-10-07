@@ -580,35 +580,34 @@ Item {
 
         // Weekly and model readings as [percent, seconds to the reset],
         // read `polledAgo` seconds before now, and the tones they give the
-        // ring, the inner ring and the percentage. A reading that runs out
-        // before its reset at its pace so far turns red, never less than its
-        // percentage gives.
-        function test_paceRaisesTheLevel_data() {
+        // ring, the inner ring and the percentage. Only the reading sets the
+        // tone, amber from 75 % and red from 90 %, whatever the pace: a limit
+        // on course to run out early says so in the popup's sentence alone.
+        function test_paceNeverRaisesTheLevel_data() {
             const day = 86400;
             return [
                 { tag: "lasts", weekly: [52, 2 * day + 21 * 3600], outer: "text" },
-                { tag: "runs out", weekly: [70, 3 * day], outer: "negative" },
-                { tag: "amber runs out", weekly: [80, 2 * day], outer: "negative" },
+                { tag: "runs out", weekly: [70, 3 * day], outer: "text" },
+                { tag: "runs out at 39", weekly: [39, 5 * day], outer: "text" },
+                { tag: "amber runs out", weekly: [80, 2 * day], outer: "neutral" },
                 { tag: "amber lasts", weekly: [80, 5 * 3600], outer: "neutral" },
-                { tag: "runaway first day", weekly: [70, 7 * day - 18 * 3600], outer: "negative" },
+                { tag: "red from 90", weekly: [92, 2 * day + 21 * 3600], outer: "negative" },
+                { tag: "runaway first day", weekly: [70, 7 * day - 18 * 3600], outer: "text" },
                 { tag: "quiet first day", weekly: [5, 7 * day - 3 * 3600], outer: "text" },
                 { tag: "reset passed", weekly: [70, -600], outer: "text" },
                 { tag: "used up", weekly: [100, 2 * day], outer: "negative" },
-                // Three days in at 50 % runs out; four days in it would last.
-                { tag: "from its poll", weekly: [50, 3 * day], polledAgo: day, outer: "negative" },
+                { tag: "from its poll", weekly: [50, 3 * day], polledAgo: day, outer: "text" },
                 { tag: "model runs out", weekly: [52, 2 * day + 21 * 3600], inner: [78, 2 * day + 21 * 3600],
-                  outer: "text", innerTone: "negative" },
+                  outer: "text", innerTone: "neutral" },
                 { tag: "model lasts", weekly: [52, 5 * 3600], inner: [78, 5 * 3600], outer: "text", innerTone: "neutral" },
                 { tag: "model quiet", weekly: [70, 3 * day], inner: [30, 2 * day + 21 * 3600],
-                  outer: "negative", innerTone: "text" },
-                // The model's limit is projected from the poll too: three
-                // days in at 50 % runs out, where four days would last.
-                { tag: "model from its poll", weekly: [52, 5 * 3600], inner: [50, 3 * day], polledAgo: day,
+                  outer: "text", innerTone: "text" },
+                { tag: "model red from 90", weekly: [52, 2 * day + 21 * 3600], inner: [95, 2 * day + 21 * 3600],
                   outer: "text", innerTone: "negative" }
             ];
         }
 
-        function test_paceRaisesTheLevel(data) {
+        function test_paceNeverRaisesTheLevel(data) {
             const usage = monitor.usage;
             const scoped = data.inner ? [Object.assign({ id: "Fable", label: "Fable" }, usage.window(data.inner[0], data.inner[1], []))] : [];
             usage.entries = { claude: { status: "ok", fetchedAt: usage.createdAt - (data.polledAgo ?? 0),
@@ -1189,7 +1188,7 @@ Item {
 
         // A new reading keeps the limit's row: its bar moves to the reading
         // and the percentage counts with it, each frame in the colour of
-        // the bar as drawn. Here the pace keeps Fable's red throughout.
+        // the bar as drawn, so Fable turns red as its bar passes 90 %.
         function test_barsFollowTheirReadings() {
             const popup = load("claude");
             const row = rows(popup)[1];
@@ -1198,14 +1197,16 @@ Item {
             verify(percent, "78% beside Fable's bar");
             compare(bar.width, bar.parent.width * 0.78);
             const seen = [];
-            row.levelChanged.connect(() => seen.push([bar.width, String(bar.color), row.level]));
+            bar.widthChanged.connect(() => seen.push([bar.width / bar.parent.width, row.level]));
             setClaude({ scoped: [Object.assign({}, monitor.usage.entries.claude.scoped[0], { percent: 95 })] });
             compare(rows(popup)[1], row, "the same row");
             compare(bar.width, bar.parent.width * 0.78, "starting from where it was");
             tryCompare(bar, "width", bar.parent.width * 0.95, 2000);
             compare(percent.text, root.localized("95%"));
             compare(String(bar.color), String(Kirigami.Theme.negativeTextColor));
-            compare(seen, [], "no change of level on the way");
+            verify(seen.some(([drawn]) => drawn < 0.89) && seen.some(([drawn]) => drawn > 0.91), JSON.stringify(seen));
+            verify(seen.every(([drawn, level]) => drawn < 0.895 ? level === 1 : drawn > 0.905 ? level === 2 : true),
+                   "amber below 90 %, red from it, as drawn: " + JSON.stringify(seen));
         }
 
         // Every model's limit gets a row, whichever the ring shows.
@@ -1385,36 +1386,37 @@ Item {
             compare(sentence(rows(popup)[0]).text, "The weekly limit is on pace to run out " + words.weekdayTime(said, weekly));
         }
 
-        // A run-out before the reset raises a limit's level to red, never
-        // lowers it: the row's percentage and bar, and the header's ring for
-        // the shared week.
-        function test_paceRaisesTheLevel() {
+        // Only a limit's reading sets its colour, amber from 75 % and red from
+        // 90 %: a run-out before the reset leaves the row's percentage and
+        // bar and the header's ring at their own level, and says so in the
+        // pace sentence alone.
+        function test_paceNeverRaisesTheLevel() {
             const red = String(Kirigami.Theme.negativeTextColor);
+            const amber = String(Kirigami.Theme.neutralTextColor);
             const plain = String(Kirigami.Theme.textColor);
             let popup = load("claude");
             let [all, fable] = rows(popup);
-            compare(fable.level, 2);
-            compare(String(rowText(fable, root.localized("78%")).color), red);
-            compare(String(fill(fable).color), red);
+            compare(popup.paces[1].state, "out", "Fable on course to run out");
+            compare(fable.level, 1);
+            compare(String(rowText(fable, root.localized("78%")).color), amber);
+            compare(String(fill(fable).color), amber);
             compare(all.level, 0);
             compare(String(rowText(all, root.localized("52%")).color), plain);
             compare(String(fill(all).color), plain);
-            compare(header(popup).ringMinimumLevel, 0);
             compare(String(ring(popup).outerTone), plain);
 
             const usage = monitor.usage;
-            setClaude({ weekly: usage.window(60, 4 * usage.day, [[3, 0], [0, 60]]) });
+            setClaude({ weekly: usage.window(39, 5 * usage.day, [[2, 0], [0, 39]]) });
             popup = load("claude");
             [all, fable] = rows(popup);
-            compare(all.level, 2);
-            compare(String(rowText(all, root.localized("60%")).color), red);
-            compare(header(popup).ringMinimumLevel, 2);
-            compare(String(ring(popup).outerTone), red);
+            compare(popup.paces[0].state, "out", "the week on course to run out at 39 %");
+            compare(all.level, 0);
+            compare(String(rowText(all, root.localized("39%")).color), plain);
+            compare(String(ring(popup).outerTone), plain);
 
-            // 91 % that lasts to the reset stays at its own level.
+            // 91 % is red, whatever the pace.
             setClaude({ weekly: usage.window(91, 3600, [[6.9, 0], [0, 91]]), scoped: [] });
             popup = load("claude");
-            compare(header(popup).ringMinimumLevel, 0);
             compare(String(ring(popup).outerTone), red);
         }
 
@@ -1719,9 +1721,10 @@ Item {
                 { tag: "claude used up", item: "claude", weekly: [100, 2 * 86400], first: "100%", level: 2, second: "2d", heat: 2 },
                 { tag: "used up, reset passed", item: "claude", weekly: [100, -600], first: "100%", level: 2, second: "–" },
                 { tag: "reset passed", item: "claude", weekly: [40, -600], first: "40%", second: "–" },
-                // On pace to run out before the reset, the percentage is red.
-                { tag: "claude runs out", item: "claude", weekly: [70, 3 * 86400], first: "70%", level: 2, second: "3d" },
-                { tag: "claude runaway first day", item: "claude", weekly: [70, 6 * 86400 + 6 * 3600], first: "70%", level: 2, second: "6d" },
+                // On pace to run out before the reset, the percentage keeps
+                // its own reading's colour.
+                { tag: "claude runs out", item: "claude", weekly: [70, 3 * 86400], first: "70%", second: "3d" },
+                { tag: "claude runaway first day", item: "claude", weekly: [70, 6 * 86400 + 6 * 3600], first: "70%", second: "6d" },
                 { tag: "claude quiet first day", item: "claude", weekly: [5, 6 * 86400 + 21 * 3600], first: "5%", second: "6d" },
                 { tag: "runs out, reset passed", item: "claude", weekly: [70, -600], first: "70%", second: "–" },
                 { tag: "signed out", item: "claude", entries: { claude: { status: "signed_out" } }, first: "–", second: "–" },

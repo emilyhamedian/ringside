@@ -4,7 +4,6 @@
 import QtQuick
 import "code/format.js" as Format
 import "code/hardware.js" as Hardware
-import "code/pace.js" as Pace
 
 // Each item's readings in words, for screen readers and tooltips, the short
 // readings beside a ring, and the times the Claude and Codex views show.
@@ -86,8 +85,7 @@ QtObject {
         const weekly = entry && entry.weekly ? entry.weekly : null;
         const now = nowMs ?? Date.now();
         const parts = countdownParts(weekly ? weekly.resetsAt : null, now, true);
-        const pace = Pace.ofWindow(weekly, Pace.pollTime(entry, now / 1000), now / 1000);
-        return { first: percent(weekly ? weekly.percent : NaN), level: Pace.level(Format.level(weekly ? weekly.percent : NaN), pace),
+        return { first: percent(weekly ? weekly.percent : NaN), level: Format.level(weekly ? weekly.percent : NaN),
                  second: spelled(parts) || "–", heat: parts.length > 0 && weekly.percent >= 100 ? 2 : 0 };
     }
 

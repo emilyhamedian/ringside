@@ -95,7 +95,7 @@ scripts/install.sh
 
 ## Claude and Codex
 
-![The Claude popup: the weekly limit, the Fable limit in red with a sentence saying when it is on pace to run out, and a graph of this week's usage with red dots from the Fable line to where it reaches 100%](docs/usage.png)
+![The Claude popup: the weekly limit, the Fable limit in amber with a sentence saying when it is on pace to run out, and a graph of this week's usage with red dots from the Fable line to where it reaches 100%](docs/usage.png)
 
 Turn them on under *Configure Ringside… → Panel Items*. Each shows while its
 command-line tool is signed in on this machine; if one doesn't appear, its row
@@ -119,9 +119,8 @@ the limit stays reached. If your plan also has a per-model weekly limit, the
 inner ring shows it; choose which under *Sensors*. Model limits are the ones
 Anthropic's usage reply lists, under the names it gives them, such as Fable.
 
-A ring also turns red when its limit is on pace to run out before the reset,
-at the rate it has been used so far. When the last check failed, a small
-amber dot sits at the ring's corner and the tooltip says when.
+When the last check failed, a small amber dot sits at the ring's corner and
+the tooltip says when.
 
 The popup lists every weekly limit and when each resets, and a graph of the
 week so far, which fills in as Ringside keeps checking. The graph has a line

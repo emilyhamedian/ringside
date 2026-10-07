@@ -121,7 +121,6 @@ PopupPage {
     PopupHeader {
         id: header
         ringValue: popup.weekly ? popup.weekly.percent : NaN
-        ringMinimumLevel: popup.paces.length > 0 ? Pace.alarm(popup.paces[0]) : 0
         title: popup.claude ? i18nc("@title", "Claude") : i18nc("@title", "Codex")
         subtitle: i18ncp("@info under Claude or Codex: what the popup shows", "Weekly limit", "Weekly limits",
                          popup.limits.length)
@@ -191,13 +190,8 @@ PopupPage {
                 readonly property string resets: limit.id !== "" && popup.weekly
                     && Math.abs(limit.resetsAt - popup.weekly.resetsAt) >= 60
                     ? words.countdown(limit.resetsAt, popup.nowMs) : ""
-                // The level of the bar as drawn, as RingGauge.drawnLevel has
-                // it, raised, never lowered, by a run-out before the reset.
-                readonly property int level: {
-                    const base = Format.level(Number.isFinite(reading) ? bar.shown + reading - Math.round(reading) : NaN);
-                    const pace = popup.paces[index];
-                    return pace ? Pace.level(base, pace) : base;
-                }
+                // The level of the bar as drawn, as RingGauge.drawnLevel has it.
+                readonly property int level: Format.level(Number.isFinite(reading) ? bar.shown + reading - Math.round(reading) : NaN)
 
                 // The bar and its percentage follow the reading as a ring
                 // does, and at once with one limit, which has no bar.

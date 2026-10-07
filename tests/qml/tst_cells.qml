@@ -738,9 +738,10 @@ Item {
                 { tag: "claude", item: "claude", lines: [percent(52), digits(2) + "d"], tones: ["text", "dim"] },
                 { tag: "claude 81 %", item: "claude", week: [81, 5 * 3600 + 12 * 60], lines: [percent(81), digits(5) + "h"],
                   tones: ["neutral", "dim"] },
-                // At this pace the week runs out before its reset.
+                // At this pace the week runs out before its reset, and its
+                // colour is still its reading's.
                 { tag: "claude 81 % runs out", item: "claude", week: [81, 2 * day + 21 * 3600], lines: [percent(81), digits(2) + "d"],
-                  tones: ["negative", "dim"] },
+                  tones: ["neutral", "dim"] },
                 { tag: "claude last day", item: "claude", week: [40, 23 * 3600 + 5 * 60], lines: [percent(40), digits(23) + "h"],
                   tones: ["text", "dim"] },
                 { tag: "claude 95 %", item: "claude", week: [95, 5 * 3600 + 12 * 60], lines: [percent(95), digits(5) + "h"],

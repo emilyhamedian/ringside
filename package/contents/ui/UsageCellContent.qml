@@ -3,14 +3,12 @@
 
 import QtQuick
 import org.kde.kirigami as Kirigami
-import "code/pace.js" as Pace
 
 // A Claude or Codex item in the panel: the weekly limit as a ring with the
 // provider's mark inside it and the chosen model's limit as an inner ring,
 // and beside it the weekly percentage over the time left until the week
 // resets. The ring and its percentage turn amber or red with the weekly
-// reading, and red while the week is on pace to run out before its reset;
-// the inner ring does the same for the model's limit. The ring breathes from
+// reading, and the inner ring with the model's limit. The ring breathes from
 // 90 % until the limit is hit. A failed check keeps the last reading and
 // marks the ring with a dot.
 Item {
@@ -26,10 +24,9 @@ Item {
     readonly property var entry: usage.entry(item)
     readonly property var weekly: entry && entry.weekly ? entry.weekly : null
     readonly property var innerLimit: usage.inner(item)
-    // Stepped by the minute timer below, for the countdown and the pace.
+    // Stepped by the minute timer below, for the countdown.
     property real nowMs: Date.now()
     readonly property var lines: words.readout(item, nowMs)
-    readonly property var pace: Pace.ofWindow(weekly, Pace.pollTime(entry, nowMs / 1000), nowMs / 1000)
 
     // The readings in words, for screen readers and the tooltip.
     readonly property string accessibleDescription: words.describe(item, nowMs)
@@ -72,13 +69,6 @@ Item {
         value: content.weekly ? content.weekly.percent : NaN
         inner: content.innerLimit !== null
         innerValue: content.innerLimit ? content.innerLimit.percent : NaN
-        // The ring is raised as the percentage beside it is, by the week's
-        // pace, and the inner ring by its own limit's. Their own readings'
-        // levels come from the arcs as drawn.
-        minimumLevel: Pace.alarm(content.pace)
-        innerMinimumLevel: content.innerLimit
-            ? Pace.alarm(Pace.ofWindow(content.innerLimit, Pace.pollTime(content.entry, content.nowMs / 1000), content.nowMs / 1000))
-            : 0
         pulsing: value >= 90 && value < 100
         // The cell's description covers it.
         Accessible.ignored: true
