@@ -1115,6 +1115,28 @@ Item {
             }
         }
 
+        // The connection's name and its address sit on lines of their own, so
+        // a long name elides alone and the address stays whole beneath it,
+        // with the interface's name after it.
+        function test_networkHeaderLines() {
+            const name = normal.networkConnection;
+            normal.networkConnection = "Framework 10G Ethernet Expansion Card on the left rear port";
+            try {
+                const header = all(load("NetworkPopup", normal), i => i.detail !== undefined)[0];
+                compare(header.subtitle, normal.networkConnection);
+                compare(header.detail, [normal.networkAddress, normal.networkInterface].filter(s => s !== "").join(" · "));
+                const nameLine = shownText(header, header.subtitle);
+                const addressLine = shownText(header, header.detail);
+                verify(nameLine && addressLine);
+                verify(nameLine.truncated, "the long name elides");
+                verify(!addressLine.truncated, "the address shows whole");
+                verify(addressLine.mapToItem(header, Qt.point(0, 0)).y >= nameLine.mapToItem(header, Qt.point(0, nameLine.height)).y,
+                       "the address under the name");
+            } finally {
+                normal.networkConnection = name;
+            }
+        }
+
         function networkHeader(data) {
             const popup = load("NetworkPopup", normal, data.mirrored);
             const rates = all(popup, i => i.pairWidth !== undefined)[0];
