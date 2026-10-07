@@ -52,13 +52,11 @@ QtObject {
     // use or the time to the weekly reset; empty where there is none, as for
     // Intel GPUs, which publish no temperature. `level` and `heat` choose
     // their colours (see Readout). The integrated GPU's temperature stays in
-    // the words and the popup. A countdown also comes as its `parts`, which
-    // Readout orders right to left when mirrored. It keeps to the days from a
-    // day out, "6d", and to hours and minutes on the last day, "23h 5m"; the
-    // popup and the words give both. With the limit reached it turns red, as
-    // in the popup, since it then says how long the lock-out lasts. The
-    // weekly percentage also turns red while the week is on pace to run out
-    // before its reset, projected from when it was read.
+    // the words and the popup. A countdown keeps to its largest unit, "6d",
+    // "23h", "12m"; the popup and the words give more. With the limit reached
+    // it turns red, as in the popup, since it then says how long the lock-out
+    // lasts. The weekly percentage also turns red while the week is on pace
+    // to run out before its reset, projected from when it was read.
     function readout(item, nowMs) {
         const percent = value => Number.isFinite(value) ? i18nc("@info:status a percentage", "%1%", Format.percent(value)) : "–";
         const temperature = celsius => Format.temperatureValid(celsius)
@@ -77,7 +75,7 @@ QtObject {
                      heat: gpu.reportsTemperature ? monitor.heat(gpu.temperature) : 0 };
         }
         case "memory": {
-            const used = Format.bytes(monitor.memoryUsed);
+            const used = Format.panelBytes(monitor.memoryUsed);
             return { first: percent(monitor.memoryPercent), level: Format.level(monitor.memoryPercent),
                      second: used.value + used.unit.charAt(0) };
         }
@@ -88,7 +86,24 @@ QtObject {
         const parts = countdownParts(weekly ? weekly.resetsAt : null, now, true);
         const pace = Pace.ofWindow(weekly, Pace.pollTime(entry, now / 1000), now / 1000);
         return { first: percent(weekly ? weekly.percent : NaN), level: Pace.level(Format.level(weekly ? weekly.percent : NaN), pace),
-                 second: spelled(parts) || "–", parts: parts, heat: parts.length > 0 && weekly.percent >= 100 ? 2 : 0 };
+                 second: spelled(parts) || "–", heat: parts.length > 0 && weekly.percent >= 100 ? 2 : 0 };
+    }
+
+    // The texts readout() can give for `item` at their widest, line by line,
+    // with every digit counting as the widest: the room the panel keeps for
+    // them whatever they read.
+    function widest(item) {
+        const percent = i18nc("@info:status a percentage", "%1%", Format.percent(100));
+        // Memory in three figures and a unit's letter, "13.4G" or "353M"; a
+        // countdown in two figures and its unit, "23h".
+        const letters = ["B", "K", "M", "G", "T", "P"];
+        const second = item === "cpu" || item === "gpu" ? [Format.whole(100) + "°"]
+                     : item === "memory" ? letters.map(unit => Format.decimal(10, 1) + unit).concat(letters.map(unit => Format.whole(100) + unit))
+                     : timeParts(Format.whole(10), Format.whole(10), Format.whole(10)).map(part => part.value + part.unit);
+        return {
+            first: item === "gpu" ? [percent, i18nc("@info:status the GPU is powered down", "off")] : [percent],
+            second: second
+        };
     }
 
     // A Claude or Codex item: its weekly use, the limit on its inner ring,
@@ -129,17 +144,15 @@ QtObject {
 
     // countdown() as number and unit pairs, for setting the units apart:
     // [{ value: "5", unit: "d" }, { value: "18", unit: "h" }]. With
-    // leadingOnly, a day or more out keeps only the days. Empty once the
-    // reset has passed.
+    // leadingOnly, only the largest unit. Empty once the reset has passed.
     function countdownParts(resetsAt, nowMs, leadingOnly) {
         const left = Format.timeLeft(resetsAt, nowMs);
         if (left === null) {
             return [];
         }
         const [days, hours, minutes] = timeParts(Format.whole(left.days), Format.whole(left.hours), Format.whole(left.minutes));
-        return left.days > 0 ? (leadingOnly ? [days] : [days, hours])
-             : left.hours > 0 ? [hours, minutes]
-             : [minutes];
+        const parts = left.days > 0 ? [days, hours] : left.hours > 0 ? [hours, minutes] : [minutes];
+        return leadingOnly ? parts.slice(0, 1) : parts;
     }
 
     // Numbers of days, hours and minutes with their unit letters. Each unit is

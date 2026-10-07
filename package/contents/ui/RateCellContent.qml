@@ -11,17 +11,13 @@ import "code/style.js" as Style
 // Two transfer rates in the panel: down and up for the network, read and
 // write for the disk. Stacked on the rows a ring's two readings use, so they
 // line up across the panel, or side by side on a thin panel. Across the panel
-// each rate is its arrow or letter, then its value and unit, as wide as their
-// text with every digit counted as the widest, so a rate moves only when it
-// gains or loses a character. Stacked, the two values end at the edge the
-// wider one sets, so their units line up. The value and its unit read in that
-// order either way, as a number keeps its sign; only the marker moves to the
-// other side. Given more room, as a cell holding its width gives them, the
-// readings still end where the rates do. Stacked, the extra goes between the
-// markers and the values, where a shorter value already leaves room, so the
-// gaps either side of the rates stay the same; side by side it goes before
-// the first marker, so each marker stays by its value and the two rates stay
-// together.
+// each rate is its arrow or letter, then its value and unit, each in a slot
+// that fits any reading: values come in three figures (format.js panelRate),
+// so they all take the room of "99.9" but those from 100, a point narrower,
+// and the units the room of the widest. Values end at their slot's end, so
+// the units line up after them; a shorter unit leaves its room after it. The
+// value and its unit read in that order either way, as a number keeps its
+// sign; only the marker moves to the other side.
 GridLayout {
     id: rates
 
@@ -35,8 +31,8 @@ GridLayout {
     readonly property bool network: item === "network"
     readonly property bool bits: network && monitor.networkBits
     readonly property var lines: network
-        ? [Format.rate(monitor.networkDown, bits), Format.rate(monitor.networkUp, bits)]
-        : [Format.rate(monitor.diskRead, false), Format.rate(monitor.diskWrite, false)]
+        ? [reading(monitor.networkDown, bits), reading(monitor.networkUp, bits)]
+        : [reading(monitor.diskRead, false), reading(monitor.diskWrite, false)]
     readonly property color markColor: Qt.alpha(Kirigami.Theme.textColor, 0.75)
     readonly property string readLetter: i18nc("@label short for disk reads", "R")
     readonly property string writeLetter: i18nc("@label short for disk writes", "W")
@@ -71,6 +67,12 @@ GridLayout {
         return network ? arrowHeight(face) * 0.8 : face.room(face.plain, [readLetter, writeLetter]);
     }
 
+    // Across the panel in three figures, for the fixed slots; along a
+    // vertical panel as verticalText() fits it.
+    function reading(bytesPerSecond, bits) {
+        return vertical ? Format.rate(bytesPerSecond, bits) : Format.panelRate(bytesPerSecond, bits);
+    }
+
     // "25M" for "24.8M". A byte rate of 1000 to 1023 in one unit rounds to 1
     // of the next, so it keeps to three digits.
     function verticalText(reading) {
@@ -91,18 +93,18 @@ GridLayout {
     // The rates in words, for screen readers.
     readonly property string accessibleDescription: words.describe(item)
 
-    // Between a marker and its value: across the panel a small spacing, at
-    // least the gap before the unit, so an arrow never touches a long value;
+    // Between a marker and its value: across the panel twice the gap before
+    // the unit, so the unit reads as the value's and the marker stands apart;
     // along a vertical panel, what fits.
-    readonly property real markerGap: !vertical ? Kirigami.Units.smallSpacing : tight ? tightSpacing : looseSpacing
+    readonly property real markerGap: tight ? tightSpacing : looseSpacing
     // Between a value and its unit, close enough that they read as one.
     readonly property real unitGap: Math.round(Kirigami.Units.smallSpacing * 0.75)
     readonly property real markerWidth: markerRoom(drawn)
     // Along a vertical panel, room for the widest value at the size drawn.
     readonly property real valueRoom: drawn.room(drawn.plain, [whole ? Format.whole(100) + "M" : Format.whole(1000) + "M"])
-    // The wider of the two values and of the two units now shown.
-    readonly property real valuesWidth: drawn.room(drawn.plain, [lines[0].value, lines[1].value])
-    readonly property real unitsWidth: drawn.room(drawn.plain, [lines[0].unit, lines[1].unit])
+    // Across the panel, room for any value and any unit.
+    readonly property real valuesWidth: drawn.room(drawn.plain, [Format.decimal(10, 1), Format.whole(100)])
+    readonly property real unitsWidth: drawn.room(drawn.plain, Format.panelRateUnits(bits))
     // Horizontally each row is a ring's line; a vertical panel spaces its own.
     readonly property real rowHeight: vertical ? -1 : drawn.lineHeight
 
@@ -139,31 +141,16 @@ GridLayout {
             // wider one, so the values line up.
             readonly property real markerWidth: rates.singleRow && !rates.network
                 ? drawn.room(drawn.plain, [index === 1 ? rates.writeLetter : rates.readLetter]) : rates.markerWidth
-            // Stacked, both rates take the wider value and unit; side by
-            // side, each its own.
-            readonly property real valueWidth: rates.vertical ? rates.valueRoom
-                                             : rates.singleRow ? drawn.room(drawn.plain, [reading.value]) : rates.valuesWidth
-            readonly property real unitWidth: rates.vertical ? 0
-                                            : rates.singleRow ? drawn.room(drawn.plain, [reading.unit]) : rates.unitsWidth
-
-            // Its implicit width, kept apart: a binding that reads both an
-            // item's width and its implicitWidth reports a loop as the layout
-            // resizes the item.
-            readonly property real ownWidth: markerWidth + rates.markerGap + valueWidth + (rates.vertical ? 0 : rates.unitGap + unitWidth)
-            // The whole pixels of room the rate has beyond its own: stacked,
-            // after its marker; side by side, before it, and only the first
-            // rate takes any.
-            readonly property real spare: Math.max(0, Math.floor(width - ownWidth))
+            readonly property real valueWidth: rates.vertical ? rates.valueRoom : rates.valuesWidth
+            readonly property real unitWidth: rates.vertical ? 0 : rates.unitsWidth
 
             Layout.row: rates.singleRow ? 0 : index
             Layout.column: rates.singleRow ? index : 0
-            Layout.fillWidth: !rates.singleRow || index === 0
-            implicitWidth: ownWidth
+            implicitWidth: markerWidth + rates.markerGap + valueWidth + (rates.vertical ? 0 : rates.unitGap + unitWidth)
             implicitHeight: rates.vertical ? value.implicitHeight : rates.rowHeight
 
             Item {
                 anchors.left: parent.left
-                anchors.leftMargin: rates.singleRow ? rate.spare : 0
                 width: rate.markerWidth
                 height: parent.height
 
@@ -188,13 +175,13 @@ GridLayout {
                 }
             }
 
-            // The value and its unit, never mirrored, after the marker and
-            // the spare room, wherever that sits; the layout's rounding up to
-            // a whole pixel falls after them. Placed by x, since with
-            // mirroring off its own anchors would read left to right.
+            // The value and its unit, never mirrored, after the marker,
+            // wherever that sits; the layout's rounding up to a whole pixel
+            // falls after them. Placed by x, since with mirroring off its own
+            // anchors would read left to right.
             Item {
-                x: rate.LayoutMirroring.enabled ? parent.width - rate.markerWidth - rates.markerGap - rate.spare - width
-                                                : rate.markerWidth + rates.markerGap + rate.spare
+                x: rate.LayoutMirroring.enabled ? parent.width - rate.markerWidth - rates.markerGap - width
+                                                : rate.markerWidth + rates.markerGap
                 width: rate.valueWidth + (unit.visible ? rates.unitGap + rate.unitWidth : 0)
                 height: parent.height
                 LayoutMirroring.enabled: false

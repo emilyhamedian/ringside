@@ -182,6 +182,85 @@ TestCase {
         compare(result.unit, data.unit);
     }
 
+    // Three figures whatever the size, a point narrower from 100, rounding
+    // into the next figure as the value shown would.
+    function test_significant_data() {
+        return [
+            { tag: "zero", v: 0, expected: "0.00" },
+            { tag: "under one", v: 0.004, expected: "0.00" },
+            { tag: "two decimals", v: 8.4, expected: "8.40" },
+            { tag: "just under ten", v: 9.994, expected: "9.99" },
+            { tag: "rounds to ten", v: 9.995, expected: "10.0" },
+            { tag: "one decimal", v: 62.14, expected: "62.1" },
+            { tag: "just under a hundred", v: 99.94, expected: "99.9" },
+            { tag: "rounds to a hundred", v: 99.95, expected: "100" },
+            { tag: "whole", v: 353.2, expected: "353" },
+            { tag: "most", v: 999.4, expected: "999" }
+        ];
+    }
+    function test_significant(data) {
+        compare(Format.significant(data.v), local(data.expected));
+    }
+
+    // The panel's rates step their unit at 999.5 of the one shown, so no
+    // value takes a fourth figure, and start at kb/s or KiB/s, so a quiet
+    // link reads "0.00" in the unit a busy one starts from.
+    function test_panelRate_data() {
+        const kib = 1024;
+        const mib = 1024 * kib;
+        const gib = 1024 * mib;
+        return [
+            { tag: "idle bytes", v: 0, bits: false, value: "0.00", unit: "KiB/s" },
+            { tag: "idle bits", v: 0, bits: true, value: "0.00", unit: "kb/s" },
+            { tag: "a byte", v: 1, bits: false, value: "0.00", unit: "KiB/s" },
+            { tag: "999 b/s", v: 999 / 8, bits: true, value: "1.00", unit: "kb/s" },
+            { tag: "4.1 KiB/s", v: 4.1 * kib, bits: false, value: "4.10", unit: "KiB/s" },
+            { tag: "62.1 kb/s", v: 62.1e3 / 8, bits: true, value: "62.1", unit: "kb/s" },
+            { tag: "353 KiB/s", v: 353 * kib, bits: false, value: "353", unit: "KiB/s" },
+            { tag: "999.4 kb/s", v: 999.4e3 / 8, bits: true, value: "999", unit: "kb/s" },
+            { tag: "999.5 kb/s", v: 999.5e3 / 8, bits: true, value: "1.00", unit: "Mb/s" },
+            { tag: "999.4 KiB/s", v: 999.4 * kib, bits: false, value: "999", unit: "KiB/s" },
+            { tag: "999.5 KiB/s", v: 999.5 * kib, bits: false, value: "0.98", unit: "MiB/s" },
+            { tag: "1000 KiB/s", v: 1000 * kib, bits: false, value: "0.98", unit: "MiB/s" },
+            { tag: "1023 KiB/s", v: 1023 * kib, bits: false, value: "1.00", unit: "MiB/s" },
+            { tag: "8.4 Mb/s", v: 8.4e6 / 8, bits: true, value: "8.40", unit: "Mb/s" },
+            { tag: "5.8 MiB/s", v: 5.8 * mib, bits: false, value: "5.80", unit: "MiB/s" },
+            { tag: "99.96 Mb/s", v: 99.96e6 / 8, bits: true, value: "100", unit: "Mb/s" },
+            { tag: "900 Mb/s", v: 900e6 / 8, bits: true, value: "900", unit: "Mb/s" },
+            { tag: "1023 MiB/s", v: 1023 * mib, bits: false, value: "1.00", unit: "GiB/s" },
+            { tag: "1023 GiB/s", v: 1023 * gib, bits: false, value: "1.00", unit: "TiB/s" },
+            { tag: "1.1 Tb/s", v: 1.1e12 / 8, bits: true, value: "1.10", unit: "Tb/s" },
+            { tag: "no reading in bytes", v: NaN, bits: false, value: "–", unit: "KiB/s" },
+            { tag: "no reading in bits", v: NaN, bits: true, value: "–", unit: "kb/s" }
+        ];
+    }
+    function test_panelRate(data) {
+        const result = Format.panelRate(data.v, data.bits);
+        compare([result.value, result.unit], [local(data.value), data.unit]);
+        verify(Format.panelRateUnits(data.bits).includes(result.unit), result.unit + " is one of the units the panel keeps room for");
+    }
+
+    // Memory for the panel steps its unit as the rates do, in three figures.
+    function test_panelBytes_data() {
+        const mib = 1024 * 1024;
+        const gib = 1024 * mib;
+        return [
+            { tag: "bytes stay whole", v: 500, value: "500", unit: "B" },
+            { tag: "353 MiB", v: 353 * mib, value: "353", unit: "MiB" },
+            { tag: "999.4 MiB", v: 999.4 * mib, value: "999", unit: "MiB" },
+            { tag: "1000 MiB", v: 1000 * mib, value: "0.98", unit: "GiB" },
+            { tag: "1023 MiB", v: 1023 * mib, value: "1.00", unit: "GiB" },
+            { tag: "9.6 GiB", v: 9.6 * gib, value: "9.60", unit: "GiB" },
+            { tag: "13.4 GiB", v: 13.4 * gib, value: "13.4", unit: "GiB" },
+            { tag: "128 GiB", v: 128 * gib, value: "128", unit: "GiB" },
+            { tag: "no reading", v: NaN, value: "–", unit: "" }
+        ];
+    }
+    function test_panelBytes(data) {
+        const result = Format.panelBytes(data.v);
+        compare([result.value, result.unit], [local(data.value), data.unit]);
+    }
+
     function test_frequency_data() {
         return [
             { tag: "mhz", megahertz: 800, value: "800", unit: "MHz" },
