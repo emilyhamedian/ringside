@@ -145,6 +145,26 @@ class Steps(unittest.TestCase):
         h.step(reset + 1)
         self.assertEqual(h.count("send"), 1)
 
+    # A cached reading from before the weekly reset still says 100%; the
+    # reset has passed, so it holds nothing.
+    def test_a_weekly_limit_whose_reset_has_passed_holds_nothing(self):
+        h = Harness(NOW + 1, claude(NOW - 100, weekly_percent=100, weekly_reset=NOW))
+        h.step()
+        self.assertEqual(h.count("send"), 1)
+        self.assertEqual(h.record["state"], "confirming")
+
+    # Only the window it started reads as started; another is the user's.
+    def test_a_started_window_stepped_again_stays_started(self):
+        reset = NOW + 4 * HOUR
+        for at, shows in ((reset - SESSION, ("started", reset - SESSION, reset + 1)),
+                          (reset - SESSION - 60, ("waiting", None, reset + 1))):
+            with self.subTest(at=at):
+                record = dict(usage.blank_record(), state="started", at=at, next=reset + 1, steppedAt=NOW + 86400)
+                h = Harness(NOW, claude(NOW, session=reset, session_percent=3), record=record)
+                h.step()
+                self.assertEqual(h.count("read"), 1)
+                self.assertEqual(h.shows(), shows)
+
     # A reading that finds the weekly limit reached holds even a send it
     # would otherwise confirm, as usage-reset did.
     def test_the_weekly_limit_reached_while_confirming_holds(self):
@@ -351,6 +371,14 @@ class Codex(unittest.TestCase):
             with self.subTest(percent=percent, reset=reset):
                 reading = codex(NOW, percent, reset)
                 self.assertEqual(usage.codex_running(reading, NOW) is not None, running)
+
+    # Idle is judged from when the reading was taken: a cached one minutes
+    # old still shows a week rolling from then, not from now.
+    def test_an_idle_account_read_minutes_ago_is_still_idle(self):
+        fetched = NOW - 240
+        h = Harness(NOW, codex(fetched, 0, fetched + WEEK), provider="codex")
+        h.step()
+        self.assertEqual(h.count("send"), 1)
 
     def test_a_week_started_by_the_send_is_confirmed_at_zero_percent(self):
         h = Harness(NOW, codex(NOW, 0, NOW + WEEK), provider="codex")
