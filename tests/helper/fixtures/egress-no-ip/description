@@ -1,0 +1,2 @@
+Without ip both devices are empty (and the helper exits 3, so the
+widget treats the routes as unknown).

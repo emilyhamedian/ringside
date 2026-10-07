@@ -6,13 +6,52 @@ import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls as QQC2
 import org.kde.kirigami as Kirigami
+import "../code/publicaddress.js" as Lookup
 
 ConfigPage {
     id: page
 
     readonly property var historyChoices: [30, 60, 120, 300, 600]
+    readonly property var service: Lookup.service(cfg_publicAddressUrl4, cfg_publicAddressUrl6)
+    // An invalid service asks nothing, so it goes unnamed rather than named
+    // after the one URL that is fine.
+    readonly property string serviceName: !service.valid
+        ? i18nc("@info a public address service whose URL isn't valid", "the address service")
+        : service.hosts.length === 2
+        ? i18nc("@info two services' host names", "%1 and %2", service.hosts[0], service.hosts[1])
+        : service.hosts[0]
     readonly property string unit: cfg_fahrenheit ? i18nc("@label temperature unit", "°F")
                                                    : i18nc("@label temperature unit", "°C")
+
+    // A public address service's URL, and what's wrong with it, if anything.
+    component UrlField: ColumnLayout {
+        id: field
+
+        property string url
+        property string placeholder
+        property string name
+        readonly property bool invalid: url.trim() !== "" && Lookup.host(url.trim()) === ""
+
+        signal edited(string text)
+
+        spacing: Kirigami.Units.smallSpacing
+
+        QQC2.TextField {
+            Layout.preferredWidth: Kirigami.Units.gridUnit * 16
+            text: field.url
+            placeholderText: field.placeholder
+            inputMethodHints: Qt.ImhUrlCharactersOnly | Qt.ImhNoAutoUppercase | Qt.ImhNoPredictiveText
+            Accessible.name: field.name
+            Accessible.description: field.invalid ? error.text : ""
+            onTextEdited: field.edited(text)
+        }
+        Note {
+            id: error
+            visible: field.invalid
+            color: Kirigami.Theme.negativeTextColor
+            text: i18nc("@info under a URL field", "Use an https:// address with a host name and no user name or password.")
+        }
+    }
 
     Kirigami.FormLayout {
         id: form
@@ -143,6 +182,41 @@ ConfigPage {
                 checked: !page.cfg_networkBits
                 onToggled: page.cfg_networkBits = !checked
             }
+        }
+
+        QQC2.CheckBox {
+            Kirigami.FormData.label: i18nc("@label", "Public address:")
+            text: i18nc("@option:check %1 is the service asked, such as ipify.org", "Ask %1 for it", page.serviceName)
+            checked: page.cfg_publicAddress === "on"
+            onToggled: page.cfg_publicAddress = checked ? "on" : "off"
+        }
+
+        Note {
+            text: !page.service.valid
+                ? i18nc("@info", "Shows the address websites see under the local one in the Network popup. Ringside asks nothing until the addresses below are fixed.")
+                : page.service.custom
+                ? i18nc("@info %1 is the service asked, such as ip.example.org", "Shows the address websites see under the local one in the Network popup. Ringside asks only %1, at the addresses below, each time that popup opens, at most once a minute. The service sees your address, as every website does.", page.serviceName)
+                : i18nc("@info", "Shows the address websites see under the local one in the Network popup. Ringside asks api.ipify.org and api6.ipify.org each time that popup opens, at most once a minute. ipify.org sees your address, as every website does, and says it keeps no logs.")
+        }
+
+        UrlField {
+            Kirigami.FormData.label: i18nc("@label:textbox", "IPv4 address URL:")
+            name: i18nc("@label:textbox", "IPv4 address URL")
+            url: page.cfg_publicAddressUrl4
+            placeholder: Lookup.IPIFY.v4
+            onEdited: text => page.cfg_publicAddressUrl4 = text
+        }
+
+        UrlField {
+            Kirigami.FormData.label: i18nc("@label:textbox", "IPv6 address URL:")
+            name: i18nc("@label:textbox", "IPv6 address URL")
+            url: page.cfg_publicAddressUrl6
+            placeholder: Lookup.IPIFY.v6
+            onEdited: text => page.cfg_publicAddressUrl6 = text
+        }
+
+        Note {
+            text: i18nc("@info", "Leave both empty for ipify.org. With either set, only that service is asked, and a field left empty isn't checked. The service has to answer with the address alone, as plain text.")
         }
     }
 }

@@ -9,9 +9,14 @@
 #                                 device, one space between fields even when
 #                                 one is empty (unreadable)
 #   ringside-info.sh route        the default-route interface, or an empty line
+#   ringside-info.sh egress       "4 DEV TUNNEL" and "6 DEV TUNNEL": the interface
+#                                 each family's traffic to the internet leaves
+#                                 through (empty without a route), and 1 when
+#                                 it is a tunnel, else 0; exits 3 without `ip`
 #
-# It reads sysfs, procfs and udev's database as the logged-in user. Nothing
-# here touches a GPU register, so a sleeping discrete GPU stays asleep.
+# It reads sysfs, procfs and udev's database as the logged-in user, and asks
+# `ip route get` for routes, which sends nothing. Nothing here touches a GPU
+# register, so a sleeping discrete GPU stays asleep.
 # The RINGSIDE_* variables point it at fixtures for the tests.
 
 set -u
@@ -21,6 +26,7 @@ sys=${RINGSIDE_SYSFS:-/sys}
 proc=${RINGSIDE_PROCFS:-/proc}
 udevadm=${RINGSIDE_UDEVADM:-udevadm}
 lsblk=${RINGSIDE_LSBLK:-lsblk}
+ip=${RINGSIDE_IP:-ip}
 
 # A JSON string literal: control characters dropped, backslashes and quotes escaped.
 str() {
@@ -200,6 +206,39 @@ default_interface() {
     awk 'NR > 1 && $2 == "00000000" { print $1; exit }' "$proc/net/route" 2>/dev/null
 }
 
+# The interface the kernel would send a packet to a public address through.
+# `ip route get` only looks the route up in the kernel's tables: nothing is
+# sent, to that address or anywhere. An unreachable or blackhole route
+# answers with loopback, which counts as no route.
+egress_dev() {
+    "$ip" "$@" 2>/dev/null | awk 'NR == 1 { for (i = 1; i < NF; i++) if ($i == "dev") { print $(i + 1); exit } }'
+}
+
+# A tunnel (WireGuard, tun) has no link-layer header, ARPHRD_NONE (65534);
+# a tap device is an Ethernet one, known by its tun_flags. The name is
+# checked as Linux allows one before it goes into a path.
+egress() {
+    if ! command -v "$ip" >/dev/null 2>&1; then
+        printf '4  0\n6  0\n'
+        exit 3
+    fi
+    for family in 4 6; do
+        if [ "$family" = 4 ]; then
+            dev=$(egress_dev route get 1.1.1.1)
+        else
+            dev=$(egress_dev -6 route get 2606:4700:4700::1111)
+        fi
+        case $dev in lo|.|..|*/*|*:*|*[[:space:]]*) dev="" ;; esac
+        [ "${#dev}" -le 15 ] || dev=""
+        tunnel=0
+        if [ -n "$dev" ] && { [ "$(first_line "$sys/class/net/$dev/type")" = 65534 ] ||
+                              [ -e "$sys/class/net/$dev/tun_flags" ]; }; then
+            tunnel=1
+        fi
+        printf '%s %s %s\n' "$family" "$dev" "$tunnel"
+    done
+}
+
 # Whole disks, so that I/O can be summed without counting a partition, LUKS,
 # LVM or RAID device on top of the disk under it. /sys/block is the fallback
 # when lsblk is missing; there, virtual devices have no device link.
@@ -282,5 +321,6 @@ case ${1:-} in
     static) static ;;
     pm) shift; pm "$@" ;;
     route) printf '%s\n' "$(default_interface)" ;;
-    *) echo "usage: $0 static | pm BDF... | route" >&2; exit 2 ;;
+    egress) egress ;;
+    *) echo "usage: $0 static | pm BDF... | route | egress" >&2; exit 2 ;;
 esac

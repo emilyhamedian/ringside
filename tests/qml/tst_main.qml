@@ -286,5 +286,21 @@ Item {
             Plasmoid.activated();
             tryCompare(popup(applet), "visible", false, 2000);
         }
+
+        // The monitor learns the widget's version for the public address
+        // check's User-Agent, and does without when there is none to read.
+        function test_versionReachesTheMonitor_data() {
+            return [{ tag: "metadata", metaData: { version: "0.3.0" }, version: "0.3.0" },
+                    { tag: "none", metaData: undefined, version: "" }];
+        }
+        function test_versionReachesTheMonitor(data) {
+            const saved = Plasmoid.metaData;
+            Plasmoid.metaData = data.metaData;
+            try {
+                compare(strip(panel(false, 44)).monitor.version, data.version);
+            } finally {
+                Plasmoid.metaData = saved;
+            }
+        }
     }
 }

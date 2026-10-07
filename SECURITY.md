@@ -21,12 +21,26 @@ Mainly the two helpers Ringside runs:
   does, holding the same lock, so the two never race on the single-use
   refresh token.
 - `package/contents/code/ringside-info.sh` reads `/proc`, `/sys` and udev's
-  database as your user.
+  database as your user. While the public address is shown it runs
+  `ip route get` and `ip -6 route get` for a fixed public address, a lookup
+  in the kernel's routing tables that sends nothing, and reads the type of
+  the interface found in `/sys/class/net`.
 
 ## What Ringside reads and sends
 
 - System items (CPU, GPU, memory, network, disk) read `/proc`, `/sys`,
   udev's database and ksystemstats, and send nothing.
+- The public address in the network popup, off until you turn it on there
+  or on General, sends one HTTPS GET per address family to `api.ipify.org`
+  and `api6.ipify.org`, or only to the URLs you set instead. A request goes
+  out when that popup opens, unless any Ringside widget asked in the last
+  minute, and when the route changes while it stays open, never sooner than
+  a minute after the last; never while the popup is closed or there is no
+  connection, and never to ipify.org when a URL of your own is set or
+  invalid. It carries the User-Agent `ringside/<version>` and
+  `Accept-Language: *`, not your languages. The service sees your address,
+  as any website does. Answers stay in memory. Qt keeps any cookie the
+  service sets until Plasma restarts and sends it back with later requests.
 - The Claude item sends your Claude Code login only to Anthropic
   (`api.anthropic.com`, and `platform.claude.com` to renew an expired
   token). Each check's result, even an error or a sign-out, is kept for

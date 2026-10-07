@@ -9,6 +9,7 @@ import "code/format.js" as Format
 import "code/hardware.js" as Hardware
 import "code/history.js" as History
 import "code/items.js" as Items
+import "code/publicaddress.js" as Lookup
 
 // Every reading the panel and the popups show, and the only place the widget
 // subscribes to ksystemstats. Each sensor id has exactly one Sensor here:
@@ -137,6 +138,16 @@ Item {
     readonly property string networkAddress: groupText(networkInfoReaders, 1)
     property var networkDownHistory: []
     property var networkUpHistory: []
+    // The address websites see; see PublicAddress.qml.
+    readonly property alias publicAddress: publicChecker
+    // The widget's version from its metadata, for that check's User-Agent.
+    property string version: ""
+    // The interface each address family leaves through, read while the
+    // network popup shows the public address: null until the helper answers
+    // after the popup opens, then { known, v4, v6 } (see code/publicaddress.js).
+    property var egress: null
+    readonly property bool egressShown: config.publicAddress === "on" && openPopup === "network"
+    onEgressShownChanged: if (!egressShown) egress = null
 
     // Disk: I/O of one device or of every whole disk, free space of one volume.
     // ksystemstats' disk/all counts a volume and the disk under it both, so
@@ -413,6 +424,15 @@ Item {
         id: noGpu
     }
 
+    PublicAddress {
+        id: publicChecker
+        config: monitor.config
+        open: monitor.openPopup === "network"
+        egress: monitor.egress
+        localAddress: monitor.networkAddress
+        userAgent: monitor.version !== "" ? "ringside/" + monitor.version : "ringside"
+    }
+
     UsageData {
         id: usageData
         config: monitor.config
@@ -526,6 +546,23 @@ Item {
                 if (name !== monitor.routeInterface) {
                     monitor.routeInterface = name;
                 }
+            }
+        }
+    }
+
+    // The routes the public address takes, re-read as often, and only while
+    // the network popup shows it.
+    P5Support.DataSource {
+        engine: "executable"
+        interval: 3000
+        connectedSources: monitor.egressShown ? [helper.command("egress")] : []
+        onNewData: (source, data) => {
+            if (!monitor.egressShown) {
+                return;
+            }
+            const next = Lookup.egress(data["exit code"], data.stdout);
+            if (JSON.stringify(next) !== JSON.stringify(monitor.egress)) {
+                monitor.egress = next;
             }
         }
     }

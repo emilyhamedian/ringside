@@ -1,0 +1,17 @@
+#!/bin/sh
+# SPDX-FileCopyrightText: 2026 Emily Hamedian <me@emily.dev>
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+# Stands in for ip(8) in the egress cases. Answers only the two lookups the
+# helper makes, from $ROUTE4 and $ROUTE6: a line of `ip route get` output, or
+# "error" for a lookup that fails as it does without a route.
+case "$*" in
+    "route get 1.1.1.1") out=$ROUTE4 ;;
+    "-6 route get 2606:4700:4700::1111") out=$ROUTE6 ;;
+    *) echo "fake ip: unexpected arguments: $*" >&2; exit 1 ;;
+esac
+if [ "$out" = error ]; then
+    echo "RTNETLINK answers: Network is unreachable" >&2
+    exit 2
+fi
+printf '%s\n    cache\n' "$out"

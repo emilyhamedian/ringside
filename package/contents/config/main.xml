@@ -39,6 +39,17 @@
     <entry name="hotCelsius" type="Double">
       <default>90</default>
     </entry>
+    <entry name="publicAddress" type="String">
+      <label>Show the public address in the network popup: empty until asked, "on" or "off"</label>
+      <default></default>
+    </entry>
+    <entry name="publicAddressUrl4" type="String">
+      <label>An https URL that answers with the IPv4 address alone; with this or the IPv6 one set, only these are asked</label>
+      <default></default>
+    </entry>
+    <entry name="publicAddressUrl6" type="String">
+      <default></default>
+    </entry>
     <entry name="usageRefreshMinutes" type="Int">
       <label>Minutes between Claude and Codex usage checks</label>
       <default>5</default>

@@ -33,7 +33,8 @@ as hotspot.
   header with its usage, name, memory and temperature, and a sleeping one a
   single line. With one GPU there is one ring.
 - **Memory**: usage and the amount in use.
-- **Network**: download and upload rates.
+- **Network**: download and upload rates. The popup can also show the
+  public address websites see, beside the local one; see below.
 - **Disk**: read and write rates. Off by default; its popup adds the drive's
   temperature, size and free space.
 - **Claude** and **Codex**: how much of the weekly limit is used and when it
@@ -171,12 +172,27 @@ it again and waits longer before each next try, up to five minutes. Other
 widgets that read the same GPU's sensors, such as Plasma's own GPU monitors,
 keep it awake regardless.
 
+## Public address
+
+The network popup can show the address websites see under the local one, so
+a VPN that is down, or that IPv6 goes around, shows up. It is off until you
+say so: the popup asks once, and the checkbox on General changes your answer.
+When it is on, Ringside asks [ipify.org](https://www.ipify.org) each time the
+network popup opens, at most once a minute, and again when the route changes
+while the popup is open. Nothing is asked while the popup is closed or there
+is no connection, and the answer is kept only in memory.
+
+To use another service, give its https addresses for IPv4 and IPv6 on
+General. With either set, only those are asked; leave one empty to skip that
+family. The service has to answer with the address alone, as plain text.
+
 ## Settings
 
 Right-click the widget and choose *Configure Ringside…*.
 
 - **General**: update interval, how far back the graphs reach, Celsius or
-  Fahrenheit, network rates in bits or bytes, and temperature thresholds.
+  Fahrenheit, network rates in bits or bytes, temperature thresholds, and the
+  public address in the network popup.
 - **Panel Items**: which items show and in what order, and rings with or
   without their text. Rings grow and shrink with the panel.
 - **Sensors**: the CPU temperature source, which GPU goes on which ring, the
@@ -191,7 +207,8 @@ Monitor. A shell script,
 [`ringside-info.sh`](package/contents/code/ringside-info.sh), adds what
 ksystemstats doesn't publish, such as the CPU model, memory type, GPU names and
 whether the discrete GPU is asleep. It reads `/proc`, `/sys` and udev's
-database as your user.
+database as your user, and, for the public address, asks `ip route get`
+which interface reaches the internet, which sends nothing.
 
 The Claude and Codex items run
 [`usage.py`](package/contents/code/usage.py). It sends your Claude Code login

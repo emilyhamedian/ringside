@@ -49,6 +49,43 @@ Rectangle {
         id: normal
     }
 
+    // The public address in the network popup, worked out by the real
+    // checker from canned replies.
+    PublicAddressStates {
+        id: publicStates
+        localInterface: normal.networkInterface
+    }
+
+    component PublicFake: FakeMonitor {
+        property string publicState
+        publicAddress: publicStates.all[publicState] ?? null
+    }
+
+    PublicFake {
+        id: publicPrompt
+        publicState: "prompt"
+    }
+
+    PublicFake {
+        id: publicBoth
+        publicState: "both"
+    }
+
+    PublicFake {
+        id: publicVpn
+        publicState: "vpn"
+    }
+
+    PublicFake {
+        id: publicLeak
+        publicState: "longleak"
+    }
+
+    PublicFake {
+        id: publicFailed
+        publicState: "failed"
+    }
+
     // Hot, with its top processes still being read.
     FakeMonitor {
         id: hot
@@ -513,6 +550,35 @@ Rectangle {
             PopupFrame {
                 label: "Disk · all disks, 78 °C"
                 DiskPopup { monitor: diskHot }
+            }
+        }
+
+        RowLayout {
+            spacing: 2 * Kirigami.Units.gridUnit
+
+            PopupFrame {
+                label: "Network · public address, the one-time question"
+                NetworkPopup { monitor: publicPrompt }
+            }
+
+            PopupFrame {
+                label: "Network · public IPv4 and IPv6"
+                NetworkPopup { monitor: publicBoth }
+            }
+
+            PopupFrame {
+                label: "Network · through a VPN, just turned on"
+                NetworkPopup { monitor: publicVpn }
+            }
+
+            PopupFrame {
+                label: "Network · a long IPv6 going around the VPN"
+                NetworkPopup { monitor: publicLeak }
+            }
+
+            PopupFrame {
+                label: "Network · public address unreachable"
+                NetworkPopup { monitor: publicFailed }
             }
         }
 

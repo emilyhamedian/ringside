@@ -1,0 +1,2 @@
+Interface names that would leave the sysfs directory are dropped before
+they reach a path: "..". Loopback counts as no route.

@@ -35,6 +35,7 @@ QtObject {
 
     // What main.qml gives and takes from Monitor.
     property var config: null
+    property string version: ""
     property string openPopup: ""
     property var enabledItems: ["cpu", "gpu", "memory", "network", "disk"]
     readonly property bool systemShown: true
@@ -97,6 +98,10 @@ QtObject {
     property real networkTotalUp: 410 * 1048576
     property var networkDownHistory: bursts(networkDown, 6e6, 5)
     property var networkUpHistory: wave(networkUp, 1e5, 6)
+    // Monitor.publicAddress (PublicAddress.qml), or null, which the popup
+    // reads as switched off; the tests and the gallery give it a real one.
+    property var publicAddress: null
+    property var egress: null
 
     property string diskDevice: "nvme0n1"
     property string volumeLabel: "/"

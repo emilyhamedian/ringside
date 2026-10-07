@@ -1,0 +1,2 @@
+export RINGSIDE_IP="$FIXTURES/common/ip" RINGSIDE_SYSFS="$FIXTURES/egress-vpn/sys"
+export ROUTE4=error ROUTE6=error

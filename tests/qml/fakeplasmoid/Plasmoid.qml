@@ -14,6 +14,8 @@ QtObject {
     property int status: PlasmaCore.Types.PassiveStatus
     property bool userConfiguring: false
     property string icon: "utilities-system-monitor"
+    // KPluginMetaData, as far as main.qml reads it.
+    property var metaData: ({ version: "0.3.0" })
     // How often the configure action was triggered.
     property int configured: 0
 
