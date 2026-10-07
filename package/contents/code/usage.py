@@ -1365,9 +1365,13 @@ def cli_environment(config_home, settings=None):
     return env
 
 
+# The output cap leaves room for a short greeting. A reply that runs past it
+# makes the CLI ask again to finish, four requests in all, and then exit
+# with an error: Haiku sometimes answers "Hi" in more than 8 tokens even
+# when told to reply with OK.
 def claude_environment():
     return cli_environment("CLAUDE_CONFIG_DIR", {
-        "MAX_THINKING_TOKENS": "0", "CLAUDE_CODE_MAX_OUTPUT_TOKENS": "8",
+        "MAX_THINKING_TOKENS": "0", "CLAUDE_CODE_MAX_OUTPUT_TOKENS": "256",
         "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1", "CLAUDE_CODE_DISABLE_TERMINAL_TITLE": "1",
         "CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION": "false", "CLAUDE_CODE_DISABLE_ADVISOR_TOOL": "1",
         "CLAUDE_CODE_SKIP_PROMPT_HISTORY": "1"})
@@ -1401,8 +1405,8 @@ def send_claude(binary, wanted):
     which this ports, also required a JSON result with no error, a reply
     and exactly the pinned model: 3 of the 13 sends its journal still
     holds failed that check although the next reading showed a window
-    started at the send. It kept no output, so which part failed is
-    unknown.
+    started at the send. It kept no output; the likely cause is the
+    8-token output cap it used, which a short greeting overruns.
     """
     try:
         claude_access_token(CLI_TOKEN_MARGIN)

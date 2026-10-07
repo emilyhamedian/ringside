@@ -617,7 +617,7 @@ class Commands(Isolated):
         self.assertEqual(timeout, usage.SEND_TIMEOUT)
         self.assertEqual({key: env[key] for key in ("HOME", "PATH", "LC_TIME", "HTTPS_PROXY", "CLAUDE_CONFIG_DIR")},
                          {key: source[key] for key in ("HOME", "PATH", "LC_TIME", "HTTPS_PROXY", "CLAUDE_CONFIG_DIR")})
-        self.assertEqual((env["MAX_THINKING_TOKENS"], env["CLAUDE_CODE_MAX_OUTPUT_TOKENS"]), ("0", "8"))
+        self.assertEqual((env["MAX_THINKING_TOKENS"], env["CLAUDE_CODE_MAX_OUTPUT_TOKENS"]), ("0", "256"))
         for key in ("ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX",
                     "CLAUDE_CODE_OAUTH_TOKEN", "OPENAI_API_KEY"):
             self.assertNotIn(key, env)
