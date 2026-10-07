@@ -703,6 +703,17 @@ Item {
             tryVerify(() => usage.starter("codex").enabled, 10000);
             verify(usage.starter("codex").reason !== "switch");
             tryVerify(() => runner().connectedSources.length === 0, 10000);
+
+            // A change that fails after the switch was turned again is no
+            // longer the one asked for, so it records nothing.
+            usage.starterWanted = { codex: false };
+            runner().newData(usage.helperCommand(usage.ids, " --starter-set codex=on"),
+                             { "exit code": 1, "exit status": 0, stdout: "", stderr: "PermissionError: [Errno 13] Permission denied\n" });
+            compare(usage.switchFailures, {});
+            tryVerify(() => runner().connectedSources.length === 0, 10000);
+            compare(usage.switchFailures, {});
+            verify(usage.starter("codex").reason !== "switch");
+            verify(!usage.starterOn("codex"));
         }
 
         // A quick on and off run one after the other, so the last one wins.
