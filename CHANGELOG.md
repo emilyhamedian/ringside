@@ -96,7 +96,8 @@ follows [Semantic Versioning](https://semver.org/).
 - Each GPU in the GPU popup opens with the header the CPU and Claude popups
   use: its usage ring, its name, its kind and memory, and its temperature.
   A second GPU follows after a rule with a header of its own, and a
-  sleeping GPU stays one line.
+  sleeping GPU stays one line. The integrated GPU always comes first, so a
+  discrete GPU that wakes opens below it instead of pushing it down.
 - Translators are told that CPU, GPU and MEM sit inside a ring in at most
   three characters.
 - The Codex ring shows the Codex mark, its cloud drawn as an outline, instead

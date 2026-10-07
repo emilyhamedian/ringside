@@ -988,10 +988,12 @@ Item {
 
         // A GPU going to sleep fades its section out with its last readings,
         // then gives way to its line at the end: the popup changes height
-        // once. Waking, the section opens at once and fades in.
+        // once. Waking, the section opens at once below the integrated GPU's
+        // and fades in.
         function test_popupSectionFadesOutThenIn() {
             const popup = load();
-            const [outer, inner] = sections(popup);
+            const [inner, outer] = sections(popup);
+            verify(inner.first, "the integrated GPU's section opens the page");
             const heights = [];
             popup.implicitHeightChanged.connect(() => heights.push(popup.implicitHeight));
             const before = popup.implicitHeight;
@@ -1003,7 +1005,7 @@ Item {
             compare(outer.slot.temperature, 48);
             tryCompare(outer, "visible", false, 1000);
             verify(visibleTexts(popup).includes("AMD Radeon RX 7700S · off"));
-            verify(inner.first, "the integrated GPU's section now opens the page");
+            verify(inner.first, "the integrated GPU's section still opens the page");
             // The height follows at the layout's next polish.
             tryVerify(() => heights.length > 0, 1000, "the popup's height changes");
             waitForRendering(popup);
@@ -1012,7 +1014,7 @@ Item {
             monitor.gpuOuter.phase = "live";
             verify(outer.visible, "open at once");
             verify(outer.opacity < 1, "and fading in");
-            verify(!inner.first);
+            verify(inner.first && !outer.first, "below the integrated GPU's");
             verify(!visibleTexts(popup).some(t => t.endsWith(" · off")));
             tryCompare(outer, "opacity", 1, 1000);
             compare(popup.implicitHeight, before);
@@ -1023,7 +1025,7 @@ Item {
         // popup keeps its height.
         function test_popupSectionTurnsBack() {
             const popup = load();
-            const outer = sections(popup)[0];
+            const outer = sections(popup)[1];
             const before = popup.implicitHeight;
             monitor.gpuOuter.phase = "asleep";
             tryVerify(() => outer.opacity < 0.9, 1000, "fading out");
@@ -1037,7 +1039,7 @@ Item {
         function test_popupInstant() {
             const popup = load();
             popup.animated = false;
-            const outer = sections(popup)[0];
+            const outer = sections(popup)[1];
             monitor.gpuOuter.phase = "asleep";
             verify(!outer.visible);
             verify(visibleTexts(popup).includes("AMD Radeon RX 7700S · off"));

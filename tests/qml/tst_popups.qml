@@ -414,7 +414,7 @@ Item {
 
             // Each GPU's header has the same ring.
             const gpu = gauges(load("GpuPopup", normal)).filter(g => g.visible);
-            compare(gpu.map(g => g.value), [12, 3], "a ring per GPU");
+            compare(gpu.map(g => g.value), [3, 12], "a ring per GPU, the integrated one first");
             gpu.forEach(g => {
                 const tag = "the ring at " + g.value + "%";
                 compare(g.text, localized(g.value + "%"), tag);
@@ -546,7 +546,7 @@ Item {
                 verify(headline && caption);
                 cpu.push([where(headline, popup), headline.implicitWidth, caption.mapToItem(popup, Qt.point(0, 0)).x].join(" "));
                 const gpuPopup = load("GpuPopup", normal);
-                const gpuHeader = headerOf(gpuPopup);
+                const gpuHeader = all(gpuPopup, i => i.partsShown !== undefined && i.title === normal.gpuOuter.name)[0];
                 const gpuHeadline = readings(gpuHeader).find(r => r.visible && r.degreeUnit !== "");
                 const gpuCaption = shownText(gpuHeader, gpuHeader.caption);
                 verify(gpuHeadline && gpuCaption, "the GPU header at " + t);
@@ -1397,7 +1397,8 @@ Item {
             const amd = ["AMD Radeon RX 7700S", "AMD Radeon 780M Graphics"];
             const kinds = ["dGPU · 8 GiB", "iGPU · shared"];
             const off = ["AMD Radeon RX 7700S · off"];
-            return [{ tag: "two", monitor: normal, titles: amd, subtitles: kinds, rings: [12, 3], values: [48, 41],
+            // The integrated GPU first, so a discrete one waking opens below it.
+            return [{ tag: "two", monitor: normal, titles: [amd[1], amd[0]], subtitles: [kinds[1], kinds[0]], rings: [3, 12], values: [41, 48],
                       captions: ["chip", "chip"], off: [] },
                     { tag: "outerAsleep", monitor: asleep, titles: [amd[1]], subtitles: [kinds[1]], rings: [3], values: [41],
                       captions: ["chip"], off: off },
@@ -1407,8 +1408,8 @@ Item {
                       captions: ["chip"], off: [] },
                     { tag: "discreteOnly", monitor: discreteOnly, titles: [amd[0]], subtitles: [kinds[0]], rings: [12], values: [48],
                       captions: ["chip"], off: [] },
-                    { tag: "intel", monitor: intel, titles: ["NVIDIA GeForce RTX 3060 Laptop GPU", "Intel Iris Xe Graphics"],
-                      subtitles: kinds, rings: [12, 3], values: [48, NaN], captions: ["", ""], off: [] },
+                    { tag: "intel", monitor: intel, titles: ["Intel Iris Xe Graphics", "NVIDIA GeForce RTX 3060 Laptop GPU"],
+                      subtitles: [kinds[1], kinds[0]], rings: [3, 12], values: [NaN, 48], captions: ["", ""], off: [] },
                     { tag: "onlyAsleep", monitor: onlyAsleep, titles: [], subtitles: [], rings: [], values: [], captions: [], off: off }];
         }
 
@@ -1495,8 +1496,8 @@ Item {
             const unnamed = every.filter(key => key !== "caption");
             return [{ tag: "plain", mirrored: false, monitor: normal, shown: [every, every] },
                     { tag: "mirrored", mirrored: true, monitor: normal, shown: [every, every] },
-                    { tag: "nvidia", mirrored: false, monitor: intel, shown: [unnamed] },
-                    { tag: "nvidiaMirrored", mirrored: true, monitor: intel, shown: [unnamed] }];
+                    { tag: "nvidia", mirrored: false, monitor: intel, shown: [null, unnamed] },
+                    { tag: "nvidiaMirrored", mirrored: true, monitor: intel, shown: [null, unnamed] }];
         }
 
         function test_gpuHeadersMatchTheCpu(data) {
@@ -1529,6 +1530,9 @@ Item {
             const gpu = layout(load("GpuPopup", data.monitor, data.mirrored));
             compare(gpu.length, 2);
             data.shown.forEach((keys, n) => {
+                if (!keys) {
+                    return;
+                }
                 for (const key in cpu[0]) {
                     const expected = keys.includes(key) ? cpu[0][key] : null;
                     compare(JSON.stringify(gpu[n][key]), JSON.stringify(expected), "GPU " + (n + 1) + ": " + key);
@@ -1663,7 +1667,7 @@ Item {
         // The CPU and GPU headers' captions show the plain words.
         function test_popupsNameTheirSensors_data() {
             return [{ tag: "usual", monitor: normal, cpu: "chip", gpu: ["chip", "chip"] },
-                    { tag: "other", monitor: otherSensors, cpu: "chiplet " + Format.whole(3), gpu: ["hotspot", "memory"] }];
+                    { tag: "other", monitor: otherSensors, cpu: "chiplet " + Format.whole(3), gpu: ["memory", "hotspot"] }];
         }
 
         function test_popupsNameTheirSensors(data) {

@@ -9,7 +9,8 @@ import "../code/format.js" as Format
 import "../code/style.js" as Style
 import ".."
 
-// One section per awake GPU, the outer ring's first, each under a header as
+// One section per awake GPU, the integrated one first, so a discrete GPU
+// waking up opens below it rather than pushing it down; each under a header as
 // in the other popups and the second after a rule. A powered-down GPU is a
 // single line at the end; nothing here reads it, so opening the popup can't
 // wake it. A GPU that wakes opens its section at once and fades it in; one
@@ -19,6 +20,7 @@ PopupPage {
     id: popup
 
     readonly property var slots: [popup.monitor.gpuOuter, popup.monitor.gpuInner].filter(slot => slot.present)
+        .sort((a, b) => (a.kind === "integrated" ? 0 : 1) - (b.kind === "integrated" ? 0 : 1))
     readonly property var awake: slots.filter(slot => slot.phase !== "asleep")
     // The GPUs with a section open: the awake ones, and one that has just
     // gone to sleep while its section fades out. Set rather than bound, so
