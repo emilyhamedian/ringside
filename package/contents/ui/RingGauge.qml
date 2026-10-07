@@ -49,6 +49,7 @@ Item {
     // durations are a millisecond or two rather than none.
     property real settle: Kirigami.Units.longDuration > 1
         ? Math.min(Kirigami.Units.veryLongDuration, interval > 0 ? interval / 2 : Infinity) : 0
+    readonly property bool hasValue: Number.isFinite(value)
     default property alias centre: face.data
 
     // The inner ring is held while it comes or until its arc has unwound,
@@ -106,10 +107,9 @@ Item {
         return Number.isFinite(percent) ? Math.max(0, Math.min(100, percent)) : 0;
     }
 
-    // A quarter of a pixel along an arc of this radius, in percent: an arc
-    // that near its reading comes to rest there.
-    function quarterPixel(radius) {
-        return 25 / (2 * Math.PI * Math.max(1, radius));
+    // A length along an arc of this radius, in percent.
+    function along(pixels, radius) {
+        return 100 * pixels / (2 * Math.PI * Math.max(1, radius));
     }
 
     // Plays the windows that just started over, each { from, early } or null;
@@ -128,12 +128,13 @@ Item {
     // Each arc follows the whole percent its reading prints, so a reading
     // that doesn't change the number doesn't move the arc. A reset animation
     // draws the arc itself, and the follower keeps to the reading meanwhile;
-    // a hidden ring keeps to it too.
+    // a hidden ring keeps to it too. An arc within a quarter of a pixel of
+    // its reading comes to rest there.
     Follower {
         id: outerFollower
         target: Math.round(gauge.clamped(gauge.value))
         settle: gauge.visible ? gauge.settle : 0
-        precision: gauge.quarterPixel(outer.radius)
+        precision: gauge.along(0.25, outer.radius)
         enabled: !outer.animating
     }
 
@@ -141,7 +142,7 @@ Item {
         id: innerFollower
         target: gauge.innerDrawn ? Math.round(gauge.clamped(gauge.innerValue)) : 0
         settle: gauge.visible ? gauge.settle : 0
-        precision: gauge.quarterPixel(gauge.innerRadius)
+        precision: gauge.along(0.25, gauge.innerRadius)
         enabled: gauge.innerShown > 0 && !innerArc.animating
     }
 
@@ -193,6 +194,7 @@ Item {
             radius: (Math.min(gauge.width, gauge.height) - gauge.strokeWidth) / 2 - 0.5
             strokeWidth: gauge.strokeWidth
             percent: outerFollower.shown
+            shortest: gauge.hasValue ? 0 : gauge.along(gauge.strokeWidth, radius)
             color: gauge.tone(gauge.drawnLevel)
             // The track keeps the base colour whatever the level.
             trackColor: Qt.alpha(gauge.color, 0.16 * gauge.color.a)
@@ -206,6 +208,7 @@ Item {
             radius: gauge.innerRadius
             strokeWidth: gauge.innerStrokeWidth
             percent: innerFollower.shown
+            shortest: gauge.innerDrawn && Number.isFinite(gauge.innerValue) ? 0 : gauge.along(gauge.innerStrokeWidth, radius)
             color: gauge.innerColor(gauge.drawnInnerLevel)
             trackColor: Qt.alpha(gauge.color, 0.22 * 0.55 * gauge.color.a)
         }

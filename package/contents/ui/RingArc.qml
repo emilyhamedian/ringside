@@ -17,6 +17,11 @@ Shape {
     required property color trackColor
     // 0 to 100, drawn as given: RingGauge moves it.
     property real percent: 0
+    // The shortest arc drawn, in percent. An arc unwinding to no reading
+    // draws nothing once it is shorter than its width, where its round caps
+    // would leave a dot.
+    property real shortest: 0
+    readonly property bool drawn: sweep.sweepAngle >= Math.max(1, 3.6 * shortest)
 
     // What is actually drawn. These normally track the properties above; a
     // reset animation drives them directly and rebinds them when it ends, so
@@ -108,7 +113,7 @@ Shape {
     ShapePath {
         fillColor: "transparent"
         // A zero-length arc with round caps would still draw a dot.
-        strokeColor: sweep.sweepAngle >= 1 ? arc.mix(arc.drawColor, arc.turnTone, arc.lift) : "transparent"
+        strokeColor: arc.drawn ? arc.mix(arc.drawColor, arc.turnTone, arc.lift) : "transparent"
         strokeWidth: arc.strokeWidth
         capStyle: ShapePath.RoundCap
 
