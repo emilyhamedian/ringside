@@ -688,6 +688,20 @@ class ReadingCache(Isolated):
                 again.assert_not_called()
                 self.assertEqual(self.collect(step + length, codex=again)["codex"]["status"], "ok")
 
+    # A reading from before the clock stepped back is ahead of now; it is
+    # served for five minutes from the step, not polled again at once.
+    def test_a_reading_from_before_a_clock_step_keeps_the_floor(self):
+        fetch = mock.Mock(return_value=reading(3, 5))
+        self.collect(1000, codex=fetch)
+        self.collect(1060, codex=fetch)
+        step = 1000 - 600
+        self.assertEqual(self.collect(step, codex=fetch)["codex"]["fetchedAt"], step)
+        self.assertEqual(self.cached()["codex"]["fetchedAt"], step)
+        self.collect(step + 299, codex=fetch)
+        fetch.assert_called_once()
+        self.collect(step + 300, codex=fetch)
+        self.assertEqual(fetch.call_count, 2)
+
     def test_a_hold_never_lasts_more_than_a_day(self):
         self.assertEqual(self.collect(1000, codex=mock.Mock(side_effect=usage.RateLimited(10 ** 9)))["codex"]["retryAfter"],
                          usage.HOLD_MAX)

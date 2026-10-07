@@ -822,7 +822,9 @@ def collect(fetchers, now=None):
     holds the provider back for as long as Retry-After asked, if that is
     longer, and reports the seconds left. A hold with more left than its own
     length means the clock stepped back; it is cut to that length so it
-    still ends on time. The cache is shared with runs that ask for other
+    still ends on time. A reading taken after now means the same, and it
+    counts as taken now, so it is served for CACHE_TTL more rather than
+    polled again at once. The cache is shared with runs that ask for other
     providers, so their entries stay as they were. The lock covers everything
     from reading the cache to writing it and the history, so a run that
     waited for another finds its result fresh; the time is taken once the
@@ -844,6 +846,9 @@ def collect_locked(fetchers, now):
     stepped = False
     for name, fetch in fetchers.items():
         entry = cache.get(name)
+        if isinstance(entry, dict) and type(entry.get("fetchedAt")) is int and entry["fetchedAt"] > now:
+            entry["fetchedAt"] = now
+            stepped = True
         if fresh(entry, now):
             providers[name] = entry
             continue
