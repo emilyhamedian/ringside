@@ -545,28 +545,57 @@ class Commands(Isolated):
         self.assertEqual(argv[argv.index("--sandbox") + 1], "read-only")
         self.assertEqual(argv[argv.index("--cd") + 1], str(usage.WORK_DIR))
         self.assertEqual(argv[argv.index("--config") + 1], 'model_reasoning_effort="low"')
+        self.assertEqual(argv[argv.index("--model") + 1], "gpt-6-luna")
         self.assertEqual(argv[-1], "Hi")
-        self.assertNotIn("--model", argv)
         for flag in ("--dangerously-bypass-approvals-and-sandbox", "--search", "--add-dir", "--full-auto"):
             self.assertNotIn(flag, argv)
         self.assertEqual(timeout, usage.SEND_TIMEOUT)
         self.assertEqual(env, {"HOME": "/home/test", "PATH": "/usr/bin", "CODEX_HOME": "/cfg/codex"})
 
-    def test_codex_gets_its_smallest_model_while_the_cli_lists_it(self):
+    def models(self, models):
         usage.CODEX_MODEL_CACHE.parent.mkdir(parents=True, exist_ok=True)
+        usage.CODEX_MODEL_CACHE.write_text(json.dumps({"models": models} if isinstance(models, list) else models))
+
+    # Owner decision: the newest Luna the CLI lists, at its lightest effort.
+    def test_codex_sends_with_the_newest_listed_luna(self):
+        def luna(slug, *efforts, visibility="list"):
+            return {"slug": slug, "visibility": visibility,
+                    "supported_reasoning_levels": [{"effort": e, "description": ""} for e in efforts]}
+
+        today = [luna("gpt-6.1-sol", "low", "medium"), luna("gpt-6-luna", "low", "medium", "high", "xhigh", "max"),
+                 luna("gpt-reserve", "low", visibility="hide"), luna("gpt-5.6-luna", "low", "medium")]
         for models, expected in (
-                ([{"slug": "gpt-6.1-sol", "visibility": "list"}, {"slug": "gpt-6-luna", "visibility": "list"}],
-                 "gpt-6-luna"),
-                ([{"slug": "gpt-6-luna", "visibility": "hide"}, {"slug": "gpt-5.6-luna", "visibility": "list"}],
-                 "gpt-5.6-luna"),
-                ([{"slug": "gpt-6.1-sol", "visibility": "list"}], None), ("odd", None), ([["x"]], None)):
+                (today, ("gpt-6-luna", "low")),
+                (today + [luna("gpt-6.9-luna", "low"), luna("gpt-6.10-luna", "medium", "low")],
+                 ("gpt-6.10-luna", "low")),
+                (today + [luna("gpt-7-luna", "low", "high", "minimal"), luna("gpt-6.10-luna", "low")],
+                 ("gpt-7-luna", "minimal")),
+                (today + [luna("gpt-8-luna", "low", visibility="hide"), luna("gpt-7-luna-mini", "low"),
+                          luna("gpt-7.x-luna", "low"), luna("gpt-٧-luna", "low")], ("gpt-6-luna", "low")),
+                ([luna("gpt-5.6-luna", "medium", "low")], ("gpt-5.6-luna", "low")),
+                ([luna("gpt-7-luna", "ultra")], ("gpt-7-luna", "low")),
+                ([{"slug": "gpt-7-luna", "visibility": "list", "supported_reasoning_levels": "low"}],
+                 ("gpt-7-luna", "low")),
+                ([{"slug": "gpt-7-luna", "visibility": "list", "supported_reasoning_levels": [{"effort": []}]}],
+                 ("gpt-7-luna", "low")),
+                ([luna("gpt-6.1-sol", "minimal")], ("gpt-6-luna", "low")), ([], ("gpt-6-luna", "low")),
+                ("odd", ("gpt-6-luna", "low")), ([["x"], {"slug": 7}, {}], ("gpt-6-luna", "low")),
+                ({"models": {"slug": "gpt-7-luna"}}, ("gpt-6-luna", "low")), (["models"], ("gpt-6-luna", "low"))):
             with self.subTest(models=models):
-                usage.CODEX_MODEL_CACHE.write_text(json.dumps({"models": models}))
+                self.models(models)
                 self.assertEqual(usage.codex_model(), expected)
                 command = usage.codex_command("codex")
-                self.assertEqual(command[command.index("--model") + 1] if expected else None, expected)
+                self.assertEqual(command[command.index("--model") + 1], expected[0])
+                self.assertEqual(command[command.index("--config") + 1], f'model_reasoning_effort="{expected[1]}"')
+
+    def test_codex_falls_back_without_a_readable_model_list(self):
+        self.assertFalse(usage.CODEX_MODEL_CACHE.exists())
+        self.assertEqual(usage.codex_model(), ("gpt-6-luna", "low"))
+        self.models([])
         usage.CODEX_MODEL_CACHE.write_text("{broken")
-        self.assertIsNone(usage.codex_model())
+        self.assertEqual(usage.codex_model(), ("gpt-6-luna", "low"))
+        usage.CODEX_MODEL_CACHE.write_bytes(b"\xff\xfe")
+        self.assertEqual(usage.codex_model(), ("gpt-6-luna", "low"))
 
     def test_codex_that_couldnt_start_never_left_and_a_timeout_did(self):
         self.runner(OSError("exec format error"))
