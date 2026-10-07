@@ -1,0 +1,2 @@
+An alias-style name with a colon is no interface name Linux allows, and
+is dropped before it reaches a path.

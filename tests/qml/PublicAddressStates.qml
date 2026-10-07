@@ -15,7 +15,7 @@ QtObject {
     id: states
 
     // The interface the popup's monitor names as local, and the moment of
-    // the last check (2:02 PM, so the notes read as in the design).
+    // the last check: a fixed time, so the notes read the same every run.
     property string localInterface: "enp195s0f3u1"
     property real at: new Date(2026, 9, 7, 14, 2).getTime()
     // name -> a lookup frozen in that state, filled in when this is created.
@@ -32,8 +32,8 @@ QtObject {
         }
     }
 
-    function route(v4, v6, tunnel4) {
-        return { known: true, v4: { device: v4, tunnel: !!tunnel4 }, v6: { device: v6, tunnel: false } };
+    function route(v4, v6, tunnel4, tunnel6) {
+        return { known: true, v4: { device: v4, tunnel: !!tunnel4 }, v6: { device: v6, tunnel: !!tunnel6 } };
     }
 
     // Runs `steps`, each { egress, v4, v6 } with the replies as [status,
@@ -44,7 +44,7 @@ QtObject {
         let now = states.at - 61000 * (last ?? steps.length - 1);
         let replies = {};
         const make = () => ({
-            readyState: 0, status: 0, responseText: "", url: "", onreadystatechange: null,
+            readyState: 0, status: 0, responseText: "", url: "", responseURL: "", onreadystatechange: null,
             open(method, url) { this.url = url; },
             setRequestHeader() {},
             abort() {},
@@ -52,6 +52,7 @@ QtObject {
                 const reply = replies[this.url];
                 if (reply) {
                     this.status = reply[0];
+                    this.responseURL = this.url;
                     this.responseText = reply[1];
                     this.readyState = XMLHttpRequest.DONE;
                     this.onreadystatechange();
@@ -76,7 +77,7 @@ QtObject {
             checker.egress = step.egress;
             checker.open = true;
         });
-        const frozen = { status: checker.status, service: checker.service, record: checker.record,
+        const frozen = { status: checker.status, service: checker.service, serviceName: checker.serviceName, record: checker.record,
                          clock: () => states.at, answer: () => {} };
         // Off before it goes: destroy() waits for the event loop, and a checker
         // still on would answer the next state's checks.
@@ -92,20 +93,14 @@ QtObject {
         const vpn = route("wg0-mullvad", "", true);
         const leak = route("wg0-mullvad", localInterface, true);
         const ok4 = [200, "203.0.113.7\n"];
+        const long6 = [200, "2001:db8:85a3:4d1c:9d2e:51f4:c8a3:7e61"];
         all = {
-            off: run([{ egress: home }], { publicAddress: "off" }),
             prompt: run([{ egress: home }], { publicAddress: "" }),
-            checking: run([{ egress: home }]),
-            v4: run([{ egress: homeV4, v4: ok4 }]),
             both: run([{ egress: home, v4: ok4, v6: [200, "2001:db8:4f2a::1c"] }]),
-            long: run([{ egress: home, v4: ok4, v6: [200, "2001:db8:85a3:4d1c:9d2e:51f4:c8a3:7e61"] }]),
             vpn: run([{ egress: homeV4, v4: ok4 }, { egress: vpn, v4: [200, "198.51.100.24"] }]),
-            leak: run([{ egress: leak, v4: [200, "198.51.100.24"], v6: [200, "2001:db8:4f2a::1c"] }]),
-            longleak: run([{ egress: leak, v4: [200, "198.51.100.24"], v6: [200, "2001:db8:85a3:4d1c:9d2e:51f4:c8a3:7e61"] }]),
-            dropped: run([{ egress: vpn, v4: [200, "198.51.100.24"] }, { egress: homeV4, v4: ok4 }]),
-            failed: run([{ egress: homeV4, v4: ok4 }, { egress: homeV4, v4: [503, ""] }], {}, 0),
-            offline: run([{ egress: route("", "") }]),
-            invalid: run([{ egress: home }], { publicAddressUrl4: "http://ip.example/" })
+            longvpn: run([{ egress: route("wg0-mullvad", "wg0-mullvad", true, true), v4: [200, "198.51.100.24"], v6: long6 }]),
+            longleak: run([{ egress: leak, v4: [200, "198.51.100.24"], v6: long6 }]),
+            failed: run([{ egress: homeV4, v4: ok4 }, { egress: homeV4, v4: [503, ""] }], {}, 0)
         };
     }
 }

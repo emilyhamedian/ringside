@@ -28,16 +28,18 @@ fi
 
 rm -f "$out"
 # The status is kept rather than tested by set -e, so a failed load still
-# prints its log.
+# prints its log. resizeToItem keeps the window the gallery's size as it
+# grows by the popups it builds after its first frame.
 rc=0
 log=$(QT_FORCE_STDERR_LOGGING=1 QT_QPA_PLATFORMTHEME=kde QT_QUICK_BACKEND=software \
-    "$QML" -platform offscreen tests/qml/Gallery.qml -- --snapshot "$out" 2>&1) || rc=$?
+    "$QML" -platform offscreen -c resizeToItem tests/qml/Gallery.qml -- --snapshot "$out" 2>&1) || rc=$?
 printf '%s\n' "$log" >&2
 [ "$rc" -eq 0 ] || { echo "gallery.sh: $QML exited with status $rc" >&2; exit 1; }
 [ -s "$out" ] || { echo "gallery.sh: no image written to $out" >&2; exit 1; }
-# A script error still leaves an image, with a part missing.
-if printf '%s\n' "$log" | grep -qE 'TypeError|ReferenceError|SyntaxError|Binding loop'; then
-    echo "gallery.sh: script errors while rendering (above)" >&2
+# A script error still leaves an image, with a part missing; a layout that
+# loops may be left half done.
+if printf '%s\n' "$log" | grep -qE 'TypeError|ReferenceError|SyntaxError|Binding loop|polish loop'; then
+    echo "gallery.sh: script or layout errors while rendering (above)" >&2
     exit 1
 fi
 echo "$out"

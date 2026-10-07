@@ -31,13 +31,12 @@ PopupPage {
         if (!compared) {
             return { state: "off" };
         }
-        const hosts = lookup.service.hosts;
         const record = lookup.record;
         const shown = publicState === "shown"
             ? Lookup.lines(record.result, record.egress, popup.monitor.networkInterface) : { v4: null, v6: null, leak: null };
         const at = ms => words.timeOfDay(ms / 1000, lookup.clock());
         const changed = shown.v4 && record.changed.v4 ? record.changed.v4 : shown.v6 && record.changed.v6 ? record.changed.v6 : null;
-        const seen = publicState === "failed" && record ? record.seen.v4 ?? record.seen.v6 : null;
+        const seen = publicState === "failed" ? record.seen.v4 ?? record.seen.v6 : null;
         let note = null;
         if (shown.leak) {
             note = { warn: true, text: shown.leak.family === "v6"
@@ -51,7 +50,9 @@ PopupPage {
         }
         return {
             state: publicState,
-            service: hosts.length === 2 ? i18nc("@info two services' host names", "%1 and %2", hosts[0], hosts[1]) : hosts[0] ?? "",
+            service: lookup.serviceName,
+            // The one family the service asks, which has no route.
+            unrouted: lookup.service.v4 !== "" ? "v4" : "v6",
             v4: shown.v4,
             v6: shown.v6,
             note: note
