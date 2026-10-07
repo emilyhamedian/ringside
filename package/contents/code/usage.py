@@ -309,6 +309,9 @@ def parse_codex(result):
     window = weekly_window(limit)
     if not window:
         raise RuntimeError("no usage window in app-server reply")
+    # As for Claude: a missing share read as 0% could pass for an idle week.
+    if type(window.get("usedPercent")) not in (int, float):
+        raise RuntimeError("no usage share in app-server reply")
     scoped = []
     for limit_id, other in sorted(by_id.items()):
         weekly = seven_day_window(other) if limit_id != "codex" and other else None
@@ -617,6 +620,10 @@ def parse_claude(usage):
     weekly = usage.get("seven_day")
     if not weekly:
         raise RuntimeError("no weekly window in usage reply")
+    # Read as 0%, a missing share would let the starter send past a reached
+    # weekly limit.
+    if type(weekly.get("utilization")) not in (int, float):
+        raise RuntimeError("no weekly utilization in usage reply")
     scoped = []
     for limit in usage.get("limits") or []:
         name = ((limit.get("scope") or {}).get("model") or {}).get("display_name") or ""
