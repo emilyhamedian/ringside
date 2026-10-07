@@ -768,12 +768,17 @@ Item {
             compare(usage.starter("codex").state, "off");
         }
 
+        // Its failures go too, so none shows again should it come back.
         function test_droppedProviderDropsItsStarter() {
             start("starter");
             usage.setStarter("codex", true);
+            usage.startFailures = { codex: { count: 1, at: 0, retryAt: 300, error: "boom", state: "waiting" } };
+            usage.switchFailures = { codex: { on: true, error: "boom" } };
             usage.providers = ["claude"];
             compare(Object.keys(usage.starters), ["claude"]);
             compare(usage.starterWanted, {});
+            compare(usage.startFailures, {});
+            compare(usage.switchFailures, {});
             usage.setStarter("codex", true);
             compare(usage.starterWanted, {}, "an unpolled provider has no switch");
             tryVerify(() => runner().connectedSources.length === 0, 10000);
