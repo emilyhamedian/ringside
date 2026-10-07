@@ -106,13 +106,15 @@ Rectangle {
 
             // With tabular digits, so a changing peak doesn't jostle the
             // caption beside it. The caption's detail gives way first, then
-            // this, so the caption's label stays whole.
+            // this, so the caption's label stays whole. It shows whole or not
+            // at all: a stub of a peak says nothing, and the reading over the
+            // graph still gives the rate.
             Caption {
                 id: top
                 anchors.right: parent.right
                 width: Math.max(0, Math.min(Math.ceil(implicitWidth),
                                             captionLine.width - captionLine.spacing - Math.ceil(labelRoom.advanceWidth)))
-                visible: text !== ""
+                visible: text !== "" && width >= Math.ceil(implicitWidth)
                 text: tile.graphTop
                 font.features: ({ "tnum": 1 })
                 horizontalAlignment: Text.AlignRight

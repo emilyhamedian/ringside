@@ -231,8 +231,9 @@ Item {
             verify(loader.item.implicitHeight > 0);
         }
 
-        function load(popup, monitor, mirrored) {
-            const loader = createTemporaryObject(mirrored ? mirroredHost : host, root);
+        // A page as wide as the popup makes it, or the given width.
+        function load(popup, monitor, mirrored, width) {
+            const loader = createTemporaryObject(mirrored ? mirroredHost : host, root, width ? { width: width } : {});
             loader.setSource(Qt.resolvedUrl("../../package/contents/ui/popups/" + popup + ".qml"), { monitor: monitor });
             waitForRendering(loader.item);
             return loader.item;
@@ -772,8 +773,11 @@ Item {
                     { tag: "network", popup: "NetworkPopup", ceilings: 0, peaks: 3 }];
         }
 
+        // Wide enough for every peak in full: the test's fallback font runs
+        // about half as wide again as Breeze's, and a peak with too little
+        // room goes (test_rateCaptionsKeepTheirLabel).
         function test_graphsHaveARuleOrAPeak(data) {
-            const found = graphs(load(data.popup, normal)).filter(g => g.visible);
+            const found = graphs(load(data.popup, normal, false, Kirigami.Units.gridUnit * 30)).filter(g => g.visible);
             compare(found.filter(g => g.ceiling).length, data.ceilings);
             compare(found.filter(g => !g.ceiling).length, data.peaks);
             found.forEach(g => {
@@ -819,7 +823,8 @@ Item {
             normal.networkBits = data.bits;
             fresh.networkBits = data.bits;
             try {
-                const popup = load("NetworkPopup", normal);
+                // Wide enough for the peaks, as in test_graphsHaveARuleOrAPeak.
+                const popup = load("NetworkPopup", normal, false, Kirigami.Units.gridUnit * 30);
                 compare(graphs(popup).map(tileCaption).map(c => c.text), [seconds, "READ", "WRITE"]);
                 const tops = graphs(popup).map(tileTop);
                 compare(tops.map(c => c.text), expected);
@@ -863,7 +868,9 @@ Item {
         // A third longer in every string, the rate tiles' caption lines stay
         // inside their tiles at the page widths a popup takes, the peak
         // apart from the caption: where they don't fit, the caption's span
-        // and then the peak are cut short, never the caption's label.
+        // is cut short and then the peak goes, never the caption's label.
+        // The peak shows whole or not at all, never as a stub or a bare
+        // ellipsis.
         function test_rateCaptionsKeepTheirLabel(data) {
             root.pseudo = true;
             try {
@@ -875,21 +882,27 @@ Item {
                 const captions = graphs(popup).map(tileCaption);
                 const tops = graphs(popup).map(tileTop);
                 compare(captions.length, 3);
-                verify(captions.concat(tops).some(c => c.truncated),
+                verify(captions.some(c => c.truncated) || tops.some(t => !t.visible),
                        "something is cut short: " + captions.concat(tops).map(c => c.text).join(", "));
+                for (const t of tops) {
+                    verify(!t.visible || !t.truncated && t.width >= Math.ceil(t.implicitWidth),
+                           t.text + " whole: " + t.width + " for " + t.implicitWidth);
+                }
                 captions.forEach((c, i) => {
                     const tile = ancestor(c, i => i.graphTop !== undefined);
                     const span = t => {
                         const left = t.mapToItem(tile, Qt.point(0, 0)).x;
                         return [left, left + (t.elide !== Text.ElideNone ? t.width : Math.max(t.width, t.contentWidth))];
                     };
-                    for (const t of [c, tops[i]]) {
+                    for (const t of [c, tops[i]].filter(t => t.visible)) {
                         const [left, right] = span(t);
                         verify(left >= tile.horizontalPadding - 0.5 && right <= tile.width - tile.horizontalPadding + 0.5,
                                t.text + " at " + left + " to " + right + " in a tile " + tile.width + " wide");
                     }
-                    const [a, b] = data.mirrored ? [span(tops[i]), span(c)] : [span(c), span(tops[i])];
-                    verify(a[1] <= b[0], c.text + " clear of " + tops[i].text + ": " + a + " " + b);
+                    if (tops[i].visible) {
+                        const [a, b] = data.mirrored ? [span(tops[i]), span(c)] : [span(c), span(tops[i])];
+                        verify(a[1] <= b[0], c.text + " clear of " + tops[i].text + ": " + a + " " + b);
+                    }
                 });
                 for (const c of captions) {
                     // Where even the label, and an ellipsis if it has more
