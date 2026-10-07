@@ -1108,6 +1108,22 @@ selectedTimeZones=Local,America/New_York
         self.assertEqual(providers["codex"]["weekly"]["clockZone"], {"offset": -18000, "abbreviation": "EST"})
         self.assertNotIn("clockZone", providers["other"]["weekly"])
 
+    def test_the_session_and_each_starter_get_the_zone_too(self):
+        off = dict(OFF)
+        providers = {"claude": {"weekly": {"resetsAt": None}, "scoped": [],
+                                "session": {"resetsAt": self.NOV_2_NOON_EST},
+                                "starter": {"enabled": True, "state": "started", "at": self.NOV_2_NOON_EST,
+                                            "next": self.SEP_4_NOON_EDT, "reason": None}},
+                     "codex": {"weekly": {"resetsAt": None},
+                               "starter": {"enabled": True, "state": "confirming", "at": self.NOV_2_NOON_EST,
+                                           "next": None, "reason": None}},
+                     "off": {"status": "signed_out", "starter": off}}
+        usage.show_in_zone(providers, usage.clock_zone())
+        self.assertEqual(providers["claude"]["session"]["clockZone"], {"offset": -18000, "abbreviation": "EST"})
+        self.assertEqual(providers["claude"]["starter"]["clockZone"], {"offset": -14400, "abbreviation": "EDT"})
+        self.assertEqual(providers["codex"]["starter"]["clockZone"], {"offset": -18000, "abbreviation": "EST"})
+        self.assertEqual(off, OFF)
+
     def test_reset_the_zone_cannot_place_keeps_system_time(self):
         providers = {"claude": {"weekly": {"resetsAt": self.SEP_4_NOON_EDT * 1000}},
                      "codex": {"weekly": {"resetsAt": self.SEP_4_NOON_EDT}}}
@@ -1122,6 +1138,10 @@ selectedTimeZones=Local,America/New_York
         claude = report["providers"]["claude"]
         self.assertEqual(claude["weekly"]["clockZone"]["abbreviation"], "EDT")
         self.assertEqual(claude["scoped"][0]["clockZone"]["abbreviation"], "EDT")
+        self.assertNotIn("clockZone", claude["starter"])
+        usage.STARTER_FILE.parent.mkdir(parents=True)
+        usage.STARTER_FILE.write_text('{"claude": true}')
+        self.assertIn(self.run_main()["providers"]["claude"]["starter"]["clockZone"]["abbreviation"], ("EDT", "EST"))
         cached = json.loads(usage.CACHE_FILE.read_text())["claude"]
         self.assertNotIn("clockZone", cached["weekly"])
         self.assertNotIn("clockZone", cached["scoped"][0])

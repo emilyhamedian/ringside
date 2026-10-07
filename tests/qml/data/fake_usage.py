@@ -25,12 +25,14 @@ NOW = int(time.time())
 DAY = 86400
 WEEK = 7 * DAY
 SESSION = 5 * 3600
+# The desktop clock's zone, as usage.py adds it to every time it reports.
+ZONE = {"offset": -4 * 3600, "abbreviation": "EDT"}
 
 
 def window(percent, left, history=()):
     """A week resetting `left` seconds from now; history as (days ago, percent)."""
     return {"percent": percent, "resetsAt": NOW + left, "windowSeconds": WEEK,
-            "clockZone": {"offset": -4 * 3600, "abbreviation": "EDT"},
+            "clockZone": ZONE,
             "history": [[NOW - round(days * DAY), percent] for days, percent in history]}
 
 
@@ -40,13 +42,14 @@ def limit(limit_id, label, week):
 
 def session(percent, left):
     """Claude's five-hour window, resetting `left` seconds from now."""
-    return {"percent": percent, "resetsAt": NOW + left, "windowSeconds": SESSION}
+    return {"percent": percent, "resetsAt": NOW + left, "windowSeconds": SESSION, "clockZone": ZONE}
 
 
 def starter(state="off", at=None, next=None, reason=None):
     """A session starter as usage.py reports it; at and next are seconds from now."""
-    return {"enabled": state != "off", "state": state, "at": None if at is None else NOW + at,
-            "next": None if next is None else NOW + next, "reason": reason}
+    report = {"enabled": state != "off", "state": state, "at": None if at is None else NOW + at,
+              "next": None if next is None else NOW + next, "reason": reason}
+    return dict(report, clockZone=ZONE) if at is not None or next is not None else report
 
 
 def ok(weekly, scoped=(), **extra):
