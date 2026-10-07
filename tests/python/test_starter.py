@@ -444,6 +444,17 @@ class Codex(unittest.TestCase):
         h.step(NOW + 300)
         self.assertEqual(h.shows(), ("retrying", NOW, NOW + 600))
 
+    # A week in use that doesn't say when it resets is read again as after
+    # a failed read; nothing is sent into it.
+    def test_a_week_in_use_without_a_reset_holds_like_a_failed_read(self):
+        with self.assertRaises(usage.Unreadable):
+            usage.codex_running(codex(NOW, 40, None), NOW)
+        h = Harness(NOW, codex(NOW, 40, None), provider="codex")
+        for at, retry in ((NOW, NOW + 300), (NOW + 300, NOW + 1200), (NOW + 1200, NOW + 4800)):
+            h.step(at)
+            self.assertEqual(h.record["next"], retry)
+        self.assertEqual(h.count("send"), 0)
+
     def test_a_running_week_waits_and_a_full_one_holds(self):
         h = Harness(NOW, codex(NOW, 30, NOW + 2 * 86400), provider="codex")
         h.step()

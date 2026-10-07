@@ -1147,8 +1147,9 @@ class Starter:
     the cached one was taken before not_before, Failed or Unreadable.
     check() returns the CLI or raises Failed; send(binary) raises Failed,
     NotSent or SwitchedOff when nothing went out. running(reading, now) is
-    the window running now, or None, and period a window's length. The
-    caller holds usage.lock throughout.
+    the window running now or None, or raises Unreadable when the reading
+    can't tell, and period a window's length. The caller holds usage.lock
+    throughout.
     """
 
     def __init__(self, record, *, read, check, send, running, period, persist, clock):
@@ -1193,6 +1194,7 @@ class Starter:
         try:
             binary = self.check()
             reading = self.read(rec["sentAt"] + CONFIRM_SLACK if rec["state"] == "confirming" else None)
+            window = self.running(reading, now)
         except Failed as err:
             self.set("failed", next_=now + RETRY_DELAYS[0], reason=err.reason)
             return
@@ -1212,7 +1214,6 @@ class Starter:
             rec.update(sentAt=None, uncertain=0, failures=0)
             self.set("weekly", next_=weekly["resetsAt"] + 1)
             return
-        window = self.running(reading, now)
         if window:
             start = window["resetsAt"] - window.get("windowSeconds", self.period)
             # A step again within the window it started, as after the clock
@@ -1262,9 +1263,13 @@ def claude_running(reading, now):
 def codex_running(reading, now):
     """Codex's week while it runs, else None. An idle account reports 0% and
     a reset a week from whenever it is asked, which moves with the clock;
-    that is no window, and the next message starts one."""
+    that is no window, and the next message starts one. A week in use that
+    doesn't say when it resets runs all the same, so the reading is as good
+    as unread."""
     week = reading["weekly"]
     reset = week["resetsAt"]
+    if reset is None and week["percent"] > 0:
+        raise Unreadable()
     if reset is None or reset <= now:
         return None
     if week["percent"] == 0 and abs(reset - reading["fetchedAt"] - week.get("windowSeconds", WEEK_SECONDS)) \
