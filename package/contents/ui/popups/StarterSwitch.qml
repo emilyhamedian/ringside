@@ -59,7 +59,9 @@ ColumnLayout {
         Layout.fillWidth: true
         Layout.preferredWidth: 0
         Layout.leftMargin: toggle.leftPadding + toggle.indicator.width + toggle.spacing
-        Layout.bottomMargin: Math.round(Kirigami.Units.smallSpacing / 2)
+        // The last line's baseline as far from the popup's edge as the
+        // switch's label is from the footer's rule, as a tile's foot is.
+        Layout.bottomMargin: Math.round(Kirigami.Units.largeSpacing * 2 - (twoLines.implicitHeight / 2 - twoLines.baselineOffset))
         // Always two lines' room, so the popup keeps its height while it is
         // open and the state changes under it. A longer status, such as one
         // with the helper's error, elides here and reads in full from a

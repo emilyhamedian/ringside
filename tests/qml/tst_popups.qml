@@ -1471,14 +1471,20 @@ Item {
 
         // The system popups' footers keep the System Monitor link and the
         // configure button on one line, with no switch: the session
-        // starter's belongs to the Claude and Codex popups only.
+        // starter's belongs to the Claude and Codex popups only. The link's
+        // text and the button's icon sit on the readings' edges, plain and
+        // mirrored.
         function test_systemFooters_data() {
-            return [{ tag: "cpu", popup: "CpuPopup" }, { tag: "gpu", popup: "GpuPopup" },
-                    { tag: "memory", popup: "MemoryPopup" }, { tag: "network", popup: "NetworkPopup" }];
+            const rows = [];
+            for (const [tag, popup] of [["cpu", "CpuPopup"], ["gpu", "GpuPopup"], ["memory", "MemoryPopup"], ["network", "NetworkPopup"]]) {
+                rows.push({ tag: tag, popup: popup, mirrored: false });
+                rows.push({ tag: tag + "Mirrored", popup: popup, mirrored: true });
+            }
+            return rows;
         }
 
         function test_systemFooters(data) {
-            const popup = load(data.popup, normal);
+            const popup = load(data.popup, normal, data.mirrored);
             const footer = all(popup, i => i.systemMonitorShown !== undefined && i.position !== undefined)[0];
             verify(footer.systemMonitorShown);
             compare(all(footer, i => i.visualPosition !== undefined).length, 0, "no switch");
@@ -1488,8 +1494,16 @@ Item {
             compare(footer.height, footer.topPadding + footer.bottomPadding + Math.max(link.implicitHeight, button.implicitHeight));
             const middle = i => i.mapToItem(footer, Qt.point(0, i.height / 2)).y;
             fuzzyCompare(middle(button), middle(link), 0.5);
-            compare(link.mapToItem(footer, Qt.point(0, 0)).x, footer.leftPadding + Kirigami.Units.largeSpacing);
-            compare(button.mapToItem(footer, Qt.point(button.width, 0)).x, footer.width - footer.rightPadding);
+            // On the readings' edges: the link's text, and the icon inside the button's padding.
+            const edge = Math.round(Kirigami.Units.largeSpacing * 2);
+            const x = (i, at) => i.mapToItem(footer, Qt.point(at, 0)).x;
+            if (data.mirrored) {
+                compare(x(link, link.width), footer.width - edge);
+                compare(x(button, button.leftPadding), edge);
+            } else {
+                compare(x(link, 0), edge);
+                compare(x(button, button.width - button.rightPadding), footer.width - edge);
+            }
         }
 
         function test_longTranslationsFit_data() {

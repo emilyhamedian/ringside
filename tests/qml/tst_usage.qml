@@ -1940,7 +1940,13 @@ Item {
             fuzzyCompare(toggle.mapToItem(popup, Qt.point(toggle.width, 0)).x,
                          button.mapToItem(popup, Qt.point(0, 0)).x - Kirigami.Units.largeSpacing - Kirigami.Units.smallSpacing, 0.5);
             compare(toggle.mapToItem(popup, Qt.point(0, 0)).x, Math.round(Kirigami.Units.largeSpacing * 2), "on the readings' edge");
+            compare(button.mapToItem(popup, Qt.point(button.width - button.rightPadding, 0)).x,
+                    popup.width - Math.round(Kirigami.Units.largeSpacing * 2), "the icon on the readings' far edge");
             verify(status.mapToItem(popup, Qt.point(0, 0)).y >= toggle.mapToItem(popup, Qt.point(0, toggle.height)).y, "under the label");
+            // The last line's baseline two large spacings above the popup's
+            // edge, as the label's capitals are below the footer's rule.
+            const lastBaseline = status.mapToItem(popup, Qt.point(0, status.height)).y - (status.height / 2 - status.baselineOffset);
+            fuzzyCompare(popup.height - lastBaseline, Math.round(Kirigami.Units.largeSpacing * 2), 1);
             const texts = toggle.parent.texts;
             StarterStates.ROWS.filter(row => (row.only ?? data.item) === data.item).forEach(row => {
                 const starter = starterFor(row);
