@@ -779,7 +779,7 @@ Item {
                 { tag: "memory", item: "memory", ring: 60, texts: [percent(60), decimal(20.0) + "G"], words: percent(60) },
                 { tag: "gpu", item: "gpu", ring: 55, inner: 7, texts: [percent(55), degrees(66)], words: "Usage " + percent(55) },
                 { tag: "network", item: "network", texts: [decimal(64.0), decimal(16.0)], words: "Down " + decimal(64.0) + " Mb/s" },
-                { tag: "disk", item: "disk", texts: [decimal(50.0), decimal(1.0)], words: "Read " + decimal(50.0) + " MiB/s" }
+                { tag: "disk", item: "disk", texts: [decimal(50.0), fixed(1, 2)], words: "Read " + decimal(50.0) + " MiB/s" }
             ];
         }
         function test_panelShowsItsHeldReadings(data) {
