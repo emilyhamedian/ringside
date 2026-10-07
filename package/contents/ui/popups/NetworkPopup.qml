@@ -16,16 +16,17 @@ PopupPage {
     readonly property real diskTemperature: popup.monitor.diskTemperature
     readonly property bool diskTemperatureShown: Number.isFinite(diskTemperature)
 
-    // What a rate graph's caption says about its top, which is the peak in
-    // view: "peak 24.8 Mb/s", or nothing before the first sample. Under the
-    // graph's floor the top is the floor, and the note still names the peak.
+    // What a rate graph's caption line says about its top, which is the
+    // peak in view: "peak 24.8 Mb/s", or nothing before the first sample.
+    // Under the graph's floor the top is the floor, and this still names
+    // the peak.
     function peakNote(samples, bits) {
         const top = History.peak(samples);
         if (top === null) {
             return "";
         }
         const r = Format.rate(top.value, bits);
-        return i18nc("@title:group after a rate graph's caption: its highest rate, as in THROUGHPUT · 60 s · peak 24.8 Mb/s or READ · peak 18.5 MiB/s",
+        return i18nc("@title:group at the end of a rate graph's caption line, after THROUGHPUT · 60 s or READ: its highest rate, as in peak 24.8 Mb/s",
                      "peak %1 %2", r.value, r.unit);
     }
 
@@ -38,8 +39,8 @@ PopupPage {
     component Note: Caption {}
 
     // Read or write: the rate over a small line graph of its history, which
-    // its peak tops. Each DiskRate below names that peak in its caption
-    // through peakNote().
+    // its peak tops. Each DiskRate below names that peak on its caption
+    // line through peakNote().
     component DiskRate: Tile {
         id: tile
 
@@ -157,7 +158,7 @@ PopupPage {
             Layout.columnSpan: 2
             caption: i18nc("@title:group", "Throughput")
             graphSeconds: popup.monitor.historySeconds
-            graphNote: popup.peakNote(throughput.history, popup.monitor.networkBits)
+            graphTop: popup.peakNote(throughput.history, popup.monitor.networkBits)
             foot: downNote
 
             Graph {
@@ -252,7 +253,7 @@ PopupPage {
 
         DiskRate {
             caption: i18nc("@title:group disk reads", "Read")
-            graphNote: popup.peakNote(popup.monitor.diskReadHistory, false)
+            graphTop: popup.peakNote(popup.monitor.diskReadHistory, false)
             rate: popup.monitor.diskRead
             history: popup.monitor.diskReadHistory
             length: popup.monitor.historyLength
@@ -260,7 +261,7 @@ PopupPage {
 
         DiskRate {
             caption: i18nc("@title:group disk writes", "Write")
-            graphNote: popup.peakNote(popup.monitor.diskWriteHistory, false)
+            graphTop: popup.peakNote(popup.monitor.diskWriteHistory, false)
             rate: popup.monitor.diskWrite
             history: popup.monitor.diskWriteHistory
             length: popup.monitor.historyLength

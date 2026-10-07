@@ -1528,7 +1528,7 @@ Item {
             waitForRendering(cpu);
             const gap = page => {
                 const r = ring(page);
-                const tile = root.find(page, i => i.visible && i.graphNote !== undefined);
+                const tile = root.find(page, i => i.visible && i.graphTop !== undefined);
                 return tile.mapToItem(page, Qt.point(0, 0)).y - r.mapToItem(page, Qt.point(0, r.height)).y;
             };
             verify(gap(cpu) > 0);
@@ -1549,10 +1549,91 @@ Item {
             const baseline = t => t.mapToItem(popup, Qt.point(0, t.baselineOffset)).y;
             fuzzyCompare(baseline(caption(popup)), baseline(subtitle), 1);
             const edge = Math.round(Kirigami.Units.largeSpacing * 2);
-            const tile = root.find(popup, i => i.visible && i.graphNote !== undefined);
+            const tile = root.find(popup, i => i.visible && i.graphTop !== undefined);
             const left = tile.mapToItem(popup, Qt.point(0, 0)).x;
             compare(left, edge);
             compare(left + tile.width, popup.width - edge);
+        }
+
+        // "100%" names each percentage graph's top at the far end of its
+        // tile's caption line, over the end of the rule, and nothing is
+        // written in the graph above its floor, where a line could run
+        // through it. Mirrored, the caption line reads from the right and
+        // "100%" ends it at the left.
+        function test_scaleOnTheCaptionLine_data() {
+            const rows = [];
+            for (const popup of ["claude", "codex", "CpuPopup", "GpuPopup", "MemoryPopup"]) {
+                rows.push({ tag: popup, popup: popup, mirrored: false });
+                rows.push({ tag: popup + " mirrored", popup: popup, mirrored: true });
+            }
+            return rows;
+        }
+
+        function test_scaleOnTheCaptionLine(data) {
+            let page;
+            if (data.popup === "claude" || data.popup === "codex") {
+                page = load(data.popup, data.mirrored);
+            } else {
+                const loader = (data.mirrored ? mirroredHost : host).createObject(root) as Loader;
+                loaders.push(loader);
+                loader.setSource(Qt.resolvedUrl("../../package/contents/ui/popups/" + data.popup + ".qml"), { monitor: monitor });
+                compare(loader.status, Loader.Ready);
+                page = loader.item as Item;
+                waitForRendering(page);
+            }
+            const rules = [];
+            const collect = i => {
+                if (i.visible && i.lineColor !== undefined && i.limitY !== undefined) {
+                    rules.push(i);
+                }
+                i.children.forEach(collect);
+            };
+            collect(page);
+            verify(rules.length > 0, "a percentage graph");
+            for (const rule of rules) {
+                const g = rule.parent;
+                let tile = g;
+                while (tile.graphTop === undefined) {
+                    tile = tile.parent;
+                }
+                const left = i => i.mapToItem(page, Qt.point(0, 0)).x;
+                const top = i => i.mapToItem(page, Qt.point(0, 0)).y;
+                const plotBottom = top(g) + (g.plotHeight ?? g.height);
+                const written = [];
+                const look = i => {
+                    if (i.visible && typeof i.text === "string" && i.text !== "" && top(i) < plotBottom) {
+                        written.push(i.text);
+                    }
+                    i.children.forEach(look);
+                };
+                look(g);
+                compare(written, [], "nothing written in the graph");
+
+                const lineParts = [];
+                const part = i => {
+                    if (i.label !== undefined && i.detail !== undefined) {
+                        lineParts.push(i);
+                    }
+                    i.children.forEach(part);
+                };
+                part(tile);
+                const [caption, scale] = lineParts;
+                compare(scale.text, root.localized("100%"));
+                verify(scale.visible && !scale.truncated);
+                verify(top(scale) + scale.height <= top(g), "on the caption line, over the graph");
+                verify(caption.visible && caption.text !== "");
+                fuzzyCompare(top(scale) + scale.baselineOffset, top(caption) + caption.baselineOffset, 0.5);
+                // The text's box at the graph's far end; its ink is right-aligned in it.
+                if (data.mirrored) {
+                    compare(left(scale), left(g));
+                    verify(left(caption) >= left(scale) + scale.width, "the caption after it");
+                } else {
+                    compare(left(scale) + scale.width, left(g) + g.width);
+                    verify(left(caption) + caption.width <= left(scale), "the caption before it");
+                }
+                compare(left(rule), left(g));
+                compare(rule.width, g.width, "the rule spans the graph, under the scale's end");
+            }
         }
 
         // The week's tile ends on its legend's baseline with a model limit,
@@ -1563,7 +1644,7 @@ Item {
         }
         function test_weekTilePadding(data) {
             const popup = load(data.item);
-            const tile = root.find(popup, i => i.visible && i.graphNote !== undefined);
+            const tile = root.find(popup, i => i.visible && i.graphTop !== undefined);
             compare(tile.foot !== null, data.legend);
             const caption = root.find(tile, i => i.label !== undefined && i.detail !== undefined);
             const capTop = caption.mapToItem(tile, Qt.point(0, caption.baselineOffset)).y - tile.capHeight;
@@ -2526,7 +2607,7 @@ Item {
             fuzzyCompare(g.mainPoints[0].y, g.height - 0.75, 1e-9);
             fuzzyCompare(g.mainPoints[1].y, yOf(g, 50), 1e-9);
             fuzzyCompare(g.mainPoints[2].y, rule(g).limitY, 1e-9);
-            verify(rule(g).limitY >= Kirigami.Units.smallSpacing, "100 % is on the rule, under its label's room");
+            verify(rule(g).limitY >= 1.5, "room over 100 % for a line's stroke");
         }
 
         function test_secondSeriesSharesTheAxis() {
@@ -2569,8 +2650,7 @@ Item {
         // Round dots from the last point to 100 % at the run-out, ending in a
         // dot on the rule, only for a limit on course to run out before the
         // reset, in the red of a limit running out: a projection, not more
-        // readings. It joins the rule's series, so the "100%" label keeps
-        // clear of it.
+        // readings.
         function test_projectionOnlyWhenOut_data() {
             return [
                 { tag: "out", percent: 60, at: start + 3 * day, runOut: start + 5 * day },
@@ -2618,8 +2698,6 @@ Item {
             compare([g.projection[0].x, g.projection[0].y], [last.x, last.y]);
             fuzzyCompare(g.projection[1].x, (data.runOut - start) / week * g.width, 1e-9);
             fuzzyCompare(g.projection[1].y, rule(g).limitY, 1e-9);
-            verify(rule(g).series.some(s => s.length === 2 && s[1].x === g.projection[1].x && s[1].y === g.projection[1].y),
-                   "the run-out is among the rule's series");
         }
 
         // With both limits on course to run out, only the named one's run-out
@@ -2651,18 +2729,6 @@ Item {
             verify(runOutPath(g).shape.visible);
             compare(ends.length, 1, "one end dot");
             verify(endDot(g, g.projection[1]), "where the named limit runs out");
-        }
-
-        // The label sits at the right end, where the week is still to come,
-        // and moves left when a run-out ends under it there.
-        function test_labelAvoidsTheRunOut() {
-            const at = start + 3 * day;
-            const lasting = make([[start, 0], [at, 40]], { percent: 40, at: at });
-            verify(!rule(lasting).atStart);
-            const late = 3 * day * 100 / (week - 2 * 3600);
-            const running = make([[start, 0], [at, late]], { percent: late, at: at, projected: "main" });
-            compare(running.projection.length, 2);
-            verify(rule(running).atStart);
         }
 
         function test_singleReadingIsADot() {
@@ -2711,20 +2777,6 @@ Item {
             verify(!make([], { percent: 0, at: now - data.age, now: now }).stale, "no line, nothing to mark");
         }
 
-        // Late in the week the marker for now falls where the "100%" label
-        // sits, at the right end; the label moves to the start rather than
-        // have the line run through its digits.
-        function test_labelAvoidsTheStaleMarker() {
-            const now = start + week - 5 * 3600;
-            const fresh = make([[start, 0], [now - 3600, 40]], { percent: 40, at: now - 3600, now: now });
-            verify(!rule(fresh).atStart, "a fresh reading leaves the label at the end");
-            const old = make([[start, 0], [now - 6 * 3600, 40]], { percent: 40, at: now - 6 * 3600, now: now });
-            verify(old.stale);
-            const marker = rectangles(old).find(i => i.width === 1 && i.y === rule(old).ruleY);
-            verify(marker.x > old.width - rule(old).span, "the marker is under the label's place at the end");
-            verify(rule(old).atStart, "the label moves to the start");
-        }
-
         // Time runs left to right in every language.
         function test_noMirroring() {
             const host = createTemporaryObject(mirroredGraph, root);
@@ -2733,8 +2785,6 @@ Item {
                          history: [[start, 0], [start + week / 2, 50]] };
             verify(!g.LayoutMirroring.enabled);
             compare(g.mainPoints[0].x, 0);
-            const label = root.find(rule(g), i => i.text === root.localized("100%"));
-            compare(label.x, g.width - label.implicitWidth);
         }
     }
 }

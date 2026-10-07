@@ -15,9 +15,10 @@ Rectangle {
     // The time the tile's graph spans, shown after the caption in place of
     // the detail: "USAGE · 60 s", "USAGE · 2 min".
     property int graphSeconds: 0
-    // About the graph's scale, after the span or in the detail's place:
-    // "THROUGHPUT · 60 s · peak 24.8 Mb/s", "READ · peak 18.5 MiB/s".
-    property string graphNote: ""
+    // What the top of the tile's graph stands for, at the far end of the
+    // caption line over the top's end, outside the graph so that no line
+    // runs through it: "100%", "peak 24.8 Mb/s".
+    property string graphTop: ""
     // The text the content ends on, such as a reading, if it doesn't end on
     // a graph: its line has room for descenders below its ink.
     property Item foot: null
@@ -53,6 +54,13 @@ Rectangle {
         text: "H"
     }
 
+    // The caption's label, and an ellipsis when its detail is cut off.
+    TextMetrics {
+        id: labelRoom
+        font: caption.font
+        text: caption.label.toLocaleUpperCase() + (caption.detail !== "" ? "…" : "")
+    }
+
     ColumnLayout {
         id: column
 
@@ -68,24 +76,47 @@ Rectangle {
         anchors.topMargin: tile.verticalPadding - tile.topTrim
         spacing: Math.round(Kirigami.Units.smallSpacing / 2)
 
-        Caption {
-            id: caption
-            visible: text !== ""
-            label: tile.caption
-            detail: {
-                const notes = [];
-                if (tile.graphSeconds > 0) {
+        // Placed by hand rather than by a RowLayout: the room left for the
+        // graph's top depends on the line's width, which a layout would feed
+        // back into the tile's.
+        Item {
+            id: captionLine
+            readonly property real spacing: Kirigami.Units.largeSpacing
+            visible: caption.text !== ""
+            Layout.fillWidth: true
+            implicitWidth: caption.implicitWidth + (top.text !== "" ? spacing + top.implicitWidth : 0)
+            implicitHeight: caption.implicitHeight
+
+            Caption {
+                id: caption
+                anchors.left: parent.left
+                width: parent.width - (top.visible ? top.width + captionLine.spacing : 0)
+                visible: text !== ""
+                label: tile.caption
+                detail: {
+                    if (tile.graphSeconds <= 0) {
+                        return tile.detail;
+                    }
                     const minutes = Format.spanMinutes(tile.graphSeconds);
-                    notes.push(minutes > 0
+                    return "· " + (minutes > 0
                         ? i18nc("@title:group time a graph spans, as in USAGE · 2 min", "%1 min", minutes)
                         : i18nc("@title:group time a graph spans, as in USAGE · 60 s", "%1 s", tile.graphSeconds));
                 }
-                if (tile.graphNote !== "") {
-                    notes.push(tile.graphNote);
-                }
-                return notes.length > 0 ? notes.map(s => "· " + s).join(" ") : tile.detail;
             }
-            Layout.fillWidth: true
+
+            // With tabular digits, so a changing peak doesn't jostle the
+            // caption beside it. The caption's detail gives way first, then
+            // this, so the caption's label stays whole.
+            Caption {
+                id: top
+                anchors.right: parent.right
+                width: Math.max(0, Math.min(Math.ceil(implicitWidth),
+                                            captionLine.width - captionLine.spacing - Math.ceil(labelRoom.advanceWidth)))
+                visible: text !== ""
+                text: tile.graphTop
+                font.features: ({ "tnum": 1 })
+                horizontalAlignment: Text.AlignRight
+            }
         }
 
         ColumnLayout {
