@@ -532,7 +532,10 @@ Item {
             compare(retry(), 5 * 3600);
 
             poll("starter");
-            compare(usage.starter("claude").state, "waiting");
+            compare(usage.starter("claude").reason, "helper", "still waiting, before the retry");
+            usage.startFailures = { claude: Object.assign({}, usage.startFailures.claude, { retryAt: Date.now() / 1000 - 1 }) };
+            starterTick().triggered();
+            tryVerify(() => usage.starter("claude").state === "confirming", 10000);
             compare(usage.startFailures, {});
         }
 
@@ -559,8 +562,43 @@ Item {
 
             answer({});
             compare(usage.starter("claude").next - usage.starter("claude").at, 600, "left out, it backs off further");
-            poll("starter");
-            compare(usage.starter("claude").state, "waiting", "a report that moves it on ends the back-off");
+            answer({ claude: Object.assign({}, usage.entry("claude"), {
+                starter: { enabled: true, state: "confirming", at: due, next: due + 300, reason: null } }) });
+            compare(usage.starter("claude").state, "confirming", "a report that moves it on ends the back-off");
+        }
+
+        // A --start that dies after the helper claimed the step leaves the
+        // starter in its state with next five minutes on. The polls that
+        // report that claim keep the back-off, which still doubles; one
+        // that reports a new state, or a next past the retry, ends it.
+        function test_startBackOffOutlastsTheHelpersClaim() {
+            start("starter");
+            const due = usage.starter("claude").next;
+            tryVerify(() => Date.now() / 1000 >= due, 5000);
+            const crash = () => runner().newData(usage.helperCommand(["claude"], " --start"), {
+                "exit code": 1, "exit status": 0, stdout: "", stderr: "Traceback (most recent call last):\nOSError: boom\n" });
+            const poll = (state, next) => {
+                const starter = { enabled: true, state: state, at: null, next: next, reason: null };
+                runner().newData(usage.command, { "exit code": 0, "exit status": 0, stderr: "", stdout: JSON.stringify({
+                    fetchedAt: due, providers: { claude: Object.assign({}, usage.entry("claude"), { starter: starter }) } }) });
+            };
+            const claimed = Math.floor(Date.now() / 1000) + 300;
+            crash();
+            poll("waiting", claimed);
+            const failed = usage.starter("claude");
+            compare([failed.state, failed.reason, failed.error], ["failed", "helper", "The usage helper exited with code 1: OSError: boom"]);
+            compare(failed.next - failed.at, 300);
+            usage.startFailures = { claude: Object.assign({}, usage.startFailures.claude, { retryAt: Date.now() / 1000 - 1 }) };
+            crash();
+            compare(usage.starter("claude").next - usage.starter("claude").at, 600, "the next crash doubles it");
+            poll("waiting", claimed);
+            compare(usage.startFailures.claude.count, 2);
+
+            poll("confirming", claimed);
+            compare(usage.startFailures, {}, "a new state ends it");
+            crash();
+            poll("confirming", usage.startFailures.claude.retryAt + 1);
+            compare(usage.startFailures, {}, "so does a next past the retry");
         }
 
         // A helper that can't save its state reports a switched-on starter
