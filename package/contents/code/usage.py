@@ -1178,6 +1178,17 @@ class Starter:
         else:
             self.set("waiting", next_=self.clock() + wait)
 
+    def unconfirmed(self, now):
+        """Count the send being confirmed as unconfirmed. The second in a
+        row pauses the starter, and returns True."""
+        rec = self.record
+        rec["uncertain"] += 1
+        if rec["uncertain"] < 2:
+            return False
+        rec["sentAt"] = None
+        self.set("paused", next_=now + PAUSE)
+        return True
+
     def step(self):
         rec, now = self.record, self.clock()
         if unstep(rec, now):
@@ -1203,7 +1214,10 @@ class Starter:
             reading = self.read(rec["sentAt"] + CONFIRM_SLACK if rec["state"] == "confirming" else None)
             window = self.running(reading, now)
         except Failed as err:
-            self.set("failed", next_=now + RETRY_DELAYS[0], reason=err.reason)
+            # A send this read was to confirm goes unconfirmed, so a brief
+            # sign-out can't let a third send out before the pause.
+            if rec["state"] != "confirming" or not self.unconfirmed(now):
+                self.set("failed", next_=now + RETRY_DELAYS[0], reason=err.reason)
             return
         except Defer as err:
             rec["next"] = err.until
@@ -1233,11 +1247,7 @@ class Starter:
                 self.set("waiting", next_=window["resetsAt"] + 1)
             return
         if rec["state"] == "confirming":
-            rec["uncertain"] += 1
-            if rec["uncertain"] >= 2:
-                rec["sentAt"] = None
-                self.set("paused", next_=now + PAUSE)
-            else:
+            if not self.unconfirmed(now):
                 self.set("retrying", rec["sentAt"], now + CONFIRM_DELAY)
             return
         rec["pending"] = now
