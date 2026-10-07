@@ -56,8 +56,7 @@ QtObject {
     // the words and the popup. A countdown keeps to its largest unit, "6d",
     // "23h", "12m"; the popup and the words give more. With the limit reached
     // it turns red, as in the popup, since it then says how long the lock-out
-    // lasts. The weekly percentage also turns red while the week is on pace
-    // to run out before its reset, projected from when it was read.
+    // lasts.
     function readout(item, nowMs) {
         const percent = value => Number.isFinite(value) ? i18nc("@info:status a percentage", "%1%", Format.percent(value)) : "–";
         const temperature = celsius => Format.temperatureValid(celsius)
