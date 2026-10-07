@@ -508,8 +508,9 @@ Item {
             const g = make({ window: window([[start, 0], [start + 2 * day, 50]], 50), runOutText: "Thu 12:00 AM" });
             compare(g.runOutOpacity, 1);
             const from = g.runOutX;
-            const xs = [];
-            createTemporaryObject(samplerComponent, weeks, { sample: () => xs.push(g.runOutX) });
+            // Each frame's time and place.
+            const seen = [];
+            createTemporaryObject(samplerComponent, weeks, { sample: () => seen.push([Date.now(), g.runOutX]) });
             g.window = window([[start, 0], [start + 2 * day, 50], [start + 3 * day, 60]], 60);
             g.pollAt = start + 3 * day;
             g.nowMs = g.pollAt * 1000;
@@ -519,11 +520,17 @@ Item {
             tryCompare(g, "runOutX", to, 2000);
             compare(g.runOutOpacity, 1, "shown all along");
             compare(g.shownRunOutText, "Fri 12:00 AM");
-            const moving = xs.filter(x => x > from && x < to);
-            verify(moving.length > 2, "eased: " + JSON.stringify(xs));
+            const xs = seen.map(([, x]) => x);
+            verify(xs.filter(x => x > from && x < to).length > 2, "eased: " + JSON.stringify(xs));
             verify(xs.every((x, i) => i === 0 || x >= xs[i - 1]), "one way: " + JSON.stringify(xs));
-            const steps = xs.map((x, i) => i === 0 ? 0 : x - xs[i - 1]).filter(step => step > 0);
-            verify(steps[0] > steps[steps.length - 1], "slowing as it lands: " + JSON.stringify(steps));
+            // Half way through the move, counted from the first frame it
+            // shows in, so no earlier than that, an ease out has gone seven
+            // eighths of the way and a steady move only half.
+            const began = seen.find(([, x]) => x > from)[0];
+            const half = seen.find(([t]) => t - began >= g.duration / 2);
+            verify(half !== undefined, "a frame half way: " + JSON.stringify(seen));
+            verify((half[1] - from) / (to - from) > 0.75,
+                   "slowing as it lands: " + (half[1] - from) + " of " + (to - from) + " at " + JSON.stringify(seen));
         }
 
         // A poll while the line still draws on puts the rest of that stretch
