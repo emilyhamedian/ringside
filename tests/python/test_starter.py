@@ -150,6 +150,20 @@ class Steps(unittest.TestCase):
         h.step(reset + 1)
         self.assertEqual(h.count("send"), 1)
 
+    # A reached limit that doesn't say when it resets sends nothing; it is
+    # read again as after a failed read.
+    def test_a_weekly_limit_without_a_reset_holds_like_a_failed_read(self):
+        for provider, reading in (("claude", dict(claude(NOW), weekly=week(100, None))),
+                                  ("codex", codex(NOW, 100, None))):
+            with self.subTest(provider=provider):
+                h = Harness(NOW, reading, provider=provider)
+                h.step()
+                self.assertEqual(h.count("send"), 0)
+                self.assertEqual(h.shows(), ("waiting", None, NOW + 300))
+                h.step(NOW + 300)
+                self.assertEqual(h.shows(), ("waiting", None, NOW + 300 + 900))
+                self.assertEqual(h.count("send"), 0)
+
     # A cached reading from before the weekly reset still says 100%; the
     # reset has passed, so it holds nothing.
     def test_a_weekly_limit_whose_reset_has_passed_holds_nothing(self):
