@@ -2203,6 +2203,13 @@ Item {
             const system = new Date(2026, 9, 6, 23, 30);
             compare(words.starterStatus("claude", { state: "waiting", next: system.getTime() / 1000 }, new Date(2026, 9, 6, 9, 0).getTime()),
                     "The next session starts at " + words.shortTime(system) + ".");
+            // A week started on one side of a daylight saving change and
+            // ending on the other: the start is shown in the zone at the start.
+            const summer = { offset: zone.offset + 3600, abbreviation: "XYD" };
+            const started = Date.UTC(2026, 9, 6, 9, 0) / 1000 - summer.offset;
+            compare(words.starterStatus("codex", { state: "started", at: started, next: started + 7 * 86400 + 3601,
+                                                   clockZone: zone, atClockZone: summer }, (started + 3600) * 1000),
+                    "Started this week at " + time(6, 9, 0) + ".");
         }
 
         // Each status sentence has its own string for a time today and for

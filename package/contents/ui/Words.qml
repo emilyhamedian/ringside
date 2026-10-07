@@ -215,23 +215,28 @@ QtObject {
 
     // What the session starter is doing, under its switch in the Claude or
     // Codex popup. `starter` is the helper's { enabled, state, at, next,
-    // reason, clockZone } (see usage.py), or UsageData's "failed" with the
-    // helper's error and reason "helper" after a --start that gave no
-    // report, or "switch" after a switch change that gave none.
+    // reason, clockZone, atClockZone } (see usage.py), or UsageData's
+    // "failed" with the helper's error and reason "helper" after a --start
+    // that didn't run, or "switch" after a switch change that didn't take.
     // Times are to the minute, in the desktop clock's zone when the helper
     // gives the starter one, as it does the resets, else in system time; the
-    // tile's caption names the zone once. Each sentence has a string for a
-    // time today ("at 11:40 PM") and one for another day, with the weekday
-    // and time apart ("Wed 1:46 AM"), so a language can word each its own way.
+    // tile's caption names the zone once. `at` takes the zone at that time,
+    // since a week Codex started can span a change of daylight saving time.
+    // Each sentence has a string for a time today ("at 11:40 PM") and one
+    // for another day, with the weekday and time apart ("Wed 1:46 AM"), so a
+    // language can word each its own way.
     function starterStatus(item, starter, nowMs) {
         const s = starter ?? { state: "off" };
         const claude = item === "claude";
-        const zone = s.clockZone ? { clockZone: s.clockZone, resetsAt: s.next ?? s.at } : null;
-        const date = epoch => zonedDate(Math.round(epoch / 60) * 60, zone);
+        const zone = epoch => {
+            const clockZone = epoch === s.at && s.atClockZone ? s.atClockZone : s.clockZone;
+            return clockZone ? { clockZone: clockZone, resetsAt: epoch } : null;
+        };
+        const date = epoch => zonedDate(Math.round(epoch / 60) * 60, zone(epoch));
         const day = epoch => Qt.locale().dayName(date(epoch).getDay(), Locale.ShortFormat);
         const time = epoch => shortTime(date(epoch));
         const onDay = (epoch, today, otherDay) =>
-            date(epoch).toDateString() === zonedDate(nowMs / 1000, zone).toDateString() ? today : otherDay;
+            date(epoch).toDateString() === zonedDate(nowMs / 1000, zone(epoch)).toDateString() ? today : otherDay;
         const both = (first, second) => i18nc("@info two sentences of the session starter's status, in order", "%1 %2", first, second);
         const confirming = onDay(s.next, i18nc("@info %1 is a time today", "Confirming at %1.", time(s.next)),
                                  i18nc("@info %1 is a weekday, %2 a time", "Confirming %1 %2.", day(s.next), time(s.next)));

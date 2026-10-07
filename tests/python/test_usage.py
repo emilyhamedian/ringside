@@ -1135,8 +1135,20 @@ selectedTimeZones=Local,America/New_York
         usage.show_in_zone(providers, usage.clock_zone())
         self.assertEqual(providers["claude"]["session"]["clockZone"], {"offset": -18000, "abbreviation": "EST"})
         self.assertEqual(providers["claude"]["starter"]["clockZone"], {"offset": -14400, "abbreviation": "EDT"})
+        self.assertEqual(providers["claude"]["starter"]["atClockZone"], {"offset": -18000, "abbreviation": "EST"})
         self.assertEqual(providers["codex"]["starter"]["clockZone"], {"offset": -18000, "abbreviation": "EST"})
+        self.assertEqual(providers["codex"]["starter"]["atClockZone"], {"offset": -18000, "abbreviation": "EST"})
         self.assertEqual(off, OFF)
+
+    # A Codex week started on daylight saving time ends a week later on
+    # standard time; the status shows the start, so it needs the start's zone.
+    def test_a_started_week_gets_the_zone_at_its_start(self):
+        start = self.NOV_2_NOON_EST - 3 * 86400 - 3 * 3600
+        providers = {"codex": {"weekly": {"resetsAt": None}, "starter": {
+            "enabled": True, "state": "started", "at": start, "next": start + 7 * 86400 + 1, "reason": None}}}
+        usage.show_in_zone(providers, usage.clock_zone())
+        self.assertEqual(providers["codex"]["starter"]["atClockZone"], {"offset": -14400, "abbreviation": "EDT"})
+        self.assertEqual(providers["codex"]["starter"]["clockZone"], {"offset": -18000, "abbreviation": "EST"})
 
     def test_reset_the_zone_cannot_place_keeps_system_time(self):
         providers = {"claude": {"weekly": {"resetsAt": self.SEP_4_NOON_EDT * 1000}},
