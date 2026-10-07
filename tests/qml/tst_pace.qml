@@ -24,7 +24,6 @@ TestCase {
         const p = Pace.project(data.percent, data.start, data.end, data.at, []);
         compare(p.state, "none");
         verify(isNaN(p.runOut) && isNaN(p.atReset) && isNaN(p.reachedAt));
-        compare(Pace.alarm(p), 0);
     }
 
     function test_reachedWithItsTime() {
@@ -33,7 +32,6 @@ TestCase {
         compare(p.state, "reached");
         // The first full point in this window; the one before it was last week's.
         compare(p.reachedAt, start + 2 * day);
-        compare(Pace.alarm(p), 2);
     }
 
     function test_reachedWithoutItsTime() {
@@ -49,7 +47,6 @@ TestCase {
         const p = Pace.project(70, start, end, start + 18 * 3600, []);
         compare(p.state, "out");
         fuzzyCompare(p.runOut, start + day * 100 / 70, 1);
-        compare(Pace.alarm(p), 2);
     }
 
     // 5% in the first 3 hours would last twenty days at a day's average:
@@ -65,7 +62,6 @@ TestCase {
         compare(p.state, "lasts");
         fuzzyCompare(p.atReset, 70, 1e-9);
         verify(isNaN(p.runOut));
-        compare(Pace.alarm(p), 0);
     }
 
     function test_out() {
@@ -132,7 +128,6 @@ TestCase {
         compare(Pace.ofWindow(full, end - 60, end - 30).state, "reached");
         compare(Pace.ofWindow(full, end - 60, end).state, "none");
         compare(Pace.ofWindow(full, end - 60, end + day).state, "none");
-        compare(Pace.alarm(Pace.ofWindow(full, end - 60, end + day)), 0);
     }
 
     function test_pollTime() {
@@ -142,15 +137,5 @@ TestCase {
         compare(Pace.pollTime({ weekly: { history: [] } }, end), end);
         compare(Pace.pollTime({}, end), end);
         compare(Pace.pollTime(null, end), end);
-    }
-
-    function test_levelOnlyRises() {
-        const out = Pace.project(60, start, end, start + 3 * day, []);
-        const lasts = Pace.project(30, start, end, start + 3 * day, []);
-        compare(Pace.level(0, out), 2);
-        compare(Pace.level(1, out), 2);
-        compare(Pace.level(0, lasts), 0);
-        compare(Pace.level(1, lasts), 1);
-        compare(Pace.level(2, lasts), 2);
     }
 }

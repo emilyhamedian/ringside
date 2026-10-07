@@ -10,13 +10,12 @@ follows [Semantic Versioning](https://semver.org/).
 
 ### Added
 
-- A Claude or Codex ring turns red when its weekly limit is on pace to run
-  out before the reset, at the rate it has been used so far; the inner ring
-  does the same for its model's limit. The popup says where the week is
-  heading in one sentence, such as "On pace to use 80% by the reset",
-  "Fable is on pace to run out Tue 3:30 AM" or "Limit reached Sun 3:00 PM".
-  It appears from a day into the week, or at once for a limit that is
-  running out.
+- The Claude and Codex popup says where the week is heading in one
+  sentence, at the rate it has been used so far, such as "On pace to use
+  80% by the reset", "Fable is on pace to run out Tue 3:30 AM" or "Limit
+  reached Sun 3:00 PM". It appears from a day into the week, or at once for
+  a limit that is running out. Colours still follow the reading alone:
+  amber from 75% and red from 90%.
 - The week graph in the Claude and Codex popup has a line at 100%, a floor,
   a tick at the reset and, for the limit the pace sentence says runs out, a
   line of red dots to where it would reach 100%. A single reading shows as

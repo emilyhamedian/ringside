@@ -62,14 +62,3 @@ function ofWindow(window, at, now) {
     }
     return project(window.percent, window.resetsAt - window.windowSeconds, window.resetsAt, at, window.history);
 }
-
-// A projection's alert level, as Format.level() counts them: red when the
-// limit is used up or on course to run out before the reset.
-function alarm(p) {
-    return p.state === "out" || p.state === "reached" ? 2 : 0;
-}
-
-// A level raised by the projection, never lowered by it.
-function level(base, p) {
-    return Math.max(base, alarm(p));
-}

@@ -24,10 +24,9 @@ Item {
     property bool inner: false
     // The colour below the alert levels.
     property color color: Kirigami.Theme.textColor
-    // Raise the rings' levels, e.g. for a hot temperature the panel has no
-    // room to show, or a limit on pace to run out before its reset.
+    // Raises the ring's level, for a hot temperature the panel has no room
+    // to show.
     property int minimumLevel: 0
-    property int innerMinimumLevel: 0
     // About a thirteenth of the ring, in half pixels, for the panel's rings;
     // the popups set their own.
     property real strokeWidth: Math.max(2, Math.round(width / 6.5) / 2)
@@ -105,7 +104,7 @@ Item {
                                                                     : outer.radius - strokeWidth / 2) - 1))
     // The readings' colours, for the readings beside the ring.
     readonly property color outerTone: tone(Math.max(Format.level(value), minimumLevel))
-    readonly property color innerTone: tone(Math.max(Format.level(innerValue), innerMinimumLevel))
+    readonly property color innerTone: tone(Format.level(innerValue))
     // The outer reading as drawn, for a number in the middle that counts
     // with the arc.
     readonly property real drawnValue: outerFollower.shown
@@ -115,7 +114,7 @@ Item {
     // at rest this is the reading's own level, and a ring at 74.6 % stays
     // below amber as the reading beside it does.
     readonly property int drawnLevel: Math.max(Format.level(drawn(outerFollower, value)), minimumLevel)
-    readonly property int drawnInnerLevel: Math.max(Format.level(drawn(innerFollower, innerValue)), innerMinimumLevel)
+    readonly property int drawnInnerLevel: Format.level(drawn(innerFollower, innerValue))
 
     function drawn(follower, reading) {
         const percent = clamped(reading);
@@ -149,7 +148,7 @@ Item {
                             outerReset.early);
         }
         if (innerReset && inner) {
-            innerArc.playReset(clamped(innerReset.from), innerColor(Math.max(Format.level(innerReset.from), innerMinimumLevel)),
+            innerArc.playReset(clamped(innerReset.from), innerColor(Format.level(innerReset.from)),
                                innerReset.early);
         }
     }

@@ -19,9 +19,6 @@ RowLayout {
     property real ringValue: NaN
     // How often a system reading updates, for the ring: see RingGauge.
     property int interval: 0
-    // Raises the ring's level past its own reading's, as a weekly limit on
-    // course to run out does.
-    property int ringMinimumLevel: 0
     property string title: ""
     property string subtitle: ""
     property string value: ""
@@ -70,7 +67,6 @@ RowLayout {
         Layout.preferredHeight: Layout.preferredWidth
         strokeWidth: 4
         value: header.ringValue
-        minimumLevel: header.ringMinimumLevel
         interval: header.interval
         // Counts with the arc, as the screen reader's value doesn't.
         text: Number.isFinite(header.ringValue) ? i18nc("@info a percentage", "%1%", Format.percent(ring.drawnValue)) : "–"
