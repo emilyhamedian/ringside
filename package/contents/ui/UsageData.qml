@@ -53,8 +53,9 @@ Item {
     property var starters: ({})
     // The switch positions asked for and not yet reported back, per id.
     property var starterWanted: ({})
-    // Per id, the --start runs in a row that gave no report: { count, at,
-    // retryAt, error }. Kept until a report moves the starter on.
+    // Per id, the --start runs in a row that gave no report or left the
+    // starter due: { count, at, retryAt, error }. Kept while reports show
+    // the starter on and due.
     property var startFailures: ({})
     // Per id, the switch change that didn't take: { on, error }. Shown
     // until the switch is turned again or reported where it was asked.
@@ -148,15 +149,16 @@ Item {
     }
 
     // A --start that reported but left a starter due, or didn't report it,
-    // would run again on every tick, so it backs off as a failed one does.
-    function startLeftDue(startedIds) {
+    // would run again on every tick, so it backs off as a failed one does,
+    // with what the helper said on stderr as the error.
+    function startLeftDue(startedIds, error) {
         const now = Date.now() / 1000;
         const due = startedIds.filter(id => {
             const s = starters[id];
             return s?.enabled === true && Number.isFinite(s.next) && s.next <= now;
         });
         if (due.length > 0) {
-            startFailed(due, "");
+            startFailed(due, error);
         }
     }
 
@@ -251,12 +253,15 @@ Item {
         }
         entries = merged;
         statuses = latest;
-        // A failed start ends once the starter is off or no longer due at
-        // the time it failed.
+        // A failed start ends once the starter is off or no longer due. A
+        // starter still due, even at a later time, as when the helper can't
+        // save its state and reports every starter due at once, keeps its
+        // back-off.
+        const now = Date.now() / 1000;
         const failures = {};
         for (const id in startFailures) {
             const s = starting[id];
-            if (s?.enabled && Number.isFinite(s.next) && s.next <= startFailures[id].at) {
+            if (s?.enabled && Number.isFinite(s.next) && s.next <= now) {
                 failures[id] = startFailures[id];
             }
         }
@@ -357,10 +362,10 @@ Item {
             } else {
                 usage.helperError = "";
                 usage.merge(report);
-                if (started) {
-                    usage.startLeftDue(started[1].split(","));
-                }
                 const reason = Report.helperFailure(data).detail;
+                if (started) {
+                    usage.startLeftDue(started[1].split(","), reason);
+                }
                 if (settled && reason !== "" && report.providers[settled]?.starter
                     && report.providers[settled].starter.enabled !== (set[2] === "on")) {
                     usage.switchRefused(settled, set[2] === "on", reason);

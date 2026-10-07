@@ -552,6 +552,34 @@ Item {
             compare(usage.starter("claude").state, "waiting", "a report that moves it on ends the back-off");
         }
 
+        // A helper that can't save its state reports a switched-on starter
+        // due at once, on every poll as after every --start. Those polls
+        // keep the back-off, which doubles with each --start, and the
+        // status gives the reason the helper printed.
+        function test_startBackOffOutlastsPollsThatSayDue() {
+            start("starter");
+            const due = usage.starter("claude").next;
+            tryVerify(() => Date.now() / 1000 >= due, 5000);
+            const answer = (command, stderr) => {
+                const now = Math.floor(Date.now() / 1000);
+                const stuck = { enabled: true, state: "waiting", at: null, next: now, reason: null };
+                runner().newData(command, { "exit code": 0, "exit status": 0, stderr: stderr, stdout: JSON.stringify({
+                    fetchedAt: now, providers: { claude: Object.assign({}, usage.entry("claude"), { starter: stuck }) } }) });
+            };
+            const run = commands();
+            for (const delay of [300, 600, 1200]) {
+                answer(usage.helperCommand(["claude"], " --start"), "[Errno 28] No space left on device\n");
+                const failed = usage.starter("claude");
+                compare([failed.state, failed.reason, failed.error], ["failed", "helper", "[Errno 28] No space left on device"]);
+                compare(failed.next - failed.at, delay);
+                wait(1100);
+                answer(usage.command, "");
+                compare(usage.starter("claude").reason, "helper", "a poll that says due keeps it");
+                starterTick().triggered();
+                compare(ran(run, " --start"), [], "not before the retry");
+            }
+        }
+
         function test_setStarterRunsTheHelper() {
             start("starter");
             const run = commands();
