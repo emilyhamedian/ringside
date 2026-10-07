@@ -21,10 +21,10 @@ MouseArea {
     // Between the wash and the panel's edges, across a horizontal panel.
     readonly property real inset: vertical ? 0 : Math.round(Kirigami.Units.smallSpacing / 2)
     // Between the content and the cell's ends. Along a horizontal panel two
-    // cells' padding makes the gap between items, twice the gap between a
-    // ring and its readings, so readings read as the ring's beside them and
-    // not the next one's.
-    readonly property real padding: vertical ? Kirigami.Units.smallSpacing : Kirigami.Units.largeSpacing
+    // cells' padding makes the gap between items, half as much again as the
+    // gap between a ring and its readings, so readings read as the ring's
+    // beside them and not the next one's.
+    readonly property real padding: vertical ? Kirigami.Units.smallSpacing : Math.round(Kirigami.Units.smallSpacing * 1.5)
     readonly property string title: item === "cpu" ? i18nc("@info:tooltip", "Processor")
                                   : item === "gpu" ? i18nc("@info:tooltip", "Graphics")
                                   : item === "memory" ? i18nc("@info:tooltip", "Memory")

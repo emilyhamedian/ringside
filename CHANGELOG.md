@@ -42,8 +42,9 @@ follows [Semantic Versioning](https://semver.org/).
   and move to the next unit before a fourth: 1023 KiB/s reads "1.00 MiB/s".
   A rate's unit sits closer to its number. Memory in use shows three
   figures too, such as "9.60G". Tooltips and popups keep their own formats.
-- Panel items sit further apart, twice the gap between a ring and its
-  readings, so each item's readings read as its own ring's.
+- Panel items sit a little further apart, half as much again as the gap
+  between a ring and its readings, so each item's readings read as its own
+  ring's.
 - The panel countdown shows only its largest unit: "6d", "23h" or "59m";
   the popup and the tooltip keep the full time. It turns red at 100%, where
   it says how long the limit stays reached.

@@ -1171,7 +1171,7 @@ Item {
 
         function test_hoverInset_data() {
             return [{ tag: "horizontal", vertical: false, inset: Math.round(Kirigami.Units.smallSpacing / 2),
-                      across: 2 * Math.round(Kirigami.Units.smallSpacing / 2), along: 2 * Kirigami.Units.largeSpacing },
+                      across: 2 * Math.round(Kirigami.Units.smallSpacing / 2), along: 2 * Math.round(Kirigami.Units.smallSpacing * 1.5) },
                     { tag: "vertical", vertical: true, inset: 0, across: 2 * Kirigami.Units.smallSpacing,
                       along: 2 * Kirigami.Units.smallSpacing }];
         }
@@ -1240,7 +1240,7 @@ Item {
         function test_cellFollowsItsContent() {
             const block = keep(blockComponent.createObject(root));
             const c = keep(panelCellComponent.createObject(root, { contentItem: block }));
-            const outside = 2 * Kirigami.Units.largeSpacing;
+            const outside = 2 * Math.round(Kirigami.Units.smallSpacing * 1.5);
             compare(c.implicitWidth, 50 + outside, "as wide as its content");
             block.implicitWidth = 60.2;
             compare(c.implicitWidth, 61 + outside, "wider, to a whole pixel");
