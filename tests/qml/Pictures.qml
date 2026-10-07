@@ -162,6 +162,10 @@ Rectangle {
                 Layout.alignment: Qt.AlignTop
                 NetworkPopup { monitor: sample }
             }
+            Dialog {
+                Layout.alignment: Qt.AlignTop
+                DiskPopup { monitor: sample }
+            }
         }
 
         Dialog {
