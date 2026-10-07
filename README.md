@@ -7,7 +7,7 @@
 CPU, GPU, memory, network and disk in a KDE Plasma 6 panel, and your Claude
 and Codex usage limits if you want them.
 
-![Ringside in a panel: CPU, GPU and memory rings with their names inside, each with its usage over its temperature or the memory in use, a Claude ring with its weekly usage over the days to its reset and its Fable limit in red on the inner ring, then network rates](docs/panel.png)
+![Ringside in a panel: CPU, GPU and memory rings with their names inside, each with its usage over its temperature or the memory in use, a Claude ring with its weekly usage over the days to its reset and its Fable limit in amber on the inner ring, then network rates](docs/panel.png)
 
 Each item is a ring with its name inside and its readings beside it, or a
 pair of rates. Each item keeps room for its widest readings, so the panel
@@ -17,9 +17,10 @@ memory in use, such as 9.60G.
 
 Click an item for its popup: history graphs, per-thread load, top
 processes, VRAM, clocks, power, swap, memory pressure and disk activity.
-Percentage graphs have a line at 100%; rate graphs reach up to their peak,
-which the caption names, or to 1 Mb/s (1 MiB/s for a disk) when the peak is
-lower. The graphs take a reading every second, or at the update interval
+Percentage graphs have a line at 100%, named at the end of the caption line
+above the graph; rate graphs reach up to their peak, named in the same place
+when it fits, or to 1 Mb/s (1 MiB/s for a disk) when the peak is lower. The
+graphs take a reading every second, or at the update interval
 when that is shorter; the panel changes at the update interval. Temperature
 sensors go by plain names such as chip and hotspot.
 
@@ -95,7 +96,7 @@ scripts/install.sh
 
 ## Claude and Codex
 
-![The Claude popup: the weekly limit, the Fable limit in amber with a sentence saying when it is on pace to run out, and a graph of this week's usage with red dots from the Fable line to where it reaches 100%](docs/usage.png)
+![The Claude popup: the weekly limit, the Fable limit in amber with a sentence saying when it is on pace to run out, and a graph of this week's usage with a dashed amber line at the time the Fable limit runs out](docs/usage.png)
 
 Turn them on under *Configure Ringside… → Panel Items*. Each shows while its
 command-line tool is signed in on this machine; if one doesn't appear, its row
@@ -124,11 +125,12 @@ the tooltip says when.
 
 The popup lists every weekly limit and when each resets, and a graph of the
 week so far, which fills in as Ringside keeps checking. The graph has a line
-at 100% and a tick at the reset. From a day into the week, or sooner if a
-limit is running out, a sentence says where it is heading: "On pace to use 88%
-by the reset", or "Fable is on pace to run out Thu 8:20 PM". When it says a
-limit runs out, the graph has red dots from that limit's line to where it
-would reach 100%. Reset times follow the time zone of Plasma's Digital Clock.
+at 100%, a floor with a tick at each midnight, and an edge at the reset. From
+a day into the week, or sooner if a limit is running out, a sentence says
+where it is heading: "On pace to use 88% by the reset", or "Fable is on pace
+to run out Thu 8:20 PM". When it says a limit runs out, a dashed line in that
+limit's colour marks the moment on the graph, with the time under it. Reset
+times follow the time zone of Plasma's Digital Clock.
 
 ### Starting the next session
 

@@ -16,10 +16,11 @@ follows [Semantic Versioning](https://semver.org/).
   reached Sun 3:00 PM". It appears from a day into the week, or at once for
   a limit that is running out. Colours still follow the reading alone:
   amber from 75% and red from 90%.
-- The week graph in the Claude and Codex popup has a line at 100%, a floor,
-  a tick at the reset and, for the limit the pace sentence says runs out, a
-  line of red dots to where it would reach 100%. A single reading shows as
-  a dot, and the marker for now appears only when the last reading is over
+- The week graph in the Claude and Codex popup has a line at 100%, a floor
+  with a tick at each midnight, and an edge at the reset. For the limit the
+  pace sentence says runs out, a dashed line in that limit's colour marks
+  the moment, with the time under the floor. A single reading shows as a
+  dot, and the marker for now appears only when the last reading is over
   two hours old.
 - A failed Claude or Codex check shows a small amber dot at the ring's
   corner, and the tooltip says when it failed, even with the ring's text
@@ -63,10 +64,11 @@ follows [Semantic Versioning](https://semver.org/).
   the decimal point. Units are smaller. °C and °F sit close to the digits:
   raised level with their top in the CPU and GPU headers, on the same line
   in the disk's caption. Process names stay monospace.
-- Graphs lose their grid lines. Percentage graphs have a labelled line at
-  100%; rate graphs reach up to their peak, which the caption names, or to
-  1 Mb/s (1 MiB/s for a disk) when the peak is lower, and the disk's peaks
-  move into its captions.
+- Graphs lose their grid lines. Percentage graphs have a line at 100%,
+  named at the end of the caption line above the graph, where no line can
+  cross it; rate graphs reach up to their peak, named in the same place when
+  it fits, or to 1 Mb/s (1 MiB/s for a disk) when the peak is lower, and the
+  disk's peaks move into its captions.
 - The popups' graphs take a reading every second, or at the update interval
   when that is shorter, so they catch short bursts: 60 points a minute at
   the default interval and up. Each new reading moves the line a step to
@@ -78,11 +80,14 @@ follows [Semantic Versioning](https://semver.org/).
 - The Claude and Codex popup sets its countdown's units smaller than its
   digits; the panel's stay the size of its digits. With one limit it shows
   no bars, since the ring gives the number, and reads "Weekly limit". The
-  week graph loses its day lines, half line and even-pace diagonal.
+  week graph loses its day lines, half line and even-pace diagonal;
+  midnights are short ticks on its floor.
 - Popups line up their content on one edge and their headers on shared
   baselines, with even padding in tiles and matching dividers. The load
   average shows its three numbers evenly spaced, the network header's
-  rates are larger, and "Since boot" puts each arrow before its total.
+  rates are larger, and "Since boot" puts each arrow before its total. The
+  footer's link and settings button line up with the edges of the readings
+  above them.
 - Each GPU in the GPU popup opens with the header the CPU and Claude popups
   use: its usage ring, its name, its kind and memory, and its temperature.
   A second GPU follows after a rule with a header of its own, and a
