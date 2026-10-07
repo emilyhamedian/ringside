@@ -423,10 +423,14 @@ Item {
             verify(usage.starterOn("claude"));
             compare(usage.starter("codex"), { enabled: false, state: "off", at: null, next: null, reason: null });
             verify(!usage.starterOn("codex"));
-            // A failed check still reports the starter.
+            // A failed or rate-limited check keeps the last reading but
+            // still takes the starter it reports.
+            usage.starters = Object.assign({}, usage.starters, { codex: { enabled: true, state: "started", at: null, next: null, reason: null } });
             poll("failed");
             compare(usage.starter("claude").state, "off");
             verify(usage.degraded("claude"));
+            compare(usage.entry("codex").status, "ok", "the reading before the rate limit");
+            compare(usage.starter("codex").state, "off");
         }
 
         function test_starterTickOnlyWhileOneIsOn() {
