@@ -21,8 +21,9 @@ Percentage graphs have a line at 100%, named at the end of the caption line
 above the graph; rate graphs reach up to their peak, named in the same place
 when it fits, or to 1 Mb/s (1 MiB/s for a disk) when the peak is lower. The
 graphs take a reading every second, or at the update interval
-when that is shorter; the panel changes at the update interval. Temperature
-sensors go by plain names such as chip and hotspot.
+when that is shorter; the panel changes at the update interval. A
+temperature that isn't the whole chip's names its sensor in plain words, such
+as hotspot.
 
 ![The CPU, GPU, memory, network and disk popups](docs/popups.png)
 

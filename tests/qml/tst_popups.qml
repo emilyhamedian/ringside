@@ -629,7 +629,7 @@ Item {
         }
 
         function test_headerCaptionUnderTheDigits(data) {
-            const popup = load("CpuPopup", normal, data.mirrored);
+            const popup = load("CpuPopup", otherSensors, data.mirrored);
             const headline = readings(popup).find(r => r.visible && r.degreeUnit !== "" && r.parent.parent.partsShown !== undefined);
             verify(headline);
             const caption = Array.from(headline.parent.children).find(i => i.visible && typeof i.text === "string" && i.text !== "");
@@ -1399,15 +1399,15 @@ Item {
             const off = ["AMD Radeon RX 7700S · off"];
             // The integrated GPU first, so a discrete one waking opens below it.
             return [{ tag: "two", monitor: normal, titles: [amd[1], amd[0]], subtitles: [kinds[1], kinds[0]], rings: [3, 12], values: [41, 48],
-                      captions: ["chip", "chip"], off: [] },
+                      captions: ["", ""], off: [] },
                     { tag: "outerAsleep", monitor: asleep, titles: [amd[1]], subtitles: [kinds[1]], rings: [3], values: [41],
-                      captions: ["chip"], off: off },
+                      captions: [""], off: off },
                     { tag: "innerAsleep", monitor: innerAsleep, titles: [amd[1]], subtitles: [kinds[1]], rings: [12], values: [48],
-                      captions: ["chip"], off: off },
+                      captions: [""], off: off },
                     { tag: "integratedOnly", monitor: integrated, titles: [amd[1]], subtitles: [kinds[1]], rings: [12], values: [48],
-                      captions: ["chip"], off: [] },
+                      captions: [""], off: [] },
                     { tag: "discreteOnly", monitor: discreteOnly, titles: [amd[0]], subtitles: [kinds[0]], rings: [12], values: [48],
-                      captions: ["chip"], off: [] },
+                      captions: [""], off: [] },
                     { tag: "intel", monitor: intel, titles: ["Intel Iris Xe Graphics", "NVIDIA GeForce RTX 3060 Laptop GPU"],
                       subtitles: [kinds[1], kinds[0]], rings: [3, 12], values: [NaN, 48], captions: ["", ""], off: [] },
                     { tag: "onlyAsleep", monitor: onlyAsleep, titles: [], subtitles: [], rings: [], values: [], captions: [], off: off }];
@@ -1553,7 +1553,7 @@ Item {
                 return { caption: header.caption, height: header.height,
                          baseline: headline.mapToItem(header, Qt.point(0, headline.baselineOffset)).y };
             };
-            const captioned = place(normal);
+            const captioned = place(data.popup === "CpuPopup" ? otherSensors : normal);
             const bare = place(uncaptioned);
             verify(captioned.caption !== "" && bare.caption === "", JSON.stringify([captioned.caption, bare.caption]));
             compare(bare.baseline, captioned.baseline, "the headline's baseline");
@@ -1640,11 +1640,11 @@ Item {
         // Temperature sensors go by plain words, not their hwmon labels;
         // labels Words doesn't know are shown as they are.
         function test_sensorNamesInWords_data() {
-            return [{ tag: "Tctl", raw: "Tctl", shown: "chip" },
-                    { tag: "Tdie", raw: "Tdie", shown: "chip" },
-                    { tag: "Package id 0", raw: "Package id 0", shown: "chip" },
-                    { tag: "Package id 1", raw: "Package id 1", shown: "chip" },
-                    { tag: "edge", raw: "edge", shown: "chip" },
+            return [{ tag: "Tctl", raw: "Tctl", shown: "" },
+                    { tag: "Tdie", raw: "Tdie", shown: "" },
+                    { tag: "Package id 0", raw: "Package id 0", shown: "" },
+                    { tag: "Package id 1", raw: "Package id 1", shown: "" },
+                    { tag: "edge", raw: "edge", shown: "" },
                     { tag: "Tccd1", raw: "Tccd1", shown: "chiplet " + Format.whole(1) },
                     { tag: "Tccd12", raw: "Tccd12", shown: "chiplet " + Format.whole(12) },
                     { tag: "junction", raw: "junction", shown: "hotspot" },
@@ -1664,9 +1664,10 @@ Item {
             compare(words.sensorName(data.raw), data.shown);
         }
 
-        // The CPU and GPU headers' captions show the plain words.
+        // The CPU and GPU headers' captions show the plain words, and none
+        // for the whole chip's own sensor.
         function test_popupsNameTheirSensors_data() {
-            return [{ tag: "usual", monitor: normal, cpu: "chip", gpu: ["chip", "chip"] },
+            return [{ tag: "usual", monitor: normal, cpu: "", gpu: ["", ""] },
                     { tag: "other", monitor: otherSensors, cpu: "chiplet " + Format.whole(3), gpu: ["memory", "hotspot"] }];
         }
 
@@ -1674,11 +1675,14 @@ Item {
             const cpu = load("CpuPopup", data.monitor);
             const header = headerOf(cpu);
             compare(header.caption, data.cpu);
-            verify(shownText(header, data.cpu), "the caption is shown");
+            if (data.cpu !== "") {
+                verify(shownText(header, data.cpu), "the caption is shown");
+            }
             const gpu = load("GpuPopup", data.monitor);
             const found = texts(gpu);
             compare(all(gpu, i => i.partsShown !== undefined).map(h => h.caption), data.gpu);
-            data.gpu.forEach(name => verify(found.includes(name), name + " in " + JSON.stringify(found)));
+            data.gpu.filter(name => name !== "").forEach(name => verify(found.includes(name), name + " in " + JSON.stringify(found)));
+            verify(!found.includes("chip") && !texts(cpu).includes("chip"), "no chip caption");
             const raw = ["Tctl", "Tccd3", "edge", "junction", "mem"];
             verify(!texts(cpu).concat(found).some(t => raw.includes(t)), "no raw label is shown");
         }
