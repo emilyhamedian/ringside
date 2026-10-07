@@ -52,6 +52,8 @@ def starter(state="off", at=None, next=None, reason=None):
     """A session starter as usage.py reports it; at and next are seconds from now."""
     report = {"enabled": state != "off", "state": state, "at": None if at is None else NOW + at,
               "next": None if next is None else NOW + next, "reason": reason}
+    if at is not None:
+        report["atClockZone"] = ZONE
     return dict(report, clockZone=ZONE) if at is not None or next is not None else report
 
 

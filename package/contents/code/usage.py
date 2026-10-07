@@ -28,7 +28,8 @@ When Plasma's digital clock shows a zone other than system time, every window
 also carries "clockZone": {"offset": <seconds east of UTC>, "abbreviation":
 "EDT"}, the zone's offset and abbreviation at that window's reset. Claude's
 session does too, and so does each starter with a time, at its next time
-or, without one, at its last.
+or, without one, at its last; a starter with a last time also carries
+"atClockZone", the zone at that time.
 
 Every poll's result, a failure or a sign-out as much as a reading, is kept
 in $XDG_CACHE_HOME/ringside for five minutes and served from there, so no
@@ -1571,25 +1572,29 @@ def clock_zone():
 def show_in_zone(providers, zone):
     """Give each window's reset the zone's offset and abbreviation at that
     moment, Claude's session included, and each starter the same at its
-    next time, or at its last when it has no next.
+    next time, or at its last when it has no next. A starter's last time
+    gets its own, atClockZone: a week Codex started can span a change of
+    daylight saving time before its next.
 
     A time the zone cannot place stays in system time on its own.
     """
     for entry in providers.values():
-        times = [(window, window.get("resetsAt")) for window in windows(entry)]
+        times = [(window, "clockZone", window.get("resetsAt")) for window in windows(entry)]
         if entry.get("session"):
-            times.append((entry["session"], entry["session"].get("resetsAt")))
+            times.append((entry["session"], "clockZone", entry["session"].get("resetsAt")))
         if entry.get("starter"):
             starter = entry["starter"]
-            times.append((starter, starter["next"] if starter.get("next") is not None else starter.get("at")))
-        for item, epoch in times:
+            times.append((starter, "clockZone",
+                          starter["next"] if starter.get("next") is not None else starter.get("at")))
+            times.append((starter, "atClockZone", starter.get("at")))
+        for item, key, epoch in times:
             if not epoch:
                 continue
             try:
                 at = datetime.fromtimestamp(epoch, zone)
             except (ValueError, OverflowError, OSError):
                 continue
-            item["clockZone"] = {"offset": int(at.utcoffset().total_seconds()), "abbreviation": at.tzname()}
+            item[key] = {"offset": int(at.utcoffset().total_seconds()), "abbreviation": at.tzname()}
 
 
 # --- main ------------------------------------------------------------------
