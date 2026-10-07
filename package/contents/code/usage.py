@@ -48,11 +48,12 @@ bool, "state": ..., "at": <epoch seconds> or null, "next": <epoch seconds>
 or null, "reason": "not-installed", "signed-out" or null}. The states are
 "off"; "waiting" (next is when the next window starts); "confirming" (at is
 the send, next the read that confirms it); "started" (at is when the window
-started, next when the next one starts, null for Codex); "weekly" (the
-weekly limit is reached; next is its reset); "failed" (with a reason);
-"retrying" (one send went unconfirmed; at is the send, next the retry) and
-"paused" (two in a row; next is when the hold ends). The widget runs --start
-once Date.now() reaches next, and --starter-set when its switch is toggled.
+started, next when the next one starts, which the popup shows only for
+Claude); "weekly" (the weekly limit is reached; next is its reset);
+"failed" (with a reason); "retrying" (one send went unconfirmed; at is the
+send, next the retry) and "paused" (two in a row; next is when the hold
+ends). The widget runs --start once Date.now() reaches next, and
+--starter-set when its switch is toggled.
 
 Set RINGSIDE_USAGE_FAKE to a JSON report to print it instead of polling,
 limited to the requested providers and with the clock zone added as on a live
@@ -1441,15 +1442,7 @@ def starter_report(name, switches, states, now):
     state, at, next_ = record["state"], record["at"], record["next"]
     if record["pending"] is not None:
         state, at, next_ = "confirming", record["pending"], record["pending"] + CONFIRM_DELAY
-    elif name == "codex" and state == "started":
-        # A week started has no next start until it ends; then one is due.
-        if next_ is not None and next_ <= now:
-            state, at = "waiting", None
-        else:
-            next_ = None
-    elif next_ is None:
-        next_ = now
-    if stepped:
+    if stepped or next_ is None:
         next_ = now
     return {"enabled": True, "state": state, "at": at, "next": next_,
             "reason": record["reason"] if state == "failed" else None}
