@@ -1888,10 +1888,6 @@ Item {
             verify(words.timeOfDay(yesterday.getTime() / 1000, noon).includes(shortDate), "another day gives the date");
         }
 
-        // Times read to the minute in every locale, as they are rounded to
-        // it or coarser: Qt 6.6's C locale gives its short time with seconds,
-        // which the floor's tests run in. Where the locale's short time has
-        // no seconds, it is the one shown.
         // The session starter's status for each state, Claude and Codex, with
         // a time today and on another day. Times are on the week's clock,
         // New York's here: it is Tuesday 6 October 2026, 10 PM there.
@@ -1980,6 +1976,10 @@ Item {
                     "When a session ends, Ringside sends Claude a one-word message to start the next one.");
         }
 
+        // Times read to the minute in every locale, as they are rounded to
+        // it or coarser: Qt 6.6's C locale gives its short time with seconds,
+        // which the floor's tests run in. Where the locale's short time has
+        // no seconds, it is the one shown.
         function test_timesHaveNoSeconds() {
             const digits = new RegExp("[0-9" + [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map(d => Format.whole(d)).join("") + "]+", "g");
             const numbers = text => (text.match(digits) ?? []).length;
