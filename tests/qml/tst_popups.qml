@@ -1239,6 +1239,38 @@ Item {
         // mirrored. Each section's parts sit where the CPU header's do. An
         // NVIDIA GPU names no sensor, yet its temperature stays level with
         // its name; the Intel GPU after it has no reading to line up.
+        // The CPU popup's own readings, the average frequency and each
+        // thread's bar, are read as often as the graph above them, so at a
+        // long update interval the whole popup still moves together.
+        function test_cpuPopupReadsWithItsGraph() {
+            normal.interval = 5000;
+            try {
+                const popup = load("CpuPopup", normal);
+                const sensors = [];
+                // Items list what they hold in `data`; models have a data()
+                // method of that name instead.
+                const walk = o => {
+                    const held = o.data;
+                    if (!held || typeof held === "function") {
+                        return;
+                    }
+                    for (let i = 0; i < held.length; ++i) {
+                        if (held[i].sensorId !== undefined) {
+                            sensors.push(held[i]);
+                        }
+                        walk(held[i]);
+                    }
+                };
+                walk(popup);
+                const own = sensors.filter(s => s.sensorId === "cpu/all/averageFrequency" || /^cpu\/cpu\d+\/usage$/.test(s.sensorId));
+                verify(own.length > 2, "the frequency and the threads: " + own.length);
+                compare(normal.readInterval, 750);
+                verify(own.every(s => s.updateRateLimit === normal.readInterval), own.map(s => s.updateRateLimit).join());
+            } finally {
+                normal.interval = 1000;
+            }
+        }
+
         function test_gpuHeadersMatchTheCpu_data() {
             const every = ["edges", "height", "ring", "title", "subtitle", "headline", "caption", "tiles"];
             const unnamed = every.filter(key => key !== "caption");

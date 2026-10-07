@@ -15,6 +15,7 @@ QtObject {
 
     property int interval: 1000
     property int sampleInterval: Math.min(interval, 1000)
+    property int readInterval: sampleInterval - 250
     property int historySeconds: 60
     property int historyLength: Math.max(2, Math.round(historySeconds * 1000 / sampleInterval))
     property var hardware: ({

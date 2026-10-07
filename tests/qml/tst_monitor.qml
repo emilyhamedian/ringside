@@ -129,9 +129,11 @@ TestCase {
         config.updateInterval = data.interval;
         compare(monitor.sampleInterval, data.sample);
         compare(monitor.historyLength, data.length);
-        const timers = Array.from(monitor.data).filter(c => c.triggeredOnStart !== undefined && c.repeat);
-        verify(timers.some(t => t.interval === data.sample && t.running), "a sampling timer");
-        verify(timers.some(t => t.interval === data.interval && t.running), "a panel timer");
+        const timer = name => Array.from(monitor.data).find(c => c.objectName === name);
+        compare(timer("sample").interval, data.sample, "the graphs' timer");
+        verify(timer("sample").running);
+        compare(timer("latch").interval, data.interval, "the panel's timer");
+        verify(timer("latch").running);
         const sensors = sensorsOf(monitor);
         verify(sensors.length > 5);
         verify(sensors.every(s => s.updateRateLimit === data.sample - 250),
