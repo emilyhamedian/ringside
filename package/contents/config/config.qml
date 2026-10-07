@@ -20,4 +20,9 @@ ConfigModel {
         icon: "cpu"
         source: "config/ConfigSensors.qml"
     }
+    ConfigCategory {
+        name: i18nc("@title", "AI Providers")
+        icon: "dialog-messages"
+        source: "config/ConfigProviders.qml"
+    }
 }
