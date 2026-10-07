@@ -6,18 +6,9 @@ import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls as QQC2
 import org.kde.kirigami as Kirigami
-import org.kde.kcmutils as KCM
 
-KCM.SimpleKCM {
+ConfigPage {
     id: page
-
-    property int cfg_updateInterval
-    property int cfg_historySeconds
-    property bool cfg_fahrenheit
-    property bool cfg_networkBits
-    property bool cfg_highlightTemperatures
-    property real cfg_warmCelsius
-    property real cfg_hotCelsius
 
     readonly property var historyChoices: [30, 60, 120, 300, 600]
     readonly property string unit: cfg_fahrenheit ? i18nc("@label temperature unit", "°F")

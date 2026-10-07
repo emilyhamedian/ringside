@@ -6,19 +6,14 @@ import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls as QQC2
 import org.kde.kirigami as Kirigami
-import org.kde.kcmutils as KCM
 import org.kde.plasma.core as PlasmaCore
 import org.kde.plasma.plasmoid
 import "../code/format.js" as Format
 import "../code/style.js" as Style
 import "../code/items.js" as Items
 
-KCM.SimpleKCM {
+ConfigPage {
     id: page
-
-    property var cfg_itemOrder: []
-    property var cfg_hiddenItems: []
-    property var cfg_ringsOnly: []
 
     readonly property var names: ({
         cpu: i18nc("@item panel item", "CPU"),
@@ -32,29 +27,10 @@ KCM.SimpleKCM {
     // A vertical panel shows rings without their readings, whatever the setting.
     readonly property bool vertical: Plasmoid.formFactor === PlasmaCore.Types.Vertical
 
-    // What the widget found on this machine, for the hints. Read from the live
-    // configuration rather than a cfg_ property: Apply writes back every cfg_
-    // property a page declares, which would undo a report the widget saved
-    // while this page was open.
-    readonly property var hardware: {
-        try {
-            const report = JSON.parse(Plasmoid.configuration.detectedHardware);
-            return report && typeof report === "object" ? report : {};
-        } catch (err) {
-            return {};
-        }
-    }
-    // Same idea as hardware above, but not readonly: there is no live
-    // Plasmoid to fake outside a real applet, so tests substitute a fixed
-    // value here instead.
-    property var usageStatus: {
-        try {
-            const report = JSON.parse(Plasmoid.configuration.usageStatus || "{}");
-            return report && typeof report === "object" ? report : {};
-        } catch (err) {
-            return {};
-        }
-    }
+    // What the widget found on this machine, for the hints.
+    readonly property var hardware: page.report("detectedHardware")
+    // Not readonly: tests substitute a fixed status here.
+    property var usageStatus: page.report("usageStatus")
     readonly property var hints: ({
         cpu: hardware.cpu ? Format.cpuModel(hardware.cpu.model) : "",
         gpu: (Array.isArray(hardware.gpus) ? hardware.gpus : []).filter(g => g)

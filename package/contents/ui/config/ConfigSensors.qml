@@ -4,8 +4,6 @@
 pragma ComponentBehavior: Bound
 import QtQuick
 import org.kde.kirigami as Kirigami
-import org.kde.kcmutils as KCM
-import org.kde.plasma.plasmoid
 import org.kde.ksysguard.sensors as Sensors
 import org.kde.kitemmodels as KItemModels
 import "../code/format.js" as Format
@@ -14,26 +12,10 @@ import "../code/format.js" as Format
 // one of the words Monitor.qml understands ("" for automatic, "none", "all").
 // The choices come from ksystemstats' sensor tree, which lists sensors
 // without subscribing to any, and from the helper's last hardware report.
-KCM.SimpleKCM {
+ConfigPage {
     id: page
 
-    property string cfg_cpuTemperatureSensor
-    property string cfg_outerGpu
-    property string cfg_innerGpu
-    property string cfg_networkInterface
-    property string cfg_diskDevice
-    property string cfg_diskVolume
-    property string cfg_diskTemperatureSensor
-    // Read straight from the configuration: declaring cfg_detectedHardware
-    // would make Apply write back the report the page opened with.
-    readonly property var hardware: {
-        try {
-            const report = JSON.parse(Plasmoid.configuration.detectedHardware || "{}");
-            return report && typeof report === "object" ? report : {};
-        } catch (err) {
-            return {};
-        }
-    }
+    readonly property var hardware: page.report("detectedHardware")
     readonly property var gpus: Array.isArray(hardware.gpus)
         ? hardware.gpus.filter(g => g && typeof g.id === "string" && g.id) : []
     readonly property string cpuSensorLabel: hardware.cpu && hardware.cpu.tempLabel ? String(hardware.cpu.tempLabel) : ""

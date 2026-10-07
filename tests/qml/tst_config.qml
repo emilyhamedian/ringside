@@ -8,10 +8,12 @@ import org.kde.ksysguard.sensors as Sensors
 import "../../package/contents/ui/config"
 
 // The settings pages load with their cfg_ properties set and without a
-// script error, and between them take every setting in main.xml the way
-// Plasma's settings dialog hands them over. Reading main.xml and config.qml
-// needs QML_XHR_ALLOW_FILE_READ=1, which scripts/test.sh sets. Outside
-// Plasma there is no Plasmoid, so the pages see no hardware report. The
+// script error, and each takes every setting in main.xml, and its Default,
+// the way Plasma's settings dialog hands them over, keeping the reports the
+// widget writes meanwhile through Apply. Reading main.xml, config.qml and
+// the pages needs QML_XHR_ALLOW_FILE_READ=1, which scripts/test.sh sets.
+// Outside Plasma there is no Plasmoid, so the pages see no hardware report
+// unless a test hands them a stand-in for the configuration. The
 // Sensors page builds its pickers from a fixed sensor list here rather than
 // from this machine's ksystemstats, whose sensors depend on the hardware,
 // udisks and the network the tests run with. One test reads the real tree,
@@ -157,8 +159,16 @@ Item {
         name: "Config"
         when: windowShown
 
+        // Stand-ins for Plasmoid.configuration made by fakeConfiguration().
+        property var fakes: []
+
         function init() {
-            failOnWarning(/TypeError|ReferenceError|SyntaxError|is not a function|Unable to assign|Cannot assign|Binding loop/);
+            failOnWarning(/TypeError|ReferenceError|SyntaxError|is not a function|Unable to assign|Cannot assign|Binding loop|Setting initial properties failed/);
+        }
+
+        function cleanup() {
+            fakes.forEach(fake => fake.destroy());
+            fakes = [];
         }
 
         function make(component, properties) {
@@ -202,13 +212,9 @@ Item {
         }
 
         // How often Claude and Codex are checked and their inner rings moved
-        // to AI Providers; General and Sensors keep nothing about either.
+        // to AI Providers; General and Sensors show nothing about either.
         function test_providerSettingsLeftTheOldPages() {
             for (const page of [make(general), make(sensors)]) {
-                compare(page.cfg_usageRefreshMinutes, undefined);
-                compare(page.cfg_claudeInnerLimit, undefined);
-                compare(page.cfg_codexInnerLimit, undefined);
-                compare(page.knownLimits, undefined);
                 for (const name of ["Check every", "Claude inner ring", "Codex inner ring"]) {
                     compare(combo(page, name), null, name);
                 }
@@ -224,67 +230,284 @@ Item {
             return request.responseText;
         }
 
-        // Every <entry> in main.xml, with its default as the value Plasma's
-        // dialog would hand a page.
-        function settings() {
+        // Every <entry> in main.xml as { name, type, value }, the value being
+        // the default, as Plasma's dialog would hand a page.
+        function entries() {
             const xml = read("../../package/contents/config/main.xml");
             const pattern = /<entry name="(\w+)" type="(\w+)">([\s\S]*?)<\/entry>/g;
-            const found = {};
+            const list = [];
             for (let m = pattern.exec(xml); m; m = pattern.exec(xml)) {
                 const text = (/<default>([^<]*)<\/default>/.exec(m[3]) || ["", ""])[1];
-                found[m[1]] = m[2] === "Int" || m[2] === "Double" ? Number(text)
-                            : m[2] === "Bool" ? text === "true"
-                            : m[2] === "StringList" ? text.split(",").filter(s => s)
-                            : text;
+                list.push({ name: m[1], type: m[2],
+                            value: m[2] === "Int" || m[2] === "Double" ? Number(text)
+                                 : m[2] === "Bool" ? text === "true"
+                                 : m[2] === "StringList" ? text.split(",").filter(s => s)
+                                 : text });
             }
-            verify(Object.keys(found).length > 0, "main.xml lists no entry");
-            return found;
+            verify(list.length > 0, "main.xml lists no entry");
+            return list;
         }
 
-        function declared(page) {
-            const keys = [];
-            for (const name in page) {
-                if (name.startsWith("cfg_") && typeof page[name] !== "function") {
-                    keys.push(name.slice(4));
-                }
+        function settings() {
+            const values = {};
+            for (const entry of entries()) {
+                values[entry.name] = entry.value;
             }
-            return keys;
+            return values;
         }
 
-        // Plasma's dialog hands each page every setting as a cfg_ property
-        // and saves back the ones the page declares. So every setting needs
-        // exactly one page declaring it with a type its value assigns to, and
-        // a page may declare nothing main.xml lacks. The reports the widget
-        // writes for the pages are read live, never declared, or Apply would
-        // write back the report a page opened with.
-        function test_everySettingHasOnePage() {
-            const values = settings();
-            const reports = ["knownLimits", "usageStatus", "detectedHardware"];
+        // The pages' sources, as config.qml lists them.
+        function pages() {
             const config = read("../../package/contents/config/config.qml");
             const pattern = /source: "([^"]+)"/g;
-            const owner = {};
+            const list = [];
             for (let m = pattern.exec(config); m; m = pattern.exec(config)) {
-                const component = Qt.createComponent(Qt.resolvedUrl("../../package/contents/ui/" + m[1]));
-                compare(component.status, Component.Ready, m[1] + ": " + component.errorString());
-                const keys = declared(createTemporaryObject(component, root));
-                const handed = {};
-                for (const key of keys) {
-                    verify(key in values, m[1] + " declares cfg_" + key + ", which main.xml lacks");
-                    verify(!reports.includes(key), m[1] + " declares the report cfg_" + key);
-                    verify(!(key in owner), "cfg_" + key + " on both " + owner[key] + " and " + m[1]);
-                    owner[key] = m[1];
-                    handed["cfg_" + key] = values[key];
+                list.push(m[1]);
+            }
+            verify(list.length > 0, "config.qml lists no page");
+            return list;
+        }
+
+        function pageComponent(source) {
+            const component = Qt.createComponent(Qt.resolvedUrl("../../package/contents/ui/" + source));
+            compare(component.status, Component.Ready, source + ": " + component.errorString());
+            return component;
+        }
+
+        // What Plasma's dialog hands a page: a title and a cfg_ property for
+        // every key in Plasmoid.configuration.keys(), which lists each entry
+        // and its Default.
+        function handed(values) {
+            const props = { title: "Page" };
+            for (const key in values) {
+                props["cfg_" + key] = values[key];
+                props["cfg_" + key + "Default"] = values[key];
+            }
+            return props;
+        }
+
+        // A stand-in for Plasmoid.configuration, as KConfigPropertyMap looks
+        // to the pages and the dialog: keys() lists each entry and its
+        // Default, a value that changes rings valueChanged, and writeConfig()
+        // saves the entries, never the Defaults, into file.
+        function fakeConfiguration(values) {
+            const names = Object.keys(values);
+            let source = "import QtQuick\nQtObject {\n    id: fake\n"
+                + "    signal valueChanged(string key, var value)\n"
+                + "    property var file: ({})\n"
+                + "    function keys() { return " + JSON.stringify(names.concat(names.map(n => n + "Default"))) + "; }\n"
+                + "    function writeConfig() {\n        const saved = {};\n"
+                + "        for (const name of " + JSON.stringify(names) + ") {\n            saved[name] = fake[name];\n        }\n"
+                + "        file = saved;\n    }\n";
+            for (const name of names) {
+                source += "    property var " + name + "\n    property var " + name + "Default\n"
+                        + "    on" + name[0].toUpperCase() + name.slice(1) + "Changed: valueChanged(\"" + name + "\", " + name + ")\n";
+            }
+            const fake = Qt.createQmlObject(source + "}\n", root, "FakeConfiguration.qml");
+            for (const name of names) {
+                fake[name] = values[name];
+                fake[name + "Default"] = values[name];
+            }
+            fakes.push(fake);
+            return fake;
+        }
+
+        // Plasma's dialog on a page, as plasma-desktop's AppletConfiguration.qml
+        // has it. Every version connects the page's cfg_ change signals to
+        // enable Apply; from 6.5 only when changed() finds a difference. On
+        // Apply, 6.0 to 6.4 write the cfg_ copies back, save, then call the
+        // page's saveConfig(); 6.5 and later call it first.
+        function dialog(page, config) {
+            const d = { signals: 0 };
+            config.keys().forEach(key => {
+                const changed = page["cfg_" + key + "Changed"];
+                if (changed) {
+                    changed.connect(() => ++d.signals);
                 }
-                const page = createTemporaryObject(component, root, handed);
-                for (const key of keys) {
-                    compare(JSON.stringify(page["cfg_" + key]), JSON.stringify(values[key]), m[1] + " cfg_" + key);
+            });
+            d.writeBack = () => {
+                config.keys().forEach(key => {
+                    const cfgKey = "cfg_" + key;
+                    if (cfgKey in page) {
+                        config[key] = page[cfgKey];
+                    }
+                });
+                config.writeConfig();
+            };
+            d.apply = order => {
+                if (order === "plasma60") {
+                    d.writeBack();
+                    if (page.hasOwnProperty("saveConfig")) {
+                        page.saveConfig();
+                    }
+                } else {
+                    if (page.saveConfig) {
+                        page.saveConfig();
+                    }
+                    d.writeBack();
+                }
+            };
+            d.changed = () => config.keys().some(key => {
+                const cfgKey = "cfg_" + key;
+                if (!page.hasOwnProperty(cfgKey)) {
+                    return false;
+                }
+                return config[key] != page[cfgKey] && config[key].toString() != page[cfgKey].toString();
+            });
+            return d;
+        }
+
+        // A page opened on the stand-in, with Plasma's full property set.
+        function open(source, values, config) {
+            const page = createTemporaryObject(pageComponent(source), root, Object.assign({ live: config }, handed(values)));
+            verify(page, source);
+            return page;
+        }
+
+        // Plasma's dialog warns about every key a page lacks, so each page
+        // declares all of them, and their Defaults, through ConfigPage: typed
+        // as main.xml types them, nothing main.xml lacks, and no declaration
+        // of a page's own.
+        function test_everyPageDeclaresEverySetting() {
+            const types = { Int: "int", Bool: "bool", Double: "real", String: "string", StringList: "var" };
+            const expected = {};
+            for (const entry of entries()) {
+                verify(entry.type in types, entry.name + " has a type this test doesn't know: " + entry.type);
+                expected[entry.name] = types[entry.type];
+                expected[entry.name + "Default"] = types[entry.type];
+            }
+            const declared = {};
+            const base = read("../../package/contents/ui/config/ConfigPage.qml");
+            const pattern = /^\s*property (\w+) cfg_(\w+)/gm;
+            for (let m = pattern.exec(base); m; m = pattern.exec(base)) {
+                declared[m[2]] = m[1];
+            }
+            for (const key in expected) {
+                compare(declared[key], expected[key], "cfg_" + key + " in ConfigPage.qml");
+            }
+            for (const key in declared) {
+                verify(key in expected, "ConfigPage.qml declares cfg_" + key + ", which main.xml lacks");
+            }
+            for (const source of pages()) {
+                const text = read("../../package/contents/ui/" + source);
+                verify(/^ConfigPage \{/m.test(text), source + " isn't rooted on ConfigPage");
+                verify(!/property \w+ cfg_/.test(text), source + " declares a cfg_ property of its own");
+                const page = createTemporaryObject(pageComponent(source), root);
+                for (const key in expected) {
+                    verify(("cfg_" + key) in page, source + " lacks cfg_" + key);
+                    verify(page.hasOwnProperty("cfg_" + key), source + " doesn't own cfg_" + key);
                 }
             }
-            const missing = Object.keys(values).filter(key => !reports.includes(key) && !(key in owner));
-            compare(missing, [], "settings no page declares");
-            for (const key of ["usageRefreshMinutes", "claudeInnerLimit", "codexInnerLimit"]) {
-                compare(owner[key], "config/ConfigProviders.qml", key);
+        }
+
+        // Each page, created as Plasma's dialog creates it, takes every key
+        // and Default without a warning (init() fails the test on one) and
+        // holds each as the type main.xml gives it. Outside Plasma, with no
+        // live configuration, saveConfig() has nothing to do.
+        function test_pagesTakePlasmasProperties_data() {
+            return pages().map(source => ({ tag: source, source: source }));
+        }
+        function test_pagesTakePlasmasProperties(data) {
+            const page = createTemporaryObject(pageComponent(data.source), root, handed(settings()));
+            verify(page);
+            for (const entry of entries()) {
+                for (const key of [entry.name, entry.name + "Default"]) {
+                    compare(JSON.stringify(page["cfg_" + key]), JSON.stringify(entry.value), "cfg_" + key);
+                    compare(typeof page["cfg_" + key], typeof entry.value, "cfg_" + key);
+                }
             }
+            verify(page.hasOwnProperty("saveConfig"), "the dialog finds saveConfig() with hasOwnProperty");
+            page.saveConfig();
+            compare(page.cfg_knownLimits, "");
+        }
+
+        function orders(rows) {
+            const all = [];
+            for (const order of ["plasma60", "plasma67"]) {
+                for (const row of rows) {
+                    all.push(Object.assign({}, row, { tag: order + "/" + row.tag, order: order }));
+                }
+            }
+            return all;
+        }
+
+        // A report the widget writes while a page is open doesn't enable
+        // Apply, which only the page's cfg_ change signals do, and holds its
+        // latest value after Apply, whichever order the dialog saves in.
+        function test_runtimeReportSurvivesApply_data() {
+            const rows = [];
+            for (const source of pages()) {
+                for (const key of ["knownLimits", "usageStatus", "detectedHardware"]) {
+                    rows.push({ tag: source.replace(/^config\/Config|\.qml$/g, "") + "/" + key, source: source, key: key });
+                }
+            }
+            return orders(rows);
+        }
+        function test_runtimeReportSurvivesApply(data) {
+            const values = settings();
+            const config = fakeConfiguration(values);
+            const page = open(data.source, values, config);
+            const d = dialog(page, config);
+            const report = JSON.stringify({ written: "while the page was open" });
+            config[data.key] = report;
+            tryVerify(() => page.latest[data.key] === report, 5000, "the page didn't learn of the report");
+            compare(d.signals, 0, "the report rang a cfg_ change signal");
+            compare(page["cfg_" + data.key], "", "the report moved the page's copy");
+            d.apply(data.order);
+            compare(config[data.key], report, "the configuration after Apply");
+            compare(config.file[data.key], report, "the file after Apply");
+            compare(page["cfg_" + data.key], report, "the page's copy after Apply");
+            tryVerify(() => page.latest[data.key] === report, 5000, "latest after Apply");
+            verify(!d.changed(), "Apply would stay enabled");
+        }
+
+        // A change made on a page is saved, alongside a report written
+        // meanwhile; everything else, the Defaults included, is as it was,
+        // and nothing reaches the file under a Default's name.
+        function test_applySavesTheChange_data() {
+            return orders([
+                { tag: "General", source: "config/ConfigGeneral.qml", key: "updateInterval", value: 2000 },
+                { tag: "Items", source: "config/ConfigItems.qml", key: "ringsOnly", value: ["cpu"] },
+                { tag: "Sensors", source: "config/ConfigSensors.qml", key: "diskDevice", value: "sda" },
+                { tag: "Providers", source: "config/ConfigProviders.qml", key: "usageRefreshMinutes", value: 10 }
+            ]);
+        }
+        function test_applySavesTheChange(data) {
+            const values = settings();
+            const config = fakeConfiguration(values);
+            const page = open(data.source, values, config);
+            const d = dialog(page, config);
+            page["cfg_" + data.key] = data.value;
+            verify(d.signals > 0, "the change rang no cfg_ change signal");
+            verify(d.changed(), "the change isn't seen");
+            const status = JSON.stringify({ claude: { status: "ok" } });
+            config.usageStatus = status;
+            tryVerify(() => page.latest.usageStatus === status, 5000);
+            d.apply(data.order);
+            compare(JSON.stringify(config[data.key]), JSON.stringify(data.value), "the configuration after Apply");
+            compare(JSON.stringify(config.file[data.key]), JSON.stringify(data.value), "the file after Apply");
+            compare(config.usageStatus, status);
+            compare(config.file.usageStatus, status);
+            for (const entry of entries()) {
+                if (entry.name !== data.key && entry.name !== "usageStatus") {
+                    compare(JSON.stringify(config.file[entry.name]), JSON.stringify(entry.value), entry.name);
+                }
+                compare(JSON.stringify(config[entry.name + "Default"]), JSON.stringify(entry.value), entry.name + "Default");
+                verify(!((entry.name + "Default") in config.file), entry.name + "Default reached the file");
+            }
+            verify(!d.changed(), "Apply would stay enabled");
+        }
+
+        // The hints read the reports as the widget writes them.
+        function test_pagesFollowTheReports() {
+            const values = settings();
+            const config = fakeConfiguration(values);
+            const sensors = open("config/ConfigSensors.qml", values, config);
+            const providers = open("config/ConfigProviders.qml", values, config);
+            config.detectedHardware = JSON.stringify({ root: { disk: "nvme0n1" } });
+            config.knownLimits = JSON.stringify({ claude: [{ id: "opus", label: "Opus", reported: true }] });
+            tryCompare(sensors, "rootDisk", "nvme0n1");
+            tryCompare(providers, "claudeHasLimits", true);
         }
 
         // The dialog's categories, as Plasma's own model reads config.qml.

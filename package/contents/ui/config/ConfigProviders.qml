@@ -5,33 +5,18 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls as QQC2
 import org.kde.kirigami as Kirigami
-import org.kde.kcmutils as KCM
-import org.kde.plasma.plasmoid
 
 // The settings for the Claude and Codex items. Switching the items on and
 // ordering them stays on Panel Items.
-KCM.SimpleKCM {
+ConfigPage {
     id: page
 
-    property int cfg_usageRefreshMinutes
-    property string cfg_claudeInnerLimit
-    property string cfg_codexInnerLimit
-    // The per-model limits the widget has reported so far, read straight
-    // from the configuration: declaring cfg_knownLimits would make Apply
-    // write back the report the page opened with. Not readonly: there is no
-    // live Plasmoid to fake outside a real applet, so tests substitute a
-    // fixed value here instead.
-    property var knownLimits: {
-        try {
-            const report = JSON.parse(Plasmoid.configuration.knownLimits || "{}");
-            return report && typeof report === "object" ? report : {};
-        } catch (err) {
-            return {};
-        }
-    }
+    // The per-model limits the widget has reported so far. Not readonly:
+    // tests substitute a fixed set here.
+    property var knownLimits: page.report("knownLimits")
     // Array.from rather than Array.isArray: a value crossing from outside
-    // the QML/JS engine (the settings dialog's own config binding, or a
-    // test's initial property) arrives as a Qt sequence, not a JS Array.
+    // the QML/JS engine (a test's initial property) arrives as a Qt
+    // sequence, not a JS Array.
     readonly property bool claudeHasLimits: Array.from(knownLimits.claude || []).length > 0 || cfg_claudeInnerLimit !== ""
     readonly property bool codexHasLimits: Array.from(knownLimits.codex || []).length > 0 || cfg_codexInnerLimit !== ""
 
