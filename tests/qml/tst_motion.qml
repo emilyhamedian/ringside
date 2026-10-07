@@ -804,6 +804,20 @@ Item {
             return root.all(g, i => i.playReset !== undefined).sort((a, b) => a.radius - b.radius)[0];
         }
 
+        function outerArc(g) {
+            return root.all(g, i => i.playReset !== undefined).sort((a, b) => b.radius - a.radius)[0];
+        }
+
+        // The path an arc draws its reading with, after its track.
+        function readingPath(arc) {
+            return Array.from(arc.data).filter(o => o.strokeColor !== undefined).pop();
+        }
+
+        // An arc's width as a length along it, in percent.
+        function widthAlong(arc) {
+            return 100 * arc.strokeWidth / (2 * Math.PI * arc.radius);
+        }
+
         function nameIn(c) {
             return root.all(c, i => i.room !== undefined && i.fits !== undefined)[0];
         }
@@ -861,6 +875,23 @@ Item {
             verify(seen.every(([, shown, width]) => width === (shown >= 0.5 ? room.dual : room.single)), "the room comes back half way");
             verify(seen.some(([percent]) => percent > 0.5 && percent < 39.5), "unwinding");
             tryCompare(nameIn(c), "shownSize", nameIn(c).size, 1000, "the name grows to its size");
+        }
+
+        // A reading that goes missing, as when the discrete GPU wakes before
+        // its first reading, unwinds the arc out of sight, without its round
+        // caps lingering as a dot at twelve o'clock.
+        function test_noCapLeftByAMissingReading() {
+            monitor.gpuOuter.usage = 12;
+            const c = cell();
+            const arc = outerArc(gauge(c));
+            const path = readingPath(arc);
+            const width = widthAlong(arc);
+            const seen = [];
+            createTemporaryObject(samplerComponent, c, { sample: () => seen.push([arc.percent, path.strokeColor.a]) });
+            monitor.gpuOuter.usage = NaN;
+            tryCompare(arc, "percent", 0, 2000);
+            verify(seen.some(([percent]) => percent > 0 && percent < width), "it unwinds through its width: " + JSON.stringify(seen));
+            verify(seen.every(([percent, alpha]) => percent >= width || alpha === 0), JSON.stringify(seen));
         }
 
         // The name scales as a texture, so its strokes soften rather than
