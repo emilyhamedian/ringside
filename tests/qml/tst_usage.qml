@@ -25,7 +25,9 @@ Item {
         return text.replace(/%(\d+)/g, (m, n) => n <= args.length ? String(args[n - 1]) : m);
     }
     function i18n(text, ...args) { return substitute(text, args); }
-    function i18nc(context, text, ...args) { return substitute(text, args); }
+    function i18nc(context, text, ...args) { return substitute(translations[text] ?? text, args); }
+    // Stand-in translations a test can set, by the English text.
+    property var translations: ({})
     function i18np(s, p, n, ...args) { return substitute(n === 1 ? s : p, [n].concat(args)); }
     function i18ncp(c, s, p, n, ...args) { return substitute(n === 1 ? s : p, [n].concat(args)); }
 
@@ -1999,6 +2001,28 @@ Item {
                     "The next session starts at " + time(6, 23, 30) + ".");
             compare(words.starterStatus("claude", { state: "waiting", next: at(7, 0, 30) }, week, at(6, 23, 30) * 1000),
                     "The next session starts " + Qt.locale().dayName(3, Locale.ShortFormat) + " " + time(7, 0, 30) + ".");
+        }
+
+        // Each status sentence has its own string for a time today and for
+        // one on another day, with the weekday and time apart, so a language
+        // can word the two its own way.
+        function test_starterStatusTranslatesEachDay() {
+            const now = new Date(2026, 9, 6, 22, 0);
+            const today = new Date(2026, 9, 6, 23, 40);
+            const wednesday = new Date(2026, 9, 7, 1, 46);
+            root.translations = {
+                "The next session starts at %1.": "Die nächste Sitzung beginnt um %1.",
+                "The next session starts %1 %2.": "Die nächste Sitzung beginnt am %1 um %2."
+            };
+            try {
+                compare(words.starterStatus("claude", { state: "waiting", next: today.getTime() / 1000 }, null, now.getTime()),
+                        "Die nächste Sitzung beginnt um " + words.shortTime(today) + ".");
+                compare(words.starterStatus("claude", { state: "waiting", next: wednesday.getTime() / 1000 }, null, now.getTime()),
+                        "Die nächste Sitzung beginnt am " + Qt.locale().dayName(3, Locale.ShortFormat) + " um "
+                        + words.shortTime(wednesday) + ".");
+            } finally {
+                root.translations = {};
+            }
         }
 
         function test_starterStatusOfAnUnknownState() {
