@@ -41,7 +41,7 @@ the window's history in the same folder. A window's "history" holds the
 points of its current span, oldest first.
 
 Claude's entry also carries "session", its five-hour window, or null when
-no session is running.
+no session is running; it is left out when the reply doesn't say.
 
 Every entry carries "starter", the session starter's state: {"enabled":
 bool, "state": ..., "at": <epoch seconds> or null, "next": <epoch seconds>
@@ -602,7 +602,7 @@ def parse_claude(usage):
     the endpoint leaves the model id empty today, and staying on the name keeps
     a pinned choice valid if ids appear later. Entries scoped to something
     other than a model are skipped. "session" is the five-hour window, null
-    while no session is running.
+    while no session is running, and left out when the reply doesn't say.
     """
     weekly = usage.get("seven_day")
     if not weekly:
@@ -613,11 +613,32 @@ def parse_claude(usage):
         if limit.get("kind") == "weekly_scoped" and name and all(s["id"] != name for s in scoped):
             scoped.append({"id": name, "label": name,
                            **window_from(limit.get("percent"), limit.get("resets_at"), WEEK_SECONDS)})
-    session = usage.get("five_hour")
-    return {"weekly": window_from(weekly.get("utilization"), weekly.get("resets_at"), WEEK_SECONDS),
-            "scoped": scoped,
-            "session": (window_from(session.get("utilization"), session.get("resets_at"), SESSION_SECONDS)
-                        if isinstance(session, dict) else None)}
+    reading = {"weekly": window_from(weekly.get("utilization"), weekly.get("resets_at"), WEEK_SECONDS),
+               "scoped": scoped}
+    with contextlib.suppress(ValueError):
+        reading["session"] = parse_session(usage)
+    return reading
+
+
+def parse_session(usage):
+    """The five-hour window, or None when the reply says no session is
+    running: five_hour null, or at 0% with no reset. A reply that leaves
+    five_hour out or garbles it raises ValueError, since the starter would
+    otherwise send into a session that runs."""
+    if "five_hour" not in usage:
+        raise ValueError("no five_hour in usage reply")
+    session = usage["five_hour"]
+    if session is None:
+        return None
+    if not isinstance(session, dict) or "resets_at" not in session:
+        raise ValueError("five_hour is not a window")
+    percent = session.get("utilization")
+    if type(percent) not in (int, float):
+        raise ValueError("five_hour has no utilization")
+    reset = epoch_seconds(session["resets_at"])
+    if reset is None and (session["resets_at"] is not None or percent != 0):
+        raise ValueError("five_hour has no reset")
+    return window_from(percent, reset, SESSION_SECONDS)
 
 
 def claude_usage():
@@ -1197,7 +1218,8 @@ def starter_read(name, now, not_before):
     """The provider's reading, through the cache and its floor as any poll.
     A confirmation needs a reading taken after the send; while the cache
     still holds an older one, the step waits for it to go stale. Readings
-    cached by 0.2, which lack Claude's session, wait the same way."""
+    cached by 0.2, which lack Claude's session, wait the same way. A new
+    reading that can't say whether a session runs is a failed read."""
     entry = read_cache().get(name)
     if fresh(entry, now) and ((not_before is not None and entry["fetchedAt"] < not_before)
                               or (name == "claude" and "session" not in entry)):
@@ -1207,6 +1229,8 @@ def starter_read(name, now, not_before):
         raise Failed("signed-out")
     if entry["status"] != "ok":
         raise Unreadable(entry.get("retryAfter", 0))
+    if name == "claude" and "session" not in entry:
+        raise Unreadable()
     return entry
 
 
