@@ -643,7 +643,7 @@ class Commands(Isolated):
     def test_codex_falls_back_without_a_readable_model_list(self):
         self.assertFalse(usage.CODEX_MODEL_CACHE.exists())
         self.assertEqual(usage.codex_model(), ("gpt-6-luna", "low"))
-        self.models([])
+        usage.CODEX_MODEL_CACHE.parent.mkdir(parents=True, exist_ok=True)
         usage.CODEX_MODEL_CACHE.write_text("{broken")
         self.assertEqual(usage.codex_model(), ("gpt-6-luna", "low"))
         usage.CODEX_MODEL_CACHE.write_bytes(b"\xff\xfe")
