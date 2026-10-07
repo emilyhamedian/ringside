@@ -53,6 +53,9 @@ Item {
     property var starters: ({})
     // The switch positions asked for and not yet reported back, per id.
     property var starterWanted: ({})
+    // Per id, the --start runs in a row that gave no report: { count, at,
+    // retryAt, error }. Kept until a report moves the starter on.
+    property var startFailures: ({})
 
     // Windows that just started over (see code/reset.js), sent before
     // `entries` changes so a ring can play the reset from its old reading.
@@ -67,8 +70,12 @@ Item {
             ? "python3 -B '" + helperPath.replace(/'/g, "'\\''") + "' --providers " + providerIds.join(",") + args : "";
     }
 
+    // As reported, or after a --start that gave no report, "failed" with
+    // reason "helper", the helper's error, and next at the retry.
     function starter(id) {
-        return starters[id] ?? null;
+        const s = starters[id] ?? null;
+        const f = startFailures[id];
+        return s && f ? Object.assign({}, s, { state: "failed", reason: "helper", at: f.at, next: f.retryAt, error: f.error }) : s;
     }
 
     // Where the switch stands: as asked while the helper writes it, then as
@@ -102,12 +109,26 @@ Item {
         const busy = runner.connectedSources.some(s => s.endsWith(" --start") || s.includes(" --starter-set "));
         const now = Date.now() / 1000;
         const due = ids.filter(id => {
-            const s = starters[id];
+            const s = starter(id);
             return starterOn(id) && Number.isFinite(s?.next) && s.next <= now;
         });
         if (due.length > 0 && !busy) {
             runner.connectSource(helperCommand(due, " --start"));
         }
+    }
+
+    // A --start that gave no report retries after 5 minutes, doubling up to
+    // the 5-hour session window, rather than on every tick: the failure may
+    // repeat, and a helper that dies after sending would send again. The
+    // readings it left untouched keep no failure.
+    function startFailed(failedIds, error) {
+        const now = Math.floor(Date.now() / 1000);
+        const failures = Object.assign({}, startFailures);
+        failedIds.forEach(id => {
+            const count = (failures[id]?.count ?? 0) + 1;
+            failures[id] = { count: count, at: now, retryAt: now + Math.min(300 * 2 ** (count - 1), 5 * 3600), error: error };
+        });
+        startFailures = failures;
     }
 
     function present(id) {
@@ -148,6 +169,9 @@ Item {
         }
         if (Object.keys(starterWanted).some(id => !ids.includes(id))) {
             starterWanted = only(starterWanted);
+        }
+        if (Object.keys(startFailures).some(id => !ids.includes(id))) {
+            startFailures = only(startFailures);
         }
         if (Object.keys(statuses).some(id => !ids.includes(id)) || ids.length === 0 && helperError !== "") {
             statuses = only(statuses);
@@ -191,7 +215,17 @@ Item {
         }
         entries = merged;
         statuses = latest;
+        // A failed start ends once the starter is off or no longer due at
+        // the time it failed.
+        const failures = {};
+        for (const id in startFailures) {
+            const s = starting[id];
+            if (s?.enabled && Number.isFinite(s.next) && s.next <= startFailures[id].at) {
+                failures[id] = startFailures[id];
+            }
+        }
         starters = starting;
+        startFailures = failures;
         rememberLimits();
         writeStatus();
     }
@@ -262,6 +296,7 @@ Item {
             // A switch change is settled by this run's report, or by its
             // failure, which leaves the switch where it was reported.
             const set = / --starter-set (\w+)=(on|off)$/.exec(source);
+            const started = / --providers ([\w,]+) --start$/.exec(source);
             const settled = set && usage.starterWanted[set[1]] === (set[2] === "on") ? set[1] : "";
             let report = null;
             try {
@@ -269,7 +304,9 @@ Item {
             } catch (err) {
                 report = null;
             }
-            if (!report?.providers) {
+            if (!report?.providers && started) {
+                usage.startFailed(started[1].split(","), usage.failureText(Report.helperFailure(data)));
+            } else if (!report?.providers) {
                 usage.helperError = usage.failureText(Report.helperFailure(data));
                 usage.entries = Report.markFailed(usage.entries, usage.helperError, Math.floor(Date.now() / 1000));
                 usage.writeStatus();

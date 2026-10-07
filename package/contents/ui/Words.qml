@@ -215,11 +215,12 @@ QtObject {
 
     // What the session starter is doing, under its switch in the Claude or
     // Codex popup. `starter` is the helper's { enabled, state, at, next,
-    // reason } (see usage.py). Times are to the minute on the week's clock,
-    // as the reset is, and the tile's caption names the zone once. Each
-    // sentence has a string for a time today ("at 11:40 PM") and one for
-    // another day, with the weekday and time apart ("Wed 1:46 AM"), so a
-    // language can word each its own way.
+    // reason } (see usage.py), or after a --start that gave no report
+    // UsageData's "failed" with reason "helper" and the helper's error.
+    // Times are to the minute on the week's clock, as the reset is, and the
+    // tile's caption names the zone once. Each sentence has a string for a
+    // time today ("at 11:40 PM") and one for another day, with the weekday
+    // and time apart ("Wed 1:46 AM"), so a language can word each its own way.
     function starterStatus(item, starter, window, nowMs) {
         const s = starter ?? { state: "off" };
         const claude = item === "claude";
@@ -274,6 +275,14 @@ QtObject {
                 return claude
                     ? i18nc("@info", "Can't start a session: Claude Code is signed out. Run claude in a terminal to sign in.")
                     : i18nc("@info", "Can't start a week: Codex is signed out. Run codex in a terminal to sign in.");
+            }
+            if (s.reason === "helper") {
+                const retry = claude
+                    ? onDay(s.next, i18nc("@info %1 is a time today", "Couldn't start a session. Trying again at %1.", time(s.next)),
+                            i18nc("@info %1 is a weekday, %2 a time", "Couldn't start a session. Trying again %1 %2.", day(s.next), time(s.next)))
+                    : onDay(s.next, i18nc("@info %1 is a time today", "Couldn't start a week. Trying again at %1.", time(s.next)),
+                            i18nc("@info %1 is a weekday, %2 a time", "Couldn't start a week. Trying again %1 %2.", day(s.next), time(s.next)));
+                return s.error ? both(retry, s.error) : retry;
             }
             break;
         case "retrying":

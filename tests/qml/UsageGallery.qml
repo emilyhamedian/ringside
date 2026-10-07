@@ -171,8 +171,8 @@ ColumnLayout {
         }
     }
 
-    // The starter's states, as [label, state, at, next, reason] with times
-    // in minutes from now.
+    // The starter's states, as [label, state, at, next, reason, error] with
+    // times in minutes from now.
     readonly property var starterStates: [
         ["off", "off"],
         ["on, waiting", "waiting", null, 133],
@@ -182,6 +182,8 @@ ColumnLayout {
         ["weekly limit reached", "weekly", null, 3 * 24 * 60],
         ["failed: not installed", "failed", null, null, "not-installed"],
         ["failed: signed out", "failed", null, null, "signed-out"],
+        ["the helper failed to start one, retrying", "failed", -1, 4, "helper",
+         "The usage helper exited with code 1: RuntimeError: boom"],
         ["one send unconfirmed, retrying", "retrying", -3, 2],
         ["two unconfirmed, paused", "paused", null, 302]
     ]
@@ -406,6 +408,7 @@ ColumnLayout {
                     starters: ({
                         [starterFrame.item]: {
                             enabled: starterFrame.row[1] !== "off", state: starterFrame.row[1], reason: starterFrame.row[4] ?? null,
+                            error: starterFrame.row[5] ?? null,
                             at: starterFrame.row[2] === null || starterFrame.row[2] === undefined ? null : fake.createdAt + starterFrame.row[2] * 60,
                             next: starterFrame.row[3] === null || starterFrame.row[3] === undefined ? null : fake.createdAt + starterFrame.row[3] * 60
                         }
