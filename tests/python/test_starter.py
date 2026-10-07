@@ -322,6 +322,21 @@ class Steps(unittest.TestCase):
         h.step(now + 300)
         self.assertEqual(h.record["state"], "paused")
 
+    # A retry the switch stops before it sends forgets the send it would
+    # have repeated, so a session the user starts later isn't taken for one
+    # the starter started.
+    def test_a_switch_found_off_before_a_retry_forgets_the_send(self):
+        h = Harness(NOW, outcome=usage.SwitchedOff(), record=dict(
+            usage.blank_record(), state="retrying", at=NOW - 300, next=NOW, sentAt=NOW - 300, uncertain=1))
+        h.step()
+        self.assertEqual(h.count("send"), 1)
+        self.assertEqual((h.record["state"], h.record["next"], h.record["sentAt"], h.record["uncertain"],
+                          h.record["pending"]), ("waiting", None, None, 0, None))
+        h.outcome = None
+        h.reading = claude(NOW + 600, session=NOW + SESSION)
+        h.step(NOW + 600)
+        self.assertEqual(h.shows(), ("waiting", None, NOW + SESSION + 1))
+
     def test_a_missing_cli_or_login_fails_and_checks_again_in_five_minutes(self):
         h = Harness(NOW)
         h.missing = True
@@ -956,18 +971,22 @@ class StarterRuns(Isolated):
         self.assertEqual((starter["state"], starter["at"], starter["next"]), ("started", sent, sent + SESSION + 1))
         self.assertEqual(self.calls, [])
 
+    # The --start polls the bad reply itself: one cached by the switch's
+    # run would defer it as a reading from 0.2.
     def test_a_reply_that_cant_tell_a_session_sends_nothing(self):
         weekly = {"utilization": 10, "resets_at": int(time.time()) + 86400}
         for body in ({"seven_day": weekly}, {"seven_day": weekly, "five_hour": "soon"}):
             with self.subTest(body=body):
-                self.write_cache({})
                 usage.STARTER_STATE.unlink(missing_ok=True)
                 self.claude.side_effect = lambda: usage.parse_claude(body)
                 self.run_main("--providers", "claude", "--starter-set", "claude=on")
+                self.write_cache({})
                 starter = self.run_main("--providers", "claude", "--start")["providers"]["claude"]["starter"]
                 self.assertEqual(self.calls, [])
-                self.assertEqual(starter["state"], "waiting")
-                self.assertGreater(starter["next"], int(time.time()))
+                self.assertEqual((starter["state"], starter["reason"]), ("failed", "unchecked"))
+                stored = json.loads(usage.STARTER_STATE.read_text())["claude"]
+                self.assertEqual(stored["failures"], 1)
+                self.assertIn(starter["next"] - stored["steppedAt"], (300, 301))
 
     def test_a_cli_that_rejects_a_flag_reports_not_responding(self):
         self.run_main("--starter-set", "claude=on")
