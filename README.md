@@ -10,18 +10,17 @@ and Codex usage limits if you want them.
 ![Ringside in a panel: CPU, GPU and memory rings with their names inside, each with its usage over its temperature or the memory in use, a Claude ring with its weekly usage over the days to its reset and its Fable limit in red on the inner ring, then network rates](docs/panel.png)
 
 Each item is a ring with its name inside and its readings beside it, or a
-pair of rates. Items are as wide as their text, with the same gap between
-each. When a reading gains a character, the items after it move over at
-once; when it loses one, they wait three minutes before closing up, so a
-value that keeps changing width doesn't shuffle the panel. A reading that
-drops further and stays there, as when traffic dies down, leaves at most a
-digit of extra space after ten to twenty seconds.
+pair of rates. Each item keeps room for its widest readings, so the panel
+stays the same width as the numbers change. Rates show three figures, such
+as 8.40 Mb/s or 353 KiB/s, and so does the memory in use, such as 9.60G.
 
 Click an item for its popup: history graphs, per-thread load, top
 processes, VRAM, clocks, power, swap, memory pressure and disk activity.
 Percentage graphs have a line at 100%; rate graphs reach up to their peak,
 which the caption names, or to 1 Mb/s (1 MiB/s for a disk) when the peak is
-lower. Temperature sensors go by plain names such as chip and hotspot.
+lower. The graphs take a reading every second, or at the update interval
+when that is shorter; the panel changes at the update interval. Temperature
+sensors go by plain names such as chip and hotspot.
 
 ![The CPU, GPU, memory and network popups](docs/popups.png)
 
@@ -113,11 +112,11 @@ under *Panel Items* says why.
   Ringside runs `codex app-server` to ask for the limits.
 
 The ring shows the weekly limit for all models, over the time left until it
-resets: the days alone ("6d") until the last day, then hours and minutes.
-At 100% that time turns red, since it's how long the limit stays reached. If
-your plan also has a per-model weekly limit, the inner ring shows it; choose
-which under *Sensors*. Model limits are the ones Anthropic's usage reply
-lists, under the names it gives them, such as Fable.
+resets in its largest unit, such as "6d", "23h" or "59m"; the popup and the
+tooltip give the full time. At 100% that time turns red, since it's how long
+the limit stays reached. If your plan also has a per-model weekly limit, the
+inner ring shows it; choose which under *Sensors*. Model limits are the ones
+Anthropic's usage reply lists, under the names it gives them, such as Fable.
 
 A ring also turns red when its limit is on pace to run out before the reset,
 at the rate it has been used so far. When the last check failed, a small
