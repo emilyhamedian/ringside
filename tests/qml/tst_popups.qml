@@ -1490,6 +1490,29 @@ Item {
             }
         }
 
+        // The system popups' footers keep the System Monitor link and the
+        // configure button on one line, with no switch: the session
+        // starter's belongs to the Claude and Codex popups only.
+        function test_systemFooters_data() {
+            return [{ tag: "cpu", popup: "CpuPopup" }, { tag: "gpu", popup: "GpuPopup" },
+                    { tag: "memory", popup: "MemoryPopup" }, { tag: "network", popup: "NetworkPopup" }];
+        }
+
+        function test_systemFooters(data) {
+            const popup = load(data.popup, normal);
+            const footer = all(popup, i => i.systemMonitorShown !== undefined && i.position !== undefined)[0];
+            verify(footer.systemMonitorShown);
+            compare(all(footer, i => i.visualPosition !== undefined).length, 0, "no switch");
+            const link = all(footer, i => i.visible && i.text === "Open System Monitor")[0];
+            const button = all(footer, i => i.visible && i.icon !== undefined && i.icon.name === "configure")[0];
+            verify(link && button);
+            compare(footer.height, footer.topPadding + footer.bottomPadding + Math.max(link.implicitHeight, button.implicitHeight));
+            const middle = i => i.mapToItem(footer, Qt.point(0, i.height / 2)).y;
+            fuzzyCompare(middle(button), middle(link), 0.5);
+            compare(link.mapToItem(footer, Qt.point(0, 0)).x, footer.leftPadding + Kirigami.Units.largeSpacing);
+            compare(button.mapToItem(footer, Qt.point(button.width, 0)).x, footer.width - footer.rightPadding);
+        }
+
         function test_longTranslationsFit_data() {
             return [{ tag: "cpu", popup: "CpuPopup", monitor: normal }, { tag: "gpu", popup: "GpuPopup", monitor: normal },
                     { tag: "memory", popup: "MemoryPopup", monitor: normal }, { tag: "network", popup: "NetworkPopup", monitor: normal },

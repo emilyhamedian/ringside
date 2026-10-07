@@ -6,6 +6,5 @@
 from fake_usage import DAY, ok, report, starter, window
 
 report(sticks=False,
-       claude=ok(window(52, 2 * DAY + 21 * 3600, [(0, 52)]), session=None,
-                 starter=starter("waiting", next=0)),
-       codex=ok(window(24, 5 * DAY, [(0, 24)]), starter=starter("started", at=-2 * DAY)))
+       claude=ok(window(52, 2 * DAY + 21 * 3600, [(0, 52)]), session=None, starter=starter("waiting", next=2)),
+       codex=ok(window(24, 5 * DAY + 4 * 3600, [(0, 24)])))

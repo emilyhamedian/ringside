@@ -11,9 +11,10 @@ nothing goes over the network.
 
 Every entry carries a session starter, off unless the scenario gives one.
 --starter-set <id>=on|off switches it in the report printed (on reads as
-waiting and due now) unless the scenario passes sticks=False, and --start
-moves each switched-on starter that is due to confirming, as a send would.
-Nothing is remembered between runs.
+waiting and due now) unless the scenario passes sticks=False. --start
+reports each listed starter but a failed one as confirming, as a send would:
+the widget runs --start only for starters that are switched on and due, so
+the fake checks neither. Nothing is remembered between runs.
 """
 
 import json
@@ -68,7 +69,6 @@ def report(sticks=True, **entries):
             providers[name]["starter"] = starter("waiting", next=0) if value == "on" else starter()
     if "--start" in sys.argv:
         for entry in providers.values():
-            due = entry["starter"]
-            if due["enabled"] and due["next"] is not None and due["next"] <= NOW and due["state"] != "failed":
+            if entry["starter"]["state"] != "failed":
                 entry["starter"] = starter("confirming", at=0, next=300)
     print(json.dumps({"fetchedAt": NOW, "providers": providers}))

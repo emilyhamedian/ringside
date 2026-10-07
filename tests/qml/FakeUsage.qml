@@ -43,6 +43,17 @@ QtObject {
     property var statuses: ({ claude: { status: "ok", message: "" }, codex: { status: "ok", message: "" } })
     // Stands in for claudeInnerLimit and codexInnerLimit.
     property var innerChoices: ({ claude: "", codex: "" })
+    // The session starter per provider, as the helper reports it.
+    property var starters: ({
+        claude: { enabled: false, state: "off", at: null, next: null, reason: null },
+        codex: { enabled: false, state: "off", at: null, next: null, reason: null }
+    })
+    property var starterWanted: ({})
+    // Whether answerStarter() reports the switch changes asked for, or
+    // the switch positions as they were.
+    property bool starterSticks: true
+    // Every setStarter() call, as [id, on].
+    property var starterRequests: []
 
     readonly property bool claudePresent: present("claude")
     readonly property bool codexPresent: present("codex")
@@ -81,5 +92,31 @@ QtObject {
     }
 
     function refresh() {
+    }
+
+    function starter(id) {
+        return starters[id] ?? null;
+    }
+
+    function starterOn(id) {
+        return starterWanted[id] ?? starter(id)?.enabled === true;
+    }
+
+    function setStarter(id, on) {
+        starterRequests = starterRequests.concat([[id, on]]);
+        starterWanted = Object.assign({}, starterWanted, { [id]: on });
+    }
+
+    // Stands in for the helper's report after --starter-set.
+    function answerStarter() {
+        const next = Object.assign({}, starters);
+        if (starterSticks) {
+            for (const id in starterWanted) {
+                next[id] = { enabled: starterWanted[id], state: starterWanted[id] ? "waiting" : "off",
+                             at: null, next: starterWanted[id] ? createdAt + 3600 : null, reason: null };
+            }
+        }
+        starters = next;
+        starterWanted = {};
     }
 }
