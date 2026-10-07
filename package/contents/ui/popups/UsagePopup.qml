@@ -305,7 +305,8 @@ PopupPage {
 
         Tile {
             caption: i18nc("@title:group the current weekly window", "This week")
-            graphTop: i18nc("@info a percentage", "%1%", Format.percent(100))
+            // The rule's, so only while the graph draws one.
+            graphTop: week.placed ? i18nc("@info a percentage", "%1%", Format.percent(100)) : ""
             foot: popup.innerLimit !== null ? allModels : week.foot
             detail: {
                 const date = words.resetDate(popup.weekly);
