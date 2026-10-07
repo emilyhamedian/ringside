@@ -12,6 +12,14 @@ Mainly the two helpers Ringside runs:
   usage limits and can renew it, saving it back the way Claude Code does. For
   Codex it only checks that `~/.codex/auth.json` exists, then asks the Codex
   CLI.
+- With the session starter switched on, `usage.py` also runs the Claude Code
+  and Codex CLIs to send one word: `claude auth status` to check the login,
+  then `claude -p`, or `codex exec`. They run in an empty private folder,
+  `~/.local/state/ringside/work`, with an environment cut down to what they
+  need, so API keys and provider overrides in your session are not passed
+  on. Before running `claude` it may renew Claude Code's login as polling
+  does, holding the same lock, so the two never race on the single-use
+  refresh token.
 - `package/contents/code/ringside-info.sh` reads `/proc`, `/sys` and udev's
   database as your user.
 
@@ -26,3 +34,7 @@ Mainly the two helpers Ringside runs:
   a longer wait, Ringside waits that long, up to a day.
 - The Codex item talks only to `codex app-server`, running locally, which
   contacts OpenAI with the Codex CLI's own login.
+- The session starter, off by default, sends the word "Hi" through the
+  Claude Code or Codex CLI when a session or week ends, counted against your
+  limits like any message. To choose Codex's model it reads the Codex CLI's
+  model list in `~/.codex/models_cache.json`.
