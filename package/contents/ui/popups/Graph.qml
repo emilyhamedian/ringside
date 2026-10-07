@@ -9,10 +9,10 @@ import "../code/history.js" as History
 
 // A history graph: a filled area under the main series and an optional
 // dashed second series (upload under download), with no grid. Percentages
-// run 0 to 100 under the labelled 100 % rule the week graph shares
-// (LimitRule). A rate's top is its peak, which the tile's caption names,
-// or the floor its tile sets when the peak is lower (1 Mb/s for the link,
-// 1 MiB/s for a disk), so a near-idle line stays near the bottom.
+// run 0 to 100 under the 100 % rule the week graph shares (LimitRule).
+// A rate's top is its peak, or the floor its tile sets when the peak is lower (1 Mb/s for the link,
+// 1 MiB/s for a disk), so a near-idle line stays near the bottom. The
+// tile's caption line names the top at its end: "100%" or the peak.
 // A new sample redraws the line at once, each point a slot to the left;
 // nothing on the graph moves on its own.
 Item {
@@ -31,7 +31,7 @@ Item {
     property real fillOpacity: 0.15
 
     // The top sits where the rule would, with or without it, so a rate's
-    // peak keeps the same room under the caption as 100 % does.
+    // peak sits under the caption line as 100 % does.
     readonly property real topY: rule.limitY
     readonly property var mainPoints: pointsOf(values)
     readonly property var secondPoints: second ? pointsOf(secondValues) : []
@@ -47,8 +47,6 @@ Item {
         id: rule
         anchors.fill: parent
         visible: graph.ceiling
-        series: [graph.mainPoints, graph.secondPoints]
-        fades: false
     }
 
     Shape {

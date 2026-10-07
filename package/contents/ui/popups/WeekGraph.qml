@@ -9,8 +9,8 @@ import "../code/pace.js" as Pace
 import "../code/reset.js" as Reset
 
 // A weekly limit's use through its window: time from the window's start to
-// its reset across, 0 to 100 % up, between a faint floor and the labelled
-// 100 % rule the system graphs share (LimitRule), with a tick at the reset.
+// its reset across, 0 to 100 % up, between a faint floor and the 100 % rule
+// the system graphs share (LimitRule), with a tick at the reset.
 // The main series is filled; a second one, the model limit on the inner
 // ring, is dashed, as in Graph. The line ends at the last poll, so the empty
 // stretch to its right is the time left; only when the last poll is hours
@@ -301,13 +301,6 @@ Item {
         id: rule
         anchors.fill: parent
         visible: graph.placed
-        // The week so far lies to the left; the right end is still to come,
-        // though late in the week the marker for now can stand there.
-        preferEnd: true
-        // Last week isn't in the series, so the label waits for it to go.
-        held: ghostFade.running
-        series: [graph.mainPoints, graph.secondPoints, graph.projection,
-                 graph.stale ? [Qt.point(graph.markerX, rule.ruleY), Qt.point(graph.markerX, graph.height)] : []]
     }
 
     // The floor, so a low week reads against 0 %, and the reset's tick at

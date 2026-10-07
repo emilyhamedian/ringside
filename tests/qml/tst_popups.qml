@@ -274,7 +274,7 @@ Item {
             compare(line.mapToItem(popup, Qt.point(0, 0)).x, edge);
             compare(line.width, popup.width - 2 * edge);
             const headers = all(popup, i => i.visible && i.partsShown !== undefined);
-            const tiles = all(popup, i => i.visible && i.graphNote !== undefined);
+            const tiles = all(popup, i => i.visible && i.graphTop !== undefined);
             if (data.monitor === onlyAsleep) {
                 compare(headers.length, 0);
                 compare(tiles.length, 0);
@@ -745,22 +745,26 @@ Item {
         }
 
         function ruleOf(graph) {
-            return graph.children.filter(c => c.preferEnd !== undefined && c.limitY !== undefined)[0];
+            return graph.children.filter(c => c.lineColor !== undefined && c.limitY !== undefined)[0];
         }
 
-        function ruleLabel(rule) {
-            return rule.children.filter(c => typeof c.text === "string")[0];
-        }
-
+        // A graph tile's caption line: its caption, and what the graph's top
+        // stands for at its far end.
         function tileCaption(graph) {
-            const tile = ancestor(graph, i => i.graphNote !== undefined);
+            const tile = ancestor(graph, i => i.graphTop !== undefined);
             return all(tile, i => i.label !== undefined && i.detail !== undefined)[0];
         }
 
-        // No grid: a percentage graph has its labelled 100 % rule, with a
-        // full smallSpacing over the label, and a rate graph, which has no
-        // natural top, rises to its peak where that rule would be and names
-        // the peak in its caption.
+        function tileTop(graph) {
+            const tile = ancestor(graph, i => i.graphTop !== undefined);
+            return all(tile, i => i.label !== undefined && i.detail !== undefined)[1];
+        }
+
+        // No grid: a percentage graph has its 100 % rule, and a rate graph,
+        // which has no natural top, rises to its peak where that rule would
+        // be. The caption line names the top at its end, "100%" or the peak,
+        // and nothing is written on the graph, where a line could run
+        // through it.
         function test_graphsHaveARuleOrAPeak_data() {
             return [{ tag: "cpu", popup: "CpuPopup", ceilings: 1, peaks: 0 },
                     { tag: "gpu", popup: "GpuPopup", ceilings: 2, peaks: 0 },
@@ -779,27 +783,26 @@ Item {
                 const lines = all(g, i => i.visible && i.border !== undefined && i.radius !== undefined
                                           && !ancestor(i, a => a === rule));
                 compare(lines.length, 0, "no grid");
+                compare(all(g, i => typeof i.text === "string").length, 0, "nothing written on the graph");
                 const caption = tileCaption(g);
+                verify(caption.text.indexOf("peak") < 0 && caption.text.indexOf("%") < 0, caption.text);
+                const top = tileTop(g);
+                verify(top.visible);
                 if (g.ceiling) {
                     verify(rule.visible);
-                    const label = ruleLabel(rule);
-                    compare(label.text, localized("100%"));
-                    probe.font = label.font;
-                    probe.text = label.text;
-                    const inkTop = label.y + label.baselineOffset + probe.tightBoundingRect.y;
-                    verify(inkTop >= Kirigami.Units.smallSpacing - 1, "room over the label: " + inkTop);
-                    verify(caption.text.indexOf("peak") < 0, caption.text);
+                    compare(top.text, localized("100%"));
                 } else {
                     verify(!rule.visible);
-                    const top = g.mainPoints.concat(g.secondPoints).reduce((m, p) => Math.min(m, p.y), Infinity);
-                    fuzzyCompare(top, g.topY, 0.001, "the peak lands where 100 % would");
-                    verify(/ · peak \S+ \S+$/.test(caption.text), caption.text);
+                    const peak = g.mainPoints.concat(g.secondPoints).reduce((m, p) => Math.min(m, p.y), Infinity);
+                    fuzzyCompare(peak, g.topY, 0.001, "the peak lands where 100 % would");
+                    verify(/^peak \S+ \S+$/.test(top.text), top.text);
                 }
             });
         }
 
-        // The disk tiles name their peak in the caption, the way Throughput
-        // does, and nowhere else; before the first sample they say nothing.
+        // The disk tiles name their peak on the caption line, the way
+        // Throughput does, and nowhere else; before the first sample they
+        // say nothing.
         // Throughput's peak is in the header's unit, bits or bytes.
         function test_diskPeaksInTheCaption_data() {
             return [{ tag: "bits", bits: true }, { tag: "bytes", bits: false }];
@@ -811,21 +814,21 @@ Item {
                 return "peak " + r.value + " " + r.unit;
             };
             const seconds = "THROUGHPUT · 60 s";
-            const expected = {
-                Throughput: seconds + " · " + peak(normal.networkDownHistory.concat(normal.networkUpHistory), data.bits),
-                Read: "READ · " + peak(normal.diskReadHistory, false),
-                Write: "WRITE · " + peak(normal.diskWriteHistory, false)
-            };
+            const expected = [peak(normal.networkDownHistory.concat(normal.networkUpHistory), data.bits),
+                              peak(normal.diskReadHistory, false), peak(normal.diskWriteHistory, false)];
             normal.networkBits = data.bits;
             fresh.networkBits = data.bits;
             try {
                 const popup = load("NetworkPopup", normal);
-                const found = graphs(popup).map(tileCaption);
-                compare(found.map(c => c.text), [expected.Throughput, expected.Read, expected.Write]);
+                compare(graphs(popup).map(tileCaption).map(c => c.text), [seconds, "READ", "WRITE"]);
+                const tops = graphs(popup).map(tileTop);
+                compare(tops.map(c => c.text), expected);
+                verify(tops.every(c => c.visible));
                 verify(!texts(popup).some(t => t.indexOf("Peak") >= 0), JSON.stringify(texts(popup)));
 
-                const empty = graphs(load("NetworkPopup", fresh)).map(tileCaption);
-                compare(empty.map(c => c.text), [seconds, "READ", "WRITE"]);
+                const empty = graphs(load("NetworkPopup", fresh));
+                compare(empty.map(tileCaption).map(c => c.text), [seconds, "READ", "WRITE"]);
+                verify(empty.map(tileTop).every(c => !c.visible && c.text === ""));
             } finally {
                 normal.networkBits = true;
                 fresh.networkBits = true;
@@ -843,7 +846,7 @@ Item {
             fuzzyCompare(top, g.topY, 0.001, "the upload's peak lands at the top");
             verify(g.mainPoints.every(p => p.y > top), "the download stays under it");
             const r = Format.rate(up, uploading.networkBits);
-            verify(tileCaption(g).text.endsWith(" · peak " + r.value + " " + r.unit), tileCaption(g).text);
+            compare(tileTop(g).text, "peak " + r.value + " " + r.unit);
         }
 
         function test_rateCaptionsKeepTheirLabel_data() {
@@ -857,9 +860,10 @@ Item {
             return rows;
         }
 
-        // A third longer in every string, the rate tiles' captions stay
-        // inside their tiles at the page widths a popup takes: where a peak
-        // note doesn't fit, it is cut short, never the label before it.
+        // A third longer in every string, the rate tiles' caption lines stay
+        // inside their tiles at the page widths a popup takes, the peak
+        // apart from the caption: where they don't fit, the caption's span
+        // and then the peak are cut short, never the caption's label.
         function test_rateCaptionsKeepTheirLabel(data) {
             root.pseudo = true;
             try {
@@ -869,20 +873,32 @@ Item {
                 waitForRendering(popup);
                 compare(popup.width, data.width);
                 const captions = graphs(popup).map(tileCaption);
+                const tops = graphs(popup).map(tileTop);
                 compare(captions.length, 3);
-                verify(captions.some(c => c.truncated), "some note is cut short: " + captions.map(c => c.text).join(", "));
+                verify(captions.concat(tops).some(c => c.truncated),
+                       "something is cut short: " + captions.concat(tops).map(c => c.text).join(", "));
+                captions.forEach((c, i) => {
+                    const tile = ancestor(c, i => i.graphTop !== undefined);
+                    const span = t => {
+                        const left = t.mapToItem(tile, Qt.point(0, 0)).x;
+                        return [left, left + (t.elide !== Text.ElideNone ? t.width : Math.max(t.width, t.contentWidth))];
+                    };
+                    for (const t of [c, tops[i]]) {
+                        const [left, right] = span(t);
+                        verify(left >= tile.horizontalPadding - 0.5 && right <= tile.width - tile.horizontalPadding + 0.5,
+                               t.text + " at " + left + " to " + right + " in a tile " + tile.width + " wide");
+                    }
+                    const [a, b] = data.mirrored ? [span(tops[i]), span(c)] : [span(c), span(tops[i])];
+                    verify(a[1] <= b[0], c.text + " clear of " + tops[i].text + ": " + a + " " + b);
+                });
                 for (const c of captions) {
-                    const tile = ancestor(c, i => i.graphNote !== undefined);
-                    const left = c.mapToItem(tile, Qt.point(0, 0)).x;
-                    const drawn = c.elide !== Text.ElideNone ? c.width : Math.max(c.width, c.contentWidth);
-                    verify(left >= tile.horizontalPadding - 0.5 && left + drawn <= tile.width - tile.horizontalPadding + 0.5,
-                           c.text + " at " + left + " to " + (left + drawn) + " in a tile " + tile.width + " wide");
-                    // Where even the label and an ellipsis are wider than
-                    // the caption, nothing can keep the label whole; at the
-                    // page's own width every label fits.
+                    // Where even the label, and an ellipsis if it has more
+                    // to say, are wider than the caption, nothing can keep
+                    // the label whole; at the page's own width every label
+                    // fits.
                     const label = c.label.toLocaleUpperCase();
                     elideProbe.font = c.font;
-                    elideProbe.text = label + "…";
+                    elideProbe.text = label + (c.detail !== "" ? "…" : "");
                     if (elideProbe.advanceWidth > c.width) {
                         verify(data.width < Kirigami.Units.gridUnit * 20, label + " is " + elideProbe.advanceWidth + " wide in " + c.width);
                         continue;
@@ -908,29 +924,6 @@ Item {
                 const top = g.mainPoints.concat(g.secondPoints).reduce((m, p) => Math.min(m, p.y), Infinity);
                 verify(top > g.topY + (g.height - g.topY) / 2, "the line keeps low: " + top + " of " + g.height);
             });
-        }
-
-        // The rule's label keeps to its end unless a line runs through it
-        // there; preferEnd starts it at the right.
-        function test_ruleLabelEnd_data() {
-            const high = 2;
-            const low = 38;
-            return [{ tag: "empty", preferEnd: false, series: [], atStart: true },
-                    { tag: "emptyPreferEnd", preferEnd: true, series: [], atStart: false },
-                    { tag: "highAtTheStart", preferEnd: false, series: [[{ x: 0, y: high }, { x: 200, y: low }]], atStart: false },
-                    { tag: "highAtTheEnd", preferEnd: true, series: [[{ x: 0, y: low }, { x: 200, y: high }]], atStart: true },
-                    { tag: "highAtBothEnds", preferEnd: true, series: [[{ x: 0, y: high }, { x: 100, y: low }, { x: 200, y: high }]], atStart: false }];
-        }
-
-        function test_ruleLabelEnd(data) {
-            const loader = createTemporaryObject(host, root, { width: 200, height: 40 });
-            loader.setSource(Qt.resolvedUrl("../../package/contents/ui/popups/LimitRule.qml"),
-                             { preferEnd: data.preferEnd, series: data.series });
-            const rule = loader.item;
-            compare(rule.width, 200);
-            compare(rule.atStart, data.atStart);
-            const label = ruleLabel(rule);
-            compare(label.x, data.atStart ? 0 : rule.width - label.implicitWidth);
         }
 
         // The memory legend spans its bar with even gaps: Used at the bar's
@@ -959,20 +952,6 @@ Item {
             verify(Math.abs(end(entries[2]) - end(bar)) <= 1, "Free ends at the bar's end: " + end(entries[2]) + " " + end(bar));
             compare(gap(entries[0], entries[1]), gap(entries[1], entries[2]));
             verify(gap(entries[0], entries[1]) > Kirigami.Units.largeSpacing, "spread wider than the minimum spacing");
-        }
-
-        // A sparse line can run over the label between two points of which
-        // only the low one lies under it.
-        function test_ruleLabelSegment() {
-            const loader = createTemporaryObject(host, root, { width: 200, height: 40 });
-            loader.setSource(Qt.resolvedUrl("../../package/contents/ui/popups/LimitRule.qml"));
-            const rule = loader.item;
-            const x = rule.span + 4;
-            rule.series = [[{ x: 0, y: rule.height }, { x: x, y: 0 }]];
-            verify(rule.height * (x - rule.span) / x < rule.labelBottom, "the segment crosses the label's end above it");
-            compare(rule.atStart, false);
-            rule.series = [[{ x: 0, y: rule.height }, { x: x, y: rule.labelBottom * x / rule.span }]];
-            compare(rule.atStart, true, "a line that stays below keeps the label at the start");
         }
 
         function headerOf(popup) {
@@ -1014,7 +993,7 @@ Item {
         }
 
         function test_tilePadding(data) {
-            const tiles = all(load(data.popup, normal), i => i.visible && i.graphNote !== undefined);
+            const tiles = all(load(data.popup, normal), i => i.visible && i.graphTop !== undefined);
             verify(tiles.length > 0);
             tiles.forEach(tile => {
                 const caption = all(tile, i => i.label !== undefined && i.detail !== undefined)[0];
@@ -1030,7 +1009,7 @@ Item {
                 const capTop = caption.mapToItem(tile, Qt.point(0, caption.baselineOffset)).y - tile.capHeight;
                 // Rounding to whole pixels is the only slack.
                 fuzzyCompare(capTop, tile.verticalPadding + leading / 2, 0.5, tile.caption + " cap top");
-                const column = caption.parent;
+                const column = caption.parent.parent;
                 const last = Array.from(column.children[1].children).filter(c => c.visible).pop();
                 let foot;
                 if (tile.foot) {
@@ -1069,7 +1048,7 @@ Item {
                 compare(left(i), edge, String(i));
                 compare(right(i), popup.width - edge, String(i));
             });
-            const tiles = all(popup, i => i.visible && i.graphNote !== undefined);
+            const tiles = all(popup, i => i.visible && i.graphTop !== undefined);
             compare(Math.min(...tiles.map(left)), edge, "the tiles' near edge");
             compare(Math.max(...tiles.map(right)), popup.width - edge, "the tiles' far edge");
             const disk = all(popup, i => i.visible && i.label === "Disk")[0];
@@ -1291,7 +1270,7 @@ Item {
                 const caption = header.caption !== "" ? shownText(header, header.caption) : null;
                 const headline = readings(header).find(r => r.visible);
                 const top = header.mapToItem(popup, Qt.point(0, 0)).y;
-                const tiles = all(popup, i => i.visible && i.graphNote !== undefined)
+                const tiles = all(popup, i => i.visible && i.graphTop !== undefined)
                     .map(t => t.mapToItem(popup, Qt.point(0, 0)).y).filter(y => y > top);
                 return {
                     edges: [header.mapToItem(popup, Qt.point(0, 0)).x, popup.width - header.mapToItem(popup, Qt.point(header.width, 0)).x],

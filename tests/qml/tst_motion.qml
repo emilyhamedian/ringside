@@ -86,14 +86,6 @@ Item {
     }
 
     Component {
-        id: ruleComponent
-        LimitRule {
-            width: 200
-            height: 40
-        }
-    }
-
-    Component {
         id: weekComponent
         WeekGraph {
             width: 700
@@ -437,89 +429,6 @@ Item {
             frames.forEach((f, i) => compare(f, after, "frame " + i));
         }
 
-        // A sample that moves the 100 % label to the graph's other end moves
-        // it at once, in full view: the system graphs have no motion.
-        function test_ruleLabelMovesAtOnceInAGraph() {
-            const g = createTemporaryObject(graphComponent, root, { values: Array(12).fill(0) });
-            const rule = root.all(g, i => i.shownAtStart !== undefined)[0];
-            const label = rule.children.find(c => c.text !== undefined);
-            compare(label.x, 0);
-            let frames = [];
-            createTemporaryObject(samplerComponent, graphs, { sample: () => frames.push([label.x, label.opacity]) });
-            wait(50);
-            frames = [];
-            g.values = [100, 100, 100].concat(Array(9).fill(0));
-            compare(rule.atStart, false);
-            const end = rule.width - label.implicitWidth;
-            compare(label.x, end, "moved at once");
-            wait(Math.max(3 * Kirigami.Units.shortDuration, 200));
-            verify(frames.length > 2, "frames sampled: " + frames.length);
-            frames.forEach((f, i) => compare(f, [end, 1], "frame " + i));
-        }
-
-        // On its own, as the week graph uses it, a rule whose label new
-        // readings move to the other end fades it out there and back in at
-        // its new end; a resize moves it at once.
-        function test_ruleLabelFadesToItsOtherEnd() {
-            const rule = createTemporaryObject(ruleComponent, root);
-            const label = rule.children.find(c => c.text !== undefined);
-            compare(label.x, 0);
-            rule.series = [[{ x: 0, y: 1 }, { x: 200, y: 39 }]];
-            compare(rule.atStart, false, "decided at once");
-            compare(label.x, 0, "still at the start");
-            tryVerify(() => label.opacity < 1, 1000, "fading");
-            compare(label.x, 0, "while it fades out");
-            tryCompare(label, "x", rule.width - label.implicitWidth, 1000);
-            tryCompare(label, "opacity", 1, 1000);
-
-            rule.series = [[{ x: 0, y: 1 }, { x: 180, y: 1 }]];
-            tryCompare(label, "x", 0, 1000);
-            tryCompare(label, "opacity", 1, 1000);
-            rule.width = 400;
-            compare(rule.atStart, false);
-            compare(label.x, rule.width - label.implicitWidth, "resized: moved at once");
-            compare(label.opacity, 1);
-        }
-
-        // A resize that leaves the label where it was, as a popup's first
-        // layout does, still lets the next readings that move it fade it.
-        function test_ruleLabelFadesAfterAResize() {
-            const rule = createTemporaryObject(ruleComponent, root);
-            const label = rule.children.find(c => c.text !== undefined);
-            rule.width = 300;
-            compare(label.x, 0);
-            wait(10);
-            rule.series = [[{ x: 0, y: 1 }, { x: 300, y: 39 }]];
-            compare(rule.atStart, false);
-            compare(label.x, 0, "still at the start");
-            tryVerify(() => label.opacity < 1, 1000, "fading");
-            tryCompare(label, "x", rule.width - label.implicitWidth, 1000);
-            tryCompare(label, "opacity", 1, 1000);
-        }
-
-        // A popup opens with its 100 % labels where the readings put them,
-        // without a fade, however the rule's first readings and its first
-        // width arrive as the popup is made.
-        function test_ruleLabelStillAsAPopupOpens_data() {
-            return [{ tag: "cpu", popup: "CpuPopup" }, { tag: "memory", popup: "MemoryPopup" }, { tag: "gpu", popup: "GpuPopup" }];
-        }
-        function test_ruleLabelStillAsAPopupOpens(data) {
-            // Made before the monitor, so it goes first.
-            const loader = createTemporaryObject(popupHost, root);
-            const monitor = createTemporaryObject(monitorComponent, graphs);
-            let labels = [];
-            const seen = [];
-            createTemporaryObject(samplerComponent, graphs, { sample: () => labels.forEach(l => seen.push(l.opacity)) });
-            loader.setSource(Qt.resolvedUrl("../../package/contents/ui/popups/" + data.popup + ".qml"), { monitor: monitor });
-            const rules = root.all(loader.item, i => i.shownAtStart !== undefined);
-            labels = rules.map(r => r.children.find(c => c.text !== undefined));
-            verify(labels.length > 0, "a 100 % label");
-            // A few frames even at Plasma's Instant speed.
-            wait(Math.max(3 * Kirigami.Units.shortDuration, 100));
-            verify(seen.length > 0, "frames sampled");
-            verify(seen.every(o => o === 1), "never dimmed: " + JSON.stringify(seen));
-            rules.forEach(r => compare(r.shownAtStart, r.atStart));
-        }
     }
 
     TestCase {
@@ -651,33 +560,6 @@ Item {
             verify(dot.opacity < 1, "the new week's dot fades in");
             tryCompare(g, "ghostOpacity", 0, 2000);
             tryCompare(dot, "opacity", 1, 1000);
-        }
-
-        // An early reset while a run-out to the right end is shown: the
-        // 100 % label, at the left clear of that run-out, stays there whole
-        // while the last week fades out, and only then moves to the right
-        // for the new week.
-        function test_newWeekHoldsTheLabelUntilTheOldOneHasGone() {
-            const g = make({ window: window([[start, 0], [start + 3 * day, 44]], 44), pollAt: start + 3 * day,
-                             nowMs: (start + 3 * day) * 1000 });
-            const rule = root.all(g, i => i.shownAtStart !== undefined)[0];
-            const label = rule.children.find(c => c.text !== undefined);
-            compare(g.runOutOpacity, 1);
-            verify(rule.shownAtStart, "clear of the run-out");
-            const seen = [];
-            createTemporaryObject(samplerComponent, weeks, { sample: () => seen.push([g.ghostOpacity, rule.shownAtStart, label.opacity]) });
-            g.window = { resetsAt: start + 2 * week, windowSeconds: week, percent: 1, history: [[start + week + 3600, 1]] };
-            g.pollAt = start + week + 3600;
-            g.nowMs = g.pollAt * 1000;
-            verify(!rule.atStart, "the new week alone would have it at the right");
-            tryCompare(g, "ghostOpacity", 0, 2000);
-            tryCompare(rule, "shownAtStart", false, 1000);
-            tryCompare(label, "opacity", 1, 1000);
-            const held = seen.filter(([ghost]) => ghost > 0);
-            verify(held.length > 3);
-            verify(held.every(([, atStart, opacity]) => atStart && opacity === 1), "held: " + JSON.stringify(held));
-            const dips = seen.filter(([, , opacity], i) => opacity < 1 && (i === 0 || seen[i - 1][2] === 1));
-            compare(dips.length, 1, "moved once: " + JSON.stringify(seen));
         }
 
         // A reset time that jitters by a second between polls is the same

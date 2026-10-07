@@ -200,6 +200,7 @@ PopupPage {
                 Layout.columnSpan: parent.columns
                 caption: i18nc("@title:group", "Usage")
                 graphSeconds: section.monitor.historySeconds
+                graphTop: i18nc("@info a percentage", "%1%", Format.percent(100))
 
                 Graph {
                     Layout.fillWidth: true
