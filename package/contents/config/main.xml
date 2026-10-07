@@ -12,7 +12,7 @@
 
   <group name="General">
     <entry name="updateInterval" type="Int">
-      <label>Milliseconds between readings</label>
+      <label>Milliseconds between panel updates</label>
       <default>1000</default>
       <min>500</min>
       <max>10000</max>
