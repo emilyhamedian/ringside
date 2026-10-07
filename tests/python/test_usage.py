@@ -151,6 +151,18 @@ class CodexParsing(Isolated):
         with self.assertRaises(RuntimeError):
             usage.parse_codex({"rateLimits": {"primary": None, "secondary": None}})
 
+    def test_a_week_without_its_share_is_an_error(self):
+        for used in (None, "soon", "absent"):
+            with self.subTest(used=used):
+                result = fixture("codex_rate_limits.json")
+                week = result["rateLimitsByLimitId"]["codex"]["primary"]
+                if used == "absent":
+                    del week["usedPercent"]
+                else:
+                    week["usedPercent"] = used
+                with self.assertRaises(RuntimeError):
+                    usage.parse_codex(result)
+
     def test_window_length_is_the_picked_windows(self):
         result = fixture("codex_rate_limits.json")
         result["rateLimitsByLimitId"]["codex"]["primary"]["windowDurationMins"] = 1440
@@ -219,6 +231,18 @@ class ClaudeParsing(Isolated):
         usage_body = fixture("claude_usage.json")
         usage_body["limits"] = []
         self.assertEqual(usage.parse_claude(usage_body)["scoped"], [])
+
+    # Read as 0%, it would let the starter send past a reached weekly limit.
+    def test_a_weekly_window_without_its_share_is_an_error(self):
+        for utilization in (None, "soon", "absent"):
+            with self.subTest(utilization=utilization):
+                usage_body = fixture("claude_usage.json")
+                if utilization == "absent":
+                    del usage_body["seven_day"]["utilization"]
+                else:
+                    usage_body["seven_day"]["utilization"] = utilization
+                with self.assertRaises(RuntimeError):
+                    usage.parse_claude(usage_body)
 
     def test_missing_weekly_is_an_error(self):
         with self.assertRaises(RuntimeError):
