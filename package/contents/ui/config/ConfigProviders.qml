@@ -9,8 +9,7 @@ import org.kde.kcmutils as KCM
 import org.kde.plasma.plasmoid
 
 // The settings for the Claude and Codex items. Switching the items on and
-// ordering them stays on Panel Items, and the session starter's switch in
-// their popups.
+// ordering them stays on Panel Items.
 KCM.SimpleKCM {
     id: page
 
@@ -97,14 +96,6 @@ KCM.SimpleKCM {
         Note {
             visible: page.claudeHasLimits || page.codexHasLimits
             text: i18nc("@info", "Automatic shows the per-model limit when your plan has just one. With more than one, pick it here.")
-        }
-
-        Item {
-            Kirigami.FormData.isSection: true
-        }
-
-        Note {
-            text: i18nc("@info", "The switch that starts a new session or week when one ends is in the Claude and Codex popups.")
         }
     }
 }
