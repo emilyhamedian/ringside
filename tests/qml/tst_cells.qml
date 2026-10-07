@@ -251,6 +251,11 @@ Item {
         RingGauge {}
     }
 
+    Component {
+        id: metricsComponent
+        FontMetrics {}
+    }
+
     // A Claude mark in a middle `room` wide.
     Component {
         id: markComponent
@@ -555,6 +560,39 @@ Item {
             }
         }
 
+        // Where its ring has the room, the Codex cloud is drawn 1.3 times a
+        // name's line, larger than the Claude star, and hollow: its outline,
+        // filled by the nonzero rule, leaves the cloud's middle clear round
+        // the prompt. Under 16 device pixels, where its line breaks up, it is
+        // left out though the room would take it.
+        function test_codexMarkIsALargerOutline() {
+            const small = nameIn(breezeSized(cell("codex", { ring: 22, textShown: true, twoLines: true })));
+            verify(small.markSize >= Kirigami.Units.iconSizes.small / 2 && small.markSize <= small.room
+                   && small.markSize * root.Screen.devicePixelRatio < 16, "a mark the room would take: " + small.markSize);
+            verify(!small.visible, "too small to read");
+
+            const name = nameIn(breezeSized(cell("codex", { ring: 46, textShown: true, twoLines: true })));
+            const shape = mark(name);
+            verify(name.visible);
+            const metrics = createTemporaryObject(metricsComponent, root, { font: label(name).font });
+            const scaled = Math.round(metrics.height * 1.2 * 1.3);
+            verify(scaled < Math.floor(name.room) - 2, "room for the scale: " + scaled + " in " + name.room);
+            compare(name.markSize, scaled);
+            // Whether the mark draws at a point in its viewBox units: the
+            // ring with and without it differ there.
+            const drawn = grabImage(name);
+            shape.visible = false;
+            const bare = grabImage(name);
+            shape.visible = true;
+            const draws = (x, y) => {
+                const p = shape.mapToItem(name, Qt.point(x, y));
+                return !Qt.colorEqual(drawn.pixel(Math.floor(p.x), Math.floor(p.y)), bare.pixel(Math.floor(p.x), Math.floor(p.y)));
+            };
+            verify(draws(11.5, 0.05), "the cloud's line");
+            verify(!draws(12, 5), "the cloud's middle, clear");
+            verify(draws(15, 15.4), "the prompt");
+        }
+
         function test_nameFitsTheHole_data() {
             const rows = [];
             for (let ring = 16; ring <= 52; ring += 2) {
@@ -593,7 +631,8 @@ Item {
                     const what = k.item + (k.inner ? " with inner ring" : "") + " at " + factor.toFixed(2) + ": ";
                     if (name.usage) {
                         const size = name.markSize;
-                        const fits = size >= Kirigami.Units.iconSizes.small / 2 && size <= g.centreWidth;
+                        const fits = size >= Kirigami.Units.iconSizes.small / 2 && size <= g.centreWidth
+                                     && size * root.Screen.devicePixelRatio >= (name.art.minimum ?? 0);
                         compare(name.visible, fits, what + "mark " + size + " in " + g.centreWidth);
                         continue;
                     }

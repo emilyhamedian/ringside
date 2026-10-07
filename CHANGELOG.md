@@ -77,7 +77,8 @@ follows [Semantic Versioning](https://semver.org/).
   sleeping GPU stays one line.
 - Translators are told that CPU, GPU and MEM sit inside a ring in at most
   three characters.
-- The Codex ring shows the Codex mark instead of the OpenAI logo.
+- The Codex ring shows the Codex mark, its cloud drawn as an outline, instead
+  of the OpenAI logo.
 
 ### Removed
 
