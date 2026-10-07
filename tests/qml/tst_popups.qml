@@ -167,6 +167,26 @@ Item {
         diskWriteHistory: []
     }
 
+    // A drive that reports no temperature.
+    FakeMonitor {
+        id: diskUnheated
+        diskTemperature: NaN
+    }
+
+    // Every whole disk's I/O, and a volume picked by its own name.
+    FakeMonitor {
+        id: allDisks
+        diskDevice: "all"
+        volumeLabel: "home"
+    }
+
+    // A volume with no name, and no disk size yet.
+    FakeMonitor {
+        id: unnamedVolume
+        volumeLabel: ""
+        diskSize: NaN
+    }
+
     // Measures a Text's ink, which a Text doesn't report.
     TextMetrics {
         id: probe
@@ -217,7 +237,11 @@ Item {
                 { tag: "gpuLongNames", popup: "GpuPopup", monitor: longGpuNames },
                 { tag: "memory", popup: "MemoryPopup", monitor: normal },
                 { tag: "memoryWithoutPressureOrSwap", popup: "MemoryPopup", monitor: bare },
-                { tag: "network", popup: "NetworkPopup", monitor: normal }
+                { tag: "network", popup: "NetworkPopup", monitor: normal },
+                { tag: "disk", popup: "DiskPopup", monitor: normal },
+                { tag: "diskWithoutTemperature", popup: "DiskPopup", monitor: diskUnheated },
+                { tag: "allDisks", popup: "DiskPopup", monitor: allDisks },
+                { tag: "diskUnnamedVolume", popup: "DiskPopup", monitor: unnamedVolume }
             ];
         }
         function test_popup(data) {
@@ -411,13 +435,10 @@ Item {
 
         function test_popupsSpellTheTemperatureUnit(data) {
             normal.fahrenheit = data.fahrenheit;
-            for (const popup of ["CpuPopup", "GpuPopup"]) {
+            for (const popup of ["CpuPopup", "GpuPopup", "DiskPopup"]) {
                 const found = texts(load(popup, normal));
                 verify(found.includes(data.unit), popup + " " + JSON.stringify(found));
             }
-            // The disk caption sets the unit against the number, as the readings do.
-            const disk = texts(load("NetworkPopup", normal)).filter(t => t.indexOf("°") >= 0);
-            compare(disk, [Format.temperature(normal.diskTemperature, data.fahrenheit) + data.unit]);
             normal.fahrenheit = false;
         }
 
@@ -477,9 +498,10 @@ Item {
 
         function test_temperatureUnitSizeAndGap(data) {
             normal.fahrenheit = data.fahrenheit;
-            const inkGaps = { CpuPopup: [], GpuPopup: [] };
-            for (const [popup, cpuTemperature] of [["CpuPopup", 61], ["CpuPopup", 60], ["GpuPopup", 61]]) {
+            const inkGaps = { CpuPopup: [], GpuPopup: [], DiskPopup: [] };
+            for (const [popup, cpuTemperature] of [["CpuPopup", 61], ["CpuPopup", 60], ["GpuPopup", 61], ["DiskPopup", 61]]) {
                 normal.cpuTemperature = cpuTemperature;
+                normal.diskTemperature = cpuTemperature;
                 const temperatures = readings(load(popup, normal)).filter(r => r.visible && r.degreeUnit !== "");
                 verify(temperatures.length > 0, popup);
                 temperatures.forEach(r => {
@@ -500,7 +522,10 @@ Item {
                 compare(gaps.length, 2);
                 fuzzyCompare(gaps[1], gaps[0], 0.5);
             }
+            compare(inkGaps.DiskPopup.length, 1);
+            fuzzyCompare(inkGaps.DiskPopup[0], inkGaps.CpuPopup[0], 0.5, "the disk's as the CPU's");
             normal.cpuTemperature = 61;
+            normal.diskTemperature = 39;
             normal.fahrenheit = false;
         }
 
@@ -622,7 +647,8 @@ Item {
         // width; only process names keep the monospace face.
         function test_numbersInSans_data() {
             return [{ tag: "cpu", popup: "CpuPopup" }, { tag: "gpu", popup: "GpuPopup" },
-                    { tag: "memory", popup: "MemoryPopup" }, { tag: "network", popup: "NetworkPopup" }];
+                    { tag: "memory", popup: "MemoryPopup" }, { tag: "network", popup: "NetworkPopup" },
+                    { tag: "disk", popup: "DiskPopup" }];
         }
 
         function test_numbersInSans(data) {
@@ -770,7 +796,8 @@ Item {
             return [{ tag: "cpu", popup: "CpuPopup", ceilings: 1, peaks: 0 },
                     { tag: "gpu", popup: "GpuPopup", ceilings: 2, peaks: 0 },
                     { tag: "memory", popup: "MemoryPopup", ceilings: 1, peaks: 0 },
-                    { tag: "network", popup: "NetworkPopup", ceilings: 0, peaks: 3 }];
+                    { tag: "network", popup: "NetworkPopup", ceilings: 0, peaks: 1 },
+                    { tag: "disk", popup: "DiskPopup", ceilings: 0, peaks: 2 }];
         }
 
         // Wide enough for every peak in full: the test's fallback font runs
@@ -804,36 +831,37 @@ Item {
             });
         }
 
-        // The disk tiles name their peak on the caption line, the way
-        // Throughput does, and nowhere else; before the first sample they
-        // say nothing.
-        // Throughput's peak is in the header's unit, bits or bytes.
-        function test_diskPeaksInTheCaption_data() {
+        // The rate tiles name their peak on the caption line and nowhere
+        // else; before the first sample they say nothing. Throughput's peak
+        // is in the header's unit, bits or bytes; a disk's always in bytes.
+        function test_ratePeaksInTheCaption_data() {
             return [{ tag: "bits", bits: true }, { tag: "bytes", bits: false }];
         }
 
-        function test_diskPeaksInTheCaption(data) {
+        function test_ratePeaksInTheCaption(data) {
             const peak = (samples, bits) => {
                 const r = Format.rate(Math.max(...samples), bits);
                 return "peak " + r.value + " " + r.unit;
             };
             const seconds = "THROUGHPUT · 60 s";
-            const expected = [peak(normal.networkDownHistory.concat(normal.networkUpHistory), data.bits),
-                              peak(normal.diskReadHistory, false), peak(normal.diskWriteHistory, false)];
             normal.networkBits = data.bits;
             fresh.networkBits = data.bits;
             try {
-                // Wide enough for the peaks, as in test_graphsHaveARuleOrAPeak.
-                const popup = load("NetworkPopup", normal, false, Kirigami.Units.gridUnit * 30);
-                compare(graphs(popup).map(tileCaption).map(c => c.text), [seconds, "READ", "WRITE"]);
-                const tops = graphs(popup).map(tileTop);
-                compare(tops.map(c => c.text), expected);
-                verify(tops.every(c => c.visible));
-                verify(!texts(popup).some(t => t.indexOf("Peak") >= 0), JSON.stringify(texts(popup)));
+                for (const [popupName, captions, expected] of [
+                        ["NetworkPopup", [seconds], [peak(normal.networkDownHistory.concat(normal.networkUpHistory), data.bits)]],
+                        ["DiskPopup", ["READ", "WRITE"], [peak(normal.diskReadHistory, false), peak(normal.diskWriteHistory, false)]]]) {
+                    // Wide enough for the peaks, as in test_graphsHaveARuleOrAPeak.
+                    const popup = load(popupName, normal, false, Kirigami.Units.gridUnit * 30);
+                    compare(graphs(popup).map(tileCaption).map(c => c.text), captions, popupName);
+                    const tops = graphs(popup).map(tileTop);
+                    compare(tops.map(c => c.text), expected, popupName);
+                    verify(tops.every(c => c.visible), popupName);
+                    verify(!texts(popup).some(t => t.indexOf("Peak") >= 0), JSON.stringify(texts(popup)));
 
-                const empty = graphs(load("NetworkPopup", fresh));
-                compare(empty.map(tileCaption).map(c => c.text), [seconds, "READ", "WRITE"]);
-                verify(empty.map(tileTop).every(c => !c.visible && c.text === ""));
+                    const empty = graphs(load(popupName, fresh));
+                    compare(empty.map(tileCaption).map(c => c.text), captions, popupName + " before a sample");
+                    verify(empty.map(tileTop).every(c => !c.visible && c.text === ""), popupName + " before a sample");
+                }
             } finally {
                 normal.networkBits = true;
                 fresh.networkBits = true;
@@ -857,10 +885,19 @@ Item {
         function test_rateCaptionsKeepTheirLabel_data() {
             const rows = [];
             // A 360 px page at gridUnit 18, as at 1.25 with Breeze, and the
-            // 280 px of gridUnit 14, here in the larger font.
-            for (const width of [Kirigami.Units.gridUnit * 20, Math.round(Kirigami.Units.gridUnit * 20 * 14 / 18)]) {
-                rows.push({ tag: width + " px", width: width, mirrored: false });
-                rows.push({ tag: width + " px mirrored", width: width, mirrored: true });
+            // 280 px of gridUnit 14, here in the larger font. Throughput's
+            // tile spans the page, and at its own width can have room for
+            // everything; the disk's half-width tiles and the narrow page
+            // always cut something.
+            const widths = [Kirigami.Units.gridUnit * 20, Math.round(Kirigami.Units.gridUnit * 20 * 14 / 18)];
+            for (const [tag, popup, count] of [["network", "NetworkPopup", 1], ["disk", "DiskPopup", 2]]) {
+                for (const width of widths) {
+                    const squeezed = popup === "DiskPopup" || width === widths[1];
+                    rows.push({ tag: tag + " " + width + " px", popup: popup, count: count, width: width, squeezed: squeezed,
+                                mirrored: false });
+                    rows.push({ tag: tag + " " + width + " px mirrored", popup: popup, count: count, width: width, squeezed: squeezed,
+                                mirrored: true });
+                }
             }
             return rows;
         }
@@ -875,15 +912,17 @@ Item {
             root.pseudo = true;
             try {
                 const loader = createTemporaryObject(data.mirrored ? mirroredHost : host, root, { width: data.width });
-                loader.setSource(Qt.resolvedUrl("../../package/contents/ui/popups/NetworkPopup.qml"), { monitor: normal });
+                loader.setSource(Qt.resolvedUrl("../../package/contents/ui/popups/" + data.popup + ".qml"), { monitor: normal });
                 const popup = loader.item;
                 waitForRendering(popup);
                 compare(popup.width, data.width);
                 const captions = graphs(popup).map(tileCaption);
                 const tops = graphs(popup).map(tileTop);
-                compare(captions.length, 3);
-                verify(captions.some(c => c.truncated) || tops.some(t => !t.visible),
-                       "something is cut short: " + captions.concat(tops).map(c => c.text).join(", "));
+                compare(captions.length, data.count);
+                if (data.squeezed) {
+                    verify(captions.some(c => c.truncated) || tops.some(t => !t.visible),
+                           "something is cut short: " + captions.concat(tops).map(c => c.text).join(", "));
+                }
                 for (const t of tops) {
                     verify(!t.visible || !t.truncated && t.width >= Math.ceil(t.implicitWidth),
                            t.text + " whole: " + t.width + " for " + t.implicitWidth);
@@ -930,8 +969,7 @@ Item {
         // 1 Mb/s for throughput and 1 MiB/s for a disk, so an idle link or
         // disk draws its noise low rather than at full height.
         function test_rateGraphFloors() {
-            const popup = load("NetworkPopup", idle);
-            const found = graphs(popup);
+            const found = graphs(load("NetworkPopup", idle)).concat(graphs(load("DiskPopup", idle)));
             compare(found.map(g => g.maximum), [125000, 1048576, 1048576]);
             found.forEach(g => {
                 const top = g.mainPoints.concat(g.secondPoints).reduce((m, p) => Math.min(m, p.y), Infinity);
@@ -1002,7 +1040,8 @@ Item {
         // the bottom as its capitals are from the top.
         function test_tilePadding_data() {
             return [{ tag: "cpu", popup: "CpuPopup" }, { tag: "gpu", popup: "GpuPopup" },
-                    { tag: "memory", popup: "MemoryPopup" }, { tag: "network", popup: "NetworkPopup" }];
+                    { tag: "memory", popup: "MemoryPopup" }, { tag: "network", popup: "NetworkPopup" },
+                    { tag: "disk", popup: "DiskPopup" }];
         }
 
         function test_tilePadding(data) {
@@ -1036,10 +1075,11 @@ Item {
             });
         }
 
-        // The header, the tiles' boxes, the Disk caption, the dividers and
-        // the process list all start and end on one edge.
+        // The header, the tiles' boxes, the dividers and the process list
+        // all start and end on one edge.
         function test_contentEdges_data() {
-            const popups = [["cpu", "CpuPopup"], ["gpu", "GpuPopup"], ["memory", "MemoryPopup"], ["network", "NetworkPopup"]];
+            const popups = [["cpu", "CpuPopup"], ["gpu", "GpuPopup"], ["memory", "MemoryPopup"], ["network", "NetworkPopup"],
+                            ["disk", "DiskPopup"]];
             const rows = [];
             popups.forEach(([tag, popup]) => {
                 rows.push({ tag: tag, popup: popup, mirrored: false });
@@ -1064,11 +1104,6 @@ Item {
             const tiles = all(popup, i => i.visible && i.graphTop !== undefined);
             compare(Math.min(...tiles.map(left)), edge, "the tiles' near edge");
             compare(Math.max(...tiles.map(right)), popup.width - edge, "the tiles' far edge");
-            const disk = all(popup, i => i.visible && i.label === "Disk")[0];
-            if (data.popup === "NetworkPopup") {
-                verify(disk);
-                compare(data.mirrored ? right(disk) : left(disk), data.mirrored ? popup.width - edge : edge, "the Disk caption");
-            }
         }
 
         // Dividers in a popup's body are inset to the content's edge and
@@ -1185,6 +1220,152 @@ Item {
             const expected = "Since boot ↓ " + down.value + " " + down.unit + " · ↑ " + up.value + " " + up.unit;
             const found = texts(load("NetworkPopup", normal));
             verify(found.includes(expected), JSON.stringify(found));
+        }
+
+        // Network and disk each have a popup of their own: nothing of the
+        // other's shows in either, and each is titled for its own item.
+        function test_networkAndDiskApart() {
+            const free = Format.bytes(normal.volumeFree, true);
+            const freeText = free.value + " " + free.unit + " free on /";
+            const net = load("NetworkPopup", normal);
+            const netTexts = texts(net);
+            compare(headerOf(net).title, "Network");
+            for (const t of ["Network", normal.networkConnection, "THROUGHPUT · 60 s"]) {
+                verify(netTexts.includes(t), t + " in " + JSON.stringify(netTexts));
+            }
+            verify(netTexts.some(t => t.startsWith("Since boot")), JSON.stringify(netTexts));
+            for (const t of ["Disk", "DISK", "READ", "WRITE", normal.diskDevice, freeText]) {
+                verify(!netTexts.some(s => s.indexOf(t) >= 0), t + " in the network popup: " + JSON.stringify(netTexts));
+            }
+            verify(!netTexts.some(t => t.indexOf("°") >= 0), "no disk temperature: " + JSON.stringify(netTexts));
+            compare(graphs(net).length, 1, "the throughput graph alone");
+
+            const disk = load("DiskPopup", normal);
+            const diskTexts = texts(disk);
+            compare(headerOf(disk).title, "Disk");
+            for (const t of ["Disk", normal.diskDevice, "READ", "WRITE"]) {
+                verify(diskTexts.includes(t), t + " in " + JSON.stringify(diskTexts));
+            }
+            for (const t of ["Network", "THROUGHPUT", "Since boot", normal.networkConnection, normal.networkAddress,
+                             normal.networkInterface, "Down", "Up"]) {
+                verify(!diskTexts.some(s => s.indexOf(t) >= 0), t + " in the disk popup: " + JSON.stringify(diskTexts));
+            }
+            compare(all(disk, i => i.pairWidth !== undefined).length, 0, "no network rates");
+            compare(graphs(disk).length, 2, "the read and write graphs");
+        }
+
+        // The popups read everything from the Monitor, which keeps one Sensor
+        // per ksystemstats id; neither subscribes anything of its own.
+        function test_ratePopupsSubscribeNothing_data() {
+            return [{ tag: "network", popup: "NetworkPopup" }, { tag: "disk", popup: "DiskPopup" }];
+        }
+
+        function test_ratePopupsSubscribeNothing(data) {
+            const found = [];
+            const walk = o => {
+                const held = o.data;
+                if (!held || typeof held === "function") {
+                    return;
+                }
+                for (let i = 0; i < held.length; ++i) {
+                    if (held[i].sensorId !== undefined || held[i].connectedSources !== undefined) {
+                        found.push(held[i]);
+                    }
+                    walk(held[i]);
+                }
+            };
+            walk(load(data.popup, normal));
+            compare(found.length, 0);
+        }
+
+        // The disk header names the device, then its size and the volume's
+        // free space on the line under it, and has the drive's temperature
+        // where the CPU header has its own, or nothing there when the drive
+        // reports none.
+        function test_diskHeader_data() {
+            const bytes = v => { const b = Format.bytes(v, true); return b.value + " " + b.unit; };
+            return [{ tag: "nvme", monitor: normal, subtitle: "nvme0n1",
+                      detail: bytes(normal.diskSize) + " · " + bytes(normal.volumeFree) + " free on /", temperature: 39 },
+                    { tag: "noTemperature", monitor: diskUnheated, subtitle: "nvme0n1",
+                      detail: bytes(diskUnheated.diskSize) + " · " + bytes(diskUnheated.volumeFree) + " free on /", temperature: NaN },
+                    { tag: "allDisks", monitor: allDisks, subtitle: "all disks",
+                      detail: bytes(allDisks.diskSize) + " · " + bytes(allDisks.volumeFree) + " free on home", temperature: 39 },
+                    { tag: "unnamedVolume", monitor: unnamedVolume, subtitle: "nvme0n1",
+                      detail: bytes(unnamedVolume.volumeFree) + " free", temperature: 39 }];
+        }
+
+        function test_diskHeader(data) {
+            const header = headerOf(load("DiskPopup", data.monitor));
+            compare(header.title, "Disk");
+            compare(header.subtitle, data.subtitle);
+            compare(header.detail, data.detail);
+            verify(shownText(header, header.subtitle), "the device is shown");
+            verify(shownText(header, header.detail), "the size and free space are shown");
+            compare(gauges(header).filter(g => g.visible).length, 0, "no ring");
+            const headline = readings(header).filter(r => r.visible);
+            if (Number.isFinite(data.temperature)) {
+                compare(headline.length, 1);
+                compare(headline[0].value, Format.temperature(data.temperature, false));
+                compare(headline[0].degreeUnit, "C");
+                compare(headline[0].pointSize, Kirigami.Theme.defaultFont.pointSize * 1.7, "the CPU header's size");
+            } else {
+                compare(headline.length, 0, "nothing in place of a temperature");
+                verify(!texts(header).some(t => t.indexOf("°") >= 0 || t === "–"), JSON.stringify(texts(header)));
+            }
+            // A caption line kept with nothing in it says nothing to a screen reader.
+            compare(all(header, i => i.visible && i.text === "" && i.font !== undefined && !i.Accessible.ignored).length, 0);
+        }
+
+        // The disk's temperature sits where the CPU's does: on the content's
+        // far edge, its digits as far below the title's baseline, though the
+        // disk header has a third line and no ring. Plain and mirrored.
+        function test_diskHeadlineWhereTheCpuHasIts_data() {
+            return [{ tag: "plain", mirrored: false }, { tag: "mirrored", mirrored: true }];
+        }
+
+        function test_diskHeadlineWhereTheCpuHasIts(data) {
+            const place = popupName => {
+                const popup = load(popupName, normal, data.mirrored);
+                const header = headerOf(popup);
+                const title = shownText(header, header.title);
+                const headline = readings(header).find(r => r.visible && r.degreeUnit !== "");
+                verify(title && headline, popupName);
+                const x = i => i.mapToItem(popup, Qt.point(0, 0)).x;
+                return { below: headline.mapToItem(header, Qt.point(0, headline.baselineOffset)).y - baselineY(title, header),
+                         edge: data.mirrored ? x(headline) : popup.width - x(headline) - headline.width,
+                         titleEdge: data.mirrored ? popup.width - x(title) - title.width : x(title) };
+            };
+            const cpu = place("CpuPopup");
+            const disk = place("DiskPopup");
+            fuzzyCompare(disk.below, cpu.below, 1, "the digits against the title");
+            compare(disk.edge, cpu.edge, "on the far edge");
+            compare(disk.titleEdge, Math.round(Kirigami.Units.largeSpacing * 2), "the title on the near edge");
+        }
+
+        // The drive's temperature takes the level colours, judged in Celsius,
+        // as the CPU's and the GPUs' do.
+        function test_diskTemperatureTakesTheLevelColours_data() {
+            return [{ tag: "74", celsius: 74, tone: "text" }, { tag: "75", celsius: 75, tone: "neutral" },
+                    { tag: "90", celsius: 90, tone: "negative" }, { tag: "90 plain", celsius: 90, plain: true, tone: "text" },
+                    { tag: "96 in Fahrenheit", celsius: 96, fahrenheit: true, tone: "negative" }];
+        }
+
+        function test_diskTemperatureTakesTheLevelColours(data) {
+            const expected = data.tone === "negative" ? Kirigami.Theme.negativeTextColor
+                           : data.tone === "neutral" ? Kirigami.Theme.neutralTextColor : Kirigami.Theme.textColor;
+            normal.highlightTemperatures = !data.plain;
+            normal.fahrenheit = !!data.fahrenheit;
+            normal.diskTemperature = data.celsius;
+            try {
+                const headline = readings(headerOf(load("DiskPopup", normal))).find(r => r.visible);
+                compare(headline.value, Format.temperature(data.celsius, !!data.fahrenheit));
+                compare(headline.degreeUnit, data.fahrenheit ? "F" : "C");
+                compare(String(parts(headline).number.color), String(expected), "the digits as drawn");
+            } finally {
+                normal.highlightTemperatures = true;
+                normal.fahrenheit = false;
+                normal.diskTemperature = 39;
+            }
         }
 
         // Each awake GPU opens with the CPU popup's header: its usage in the
@@ -1514,7 +1695,8 @@ Item {
         // mirrored.
         function test_systemFooters_data() {
             const rows = [];
-            for (const [tag, popup] of [["cpu", "CpuPopup"], ["gpu", "GpuPopup"], ["memory", "MemoryPopup"], ["network", "NetworkPopup"]]) {
+            for (const [tag, popup] of [["cpu", "CpuPopup"], ["gpu", "GpuPopup"], ["memory", "MemoryPopup"], ["network", "NetworkPopup"],
+                                        ["disk", "DiskPopup"]]) {
                 rows.push({ tag: tag, popup: popup, mirrored: false });
                 rows.push({ tag: tag + "Mirrored", popup: popup, mirrored: true });
             }
@@ -1547,6 +1729,7 @@ Item {
         function test_longTranslationsFit_data() {
             return [{ tag: "cpu", popup: "CpuPopup", monitor: normal }, { tag: "gpu", popup: "GpuPopup", monitor: normal },
                     { tag: "memory", popup: "MemoryPopup", monitor: normal }, { tag: "network", popup: "NetworkPopup", monitor: normal },
+                    { tag: "disk", popup: "DiskPopup", monitor: normal }, { tag: "allDisks", popup: "DiskPopup", monitor: allDisks },
                     { tag: "cpuLongModel", popup: "CpuPopup", monitor: longModel }];
         }
 

@@ -247,6 +247,23 @@ TestCase {
         return Array.from(m.data).find(child => child.pendingSource !== undefined);
     }
 
+    // The default route is re-read only while the network popup shows it;
+    // the disk popup, which once shared that popup, has no use for it.
+    function test_theRouteIsReadForTheNetworkPopupOnly() {
+        const route = Array.from(monitor.data).find(child => child.engine === "executable" && child.interval === 3000);
+        verify(route, "the monitor owns the route's DataSource");
+        for (const open of ["", "cpu", "memory", "disk"]) {
+            monitor.openPopup = open;
+            compare(route.connectedSources.length, 0, "with " + (open || "nothing") + " open");
+        }
+        monitor.openPopup = "network";
+        compare(route.connectedSources.length, 1);
+        verify(route.connectedSources[0].endsWith(" route"), route.connectedSources[0]);
+        tryCompare(monitor, "routeInterface", "eth9", 10000, "the stub's route arrives");
+        monitor.openPopup = "";
+        compare(route.connectedSources.length, 0);
+    }
+
     function stopTimers(m) {
         for (const child of m.data) {
             if (child.running !== undefined && child.repeat !== undefined) {

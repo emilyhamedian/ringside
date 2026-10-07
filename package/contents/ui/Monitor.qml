@@ -519,8 +519,7 @@ Item {
     P5Support.DataSource {
         engine: "executable"
         interval: 3000
-        connectedSources: monitor.openPopup === "network" || monitor.openPopup === "disk"
-                          ? [helper.command("route")] : []
+        connectedSources: monitor.openPopup === "network" ? [helper.command("route")] : []
         onNewData: (source, data) => {
             if (data["exit code"] === 0) {
                 const name = String(data.stdout || "").trim();

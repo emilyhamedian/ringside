@@ -56,7 +56,7 @@ PlasmoidItem {
         openItem = item;
         openCell = cell;
         popupContent.setSource(Qt.resolvedUrl("popups/" + ({ cpu: "CpuPopup", gpu: "GpuPopup", memory: "MemoryPopup",
-                                                             network: "NetworkPopup", disk: "NetworkPopup",
+                                                             network: "NetworkPopup", disk: "DiskPopup",
                                                              claude: "UsagePopup", codex: "UsagePopup" })[item] + ".qml"),
                                Items.isUsage(item) ? { monitor: monitor, item: item } : { monitor: monitor });
         popup.visible = true;
