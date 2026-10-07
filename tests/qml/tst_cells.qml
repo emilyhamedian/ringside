@@ -9,8 +9,8 @@ import "../../package/contents/ui/code/style.js" as Style
 
 // The panel's cells on their own, with FakeMonitor's readings: the
 // ring and its stroke, the name or mark inside it, the readings beside it in
-// every state, their faces and colours, the width each line takes, and the
-// rates on the same lines. It names no Strip, popup or settings page, so it
+// every state, their faces and colours, the room each line keeps whatever it
+// reads, and the rates on the same lines in their fixed slots. It names no Strip, popup or settings page, so it
 // loads on Plasma 6.0, and it runs again in German and Egyptian Arabic.
 Item {
     id: root
@@ -45,6 +45,13 @@ Item {
     }
     function decimal(v) {
         return Number(v).toLocaleString(Qt.locale(), "f", 1);
+    }
+    function fixed(v, decimals) {
+        return Number(v).toLocaleString(Qt.locale(), "f", decimals);
+    }
+    // A C-locale text, "8.40 Mb/s", in the locale's digits and decimal mark.
+    function localized(text) {
+        return text.replace(/\d+(?:\.(\d+))?/g, (m, decimals) => fixed(Number(m), decimals ? decimals.length : 0));
     }
     function percent(v) {
         return digits(v) + "%";
@@ -130,13 +137,6 @@ Item {
         }
     }
 
-    Component {
-        id: readoutComponent
-        Readout {
-            lines: ({ first: "40%", level: 0, second: "", heat: 0, parts: [] })
-        }
-    }
-
     // A text of its own, to compare a drawn one with.
     Component {
         id: probeComponent
@@ -208,29 +208,6 @@ Item {
             Kirigami.Theme.inherit: false
             Kirigami.Theme.focusColor: "#ff00ff"
         }
-    }
-
-    // A cell with its content declared inside it, as the strip's would be
-    // without a Loader.
-    Component {
-        id: declaredCellComponent
-        PanelCell {
-            item: "cpu"
-            contentItem: declaredBlock
-            settleDelay: 400
-            relayoutWindow: 1
-
-            Item {
-                id: declaredBlock
-                implicitWidth: 50
-                implicitHeight: 34
-            }
-        }
-    }
-
-    Component {
-        id: signalSpyComponent
-        SignalSpy {}
     }
 
     Component {
@@ -749,6 +726,8 @@ Item {
                 { tag: "memory", item: "memory", lines: [percent(42), decimal(13.4) + "G"], tones: ["text", "dim"] },
                 { tag: "memory 77 %", item: "memory", set: { memoryPercent: 77 }, lines: [percent(77), decimal(13.4) + "G"], tones: ["neutral", "dim"] },
                 { tag: "memory in MiB", item: "memory", set: { memoryUsed: 900 * mib, memoryPercent: 3 }, lines: [percent(3), digits(900) + "M"], tones: ["text", "dim"] },
+                { tag: "memory in three figures", item: "memory", set: { memoryUsed: 9.6 * gib, memoryPercent: 60 }, lines: [percent(60), fixed(9.6, 2) + "G"],
+                  tones: ["text", "dim"] },
                 { tag: "dual gpu", item: "gpu", lines: [percent(12), degrees(48)], tones: ["text", "dim"], absent: degrees(41) },
                 { tag: "dual gpu hot", item: "gpu", outer: { usage: 90, temperature: 92 }, lines: [percent(90), degrees(92)], tones: ["negative", "negative"] },
                 { tag: "dual gpu warm", item: "gpu", outer: { temperature: 80 }, lines: [percent(12), degrees(80)], tones: ["text", "neutral"] },
@@ -757,14 +736,14 @@ Item {
                 { tag: "intel only", item: "gpu", outer: { reportsTemperature: false, kind: "integrated" }, inner: { present: false },
                   lines: [percent(12), ""], tones: ["text", "dim"] },
                 { tag: "claude", item: "claude", lines: [percent(52), digits(2) + "d"], tones: ["text", "dim"] },
-                { tag: "claude 81 %", item: "claude", week: [81, 5 * 3600 + 12 * 60], lines: [percent(81), digits(5) + "h " + digits(12) + "m"],
+                { tag: "claude 81 %", item: "claude", week: [81, 5 * 3600 + 12 * 60], lines: [percent(81), digits(5) + "h"],
                   tones: ["neutral", "dim"] },
                 // At this pace the week runs out before its reset.
                 { tag: "claude 81 % runs out", item: "claude", week: [81, 2 * day + 21 * 3600], lines: [percent(81), digits(2) + "d"],
                   tones: ["negative", "dim"] },
-                { tag: "claude last day", item: "claude", week: [40, 23 * 3600 + 5 * 60], lines: [percent(40), digits(23) + "h " + digits(5) + "m"],
+                { tag: "claude last day", item: "claude", week: [40, 23 * 3600 + 5 * 60], lines: [percent(40), digits(23) + "h"],
                   tones: ["text", "dim"] },
-                { tag: "claude 95 %", item: "claude", week: [95, 5 * 3600 + 12 * 60], lines: [percent(95), digits(5) + "h " + digits(12) + "m"],
+                { tag: "claude 95 %", item: "claude", week: [95, 5 * 3600 + 12 * 60], lines: [percent(95), digits(5) + "h"],
                   tones: ["negative", "dim"] },
                 { tag: "claude minutes", item: "claude", week: [40, 12 * 60], lines: [percent(40), digits(12) + "m"], tones: ["text", "dim"] },
                 { tag: "claude reset passed", item: "claude", week: [40, -600], lines: [percent(40), "–"], tones: ["text", "dim"] },
@@ -774,8 +753,8 @@ Item {
         }
 
         // The ring's own reading, heavier and in the ring's colour, over a
-        // dimmer one in its own heat colour. A countdown is a day count from
-        // a day out, then hours and minutes.
+        // dimmer one in its own heat colour. A countdown keeps to its largest
+        // unit, and memory to three figures.
         function test_lines(data) {
             apply(data.item, data);
             const c = cell(data.item);
@@ -796,17 +775,17 @@ Item {
         }
 
         // An asleep GPU or an Intel one has no second reading; the cell
-        // keeps its height and its first line stays put. Stacked, the blank
-        // second line keeps its row; on one line it goes with its dot. Only
-        // the width follows the text.
+        // keeps its size and its first line stays put. The blank second line
+        // keeps its room, and on one line its dot goes.
         function test_line2KeepsItsSpace(data) {
             const c = cell("gpu", { twoLines: data.twoLines, ring: data.twoLines ? 34 : 26 });
             const measure = () => {
                 const first = line(c, "first");
                 const second = line(c, "second");
                 const at = first.mapToItem(c, Qt.point(0, 0));
-                return { height: c.implicitHeight, firstX: at.x, firstY: at.y, firstHeight: first.height,
-                         second: data.twoLines ? [second.visible, second.mapToItem(c, Qt.point(0, 0)).y, second.height] : [] };
+                const secondAt = second.mapToItem(c, Qt.point(0, 0));
+                return { width: c.implicitWidth, height: c.implicitHeight, firstX: at.x, firstY: at.y, firstHeight: first.height,
+                         second: [second.visible, secondAt.x, secondAt.y, second.width, second.height] };
             };
             const awake = measure();
             compare(line(c, "second").text, degrees(48));
@@ -817,7 +796,6 @@ Item {
             settle();
             compare([line(c, "first").text, line(c, "second").text], ["off", ""]);
             compare(readingsIn(c).map(t => t.text), ["off"], "no dot beside nothing");
-            compare(line(c, "second").visible, data.twoLines);
             compare(measure(), awake, "asleep");
             monitor.gpuOuter.phase = "live";
             monitor.gpuOuter.reportsTemperature = false;
@@ -831,7 +809,7 @@ Item {
                 { tag: "cpu", item: "cpu", texts: [percent(23), "·", degrees(61)] },
                 { tag: "memory", item: "memory", texts: [percent(42), "·", decimal(13.4) + "G"] },
                 { tag: "claude", item: "claude", texts: [percent(52), "·", digits(2) + "d"] },
-                { tag: "claude last day", item: "claude", week: [52, 5 * 3600 + 12 * 60], texts: [percent(52), "·", digits(5) + "h " + digits(12) + "m"] },
+                { tag: "claude last day", item: "claude", week: [52, 5 * 3600 + 12 * 60], texts: [percent(52), "·", digits(5) + "h"] },
                 { tag: "gpu asleep", item: "gpu", asleep: true, texts: ["off"] }
             ];
         }
@@ -858,301 +836,261 @@ Item {
             }
         }
 
-        function test_mirroredCountdownReadsFromTheRight_data() {
-            const set = zero => text => text.replace(/[0-9]/g, d => String.fromCharCode(zero + Number(d)));
-            return [{ tag: "Arabic-Indic digits, as in Egypt", digits: set(0x660) },
-                    { tag: "Latin digits, as in Israel", digits: set(0x30) },
-                    { tag: "Extended Arabic-Indic digits, as in Iran", digits: set(0x6f0) }];
-        }
-
-        // Mirrored, the countdown's first part is rightmost, read first as in
-        // the popup's header, whatever digits the locale has. A probe draws
-        // each part as a link, so linkAt() says which one lies where.
-        function test_mirroredCountdownReadsFromTheRight(data) {
-            const holder = keep(mirrorComponent.createObject(root));
-            const parts = [{ value: data.digits("23"), unit: "h" }, { value: data.digits("5"), unit: "m" }];
-            const readout = keep(readoutComponent.createObject(holder, {
-                lines: { first: "40%", level: 0, second: "", heat: 0, parts: parts }
-            }));
-            waitForRendering(readout);
-            const second = line(readout, "second");
-            const probe = keep(probeComponent.createObject(holder, { font: second.font, y: 50, width: 200, textFormat: Text.StyledText }));
-            probe.text = second.text.split(" ").map((part, i) => '<a href="' + i + '">' + part + "</a>").join(" ");
-            waitForRendering(probe);
-            const order = [];
-            for (let x = 0; x < probe.width; x += 0.5) {
-                const link = probe.linkAt(x, probe.height / 2);
-                if (link !== "" && order[order.length - 1] !== link) {
-                    order.push(link);
-                }
-            }
-            compare(order.join(","), "1,0", "the parts from left to right");
-        }
-
         function test_countdownText_data() {
             const rows = [];
-            for (const [what, left, parts] of [["days", 6 * day + 23 * 3600, [[6, "d"]]],
-                                               ["last day", 23 * 3600 + 5 * 60, [[23, "h"], [5, "m"]]],
-                                               ["minutes", 12 * 60, [[12, "m"]]]]) {
+            for (const [what, left, text] of [["days", 6 * day + 23 * 3600, [6, "d"]],
+                                              ["last day", 23 * 3600 + 5 * 60, [23, "h"]],
+                                              ["minutes", 12 * 60, [12, "m"]]]) {
                 for (const mirrored of [false, true]) {
-                    rows.push({ tag: what + (mirrored ? " mirrored" : ""), left: left, parts: parts, mirrored: mirrored });
+                    rows.push({ tag: what + (mirrored ? " mirrored" : ""), left: left, text: text, mirrored: mirrored });
                 }
             }
             return rows;
         }
 
         // A countdown is plain text in the face of the other second lines,
-        // its units as large as its digits, as in "11.2G" or "61°", and its
-        // parts a space apart. Mirrored, a right-to-left mark leads it and
-        // the space, so the days come first from the right. Its room counts
-        // every digit as the widest, as every line's does.
+        // its largest unit alone, as large as its digits, as in "11.2G" or
+        // "61°", mirrored or not. Its room is that of two of the widest
+        // digits and the widest unit, whatever it reads.
         function test_countdownText(data) {
             setWeek("claude", [52, data.left]);
             const holder = data.mirrored ? keep(mirrorComponent.createObject(root)) : root;
             const c = keep(usageComponent.createObject(holder, { monitor: monitor, item: "claude" }));
             waitForRendering(c);
             const second = line(c, "second");
-            const mark = data.mirrored ? "\u200f" : "";
             compare(second.textFormat, Text.PlainText);
-            compare(second.text, mark + data.parts.map(([value, unit]) => root.digits(value) + unit).join(mark + " "));
+            compare(second.text, root.digits(data.text[0]) + data.text[1]);
             verify(second.contentWidth <= second.width, second.contentWidth + " in " + second.width);
 
             const readout = root.find(c, i => i.textWidth !== undefined);
             const face = readout.face.plain.font;
             compare([second.font.family, second.font.pointSize, second.font.weight], [face.family, face.pointSize, face.weight],
                     "the face of a temperature or memory line");
-            compare(readout.rooms[1], readout.face.room(readout.face.plain, [second.text]), "the room of its widest digits");
-            const probe = keep(probeComponent.createObject(root, { font: second.font, textFormat: Text.PlainText,
-                                                                   text: readout.face.widestDigits(readout.face.plain, second.text) }));
-            verify(readout.rooms[1] >= Math.ceil(probe.implicitWidth), "the widest digits take " + probe.implicitWidth + " in " + readout.rooms[1]);
+            compare(readout.rooms[1], readout.face.room(readout.face.plain, ["d", "h", "m"].map(unit => root.digits(10) + unit)),
+                    "the room of two figures and a unit");
             compare(root.findAll(readout, i => i.textFormat !== undefined).length, 3, "the two lines and the dot, nothing hidden to measure");
         }
 
-        function test_widthFollowsCharacters_data() {
-            const states = {
-                cpu: [{ set: { cpuUsage: 5 } }, { set: { cpuUsage: 8 } }, { set: { cpuUsage: 11, cpuTemperature: 11 } },
-                      { set: { cpuUsage: 88, cpuTemperature: 88 } }, { set: { cpuUsage: 100, cpuTemperature: 1 } },
-                      { set: { cpuUsage: 100, cpuTemperature: 9 } }, { set: { cpuUsage: NaN, cpuTemperature: NaN } },
-                      { set: { fahrenheit: true, cpuUsage: 100, cpuTemperature: 149 } }],
-                memory: [{ set: { memoryPercent: 11, memoryUsed: 1.11 * gib } }, { set: { memoryPercent: 88, memoryUsed: 8.88 * gib } },
-                         { set: { memoryPercent: 1, memoryUsed: 111 * mib } }, { set: { memoryPercent: 8, memoryUsed: 888 * mib } },
-                         { set: { memoryPercent: 100, memoryUsed: 1023 * mib } }, { set: { memoryPercent: NaN, memoryUsed: NaN } }],
-                gpu: [{ outer: { usage: 11, temperature: 11 } }, { outer: { usage: 88, temperature: 88 } },
-                      { outer: { usage: 5 } }, { outer: { usage: 9 } }, { outer: { phase: "asleep" }, inner: { present: false } },
-                      { outer: { phase: "live", reportsTemperature: false } }],
-                claude: [{ week: [11, 6 * day + 23 * 3600] }, { week: [88, day + 11 * 3600] }, { week: [5, 5 * 3600 + 12 * 60] },
-                         { week: [8, 9 * 3600 + 59 * 60] }, { week: [100, 59 * 60] }, { week: [100, 10 * 60] },
-                         { week: [NaN, 2 * day] }, { week: null }],
-                network: [{ set: { networkDown: 111e3 / 8, networkUp: 888e3 / 8 } }, { set: { networkDown: 888e3 / 8, networkUp: 111e3 / 8 } },
-                          { set: { networkDown: 11.1e6 / 8, networkUp: 88.8e6 / 8 } }, { set: { networkDown: 88.8e6 / 8, networkUp: 11.1e6 / 8 } },
-                          { set: { networkDown: 999 / 8, networkUp: 1 / 8 } }, { set: { networkDown: 0, networkUp: NaN } },
-                          { set: { networkDown: 888e9 / 8, networkUp: 1.1e12 / 8 } }],
-                disk: [{ set: { diskRead: 11.1 * mib, diskWrite: 88.8 * mib } }, { set: { diskRead: 88.8 * mib, diskWrite: 11.1 * mib } },
-                       { set: { diskRead: 1023, diskWrite: 1023 * 1024 } }, { set: { diskRead: 1000, diskWrite: 1000 * 1024 } },
-                       { set: { diskRead: 0, diskWrite: NaN } }, { set: { diskRead: 99.9 * gib, diskWrite: 1023 * 1024 ** 4 } }]
+        // Readings at their extremes, item by item: { set, outer, inner,
+        // week (see apply), shows: texts drawn, in ASCII }.
+        function extremes() {
+            return {
+                cpu: [{ set: { cpuUsage: 0, cpuTemperature: 9 }, shows: ["0%", "9°"] },
+                      { set: { cpuUsage: 5, cpuTemperature: 105 }, shows: ["5%", "105°"] },
+                      { set: { cpuUsage: 100, cpuTemperature: 1 }, shows: ["100%", "1°"] },
+                      { set: { cpuUsage: NaN, cpuTemperature: NaN }, shows: ["–"] },
+                      { set: { fahrenheit: true, cpuUsage: 100, cpuTemperature: 149 }, shows: ["100%", "300°"] },
+                      { set: { fahrenheit: false, cpuUsage: 11, cpuTemperature: 48 }, shows: ["11%", "48°"] }],
+                memory: [{ set: { memoryPercent: 0, memoryUsed: 0 }, shows: ["0%", "0B"] },
+                         { set: { memoryPercent: 1, memoryUsed: 999 * mib }, shows: ["1%", "999M"] },
+                         { set: { memoryPercent: 6, memoryUsed: 1000 * mib }, shows: ["6%", "0.98G"] },
+                         { set: { memoryPercent: 60, memoryUsed: 9.6 * gib }, shows: ["60%", "9.60G"] },
+                         { set: { memoryPercent: 88, memoryUsed: 13.4 * gib }, shows: ["88%", "13.4G"] },
+                         { set: { memoryPercent: 100, memoryUsed: 1023 * gib }, shows: ["100%", "1.00T"] },
+                         { set: { memoryPercent: NaN, memoryUsed: NaN }, shows: ["–"] }],
+                gpu: [{ outer: { usage: 0, temperature: 9 }, shows: ["0%", "9°"] },
+                      { outer: { usage: 100, temperature: 105 }, shows: ["100%", "105°"] },
+                      { outer: { phase: "asleep" }, shows: ["3%", "41°"] },
+                      { inner: { phase: "asleep" }, shows: ["off"] },
+                      { outer: { phase: "live", usage: 7 }, inner: { phase: "live" }, shows: ["7%"] },
+                      { outer: { reportsTemperature: false }, inner: { present: false }, shows: ["7%"] }],
+                claude: [{ week: [0, 6 * day + 23 * 3600], shows: ["0%", "6d"] },
+                         { week: [5, day + 11 * 3600], shows: ["5%", "1d"] },
+                         { week: [88, 23 * 3600 + 59 * 60], shows: ["88%", "23h"] },
+                         { week: [100, 59 * 60], shows: ["100%", "59m"] },
+                         { week: [100, 5 * 60], shows: ["100%", "5m"] },
+                         { week: [40, -600], shows: ["40%", "–"] },
+                         { week: [NaN, 2 * day], shows: ["–", "2d"] },
+                         { week: null, shows: ["–"] }],
+                network: [{ set: { networkDown: 0, networkUp: 0 }, shows: ["0.00"] },
+                          { set: { networkDown: 999 / 8, networkUp: 62.1e3 / 8 }, shows: ["1.00", "62.1"] },
+                          { set: { networkDown: 999.4e3 / 8, networkUp: 999.5e3 / 8 }, shows: ["999", "1.00"] },
+                          { set: { networkDown: 8.4e6 / 8, networkUp: 900e6 / 8 }, shows: ["8.40", "900"] },
+                          { set: { networkDown: 1023 * 1024 ** 3, networkUp: NaN }, shows: ["–"] }],
+                disk: [{ set: { diskRead: 0, diskWrite: 0 }, shows: ["0.00", "KiB/s"] },
+                       { set: { diskRead: 4.1 * 1024, diskWrite: 353 * 1024 }, shows: ["4.10", "353"] },
+                       { set: { diskRead: 1000 * 1024, diskWrite: 1023 * 1024 }, shows: ["0.98", "1.00", "MiB/s"] },
+                       { set: { diskRead: 412 * mib, diskWrite: 1023 * mib }, shows: ["412", "GiB/s"] },
+                       { set: { diskRead: 1023 * gib, diskWrite: NaN }, shows: ["TiB/s", "–"] }]
             };
+        }
+
+        function test_widthIsFixed_data() {
             const rows = [];
-            for (const item in states) {
-                rows.push({ tag: item + " two lines", item: item, twoLines: true, states: states[item] });
-                rows.push({ tag: item + " one line", item: item, twoLines: false, states: states[item] });
+            const states = extremes();
+            for (const item of ["cpu", "memory", "gpu", "claude", "codex", "network", "disk"]) {
+                for (const twoLines of [true, false]) {
+                    for (const mirrored of [false, true]) {
+                        rows.push({ tag: item + (twoLines ? " two lines" : " one line") + (mirrored ? " mirrored" : ""),
+                                    item: item, twoLines: twoLines, mirrored: mirrored, states: states[item === "codex" ? "claude" : item] });
+                    }
+                }
             }
             return rows;
         }
 
-        // A cell is as wide as its readings, with every digit counted as the
-        // widest: readings that differ only in their digits take the same
-        // width, the text ends where the cell does, give or take the dim
-        // line's overhang, and every text fits the box it is drawn in.
-        function test_widthFollowsCharacters(data) {
+        // A cell keeps one width whatever its readings: each line takes the
+        // room of the widest text it can show, "100%" for every ring and
+        // "off" too for the GPU, three figures for memory and the rates, and
+        // two for a countdown, so no text in it moves or overruns its box
+        // from 0 to 100 %, 9 to 105 degrees, an idle link to 1023 GiB/s, a
+        // GPU asleep or handing over, or a countdown from 6d to its reset.
+        function test_widthIsFixed(data) {
             const rate = data.item === "network" || data.item === "disk";
-            const c = cell(data.item, rate ? { singleRow: !data.twoLines } : { twoLines: data.twoLines, ring: data.twoLines ? 34 : 26 });
-            const height = c.implicitHeight;
+            const holder = data.mirrored ? mirrorComponent.createObject(root) : root;
+            const component = rate ? rateComponent : data.item === "claude" || data.item === "codex" ? usageComponent : ringComponent;
+            const c = keep(component.createObject(holder, Object.assign({ monitor: monitor, item: data.item },
+                rate ? { singleRow: !data.twoLines } : { twoLines: data.twoLines, ring: data.twoLines ? 34 : 26 })));
+            if (data.mirrored) {
+                keep(holder);
+            }
+            waitForRendering(c);
+            if (data.item === "cpu" || data.item === "memory" || data.item === "gpu") {
+                // Layout only: the GPU's readings change at once (see tst_motion).
+                c.animated = false;
+            }
             const readout = root.find(c, i => i.textWidth !== undefined);
-            const widths = {};
+            if (readout) {
+                const face = readout.face;
+                const percent = root.percent(100);
+                const firsts = data.item === "gpu" ? [percent, "off"] : [percent];
+                const seconds = data.item === "cpu" || data.item === "gpu" ? [root.degrees(100)]
+                              : data.item === "memory" ? [root.decimal(10) + "M", root.digits(100) + "M"]
+                              : ["d", "h", "m"].map(unit => root.digits(10) + unit);
+                compare(readout.rooms[0], face.room(face.strong, firsts), "the first line keeps room for " + firsts.join(", "));
+                verify(readout.rooms[1] >= face.room(face.plain, seconds), "the second line keeps room for " + seconds.join(", "));
+                compare(c.implicitWidth, gauge(c).width + Kirigami.Units.largeSpacing + readout.textWidth, "the ring, its gap and the readings' room");
+            }
+            // Where each reading is anchored: a text's start, end or middle,
+            // as it is aligned, and its row.
+            const texts = readingsIn(c);
+            const place = t => {
+                const align = t.effectiveHorizontalAlignment;
+                const p = t.mapToItem(c, Qt.point(align === Text.AlignRight ? t.width : align === Text.AlignHCenter ? t.width / 2 : 0, 0));
+                return [p.x, p.y, t.height].join(",");
+            };
+            const places = texts.map(place);
+            const width = c.implicitWidth;
+            const height = c.implicitHeight;
+            const seen = [];
             for (const state of data.states) {
                 apply(data.item, state);
                 settle();
                 const shown = readingsIn(c);
-                const key = root.shape(shown.map(t => t.text));
                 const what = "showing " + shown.map(t => t.text).join(" ");
-                compare(c.implicitHeight, height, what);
+                seen.push(...shown.map(t => t.text));
+                compare(c.implicitWidth, width, what + ": the width");
+                compare(c.implicitHeight, height, what + ": the height");
+                texts.forEach((t, i) => compare(place(t), places[i], what + ": " + (t.objectName || t.text) + " stays put"));
+                shown.forEach(t => verify(texts.includes(t), what + ": " + t.text + " was there from the start"));
                 shown.forEach(t => verify(t.contentWidth <= t.width, what + ": " + t.text + " is " + t.contentWidth + " wide in " + t.width));
-                // Where the text ends: a right-aligned one at its box's end.
-                // Rounding up, the room's and the layout's, and the last
-                // glyph's ink counted a pixel high leave under three pixels.
-                const end = Math.max(...shown.map(t => t.mapToItem(c, Qt.point(0, 0)).x
-                                                      + (t.effectiveHorizontalAlignment === Text.AlignRight ? t.width : t.contentWidth)));
-                verify(c.implicitWidth - end < 3 && end - c.implicitWidth <= Kirigami.Units.smallSpacing,
-                       what + ": the text ends at " + end + ", the cell at " + c.implicitWidth);
-                if (readout) {
-                    compare(c.implicitWidth, gauge(c).width + Kirigami.Units.largeSpacing + readout.implicitWidth - readout.overhang,
-                            what + ": the width the layout gives the readings");
+                // Stacked, a ring's readings keep to the ring, so a short
+                // one leaves its room after it.
+                if (readout && data.twoLines) {
+                    const first = line(c, "first");
+                    compare(first.effectiveHorizontalAlignment, data.mirrored ? Text.AlignRight : Text.AlignLeft, what);
                 }
-                widths[key] = widths[key] ?? c.implicitWidth;
-                compare(c.implicitWidth, widths[key], what + " is as wide as " + key + " was");
             }
-            verify(Object.keys(widths).length < data.states.length, "some readings differ only in their digits: " + JSON.stringify(widths));
+            for (const text of data.states.reduce((all, state) => all.concat(state.shows), [])) {
+                verify(seen.includes(root.localized(text)), root.localized(text) + " was drawn: " + JSON.stringify(seen));
+            }
         }
 
-        function test_dimLineOverhang_data() {
-            return [{ tag: "long dim line", item: "memory", state: { set: { memoryPercent: 1, memoryUsed: 1023 * mib } }, capped: true },
-                    { tag: "first line longer", item: "cpu", state: { set: { cpuUsage: 100, cpuTemperature: 5 } } },
-                    { tag: "one line", item: "memory", twoLines: false, state: { set: { memoryPercent: 1, memoryUsed: 1023 * mib } } },
-                    { tag: "coloured", item: "cpu", state: { set: { fahrenheit: true, cpuUsage: 5, cpuTemperature: 92 } },
-                      dim: { cpuTemperature: 50 } }];
-        }
-
-        // A dim second line longer than the first runs past the readings
-        // into the gap after them, by at most smallSpacing: any closer and
-        // it reads as the next item's. The cell's width leaves that much
-        // out. A coloured line, or one on a thin panel, stays inside.
-        function test_dimLineOverhang(data) {
-            const c = cell(data.item, { twoLines: data.twoLines ?? true, ring: 34 });
+        // The GPU keeps room for "off" as translated, however long, so a
+        // sleeping GPU moves nothing either.
+        function test_longOffKeepsItsRoom() {
+            root.translations = { "off": "ausgeschaltet" };
+            monitor.gpuInner.present = false;
+            const c = cell("gpu");
+            c.animated = false;
             const readout = root.find(c, i => i.textWidth !== undefined);
-            const second = line(c, "second");
-            if (data.dim) {
-                apply(data.item, { set: Object.assign({}, data.state.set, data.dim) });
-                settle();
-                compare(String(second.color), root.tone("dim"), "dim at " + second.text);
-                verify(readout.overhang > 0, second.text + " runs over");
-            }
-            apply(data.item, data.state);
+            const width = c.implicitWidth;
+            verify(readout.rooms[0] >= readout.face.room(readout.face.strong, ["ausgeschaltet"]), "room for the translation");
+            monitor.gpuOuter.phase = "asleep";
             settle();
-            if (data.dim) {
-                compare(String(second.color), root.tone("negative"), "coloured at " + second.text);
-            }
-            const longer = readout.rooms[1] - readout.rooms[0];
-            const what = line(c, "first").text + " over " + second.text + ", " + longer + " px longer";
-            if (data.capped) {
-                verify(Math.round(longer * 0.4) > Kirigami.Units.smallSpacing, what + ": long enough to reach the cap");
-                compare(readout.overhang, Kirigami.Units.smallSpacing, what);
-            } else {
-                compare(readout.overhang, 0, what);
-            }
-            compare(c.implicitWidth, gauge(c).width + Kirigami.Units.largeSpacing + readout.textWidth, what);
-            const end = Math.max(...readingsIn(c).map(t => t.mapToItem(c, Qt.point(t.width, 0)).x));
-            fuzzyCompare(end - c.implicitWidth, readout.overhang, 0.01, what + ": the readings end past the cell");
+            compare(line(c, "first").text, "ausgeschaltet");
+            compare(c.implicitWidth, width, "asleep, as wide as awake");
+            verify(line(c, "first").contentWidth <= line(c, "first").width, "it fits");
         }
 
-        function test_ratesHugTheirText_data() {
-            const states = {
-                network: [{ networkDown: 0, networkUp: 0 }, { networkDown: 99.9e6 / 8, networkUp: 999e3 / 8 },
-                          { networkDown: 999e6 / 8, networkUp: 99.9e9 / 8 }, { networkDown: 1.3e6, networkUp: 1023 },
-                          { networkDown: NaN, networkUp: NaN }, { networkDown: 999e12 / 8, networkUp: 5 }],
-                disk: [{ diskRead: 0, diskWrite: 0 }, { diskRead: 1023, diskWrite: 1023 * 1024 },
-                       { diskRead: 99.9 * mib, diskWrite: 1023 * gib }, { diskRead: 1023 * 1024 ** 5, diskWrite: 9.9 * 1024 ** 4 },
-                       { diskRead: NaN, diskWrite: 1 }]
-            };
+        function test_ratesKeepFixedSlots_data() {
             const rows = [];
             for (const [item, bits] of [["network", true], ["network", false], ["disk", false]]) {
                 for (const singleRow of [false, true]) {
-                    rows.push({ tag: item + (item === "network" ? (bits ? " bits" : " bytes") : "") + (singleRow ? " one row" : " two rows"),
-                                item: item, bits: bits, singleRow: singleRow, states: states[item] });
+                    for (const mirrored of [false, true]) {
+                        rows.push({ tag: item + (item === "network" ? (bits ? " bits" : " bytes") : "") + (singleRow ? " one row" : " two rows")
+                                         + (mirrored ? " mirrored" : ""),
+                                    item: item, bits: bits, singleRow: singleRow, mirrored: mirrored });
+                    }
                 }
             }
             return rows;
         }
 
-        // Rates hug their text, so short ones take less room than long ones.
-        // Each marker sits a small spacing from its value, at least the gap
-        // before the unit, so an arrow never touches a long value; stacked,
-        // the values end at one edge and the units start at one.
-        function test_ratesHugTheirText(data) {
+        // Each rate is its arrow or letter, 6 px (one and a half small
+        // spacings) from a slot that fits any value in three figures, then
+        // its unit in a column that fits the widest. Values end at the
+        // slot's end and units start at the column's, whatever they read;
+        // stacked, both rows share them. Mirrored, the marker moves to the
+        // other side and the value still comes before its unit.
+        function test_ratesKeepFixedSlots(data) {
             monitor.networkBits = data.bits;
-            const c = cell(data.item, { singleRow: data.singleRow });
-            verify(Kirigami.Units.smallSpacing >= c.unitGap, "the marker's gap is at least the unit's");
-            const widths = [];
-            for (const state of data.states) {
-                apply(data.item, { set: state });
+            const holder = data.mirrored ? mirrorComponent.createObject(root) : root;
+            const c = keep(rateComponent.createObject(holder, { monitor: monitor, item: data.item, singleRow: data.singleRow }));
+            // The rates go before their holder, so they never see its
+            // mirroring go.
+            if (data.mirrored) {
+                keep(holder);
+            }
+            waitForRendering(c);
+            const gap = Math.round(Kirigami.Units.smallSpacing * 1.5);
+            if (Kirigami.Units.smallSpacing === 4) {
+                compare(gap, 6, "6 px at the usual spacing");
+            }
+            compare(c.markerGap, gap, "the marker's gap");
+            compare(c.unitGap, Math.round(Kirigami.Units.smallSpacing * 0.75), "the unit's gap");
+            const face = keep(faceComponent.createObject(root));
+            compare(c.valuesWidth, face.room(face.plain, [root.decimal(10), root.digits(100)]), "the values' slot");
+            compare(c.unitsWidth, face.room(face.plain, data.bits ? ["kb/s", "Mb/s", "Gb/s", "Tb/s"] : ["KiB/s", "MiB/s", "GiB/s", "TiB/s", "PiB/s"]),
+                    "the units' column");
+            const x = i => i.mapToItem(c, Qt.point(0, 0)).x;
+            const right = i => i.mapToItem(c, Qt.point(i.width, 0)).x;
+            const rates = root.findAll(c, i => i.index !== undefined && i.reading !== undefined).sort((a, b) => a.index - b.index);
+            compare(rates.length, 2);
+            const values = rates.map(r => root.find(r, i => i.horizontalAlignment === Text.AlignRight && i.text !== undefined));
+            const units = rates.map(r => root.find(r, i => i.text !== undefined && i !== values[rates.indexOf(r)] && i.visible
+                                                     && i.parent === values[rates.indexOf(r)].parent));
+            const ends = values.map(right);
+            const starts = units.map(x);
+            const width = c.implicitWidth;
+            const shape = new RegExp("^([0-9]" + "\\" + Qt.locale().decimalPoint + "[0-9][0-9]|[0-9][0-9]" + "\\" + Qt.locale().decimalPoint
+                                     + "[0-9]|[0-9][0-9][0-9]|–)$");
+            for (const state of extremes()[data.item]) {
+                apply(data.item, state);
                 settle();
                 const what = "showing " + root.texts(c).join(" ");
-                widths.push(c.implicitWidth);
-                // Each rate: its marker, then its value and unit.
-                const rates = root.findAll(c, i => i.reading !== undefined).sort((a, b) => a.index - b.index);
-                compare(rates.length, 2);
-                const values = rates.map(r => root.find(r, i => i.visible && i.horizontalAlignment === Text.AlignRight));
-                const units = rates.map((r, row) => root.find(r, i => i.visible && i !== values[row] && i.text === c.lines[row].unit));
+                compare(c.implicitWidth, width, what + ": the width");
                 for (let row = 0; row < 2; ++row) {
                     const value = values[row];
                     const unit = units[row];
-                    compare([value.text, unit.text], [c.lines[row].value, c.lines[row].unit], what);
-                    verify(value.contentWidth <= value.width && unit.contentWidth <= unit.width, what + " fits");
                     const marker = rates[row].children[0];
-                    const markerEnd = marker.mapToItem(c, Qt.point(marker.width, 0)).x;
-                    const valueAt = value.mapToItem(c, Qt.point(0, 0)).x;
-                    const unitAt = unit.mapToItem(c, Qt.point(0, 0)).x;
-                    compare(valueAt - markerEnd, Kirigami.Units.smallSpacing, what + ": the marker's gap");
-                    compare(unitAt - (valueAt + value.width), c.unitGap, what + ": the unit's gap");
-                    // Side by side, a letter's marker is as wide as the
-                    // letter, so "R" leaves no gap before the disk's rates.
-                    if (data.item === "disk" && data.singleRow) {
-                        const letter = root.find(marker, i => i.visible && typeof i.text === "string");
-                        verify(letter.mapToItem(marker, Qt.point(0, 0)).x < 1, what + ": " + letter.text + " fills its marker");
-                    }
-                }
-                if (!data.singleRow) {
-                    compare(values[0].mapToItem(c, Qt.point(values[0].width, 0)).x, values[1].mapToItem(c, Qt.point(values[1].width, 0)).x,
-                            what + ": the values end at one edge");
-                    compare(units[0].mapToItem(c, Qt.point(0, 0)).x, units[1].mapToItem(c, Qt.point(0, 0)).x, what + ": the units line up");
-                }
-            }
-            verify(Math.min(...widths) < Math.max(...widths), "short rates take less room: " + widths.join(", "));
-        }
-
-        function test_ratesKeepSpareRoomInside_data() {
-            return [{ tag: "network two rows", item: "network", singleRow: false },
-                    { tag: "network one row", item: "network", singleRow: true },
-                    { tag: "disk two rows", item: "disk", singleRow: false },
-                    { tag: "disk one row", item: "disk", singleRow: true }];
-        }
-
-        // Given more room than their text needs, as a cell holding its width
-        // gives them, the rates keep it inside in whole pixels, and each
-        // rate's readings end at its end and the last at the rates' end.
-        // Stacked, the room goes between the markers, which stay at the
-        // start, and the values, and the markers, values and units still line
-        // up. Side by side it goes before the first marker, each marker keeps
-        // its usual gap to its value, and the two rates stay together.
-        function test_ratesKeepSpareRoomInside(data) {
-            const c = cell(data.item, { singleRow: data.singleRow });
-            const rates = root.findAll(c, i => i.reading !== undefined).sort((a, b) => a.index - b.index);
-            const secondWidth = rates[1].width;
-            // The strip gives a cell whole pixels.
-            c.width = Math.ceil(c.implicitWidth) + 40;
-            settle();
-            const x = i => i.mapToItem(c, Qt.point(0, 0)).x;
-            const right = i => i.mapToItem(c, Qt.point(i.width, 0)).x;
-            const inWholePixels = (room, what) => verify(room > 0 && Math.abs(room - Math.round(room)) < 1e-6, what + ", in whole pixels: " + room);
-            compare(x(rates[0]), 0, "the first rate at the start");
-            const ends = [];
-            for (const rate of rates) {
-                const what = "rate " + rate.index + ": ";
-                const marker = rate.children[0];
-                const value = root.find(rate, i => i.visible && i.horizontalAlignment === Text.AlignRight);
-                const pair = value.parent;
-                if (!data.singleRow) {
-                    compare(x(marker), x(rate), what + "the marker at the rate's start");
-                    inWholePixels(x(value) - right(marker) - Kirigami.Units.smallSpacing, what + "room between the marker and its value");
-                } else {
-                    fuzzyCompare(x(value) - right(marker), Kirigami.Units.smallSpacing, 1e-6, what + "the marker by its value");
-                    if (rate.index === 1) {
-                        compare(x(marker), x(rate), what + "the marker at the rate's start");
+                    compare([value.text, unit.text], [c.lines[row].value, c.lines[row].unit], what);
+                    verify(shape.test(value.text.replace(/[٠-٩]/g, d => String(d.charCodeAt(0) - 0x660))),
+                           what + ": " + value.text + " in three figures");
+                    verify(value.contentWidth <= value.width && unit.contentWidth <= c.unitsWidth, what + ": row " + row + " fits");
+                    compare(right(value), ends[row], what + ": row " + row + "'s value ends where it did");
+                    compare(x(unit), starts[row], what + ": row " + row + "'s unit starts where it did");
+                    compare(x(unit) - right(value), c.unitGap, what + ": the unit's gap");
+                    if (data.mirrored) {
+                        compare(x(marker) - (x(value) + value.width + c.unitGap + c.unitsWidth), gap, what + ": row " + row + "'s marker to the right");
                     } else {
-                        inWholePixels(x(marker) - x(rate), what + "room before the marker");
+                        compare(x(value) - right(marker), gap, what + ": row " + row + "'s marker to the left");
                     }
                 }
-                const end = right(pair);
-                verify(end > right(rate) - 1 && end <= right(rate), what + "the readings end at the rate's end: " + end + ", " + right(rate));
-                ends.push(end);
-            }
-            verify(ends[1] > c.width - 1 && ends[1] <= c.width, "the last readings end at the rates' end: " + ends[1] + " in " + c.width);
-            if (data.singleRow) {
-                compare(rates[1].width, secondWidth, "the second rate keeps its width");
-            } else {
-                compare(x(rates[0].children[0]), x(rates[1].children[0]), "stacked, the markers line up");
-                compare(ends[0], ends[1], "stacked, the values and units end at one edge");
-                const units = rates.map((r, row) => root.find(r, i => i.visible && i.text === c.lines[row].unit && i.horizontalAlignment !== Text.AlignRight));
-                compare(units[0].mapToItem(c, Qt.point(0, 0)).x, units[1].mapToItem(c, Qt.point(0, 0)).x, "the units line up");
+                if (!data.singleRow) {
+                    compare(ends[0], ends[1], what + ": the values end at one edge");
+                    compare(starts[0], starts[1], what + ": the units line up");
+                }
             }
         }
 
@@ -1262,108 +1200,21 @@ Item {
             compare(washes[1].border.width, 0, "the line goes with focus");
         }
 
-        // Along a horizontal panel a cell grows with its content at once and
-        // keeps its width through a narrower content until that has lasted
-        // the settle delay, so a reading that comes and goes moves nothing.
-        // A change of layout, and the moments after the cell is made, apply
-        // at once.
-        function test_settleHold() {
+        // A cell is as wide as its content and its padding, rounded up to a
+        // whole pixel across a horizontal panel, and follows it at once
+        // either way: the readings' rooms are what keep it still.
+        function test_cellFollowsItsContent() {
             const block = keep(blockComponent.createObject(root));
-            const c = keep(panelCellComponent.createObject(root, { contentItem: block, settleDelay: 400, relayoutWindow: 100 }));
+            const c = keep(panelCellComponent.createObject(root, { contentItem: block }));
             const outside = 2 * Kirigami.Units.largeSpacing;
-            const digit = c.digitWidth;
             compare(c.implicitWidth, 50 + outside, "as wide as its content");
-            verify(digit > 1 && digit < 20, "a digit's width: " + digit);
-
-            // Content given at creation holds through its first shrink.
-            const declared = keep(declaredCellComponent.createObject(root));
-            wait(20);
-            declared.contentItem.implicitWidth = 50 - digit;
-            compare(declared.implicitWidth, 50 + outside, "holds what it was made with");
-
-            block.implicitWidth = 45;
-            compare(c.implicitWidth, 45 + outside, "just made, it follows its content");
-            wait(200);
-
             block.implicitWidth = 60.2;
-            compare(c.implicitWidth, 61 + outside, "grows at once, to a whole pixel");
-            block.implicitWidth = 61 - digit;
-            compare(c.implicitWidth, 61 + outside, "holds through a digit's shrink");
-            wait(200);
-            compare(c.implicitWidth, 61 + outside, "still holding");
+            compare(c.implicitWidth, 61 + outside, "wider, to a whole pixel");
             block.implicitWidth = 40;
-            compare(c.implicitWidth, 61 + outside, "and through a bigger one");
-            tryCompare(c, "implicitWidth", 40 + outside, 2000, "settles after the delay");
-
-            // A reading that comes back in time moves nothing.
-            block.implicitWidth = 50;
-            block.implicitWidth = 50 - digit;
-            wait(200);
-            block.implicitWidth = 50;
-            wait(400);
-            compare(c.implicitWidth, 50 + outside, "came back before the delay");
-
-            // A change of layout applies at once, and so does a narrower
-            // content for a moment after it.
-            block.implicitWidth = 50 - digit;
-            compare(c.implicitWidth, 50 + outside, "held");
-            c.layoutKey = "thin";
-            compare(c.implicitWidth, 50 - digit + outside, "a new layout applies at once");
-            block.implicitWidth = 25;
-            compare(c.implicitWidth, 25 + outside, "and so does its content, for a moment");
-            wait(200);
-            block.implicitWidth = 25 - digit;
-            compare(c.implicitWidth, 25 + outside, "then it holds again");
-        }
-
-        // Through a hold the cell keeps the widest it showed, whatever its
-        // content passes through; the hold ends at the content's width then.
-        // Ended any wider, the cell would keep the difference as a gap until
-        // its content next changed, as nothing would start another hold.
-        function test_settleEndsAtTheContentWidth() {
-            const block = keep(blockComponent.createObject(root));
-            const c = keep(panelCellComponent.createObject(root, { contentItem: block, settleDelay: 400, relayoutWindow: 1 }));
-            const outside = 2 * Kirigami.Units.largeSpacing;
-            wait(20);
-            block.implicitWidth = 60;
-            compare(c.implicitWidth, 60 + outside);
-            const moves = keep(signalSpyComponent.createObject(root, { target: c, signalName: "implicitWidthChanged" }));
-            const digit = c.digitWidth;
-            for (const width of [60 - digit, 60 - digit / 2, 60 - digit]) {
-                block.implicitWidth = width;
-                wait(50);
-            }
-            compare(c.implicitWidth, 60 + outside, "holding");
-            tryCompare(c, "implicitWidth", 60 - digit + outside, 2000, "settles at the content's width");
-            wait(2 * c.settleDelay);
-            compare(c.implicitWidth, 60 - digit + outside, "and stays there");
-            compare(moves.count, 1, "moved once");
-        }
-
-        // Every trim delay a held cell gives up all but a digit more than the
-        // widest content it had in that time, so a reading that came back
-        // within it keeps its room, and one that stayed down leaves a digit.
-        function test_trimToADigit() {
-            const block = keep(blockComponent.createObject(root));
-            const c = keep(panelCellComponent.createObject(root, { contentItem: block, settleDelay: 60000, trimDelay: 600, relayoutWindow: 1 }));
-            const outside = 2 * Kirigami.Units.largeSpacing;
-            const digit = c.digitWidth;
-            wait(20);
-            block.implicitWidth = 60;
-            block.implicitWidth = 40;
-            compare(c.implicitWidth, 60 + outside, "holds at first");
-            wait(100);
-            block.implicitWidth = 50;
-            wait(50);
-            block.implicitWidth = 40;
-            verify(50 + digit < 60, "a digit's width: " + digit);
-            tryVerify(() => c.implicitWidth < 60 + outside, 3000, "trims");
-            compare(c.implicitWidth, 50 + digit + outside, "to a digit more than the widest in that time");
-            tryCompare(c, "implicitWidth", 40 + digit + outside, 3000, "then to a digit more than one that stayed down");
-            wait(2 * c.trimDelay);
-            compare(c.implicitWidth, 40 + digit + outside, "and stays there");
-            block.implicitWidth = 40 + Math.floor(digit);
-            compare(c.implicitWidth, 40 + digit + outside, "a digit back moves nothing");
+            compare(c.implicitWidth, 40 + outside, "narrower, at once");
+            c.vertical = true;
+            block.implicitWidth = 40.5;
+            compare(c.implicitWidth, 40.5 + 2 * Kirigami.Units.smallSpacing, "along a vertical panel, as it is");
         }
 
         // Font features have to reach both what measures and what draws, or

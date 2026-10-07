@@ -485,39 +485,43 @@ Item {
             verify(bare.accessibleDescription !== "", "the tooltip still has the words");
         }
 
-        function test_countdownRoomFollowsItsText_data() {
+        function test_countdownKeepsItsRoom_data() {
             return [{ tag: "two lines", twoLines: true }, { tag: "one line", twoLines: false }];
         }
 
-        // The countdown takes the room of its text, with every digit counted
-        // as the widest: the same characters keep the same room as the
-        // minutes run, fewer take less, and every reading fits its box.
-        function test_countdownRoomFollowsItsText(data) {
-            const shape = text => text.replace(/[0-9٠-٩۰-۹]/g, "0");
+        // The countdown shows its largest unit alone and keeps one room
+        // whatever it reads, from a new week down to the last minutes and a
+        // passed reset, so the cell keeps its width; every reading fits its
+        // box and starts where the last one did.
+        function test_countdownKeepsItsRoom(data) {
             claudeAt(40, 6 * 86400 + 23 * 3600);
             const c = cell("claude", { twoLines: data.twoLines });
             const readout = root.find(c, i => i.textWidth !== undefined);
-            const rooms = {};
-            const widths = {};
-            for (const percent of [5, 100, NaN]) {
+            const width = c.implicitWidth;
+            const room = readout.rooms[1];
+            const starts = ["first", "second"].map(name => line(c, name).mapToItem(c, Qt.point(0, 0)).x);
+            const shown = [];
+            for (const percent of [0, 5, 100, NaN]) {
                 for (const left of [6 * 86400 + 23 * 3600, 86400 + 11 * 3600, 23 * 3600 + 59 * 60, 10 * 3600 + 10 * 60,
-                                    5 * 60, 30, -600]) {
+                                    3600, 59 * 60, 5 * 60, 30, -600]) {
                     claudeAt(percent, left);
                     waitForRendering(c);
                     const texts = [line(c, "first").text, line(c, "second").text];
                     const what = texts.join(" ") + " at " + percent + "% with " + left + " s left";
-                    for (const name of ["first", "second"]) {
-                        verify(line(c, name).contentWidth <= line(c, name).width, line(c, name).text + " overflows its room: " + what);
-                    }
-                    const second = shape(texts[1]);
-                    rooms[second] = rooms[second] ?? readout.rooms[1];
-                    compare(readout.rooms[1], rooms[second], what + ": the room " + second + " took before");
-                    const both = shape(texts.join(" "));
-                    widths[both] = widths[both] ?? c.implicitWidth;
-                    compare(c.implicitWidth, widths[both], what + ": the width " + both + " took before");
+                    verify(!texts[1].includes(" "), what + ": one unit");
+                    ["first", "second"].forEach((name, i) => {
+                        const text = line(c, name);
+                        verify(text.contentWidth <= text.width, text.text + " overflows its room: " + what);
+                        compare(text.mapToItem(c, Qt.point(0, 0)).x, starts[i], what + ": " + name + " stays put");
+                    });
+                    compare(readout.rooms[1], room, what + ": the countdown's room");
+                    compare(c.implicitWidth, width, what + ": the cell's width");
+                    shown.push(texts[1]);
                 }
             }
-            verify(rooms[shape("5m")] < rooms[shape("23h 59m")], "fewer characters take less room: " + JSON.stringify(rooms));
+            for (const text of ["6d", "1d", "23h", "10h", "1h", "59m", "5m", "–"]) {
+                verify(shown.includes(root.localized(text)), text + " among " + JSON.stringify(shown));
+            }
             compare(line(c, "first").text, "–", "no percentage, a dash");
             compare(line(c, "second").text, "–", "a passed reset shows a dash until the next poll");
         }
@@ -1542,9 +1546,12 @@ Item {
                 { tag: "days", left: 5 * 86400 + 18 * 3600 + 7 * 60, expected: [["5", "d"], ["18", "h"]] },
                 { tag: "daysLeadingOnly", left: 5 * 86400 + 18 * 3600 + 7 * 60, leadingOnly: true, expected: [["5", "d"]] },
                 { tag: "oneDayLeadingOnly", left: 86400 + 30 * 60, leadingOnly: true, expected: [["1", "d"]] },
-                { tag: "lastDayLeadingOnly", left: 23 * 3600 + 5 * 60, leadingOnly: true, expected: [["23", "h"], ["5", "m"]] },
+                { tag: "lastDayLeadingOnly", left: 23 * 3600 + 5 * 60, leadingOnly: true, expected: [["23", "h"]] },
                 { tag: "hours", left: 5 * 3600 + 12 * 60, expected: [["5", "h"], ["12", "m"]] },
+                { tag: "hoursLeadingOnly", left: 3600 + 2 * 60, leadingOnly: true, expected: [["1", "h"]] },
                 { tag: "minutes", left: 12 * 60, leadingOnly: true, expected: [["12", "m"]] },
+                { tag: "lastMinutesLeadingOnly", left: 59 * 60, leadingOnly: true, expected: [["59", "m"]] },
+                { tag: "passedLeadingOnly", left: -60, leadingOnly: true, expected: [] },
                 { tag: "passed", left: -60, expected: [] },
                 { tag: "noReset", left: NaN, expected: [] }
             ];
@@ -1705,8 +1712,9 @@ Item {
                 { tag: "claude", item: "claude", first: "52%", second: "2d" },
                 { tag: "codex", item: "codex", first: "24%", second: "5d" },
                 { tag: "claude a day out", item: "claude", weekly: [40, 86400 + 30 * 60], first: "40%", second: "1d" },
-                { tag: "claude last day", item: "claude", weekly: [40, 23 * 3600 + 5 * 60], first: "40%", second: "23h 5m" },
-                { tag: "claude at its limit", item: "claude", weekly: [90, 3600], first: "90%", level: 2, second: "1h 0m" },
+                { tag: "claude last day", item: "claude", weekly: [40, 23 * 3600 + 5 * 60], first: "40%", second: "23h" },
+                { tag: "claude at its limit", item: "claude", weekly: [90, 3600], first: "90%", level: 2, second: "1h" },
+                { tag: "claude last hour", item: "claude", weekly: [40, 59 * 60], first: "40%", second: "59m" },
                 { tag: "claude amber", item: "claude", weekly: [75, 12 * 60], first: "75%", level: 1, second: "12m" },
                 { tag: "claude used up", item: "claude", weekly: [100, 2 * 86400], first: "100%", level: 2, second: "2d", heat: 2 },
                 { tag: "used up, reset passed", item: "claude", weekly: [100, -600], first: "100%", level: 2, second: "–" },
@@ -1722,7 +1730,7 @@ Item {
         }
 
         // Readout reads a missing level or heat as none, and only a true
-        // `off` as asleep. A countdown's parts spell its second line.
+        // `off` as asleep. A countdown keeps to its largest unit.
         function test_readout(data) {
             const usage = monitor.usage;
             apply(monitor, data.set ?? {});
@@ -1739,9 +1747,6 @@ Item {
             compare({ first: r.first, level: r.level ?? 0, off: r.off === true, second: r.second, heat: r.heat ?? 0 },
                     { first: local(data.first), level: data.level ?? 0, off: data.off ?? false,
                       second: local(data.second), heat: data.heat ?? 0 });
-            if (r.parts) {
-                compare(r.parts.map(p => p.value + p.unit).join(" ") || "–", r.second, "the parts");
-            }
         }
     }
 

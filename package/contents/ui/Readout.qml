@@ -9,41 +9,28 @@ import "code/style.js" as Style
 // A ring's readings, beside it in the panel: the ring's own reading, heavier
 // and in the ring's colour, over a second one, dimmer: a temperature, memory
 // in use or the time to a reset. On a thin panel they share a line,
-// "23% · 61°". Each line is as wide as its text, with every digit counted as
-// the widest, so the gap after the readings is the same for every ring and a
-// reading moves only when it gains or loses a character. A second line with
-// nothing to show keeps its height; on one line it goes, with its dot. Each
-// reading is one text, so mirroring never parts a number from its sign. The
-// cell describes the readings to screen readers, so the texts themselves
-// stay out of the accessibility tree.
+// "23% · 61°". Each line keeps the room of the widest text it can show, so
+// the panel never moves as readings change; the readings keep to the ring and
+// what they leave free falls after them. A line with nothing to show keeps
+// its room, and on one line its dot goes. Each reading is one text, so
+// mirroring never parts a number from its sign. The cell describes the
+// readings to screen readers, so the texts themselves stay out of the
+// accessibility tree.
 GridLayout {
     id: readout
 
-    // Words.readout(): { first, level, off, second, heat, parts }.
+    // Words.readout(): { first, level, off, second, heat }.
     required property var lines
-    // The second line as drawn. Mirrored, a countdown's parts, "23h 5m", are
-    // led by a right-to-left mark and so is the space between them, so the
-    // days come first from the right as in the popup, whatever digits the
-    // locale has: Latin or Persian digits after a Latin unit would otherwise
-    // join it in one left-to-right run.
-    readonly property string second: (lines.parts ?? []).length > 0 && LayoutMirroring.enabled
-        ? "\u200f" + lines.parts.map(part => part.value + part.unit).join("\u200f ") : lines.second
+    // Words.widest(): { first, second }, the texts each line keeps room for.
+    required property var widest
     // The room each line takes.
-    readonly property var rooms: [face.room(face.strong, [lines.first]), face.room(face.plain, [second])]
+    readonly property var rooms: [face.room(face.strong, widest.first), face.room(face.plain, widest.second)]
     property bool oneLine: false
     readonly property alias face: face
-    // How far a dim second line, longer than the first, may run past the
-    // readings' width into the gap after them. A coloured one stays inside.
-    readonly property real overhang: oneLine || lines.heat ? 0
-        : Math.min(Kirigami.Units.smallSpacing, Math.round(Math.max(0, rooms[1] - rooms[0]) * 0.4))
     readonly property real dotRoom: face.room(face.plain, ["·"])
-    // The width the readings take, less the overhang. It comes from the rooms
-    // rather than the layout, which follows them a frame later: until then a
-    // width from both would be one the readings never have, and a cell would
-    // hold on to it.
-    readonly property real textWidth: (!oneLine ? Math.max(rooms[0], rooms[1])
-                                       : rooms[0] + (secondShown ? dotRoom + rooms[1] + 2 * columnSpacing : 0)) - overhang
-    readonly property bool secondShown: !oneLine || lines.second !== ""
+    // The width the readings take, from the rooms rather than the layout,
+    // which follows them a frame later.
+    readonly property real textWidth: !oneLine ? Math.max(rooms[0], rooms[1]) : rooms[0] + dotRoom + rooms[1] + 2 * columnSpacing
 
     columns: oneLine ? 3 : 1
     rowSpacing: 0
@@ -70,11 +57,11 @@ GridLayout {
     }
 
     Text {
-        visible: readout.oneLine && readout.secondShown
+        visible: readout.oneLine
         Layout.preferredWidth: readout.dotRoom
         Layout.preferredHeight: face.lineHeight
         horizontalAlignment: Text.AlignHCenter
-        text: "·"
+        text: readout.lines.second !== "" ? "·" : ""
         color: Style.dim(Kirigami.Theme.textColor)
         font: face.plain.font
         textFormat: Text.PlainText
@@ -83,12 +70,11 @@ GridLayout {
 
     Text {
         objectName: "second"
-        visible: readout.secondShown
         Layout.preferredWidth: readout.rooms[1]
         Layout.preferredHeight: face.lineHeight
         Layout.fillWidth: !readout.oneLine
         horizontalAlignment: Text.AlignLeft
-        text: readout.second
+        text: readout.lines.second
         color: readout.lines.heat === 2 ? Kirigami.Theme.negativeTextColor
              : readout.lines.heat === 1 ? Kirigami.Theme.neutralTextColor
              : Style.dim(Kirigami.Theme.textColor)

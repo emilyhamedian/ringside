@@ -128,6 +128,52 @@ function rate(bytesPerSecond, bits) {
     return { value: i === 0 ? whole(v) : number(v), unit: units[i] };
 }
 
+// Three significant figures, "8.40", "62.1", "353": every value has three
+// digits, and all but those from 100 a decimal point, so a value set in the
+// panel's figures of one width takes the same room whatever it reads.
+function significant(v) {
+    const a = Math.abs(v);
+    return a < 9.995 ? decimal(v, 2) : a < 99.95 ? decimal(v, 1) : whole(v);
+}
+
+// The units panelRate() steps through.
+function panelRateUnits(bits) {
+    return bits ? ["kb/s", "Mb/s", "Gb/s", "Tb/s"] : ["KiB/s", "MiB/s", "GiB/s", "TiB/s", "PiB/s"];
+}
+
+// A rate for the panel, in three significant figures from kb/s or KiB/s up:
+// "0.00 KiB/s" idle, "8.40 Mb/s", "353 KiB/s". The unit steps up at 999.5 of
+// the one shown, binary units too ("0.98 MiB/s" for 1000 KiB/s), so no value
+// takes a fourth digit.
+function panelRate(bytesPerSecond, bits) {
+    const units = panelRateUnits(bits);
+    if (!usable(bytesPerSecond)) {
+        return { value: DASH, unit: units[0] };
+    }
+    const step = bits ? 1000 : 1024;
+    let v = (bits ? bytesPerSecond * 8 : bytesPerSecond) / step;
+    let i = 0;
+    while (i < units.length - 1 && Math.abs(v) >= 999.5) {
+        v /= step;
+        ++i;
+    }
+    return { value: significant(v), unit: units[i] };
+}
+
+// Bytes for the panel as panelRate() steps them: "9.95 GiB", "13.4 GiB".
+function panelBytes(v) {
+    if (!usable(v)) {
+        return { value: DASH, unit: "" };
+    }
+    let i = 0;
+    let scaled = v;
+    while (i < BYTE_UNITS.length - 1 && Math.abs(scaled) >= 999.5) {
+        scaled /= 1024;
+        ++i;
+    }
+    return { value: i === 0 ? whole(scaled) : significant(scaled), unit: BYTE_UNITS[i] };
+}
+
 function frequency(megahertz) {
     if (!usable(megahertz) || megahertz <= 0) {
         return { value: DASH, unit: "" };

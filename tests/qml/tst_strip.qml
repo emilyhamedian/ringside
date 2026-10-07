@@ -5,13 +5,13 @@ import QtQuick
 import QtTest
 import org.kde.kirigami as Kirigami
 import "../../package/contents/ui"
-import "../../package/contents/ui/code/format.js" as Format
 
 // The panel strip with FakeMonitor's readings: rings follow the panel's
 // thickness inside the hover wash, with the item's name inside them and their
-// readings on the rows the rates use; cells, rates included, grow at once and
-// shrink after a hold, a thin vertical panel's rates fit, mirrored layouts
-// read right to left, and every cell describes its readings in words.
+// readings on the rows the rates use; no item moves as readings change, while
+// settings and the font take effect at once; a thin vertical panel's rates
+// fit, mirrored layouts read right to left, and every cell describes its
+// readings in words.
 Item {
     id: root
     width: 1200
@@ -258,324 +258,156 @@ Item {
             }
         }
 
-        // The right edge, in the strip, of a rate cell's furthest text.
-        function textEnd(index) {
-            const texts = all(strip.cellAt(index).contentItem, i => i.visible && typeof i.text === "string" && i.text !== "");
-            return Math.max(...texts.map(t => box(t).right));
+        // Claude and Codex at [percent, seconds left] each, or not yet
+        // checked for null.
+        function setWeeks(claude, codex) {
+            const usage = monitor.usage;
+            const entry = week => ({ status: "ok", fetchedAt: usage.createdAt, weekly: usage.window(week[0], week[1], []), scoped: [] });
+            usage.entries = claude ? { claude: entry(claude), codex: entry(codex) } : {};
         }
 
-        // The right edge, in the strip, of a rate cell's values and units as
-        // laid out, which its furthest text reaches to within a pixel.
-        function readingsEnd(index) {
-            const values = all(strip.cellAt(index).contentItem, i => i.visible && i.horizontalAlignment === Text.AlignRight);
-            compare(values.length, 2);
-            return Math.max(...values.map(v => box(v.parent).right));
+        // Every item's box, and the strip's width.
+        function geometry() {
+            return { width: strip.implicitWidth,
+                     cells: strip.items.map((item, i) => { const b = box(strip.cellAt(i)); return item + " " + b.x + "+" + b.width; }) };
         }
 
-        // The left edge, in the strip, of a rate cell's arrows or letters.
-        function markersStart(index) {
-            const rates = all(strip.cellAt(index).contentItem, i => i.reading !== undefined);
-            compare(rates.length, 2);
-            return Math.min(...rates.map(r => box(r.children[0]).x));
-        }
-
-        function rateChanges() {
+        // Readings at their extremes across the strip, each with texts it
+        // draws.
+        function extremeSteps() {
+            const gib = monitor.gib;
+            const mib = 1048576;
             return [
-                { what: "no traffic", change: () => { monitor.networkDown = 0; monitor.networkUp = 0; } },
-                { what: "slow traffic", change: () => { monitor.networkDown = 60; monitor.networkUp = 20; } },
-                { what: "three digits", change: () => { monitor.networkDown = 130; monitor.networkUp = 300; } },
-                { what: "the widest bits", change: () => { monitor.networkDown = 99.9e6 / 8; monitor.networkUp = 999e3 / 8; } },
-                { what: "fast traffic", change: () => { monitor.networkDown = 1.3e7; monitor.networkUp = 1023; } },
-                { what: "no network", change: () => { monitor.networkDown = NaN; monitor.networkUp = NaN; } },
-                { what: "disk", change: () => { monitor.diskRead = 0; monitor.diskWrite = 1e9; } },
-                { what: "the widest bytes", change: () => { monitor.diskRead = 1023 * 1024 ** 2; monitor.diskWrite = 1023; } },
-                { what: "a quiet disk", change: () => { monitor.diskRead = 0; monitor.diskWrite = 0; } }
+                { what: "all at zero", change: () => {
+                    monitor.cpuUsage = 0; monitor.cpuTemperature = 9; monitor.memoryUsed = 0; monitor.memoryPercent = 0;
+                    monitor.gpuOuter.usage = 0; monitor.gpuOuter.temperature = 9;
+                    monitor.networkDown = 0; monitor.networkUp = 0; monitor.diskRead = 0; monitor.diskWrite = 0;
+                    setWeeks([0, 6 * 86400 + 23 * 3600], [0, 6 * 86400 + 20 * 3600]);
+                }, shows: ["0%", "9°", "0B", "0.00", "6d"] },
+                { what: "all at their most", change: () => {
+                    monitor.cpuUsage = 100; monitor.cpuTemperature = 105; monitor.memoryUsed = 1023 * gib; monitor.memoryPercent = 100;
+                    monitor.gpuOuter.usage = 100; monitor.gpuOuter.temperature = 105;
+                    monitor.networkDown = 1023 * gib; monitor.networkUp = 1023 * gib; monitor.diskRead = 1023 * gib; monitor.diskWrite = 1023 * gib;
+                    setWeeks([100, 59 * 60], [100, 5 * 60]);
+                }, shows: ["100%", "105°", "1.00T", "TiB/s", "59m", "5m"] },
+                { what: "302 °F", change: () => { monitor.fahrenheit = true; monitor.cpuTemperature = 149.9; }, shows: ["302°"] },
+                { what: "unit edges", change: () => {
+                    monitor.fahrenheit = false; monitor.cpuTemperature = 61; monitor.memoryUsed = 1000 * mib; monitor.memoryPercent = 6;
+                    monitor.networkDown = 999.4e3 / 8; monitor.networkUp = 999.5e3 / 8; monitor.diskRead = 999.4 * 1024; monitor.diskWrite = 1023 * 1024;
+                    setWeeks([88, 23 * 3600 + 59 * 60], [41, 86400 + 7 * 3600]);
+                }, shows: ["0.98G", "999", "1.00", "23h", "1d"] },
+                { what: "usual", change: () => {
+                    monitor.cpuUsage = 12; monitor.memoryUsed = 9.6 * gib; monitor.memoryPercent = 60;
+                    monitor.gpuOuter.usage = 4; monitor.gpuOuter.temperature = 46;
+                    monitor.networkDown = 8.4e6 / 8; monitor.networkUp = 100e3 / 8; monitor.diskRead = 4.1 * 1024; monitor.diskWrite = 353 * 1024;
+                }, shows: ["12%", "9.60G", "4%", "4.10", "353"] },
+                { what: "the discrete GPU asleep", change: () => { monitor.gpuOuter.phase = "asleep"; }, shows: ["3%", "41°"] },
+                { what: "both GPUs asleep", change: () => { monitor.gpuInner.phase = "asleep"; }, shows: ["off"] },
+                { what: "the GPUs awake", change: () => { monitor.gpuOuter.phase = "live"; monitor.gpuInner.phase = "live"; }, shows: ["4%", "46°"] },
+                { what: "Claude and Codex reached and reset", change: () => setWeeks([100, -600], [100, 10 * 60]), shows: ["100%", "–", "10m"] },
+                { what: "no readings", change: () => {
+                    monitor.cpuUsage = NaN; monitor.cpuTemperature = NaN; monitor.memoryUsed = NaN; monitor.memoryPercent = NaN;
+                    monitor.gpuOuter.usage = NaN; monitor.gpuOuter.temperature = NaN;
+                    monitor.networkDown = NaN; monitor.networkUp = NaN; monitor.diskRead = NaN; monitor.diskWrite = NaN;
+                    setWeeks(null);
+                }, shows: ["–"] }
             ];
         }
 
-        function test_ratesHoldTheirWidth_data() {
+        function test_nothingMoves_data() {
             const rows = [];
-            for (const [order, items] of [["rates last", ["cpu", "gpu", "memory", "network", "disk"]],
-                                          ["rates between", ["cpu", "network", "gpu", "disk", "memory", "claude"]]]) {
-                for (const bits of [true, false]) {
-                    for (const thickness of [46, 30]) {
-                        rows.push({ tag: order + (bits ? " bits " : " bytes ") + thickness, items: items, bits: bits, thickness: thickness });
+            for (const mirrored of [false, true]) {
+                for (const thickness of [46, 30]) {
+                    for (const bits of [true, false]) {
+                        rows.push({ tag: (mirrored ? "mirrored " : "") + (thickness === 46 ? "two lines" : "thin") + (bits ? " bits" : " bytes"),
+                                    mirrored: mirrored, thickness: thickness, bits: bits });
                     }
                 }
             }
             return rows;
         }
 
-        // Rates hold their width as rings do, wherever they sit: a wider
-        // reading takes its room at once, moving the items after it, and a
-        // narrower one waits out the settle delay, so traffic that comes and
-        // goes moves the panel once. An item moves only when one before it
-        // grew. The room a rate holds sits inside it, before its values, so
-        // its readings always end its cell's padding before the next item,
-        // the gap any item leaves, a quiet disk at the end of the strip
-        // included, and on two lines its markers start that padding after
-        // the item before. Settled, each rate hugs its text.
-        function test_ratesHoldTheirWidth(data) {
+        // Across a horizontal panel every item keeps its place and width
+        // whatever its readings, from left to right or right to left, on two
+        // lines or one: the panel's size holds still. Each extreme is really
+        // drawn, and fits.
+        function test_nothingMoves(data) {
             monitor.networkBits = data.bits;
-            const strip = makePanel(data.thickness, { items: data.items, relayoutWindow: 0, trimDelay: 60000 });
-            const rates = data.items.map((item, i) => i).filter(i => !root.ringItems.includes(data.items[i]));
-            const tight = i => strip.cellAt(i).contentWidth + 2 * strip.cellAt(i).padding;
-            const widths = () => data.items.map((item, i) => strip.cellAt(i).implicitWidth);
-            const places = () => data.items.map((item, i) => box(strip.cellAt(i)).x);
-            let before = widths();
-            let at = places();
-            let held = false;
-            checkRow("at first");
-            for (const step of rateChanges()) {
+            const strip = makeStrip({ items: ["cpu", "memory", "gpu", "claude", "codex", "network", "disk"],
+                                      thickness: data.thickness, height: data.thickness },
+                                    data.mirrored ? mirroredComponent : stripComponent);
+            compare(strip.twoLines, data.thickness === 46);
+            // Layout only: the GPU's readings change at once (see tst_motion).
+            strip.cellAt(2).contentItem.animated = false;
+            const at = geometry();
+            const adjacent = what => {
+                for (let i = 1; i < strip.items.length; ++i) {
+                    const before = box(strip.cellAt(i - 1));
+                    const cell = box(strip.cellAt(i));
+                    compare(data.mirrored ? cell.right : cell.x, data.mirrored ? before.x : before.right, what + ": " + strip.items[i] + " beside " + strip.items[i - 1]);
+                }
+            };
+            adjacent("at first");
+            for (const step of extremeSteps()) {
                 sizeAfter(strip, step.change);
-                checkRow(step.what);
                 checkFits(step.what);
+                const texts = visibleTexts(strip);
+                for (const text of step.shows) {
+                    verify(texts.includes(text), step.what + " shows " + text + ": " + JSON.stringify(texts));
+                }
+                compare(geometry(), at, step.what + ": every item where it was");
+                adjacent(step.what);
+            }
+        }
+
+        // The objects that measure a rate cell's text, at the panel's size.
+        function rateFaces(index) {
+            return Array.from(strip.cellAt(index).contentItem.resources).filter(o => o.drawnSize !== undefined);
+        }
+
+        // Settings and the font are what may resize an item, and they do so
+        // at once, moving the items after it by as much: bits or bytes sets
+        // the rates' unit column, a thinner panel puts readings on one line,
+        // a ring without its text is the ring alone, and a larger font widens
+        // every reading's room. Kirigami's theme font can't change in a test,
+        // so the cells' own measures stand in for it.
+        function test_settingsAndFontRemeasure() {
+            const strip = makePanel(46, { items: ["cpu", "network", "claude", "disk"] });
+            const widths = () => strip.items.map((item, i) => strip.cellAt(i).implicitWidth);
+            const check = (what, change, grows) => {
+                const before = widths();
+                const at = geometry();
+                change();
+                waitForRendering(strip);
+                verify(waitForPolish(strip), "laid out");
                 const now = widths();
-                rates.forEach(i => {
-                    compare(now[i], Math.max(tight(i), before[i]), step.what + ": " + data.items[i] + " holds");
-                    held = held || now[i] > tight(i);
-                    const cell = strip.cellAt(i);
-                    const after = box(cell).right - readingsEnd(i);
-                    verify(after >= cell.padding && after < cell.padding + 1,
-                           step.what + ": " + data.items[i] + "'s readings end " + after + " before the next item");
-                    if (strip.twoLines) {
-                        compare(markersStart(i) - box(cell).x, cell.padding,
-                                step.what + ": " + data.items[i] + "'s markers start its padding after the item before");
+                checkRow(what);
+                grows.forEach(i => verify(now[i] !== before[i], what + ": " + strip.items[i] + " " + before[i] + " to " + now[i] + " at once"));
+                now.forEach((w, i) => {
+                    if (!grows.includes(i)) {
+                        compare(w, before[i], what + ": " + strip.items[i] + " keeps its width");
                     }
                 });
-                const placed = places();
-                for (let i = 1; i < data.items.length; ++i) {
-                    if (!now.slice(0, i).some((w, j) => w > before[j])) {
-                        compare(placed[i], at[i], step.what + ": " + data.items[i] + " stays put, as nothing before it grew");
-                    }
-                }
-                before = now;
-                at = placed;
-            }
-            verify(held, "a rate holds room it no longer needs");
-
-            // The last step leaves the disk quiet, holding the room of its
-            // widest readings, and then once that has lasted the delay, as
-            // wide as its text. Either way its text ends its padding before
-            // the next item, or the strip's end.
-            const diskAt = data.items.indexOf("disk");
-            const disk = strip.cellAt(diskAt);
-            const quiet = Format.rate(0, false).value;
-            const checkQuietDisk = what => {
-                compare(rateRows(diskAt).map(t => t.text), [quiet, quiet], what);
-                const end = diskAt === data.items.length - 1 ? strip.implicitWidth : box(disk).right;
-                const after = end - textEnd(diskAt);
-                verify(after >= disk.padding && after < disk.padding + 1, what + ": after the quiet disk's text, its padding: " + after);
+                return { before: before, now: now, at: at };
             };
-            verify(disk.implicitWidth > tight(diskAt), "the quiet disk holds");
-            checkQuietDisk("held");
-            strip.settleDelay = 300;
-            rates.forEach(i => tryCompare(strip.cellAt(i), "implicitWidth", tight(i), 3000, data.items[i] + " settles"));
-            verify(waitForPolish(strip), "laid out");
-            checkRow("settled");
-            checkQuietDisk("settled");
-            if (diskAt === data.items.length - 1) {
-                compare(strip.implicitWidth, box(disk).right, "the strip ends with the disk");
-            }
+            const network = strip.cellAt(1).contentItem;
+            const bitsUnits = network.unitsWidth;
+            check("bytes", () => { monitor.networkBits = false; }, [1]);
+            verify(network.unitsWidth !== bitsUnits, "the unit column follows: " + bitsUnits + " to " + network.unitsWidth);
+            check("one line", () => { strip.thickness = 30; strip.height = 30; }, [0, 1, 2, 3]);
+            check("two lines", () => { strip.thickness = 46; strip.height = 46; }, [0, 1, 2, 3]);
+            check("Claude's ring alone", () => { strip.ringsOnly = ["claude"]; }, [2]);
+            compare(strip.cellAt(2).implicitWidth, strip.ring + 2 * strip.cellAt(2).padding, "the ring and its padding");
+            check("Claude's text back", () => { strip.ringsOnly = []; }, [2]);
 
-            // A change of layout takes the rates' new widths at once.
-            strip.settleDelay = 60000;
-            sizeAfter(strip, () => { monitor.diskRead = 88.8 * 1048576; monitor.networkDown = 88.8e6 / 8; });
-            sizeAfter(strip, () => { monitor.diskRead = 0; monitor.networkDown = 0; });
-            rates.forEach(i => verify(strip.cellAt(i).implicitWidth > tight(i), data.items[i] + " holds"));
-            strip.thickness = data.thickness + 1;
-            strip.height = data.thickness + 1;
-            waitForRendering(strip);
-            rates.forEach(i => compare(strip.cellAt(i).implicitWidth, tight(i), data.items[i] + " in the new layout"));
-            checkRow("a new layout");
-        }
-
-        function test_ringsGrowAtOnceAndShrinkAfterTheHold_data() {
-            return [{ tag: "two lines", thickness: 46 }, { tag: "thin", thickness: 30 }];
-        }
-
-        // A ring's cell takes a wider reading's room at once, moving the
-        // items after it, but keeps its width through a narrower one until
-        // that has lasted the settle delay, so a reading that comes and goes
-        // moves the panel once. Each change shows the reading it sets, so the
-        // widest ones are really drawn (100%, 302°, 1023M, "off"), and fits.
-        function test_ringsGrowAtOnceAndShrinkAfterTheHold(data) {
-            const strip = makePanel(data.thickness, { items: ["cpu", "gpu", "memory", "claude", "network", "disk"], relayoutWindow: 0, trimDelay: 60000 });
-            // Layout only: the GPU's readings change at once (see tst_motion).
-            strip.cellAt(1).contentItem.animated = false;
-            const widths = () => strip.items.map((item, i) => strip.cellAt(i).implicitWidth);
-            const tight = i => strip.cellAt(i).contentWidth + 2 * strip.cellAt(i).padding;
-            const changes = [
-                { what: "memory 9.6 GiB", change: () => { monitor.memoryUsed = 9.6 * monitor.gib; }, shows: "9.6G" },
-                { what: "memory 1023 MiB", change: () => { monitor.memoryUsed = 1023 * 1048576; }, shows: "1023M" },
-                { what: "no memory", change: () => { monitor.memoryUsed = NaN; } },
-                { what: "CPU 5%", change: () => { monitor.cpuUsage = 5; }, shows: "5%" },
-                { what: "CPU 11%", change: () => { monitor.cpuUsage = 11; }, shows: "11%" },
-                { what: "CPU 88%", change: () => { monitor.cpuUsage = 88; }, shows: "88%" },
-                { what: "CPU 100%", change: () => { monitor.cpuUsage = 100; }, shows: "100%" },
-                { what: "no CPU usage", change: () => { monitor.cpuUsage = NaN; } },
-                { what: "11 °C", change: () => { monitor.cpuTemperature = 11; }, shows: "11°" },
-                { what: "88 °C", change: () => { monitor.cpuTemperature = 88; }, shows: "88°" },
-                { what: "no temperature", change: () => { monitor.cpuTemperature = NaN; } },
-                // A change of units is one of layout: it applies at once.
-                { what: "100 °F", change: () => { monitor.fahrenheit = true; monitor.cpuTemperature = 38; }, shows: "100°", layout: true },
-                { what: "302 °F", change: () => { monitor.cpuTemperature = 149.9; }, shows: "302°" },
-                { what: "GPU 100%", change: () => { monitor.gpuOuter.usage = 100; }, shows: "100%" },
-                { what: "discrete GPU asleep", change: () => { monitor.gpuOuter.phase = "asleep"; }, shows: "3%" },
-                { what: "the only GPU asleep", change: () => { monitor.gpuInner.present = false; }, shows: "off" },
-                { what: "GPU awake", change: () => { monitor.gpuOuter.phase = "live"; }, shows: "100%" },
-                { what: "Claude at its limit", change: () => {
-                    const entries = JSON.parse(JSON.stringify(monitor.usage.entries));
-                    entries.claude.weekly.percent = 100;
-                    entries.claude.weekly.resetsAt = monitor.usage.createdAt + 600;
-                    monitor.usage.entries = entries;
-                }, shows: "10m" },
-                // The countdown keeps to the days from a day out, so a new
-                // week is narrower than the last minutes of the old one.
-                { what: "Claude's new week", change: () => {
-                    const entries = JSON.parse(JSON.stringify(monitor.usage.entries));
-                    entries.claude.weekly.percent = 0;
-                    entries.claude.weekly.resetsAt = monitor.usage.createdAt + 6 * 86400 + 23 * 3600;
-                    monitor.usage.entries = entries;
-                }, shows: "6d" }
-            ];
-            let before = widths();
-            checkFits("at first");
-            for (const step of changes) {
-                sizeAfter(strip, step.change);
-                checkFits(step.what);
-                if (step.shows) {
-                    verify(visibleTexts(strip).includes(step.shows), step.what + ": " + JSON.stringify(visibleTexts(strip)));
-                }
-                const now = widths();
-                for (let i = 0; i < 4; ++i) {
-                    compare(now[i], step.layout ? tight(i) : Math.max(before[i], tight(i)), step.what + ": " + strip.items[i]);
-                }
-                checkRow(step.what);
-                before = now;
-            }
-            verify([0, 1, 2, 3].some(i => before[i] > tight(i)), "some ring holds room it no longer needs");
-
-            // Once narrower readings have lasted the delay, each cell is as
-            // wide as they are. A new delay restarts the waits.
-            strip.settleDelay = 300;
-            for (let i = 0; i < 4; ++i) {
-                tryCompare(strip.cellAt(i), "implicitWidth", tight(i), 3000, strip.items[i] + " settles");
-            }
-            verify(waitForPolish(strip), "laid out");
-            checkRow("settled");
-
-            // A wider reading moves the items after it at once; back to the
-            // narrower one, they wait, then move back.
-            sizeAfter(strip, () => { monitor.fahrenheit = false; monitor.cpuUsage = 5; monitor.cpuTemperature = 50; });
-            const width = strip.implicitWidth;
-            const gpuAt = box(strip.cellAt(1)).x;
-            sizeAfter(strip, () => { monitor.cpuUsage = 5; monitor.cpuTemperature = 100; });
-            const grown = strip.implicitWidth;
-            verify(grown > width, "grows at once: " + grown + " after " + width);
-            verify(box(strip.cellAt(1)).x > gpuAt, "the GPU moves along at once");
-            sizeAfter(strip, () => { monitor.cpuTemperature = 50; });
-            compare(strip.implicitWidth, grown, "holds");
-            const cpu = strip.cellAt(0);
-            compare(box(cpu.contentItem).x, box(cpu).x + cpu.padding, "the room held falls after the content");
-            wait(150);
-            compare(strip.implicitWidth, grown, "still holding");
-            tryCompare(strip, "implicitWidth", width, 3000, "moves back after the delay");
-            compare(box(strip.cellAt(1)).x, gpuAt);
-
-            // A change of layout takes the new widths at once.
-            strip.settleDelay = 60000;
-            sizeAfter(strip, () => { monitor.cpuTemperature = 100; });
-            sizeAfter(strip, () => { monitor.cpuTemperature = 50; });
-            verify(strip.cellAt(0).implicitWidth > tight(0), "the CPU holds");
-            strip.thickness = data.thickness + 1;
-            strip.height = data.thickness + 1;
-            waitForRendering(strip);
-            for (let i = 0; i < 4; ++i) {
-                compare(strip.cellAt(i).implicitWidth, tight(i), strip.items[i] + " in the new layout");
-            }
-            checkRow("a new layout");
-        }
-
-        // A burst that dies down leaves a digit of room at most once the
-        // trim delay has passed, as on the owner's panel: the disk back to
-        // 0 B/s after 353 KiB/s, by steady network rates. A reading one digit
-        // narrower keeps all of its room, so 12 B/s and 0 B/s don't jiggle
-        // the panel.
-        function test_heldRoomIsADigitAtMost() {
-            monitor.networkDown = 337e3 / 8;
-            monitor.networkUp = 62.1e3 / 8;
-            monitor.diskRead = 0;
-            monitor.diskWrite = 0;
-            const strip = makePanel(46, { items: ["cpu", "network", "disk"], relayoutWindow: 0, trimDelay: 300 });
-            const disk = strip.cellAt(2);
-            const quiet = disk.implicitWidth;
-            compare(quiet, disk.contentWidth + 2 * disk.padding, "quiet, it hugs its text");
-            verify(disk.digitWidth > 1, "a digit's width: " + disk.digitWidth);
-
-            sizeAfter(strip, () => { monitor.diskRead = 12; });
-            const twelve = disk.implicitWidth;
-            verify(twelve > quiet, "12 B/s is wider");
-            sizeAfter(strip, () => { monitor.diskRead = 0; });
-            compare(disk.implicitWidth, twelve, "a digit narrower, it keeps its room");
-            wait(2 * strip.trimDelay);
-            compare(disk.implicitWidth, twelve, "through the trims too");
-
-            sizeAfter(strip, () => { monitor.diskRead = 353 * 1024; });
-            verify(disk.implicitWidth > quiet + disk.digitWidth, "353 KiB/s is wider by more than a digit");
-            const burst = disk.implicitWidth;
-            sizeAfter(strip, () => { monitor.diskRead = 0; });
-            compare(disk.implicitWidth, burst, "back to 0 B/s, it holds for a moment");
-            tryCompare(disk, "implicitWidth", quiet + disk.digitWidth, 3000, "then keeps a digit of room");
-            strip.settleDelay = 300;
-            tryCompare(disk, "implicitWidth", quiet, 3000, "and none after the hold");
-        }
-
-        // A disk that keeps going quiet and coming back within the trim delay
-        // keeps its room, so the items after it stay put; once it stays
-        // quiet they close up to within a digit.
-        function test_comingBackKeepsTheRoom() {
-            monitor.networkDown = 337e3 / 8;
-            monitor.networkUp = 62.1e3 / 8;
-            monitor.diskRead = 0;
-            monitor.diskWrite = 0;
-            const strip = makePanel(46, { items: ["cpu", "disk", "network"], relayoutWindow: 0, trimDelay: 600 });
-            const disk = strip.cellAt(1);
-            const quiet = disk.implicitWidth;
-            sizeAfter(strip, () => { monitor.diskRead = 4 * 1024; });
-            const busy = disk.implicitWidth;
-            verify(busy > quiet + disk.digitWidth, "4 KiB/s is wider by more than a digit");
-            const at = box(strip.cellAt(2)).x;
-            const width = strip.implicitWidth;
-            for (let i = 0; i < 16; ++i) {
-                sizeAfter(strip, () => { monitor.diskRead = i % 2 ? 4 * 1024 : 0; });
-                wait(100);
-                compare(box(strip.cellAt(2)).x, at, "reading " + i + ": the network stays put");
-                compare(strip.implicitWidth, width, "reading " + i + ": so does the strip's end");
-            }
-            sizeAfter(strip, () => { monitor.diskRead = 0; });
-            tryCompare(disk, "implicitWidth", quiet + disk.digitWidth, 3000, "quiet, it keeps a digit");
-            verify(box(strip.cellAt(2)).x < at, "and the network closes up");
-        }
-
-        // Bits or bytes is a change of layout, so a held cell takes its new
-        // width at once. The theme's font is one too, but a test can't
-        // change it, so the cells' layout keys are checked for its family
-        // and size.
-        function test_unitsAndFontAreLayout() {
-            const strip = makePanel(46, { items: ["cpu", "network", "claude"], relayoutWindow: 0 });
-            const network = strip.cellAt(1);
-            const tight = () => network.contentWidth + 2 * network.padding;
-            sizeAfter(strip, () => { monitor.networkDown = 88.8e6 / 8; });
-            sizeAfter(strip, () => { monitor.networkDown = 999 / 8; });
-            verify(network.implicitWidth > tight(), "holds after a narrower reading");
-            sizeAfter(strip, () => { monitor.networkBits = false; });
-            compare(network.implicitWidth, tight(), "bytes apply at once");
-
-            const font = Kirigami.Theme.defaultFont.family + "," + Kirigami.Theme.defaultFont.pointSize;
-            for (let i = 0; i < strip.items.length; ++i) {
-                verify(strip.cellAt(i).layoutKey.indexOf(font) >= 0, strip.items[i] + ": " + strip.cellAt(i).layoutKey);
-            }
+            const readout = find(strip.cellAt(0).contentItem, r => r.textWidth !== undefined);
+            const cpu = check("a larger font for the CPU", () => { readout.face.pointSize = readout.face.panelPointSize * 1.5; }, [0]);
+            verify(cpu.now[0] > cpu.before[0], "wider");
+            const faces = rateFaces(3);
+            compare(faces.length, 2, "the disk measures at its base size and as drawn");
+            const disk = check("a larger font for the disk", () => faces.forEach(f => { f.pointSize = f.panelPointSize * 1.5; }), [3]);
+            verify(disk.now[3] > disk.before[3], "wider");
+            checkFits("larger fonts");
         }
 
         function test_verticalRatesFit_data() {
@@ -901,7 +733,7 @@ Item {
         // Claude and Codex sit among the rings, marked and described like
         // them: the weekly percentage over the time to the reset.
         function test_usageCells() {
-            const strip = makeStrip({ items: ["cpu", "claude", "codex", "network"], relayoutWindow: 0 });
+            const strip = makeStrip({ items: ["cpu", "claude", "codex", "network"] });
             const claude = strip.cellAt(1);
             compare(claude.Accessible.name, "Claude");
             verify(/^52% used, Fable 78%, resets in 2 days 2\d hours$/.test(claude.Accessible.description),
@@ -916,8 +748,8 @@ Item {
             compare([line(1, "first").text, line(1, "second").text], ["52%", "2d"]);
             compare([line(2, "first").text, line(2, "second").text], ["24%", "5d"]);
 
-            // At the limit both readings turn red, and the wider one takes
-            // its room at once.
+            // At the limit both readings turn red, and nothing moves.
+            const at = geometry();
             const entries = JSON.parse(JSON.stringify(monitor.usage.entries));
             entries.claude.weekly.percent = 100;
             entries.claude.weekly.resetsAt = monitor.usage.createdAt + 600;
@@ -926,6 +758,7 @@ Item {
             compare([line(1, "first").color, line(1, "second").color], [root.hotColor, root.hotColor]);
             checkFits("at the limit");
             checkRow("at the limit");
+            compare(geometry(), at, "at the limit");
         }
 
         // A ring's readings are drawn for the eye alone: screen readers hear
@@ -959,7 +792,7 @@ Item {
         }
 
         function test_mirrored(data) {
-            const strip = makeStrip({ thickness: data.thickness, height: data.thickness, relayoutWindow: 0 }, mirroredComponent);
+            const strip = makeStrip({ thickness: data.thickness, height: data.thickness }, mirroredComponent);
             for (let i = 1; i < strip.items.length; ++i) {
                 compare(box(strip.cellAt(i)).right, box(strip.cellAt(i - 1)).x, strip.items[i] + " left of " + strip.items[i - 1]);
             }
@@ -991,48 +824,13 @@ Item {
                     const what = rates.item + " row " + row + ": ";
                     compare(value.effectiveHorizontalAlignment, Text.AlignRight, what + "the value isn't mirrored");
                     verify(box(value).right <= box(unit).x, what + "the number before its unit");
-                    compare(marker.x - box(pair).right, Kirigami.Units.smallSpacing, what + "the marker to the right");
+                    compare(marker.x - box(pair).right, Math.round(Kirigami.Units.smallSpacing * 1.5), what + "the marker 6 px to the right");
                 });
             }
             compare([line(0, "first").text, line(0, "second").text], ["23%", "61°"]);
             compare([line(2, "first").text, line(2, "second").text], ["42%", "13.4G"]);
             const texts = visibleTexts(strip);
             verify(!texts.includes("%") && !texts.includes("°"), JSON.stringify(texts));
-
-            // A rate holding its width keeps the room inside, so its readings
-            // still end its padding before the next item, here on their left.
-            // On two lines the room goes between the letters and the values,
-            // the letters keeping their padding from the item before; on one
-            // it goes before the first letter, each letter stays by its value
-            // and the second rate stays by the first. The marker checks above
-            // ran on the cell before it held.
-            const disk = strip.cellAt(5);
-            sizeAfter(strip, () => { monitor.diskRead = 1023 * 1048576; });
-            sizeAfter(strip, () => { monitor.diskRead = 0; });
-            verify(disk.implicitWidth > disk.contentWidth + 2 * disk.padding, "the disk holds");
-            const values = all(disk.contentItem, i => i.visible && i.horizontalAlignment === Text.AlignRight);
-            const before = Math.min(...values.map(v => box(v.parent).x)) - box(disk).x;
-            verify(before >= disk.padding && before < disk.padding + 1, "the held disk's readings end " + before + " from its left end");
-            const diskRates = all(disk.contentItem, i => i.reading !== undefined).sort((a, b) => a.index - b.index);
-            const wholeRoom = (room, what) => verify(room > 0 && Math.abs(room - Math.round(room)) < 1e-6, what + ", in whole pixels: " + room);
-            if (strip.twoLines) {
-                diskRates.forEach(r => {
-                    const what = "held disk row " + r.index + ": ";
-                    const letter = box(r.children[0]);
-                    const pair = box(values.find(v => v.parent.parent === r).parent);
-                    compare(box(disk).right - disk.padding, letter.right, what + "the letter its padding from the right end");
-                    wholeRoom(letter.x - pair.right - Kirigami.Units.smallSpacing, what + "the room between the letter and its value");
-                });
-            } else {
-                wholeRoom(box(disk).right - disk.padding - box(diskRates[0].children[0]).right, "the room before the first letter");
-                diskRates.forEach(r => {
-                    const what = "held disk row " + r.index + ": ";
-                    const letter = box(r.children[0]);
-                    const pair = box(values.find(v => v.parent.parent === r).parent);
-                    fuzzyCompare(letter.x - pair.right, Kirigami.Units.smallSpacing, 1e-6, what + "the letter by its value");
-                });
-                compare(box(diskRates[1].children[0]).right, box(diskRates[1]).right, "the second letter at its rate's start");
-            }
         }
 
         function test_hiddenTextShowsTooltipAndHeat() {

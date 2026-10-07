@@ -25,13 +25,6 @@ GridLayout {
     property string openItem: ""
     // Plasmoid.location, for the tooltips.
     property int location: PlasmaCore.Types.Floating
-    // How long a cell keeps its width after its readings narrow, how often
-    // it trims that room to a digit, and how long after a change of layout
-    // it takes its new width at once (see PanelCell); writable for the
-    // tests.
-    property int settleDelay: 3 * 60 * 1000
-    property int trimDelay: 10 * 1000
-    property int relayoutWindow: 500
 
     signal activated(string item, Item cell)
 
@@ -88,22 +81,10 @@ GridLayout {
             item: entry.modelData
             open: strip.openItem === entry.modelData
             vertical: strip.vertical
-            settleDelay: strip.settleDelay
-            trimDelay: strip.trimDelay
-            relayoutWindow: strip.relayoutWindow
-            layoutKey: [entry.textShown, strip.vertical, strip.thickness, strip.twoLines,
-                        Kirigami.Theme.defaultFont.family, Kirigami.Theme.defaultFont.pointSize,
-                        strip.monitor.fahrenheit, strip.monitor.networkBits,
-                        strip.monitor.gpuOuter.name, strip.monitor.gpuInner.name,
-                        Items.isUsage(entry.modelData) && strip.monitor.usage.entry(entry.modelData)?.status].join()
             onActivated: strip.activated(entry.modelData, cell)
 
-            // Along a horizontal panel a ring's content keeps to the cell's
-            // start, so room the cell holds on to, and the cell's rounding up
-            // to a whole pixel, fall after it. Rates take the cell's room and
-            // keep what it holds inside, before their values, so their
-            // readings end the cell's padding before the next item, the gap
-            // any item leaves.
+            // Along a horizontal panel the content keeps to the cell's start,
+            // so the cell's rounding up to a whole pixel falls after it.
             // Along a vertical panel the content is centred.
             // Both in whole pixels, rounding as the ring cells' own layout
             // does, so a ring's readings and the rates land on the same rows.
@@ -161,7 +142,6 @@ GridLayout {
                     vertical: strip.vertical
                     singleRow: !strip.vertical && !strip.twoLines
                     availableWidth: strip.vertical ? cell.width - 2 * Kirigami.Units.smallSpacing : Infinity
-                    width: strip.vertical ? implicitWidth : Math.max(implicitWidth, cell.width - 2 * cell.padding)
 
                     Binding {
                         target: cell
