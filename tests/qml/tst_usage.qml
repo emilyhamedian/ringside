@@ -1687,6 +1687,8 @@ Item {
             { state: "weekly", enabled: true, failed: false, next: 3 * 86400 },
             { state: "failed", enabled: true, failed: true, reason: "not-installed" },
             { state: "failed", enabled: true, failed: true, reason: "signed-out" },
+            { state: "failed", enabled: true, failed: true, reason: "not-responding", next: 300 },
+            { state: "failed", enabled: true, failed: true, reason: "not-subscription", only: "claude" },
             { state: "failed", enabled: true, failed: true, reason: "helper", at: -60, next: 240, error: "The usage helper exited with code 1: boom" },
             { state: "failed", enabled: false, failed: true, reason: "switch", error: "The usage helper exited with code 1: boom" },
             { state: "retrying", enabled: true, failed: true, at: -180, next: 120 },
@@ -1720,12 +1722,12 @@ Item {
             compare(toggle.mapToItem(popup, Qt.point(0, 0)).x, Math.round(Kirigami.Units.largeSpacing * 2), "on the readings' edge");
             verify(status.mapToItem(popup, Qt.point(0, 0)).y >= toggle.mapToItem(popup, Qt.point(0, toggle.height)).y, "under the label");
             const texts = toggle.parent.texts;
-            starterStates.forEach(row => {
+            starterStates.filter(row => (row.only ?? data.item) === data.item).forEach(row => {
                 const starter = starterFor(row);
                 setStarter(data.item, starter);
                 compare(toggle.text, data.label, row.state);
                 compare(toggle.checked, row.enabled, row.state);
-                compare(status.text, texts.starterStatus(data.item, starter, popup.weekly, popup.nowMs), row.state);
+                compare(status.text, texts.starterStatus(data.item, starter, popup.nowMs), row.state);
                 verify(status.text !== "", row.state);
                 compare(String(status.color), String(row.failed ? Kirigami.Theme.textColor : Style.dim(Kirigami.Theme.textColor)), row.state);
                 compare(toggle.Accessible.name, data.label, row.state);
@@ -2019,8 +2021,9 @@ Item {
         }
 
         // The session starter's status for each state, Claude and Codex, with
-        // a time today and on another day. Times are on the week's clock,
-        // New York's here: it is Tuesday 6 October 2026, 10 PM there.
+        // a time today and on another day. Times are on the clock the helper
+        // gives the starter, New York's here: it is Tuesday 6 October 2026,
+        // 10 PM there.
         function test_starterStatus_data() {
             const T = (h, m) => ({ day: 6, h: h, m: m });
             const W = (h, m) => ({ day: 7, h: h, m: m });
@@ -2041,6 +2044,12 @@ Item {
                 ["notInstalled", { state: "failed", reason: "not-installed" }, ["Can't start a session: Claude Code isn't installed."]],
                 ["signedOut", { state: "failed", reason: "signed-out" },
                  ["Can't start a session: Claude Code is signed out. Run claude in a terminal to sign in."]],
+                ["notSubscription", { state: "failed", reason: "not-subscription" },
+                 ["Can't start a session: Claude Code isn't signed in with a Claude subscription."]],
+                ["notResponding", { state: "failed", reason: "not-responding", next: T(22, 5) },
+                 ["Can't start a session: Claude Code isn't responding. Trying again at %1.", T(22, 5)]],
+                ["notRespondingTomorrow", { state: "failed", reason: "not-responding", next: W(0, 0) },
+                 ["Can't start a session: Claude Code isn't responding. Trying again %1.", W(0, 0)]],
                 ["retrying", { state: "retrying", at: T(23, 30), next: T(23, 35) },
                  ["Couldn't confirm the session started at %1. Trying once more at %2.", T(23, 30), T(23, 35)]],
                 ["paused", { state: "paused", next: W(4, 35) }, ["Couldn't confirm two sessions in a row. Paused until %1.", W(4, 35)]],
@@ -2058,12 +2067,17 @@ Item {
                 ["waitingToday", { state: "waiting", next: T(23, 40) }, ["The next week starts at %1.", T(23, 40)]],
                 ["confirming", { state: "confirming", at: T(23, 30), next: T(23, 35) },
                  ["Started a week at %1. Confirming at %2.", T(23, 30), T(23, 35)]],
-                ["started", { state: "started", at: T(23, 30) }, ["Started this week at %1.", T(23, 30)]],
+                // The next start is the week's end, which the reset line gives.
+                ["started", { state: "started", at: T(23, 30), next: { day: 13, h: 23, m: 30 } }, ["Started this week at %1.", T(23, 30)]],
                 ["startedYesterday", { state: "started", at: { day: 5, h: 23, m: 30 } }, ["Started this week %1.", { day: 5, h: 23, m: 30 }]],
                 ["weekly", { state: "weekly", next: F(2, 33) }, ["Weekly limit reached. The next week starts %1, when the limit resets.", F(2, 33)]],
                 ["notInstalled", { state: "failed", reason: "not-installed" }, ["Can't start a week: Codex isn't installed."]],
                 ["signedOut", { state: "failed", reason: "signed-out" },
                  ["Can't start a week: Codex is signed out. Run codex in a terminal to sign in."]],
+                ["notResponding", { state: "failed", reason: "not-responding", next: T(22, 5) },
+                 ["Can't start a week: Codex isn't responding. Trying again at %1.", T(22, 5)]],
+                ["notRespondingTomorrow", { state: "failed", reason: "not-responding", next: W(0, 0) },
+                 ["Can't start a week: Codex isn't responding. Trying again %1.", W(0, 0)]],
                 ["retrying", { state: "retrying", at: T(23, 30), next: W(0, 5) },
                  ["Couldn't confirm the week started at %1. Trying once more %2.", T(23, 30), W(0, 5)]],
                 ["paused", { state: "paused", next: W(4, 35) }, ["Couldn't confirm two weeks in a row. Paused until %1.", W(4, 35)]],
@@ -2079,9 +2093,8 @@ Item {
             // New York's wall clock in October, four hours behind UTC.
             const epoch = t => Date.UTC(2026, 9, t.day, t.h + 4, t.m) / 1000;
             const now = epoch({ day: 6, h: 22, m: 0 });
-            const week = { resetsAt: epoch({ day: 9, h: 20, m: 33 }), clockZone: { offset: -4 * 3600, abbreviation: "EDT" } };
             const starter = { enabled: data.starter.state !== "off", state: data.starter.state, reason: data.starter.reason ?? null,
-                              error: data.starter.error ?? null,
+                              error: data.starter.error ?? null, clockZone: { offset: -4 * 3600, abbreviation: "EDT" },
                               at: data.starter.at ? epoch(data.starter.at) : null,
                               next: data.starter.next ? epoch(data.starter.next) - (data.starter.early ?? 0) : null };
             // The expected time as the locale writes it: its time, after its
@@ -2092,23 +2105,26 @@ Item {
                 return t.day === 6 ? time : Qt.locale().dayName(date.getDay(), Locale.ShortFormat) + " " + time;
             };
             const [text, ...times] = data.expected;
-            compare(words.starterStatus(data.item, starter, week, now * 1000), root.substitute(text, times.map(spelled)));
+            compare(words.starterStatus(data.item, starter, now * 1000), root.substitute(text, times.map(spelled)));
         }
 
-        // Today is the week's day, not system time's: in a clock zone twelve
-        // hours from system time, the two disagree on which day it is.
-        function test_starterStatusTodayOnTheWeeksClock() {
+        // Times and today are the starter's clock zone's, not system time's:
+        // in a zone twelve hours from system time, the two disagree on which
+        // day it is. Without a zone, they are system time's.
+        function test_starterStatusOnTheStartersClock() {
             const base = Date.UTC(2026, 9, 6, 12, 0) / 1000;
             const systemOffset = -new Date(base * 1000).getTimezoneOffset() * 60;
             const zone = { offset: systemOffset + (systemOffset <= 0 ? 12 : -12) * 3600, abbreviation: "XYZ" };
-            const week = { resetsAt: base + 3 * 86400, clockZone: zone };
             // An epoch whose wall clock in the zone reads October `day`, h:m.
             const at = (day, h, m) => Date.UTC(2026, 9, day, h, m) / 1000 - zone.offset;
             const time = (day, h, m) => words.shortTime(new Date(2026, 9, day, h, m));
-            compare(words.starterStatus("claude", { state: "waiting", next: at(6, 23, 30) }, week, at(6, 0, 30) * 1000),
+            compare(words.starterStatus("claude", { state: "waiting", next: at(6, 23, 30), clockZone: zone }, at(6, 0, 30) * 1000),
                     "The next session starts at " + time(6, 23, 30) + ".");
-            compare(words.starterStatus("claude", { state: "waiting", next: at(7, 0, 30) }, week, at(6, 23, 30) * 1000),
+            compare(words.starterStatus("claude", { state: "waiting", next: at(7, 0, 30), clockZone: zone }, at(6, 23, 30) * 1000),
                     "The next session starts " + Qt.locale().dayName(3, Locale.ShortFormat) + " " + time(7, 0, 30) + ".");
+            const system = new Date(2026, 9, 6, 23, 30);
+            compare(words.starterStatus("claude", { state: "waiting", next: system.getTime() / 1000 }, new Date(2026, 9, 6, 9, 0).getTime()),
+                    "The next session starts at " + words.shortTime(system) + ".");
         }
 
         // Each status sentence has its own string for a time today and for
@@ -2123,9 +2139,9 @@ Item {
                 "The next session starts %1 %2.": "Die nächste Sitzung beginnt am %1 um %2."
             };
             try {
-                compare(words.starterStatus("claude", { state: "waiting", next: today.getTime() / 1000 }, null, now.getTime()),
+                compare(words.starterStatus("claude", { state: "waiting", next: today.getTime() / 1000 }, now.getTime()),
                         "Die nächste Sitzung beginnt um " + words.shortTime(today) + ".");
-                compare(words.starterStatus("claude", { state: "waiting", next: wednesday.getTime() / 1000 }, null, now.getTime()),
+                compare(words.starterStatus("claude", { state: "waiting", next: wednesday.getTime() / 1000 }, now.getTime()),
                         "Die nächste Sitzung beginnt am " + Qt.locale().dayName(3, Locale.ShortFormat) + " um "
                         + words.shortTime(wednesday) + ".");
             } finally {
@@ -2134,9 +2150,10 @@ Item {
         }
 
         function test_starterStatusOfAnUnknownState() {
-            compare(words.starterStatus("claude", { enabled: true, state: "failed", reason: "elsewhere" }, null, 0), "");
-            compare(words.starterStatus("claude", { enabled: true, state: "later" }, null, 0), "");
-            compare(words.starterStatus("claude", null, null, 0),
+            compare(words.starterStatus("claude", { enabled: true, state: "failed", reason: "elsewhere" }, 0), "");
+            compare(words.starterStatus("codex", { enabled: true, state: "failed", reason: "not-subscription" }, 0), "");
+            compare(words.starterStatus("claude", { enabled: true, state: "later" }, 0), "");
+            compare(words.starterStatus("claude", null, 0),
                     "When a session ends, Ringside sends Claude a one-word message to start the next one.");
         }
 

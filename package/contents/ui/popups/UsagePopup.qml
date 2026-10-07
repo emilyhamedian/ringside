@@ -109,7 +109,6 @@ PopupPage {
     footerLeading: StarterSwitch {
         item: popup.item
         usage: popup.usage
-        weekly: popup.weekly
         nowMs: popup.nowMs
         texts: words
     }

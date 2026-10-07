@@ -182,6 +182,8 @@ ColumnLayout {
         ["weekly limit reached", "weekly", null, 3 * 24 * 60],
         ["failed: not installed", "failed", null, null, "not-installed"],
         ["failed: signed out", "failed", null, null, "signed-out"],
+        ["failed: not a subscription (Claude only)", "failed", null, null, "not-subscription"],
+        ["failed: not responding, retrying", "failed", null, 5, "not-responding"],
         ["the helper failed to start one, retrying", "failed", -1, 4, "helper",
          "The usage helper exited with code 1: RuntimeError: boom"],
         ["the switch couldn't be turned off", "failed", null, null, "switch",
@@ -426,7 +428,6 @@ ColumnLayout {
                     leading: StarterSwitch {
                         item: starterFrame.item
                         usage: starterFrame.fake
-                        weekly: section.monitor.usage.entry(starterFrame.item).weekly
                         nowMs: starterFrame.fake.createdAt * 1000
                         texts: Words { monitor: section.monitor }
                     }
