@@ -456,6 +456,38 @@ Item {
             tryVerify(() => runner().connectedSources.length === 0, 10000);
         }
 
+        // A switch turned off while its starter is due starts nothing, even
+        // before the helper has written the change.
+        function test_switchedOffStartsNothing() {
+            start("starter-slow-set");
+            const run = commands();
+            const due = usage.starter("claude").next;
+            tryVerify(() => Date.now() / 1000 >= due, 5000);
+            usage.setStarter("claude", false);
+            starterTick().triggered();
+            compare(ran(run, " --start"), [], "the switch is off");
+            tryVerify(() => Object.keys(usage.starterWanted).length === 0, 10000);
+            starterTick().triggered();
+            compare(ran(run, " --start"), [], "the helper reports it off");
+        }
+
+        // A due start waits for a switch change being written, so the two
+        // never run at once, and runs as soon as it lands, with the starter
+        // just switched on, which is due at once.
+        function test_startWaitsForASwitchChange() {
+            start("starter-slow-set");
+            const run = commands();
+            const due = usage.starter("claude").next;
+            tryVerify(() => Date.now() / 1000 >= due, 5000);
+            usage.setStarter("codex", true);
+            starterTick().triggered();
+            compare(ran(run, " --start"), [], "a switch change is being written");
+            tryVerify(() => ran(run, " --start").length === 1, 10000);
+            compare(ran(run, " --start"), [usage.helperCommand(["claude", "codex"], " --start")]);
+            verify(!runner().connectedSources.some(c => c.includes("--starter-set")));
+            tryVerify(() => runner().connectedSources.length === 0, 10000);
+        }
+
         function test_setStarterRunsTheHelper() {
             start("starter");
             const run = commands();
