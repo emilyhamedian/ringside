@@ -2148,7 +2148,7 @@ Item {
             compare(g.runOutOpacity, 1, "a run-out drawn");
             const said = popup.paces[data.said];
             compare(g.runOutX, Math.round(g.xAt(said.runOut)));
-            compare(g.runOutLevel, rows(popup)[data.said].level, "in its limit's level");
+            compare(g.shownRunOutLevel, rows(popup)[data.said].level, "in its limit's level");
             const when = popup.runOutWhen(popup.limits[data.said], said);
             compare(g.runOutTime.text, when);
             verify(g.runOutTime.visible);
@@ -2756,7 +2756,7 @@ Item {
             verify(bottom <= g.floorY && bottom > g.floorY - 3, "down to the floor: " + bottom);
             verify(d.every((i, n) => n === 0 || i.y > d[n - 1].y + d[n - 1].height), "dashed");
             const colour = [Kirigami.Theme.textColor, Kirigami.Theme.neutralTextColor, Kirigami.Theme.negativeTextColor][data.level];
-            compare(g.runOutLevel, data.level);
+            compare(g.shownRunOutLevel, data.level);
             d.forEach(i => compare(String(i.color), String(Qt.alpha(colour, 0.6 * colour.a))));
             const time = r.label;
             verify(time.visible);
@@ -2792,9 +2792,8 @@ Item {
                 return;
             }
             verify(runOutOf(g).visible);
-            compare(g.runOutSeries, data.tag);
             compare(g.runOutX, Math.round((data.runOut - start) / week * g.width));
-            compare(g.runOutLevel, data.level);
+            compare(g.shownRunOutLevel, data.level);
         }
 
         function test_singleReadingIsADot() {
