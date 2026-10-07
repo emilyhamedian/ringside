@@ -26,6 +26,12 @@ follows [Semantic Versioning](https://semver.org/).
   shown. This replaces the fade, which looked like a sleeping GPU.
 - A panel item with keyboard focus has a line around it in the theme's
   focus colour.
+- A switch in the Claude and Codex popups, off by default, starts the next
+  Claude session or Codex week as soon as the last one ends, by sending one
+  word through the Claude Code or Codex CLI, so a window is always running
+  instead of waiting for your next message. The line under the switch says
+  when the next one starts, or why it can't. See "Starting the next session"
+  in the README.
 - Readings move into place instead of jumping. A ring sweeps to each new
   reading and turns amber or red as it passes 75% or 90%, and the number in
   a popup's ring counts along with it; the Claude and Codex bars do the

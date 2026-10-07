@@ -130,6 +130,30 @@ by the reset", or "Fable is on pace to run out Thu 8:20 PM". When it says a
 limit runs out, the graph has red dots from that limit's line to where it
 would reach 100%. Reset times follow the time zone of Plasma's Digital Clock.
 
+### Starting the next session
+
+The Claude and Codex popups have a switch at the bottom: *Start a new session
+when one ends* for Claude, *Start a new week when one ends* for Codex. It is
+off by default and applies to every Ringside widget you have.
+
+With it on, when your Claude five-hour session ends, or none is running,
+Ringside has Claude Code send Claude the word "Hi" on Haiku, with no tools,
+settings or saved session, so the next five hours start at once instead of at
+your next message. For Codex it does the same when the week ends, with one
+read-only `codex exec` turn on the newest Luna model the Codex CLI lists, at
+its lightest effort. Five minutes later Ringside checks the limits to see that
+a new session or week started. It waits while one is running, and while the
+weekly limit is reached it waits for the reset. If it can't confirm two starts
+in a row, it stops for five hours. The line under the switch says when the
+next one starts, or why it can't. It works only while Ringside is running;
+after sleep or a login it catches up at once.
+
+Each message counts toward your limits like any other: a few hundred tokens,
+at most one per five-hour session for Claude and one a week for Codex, plus a
+retry when a start isn't confirmed. If you pay for usage beyond your plan,
+such as Claude's extra usage or Codex credits, switch it off: Ringside
+doesn't check whether a message would be billed.
+
 ## Discrete GPUs on laptops
 
 Reading a GPU's sensors keeps it awake. A laptop's discrete GPU normally
@@ -169,7 +193,10 @@ The Claude and Codex items run
 [`usage.py`](package/contents/code/usage.py). It sends your Claude Code login
 only to Anthropic (`api.anthropic.com`, and `platform.claude.com` to renew it),
 and asks the Codex CLI on your machine for Codex. It keeps the last readings
-and the week's history in `~/.cache/ringside/`.
+and the week's history in `~/.cache/ringside/`. With the session starter on,
+it also runs `claude` and `codex` from `~/.local/bin` or your PATH, keeps the
+switch in `~/.config/ringside/starter.json` and its state in
+`~/.local/state/ringside/`.
 
 ## Development
 
