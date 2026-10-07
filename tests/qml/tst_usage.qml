@@ -10,6 +10,7 @@ import "../../package/contents/ui/popups"
 import "../../package/contents/ui/code/format.js" as Format
 import "../../package/contents/ui/code/report.js" as Report
 import "../../package/contents/ui/code/style.js" as Style
+import "starterstates.js" as StarterStates
 
 // The Claude and Codex items. UsageData runs the stub scenarios in data/
 // (fake-usage-*.py) in place of usage.py, so no credentials are read and no
@@ -1822,28 +1823,8 @@ Item {
             monitor.usage.starters = Object.assign({}, monitor.usage.starters, { [item]: Object.assign({ at: null, next: null, reason: null }, starter) });
         }
 
-        readonly property var starterStates: [
-            { state: "off", enabled: false, failed: false },
-            { state: "waiting", enabled: true, failed: false, next: 3600 },
-            { state: "confirming", enabled: true, failed: false, at: -180, next: 120 },
-            { state: "started", enabled: true, failed: false, at: -180, next: 5 * 3600 },
-            { state: "weekly", enabled: true, failed: false, next: 3 * 86400 },
-            { state: "failed", enabled: true, failed: true, reason: "not-installed" },
-            { state: "failed", enabled: true, failed: true, reason: "signed-out" },
-            { state: "failed", enabled: true, failed: true, reason: "not-responding", next: 300 },
-            { state: "failed", enabled: true, failed: true, reason: "not-subscription", only: "claude" },
-            { state: "failed", enabled: true, failed: true, reason: "unchecked", next: 900 },
-            { state: "failed", enabled: true, failed: true, reason: "not-sent", next: 300 },
-            { state: "failed", enabled: true, failed: true, reason: "helper", at: -60, next: 240, error: "The usage helper exited with code 1: boom" },
-            { state: "failed", enabled: false, failed: true, reason: "switch", error: "The usage helper exited with code 1: boom" },
-            { state: "retrying", enabled: true, failed: true, at: -180, next: 120 },
-            { state: "paused", enabled: true, failed: true, next: 5 * 3600 }
-        ]
-
         function starterFor(row) {
-            const at = monitor.usage.createdAt;
-            return { enabled: row.enabled, state: row.state, reason: row.reason ?? null, error: row.error ?? null,
-                     at: row.at !== undefined ? at + row.at : null, next: row.next !== undefined ? at + row.next : null };
+            return StarterStates.starter(row, monitor.usage.createdAt);
         }
 
         function test_starterSwitch_data() {
@@ -1867,7 +1848,7 @@ Item {
             compare(toggle.mapToItem(popup, Qt.point(0, 0)).x, Math.round(Kirigami.Units.largeSpacing * 2), "on the readings' edge");
             verify(status.mapToItem(popup, Qt.point(0, 0)).y >= toggle.mapToItem(popup, Qt.point(0, toggle.height)).y, "under the label");
             const texts = toggle.parent.texts;
-            starterStates.filter(row => (row.only ?? data.item) === data.item).forEach(row => {
+            StarterStates.ROWS.filter(row => (row.only ?? data.item) === data.item).forEach(row => {
                 const starter = starterFor(row);
                 setStarter(data.item, starter);
                 compare(toggle.text, data.label, row.state);
@@ -1933,7 +1914,7 @@ Item {
             const status = starterStatus(popup);
             const lines = new Set();
             // An unknown state says nothing, the shortest status there is.
-            starterStates.concat([{ state: "later", enabled: true }]).forEach(row => {
+            StarterStates.ROWS.concat([{ state: "later", enabled: true }]).forEach(row => {
                 setStarter(data.item, starterFor(row));
                 waitForRendering(popup);
                 compare(popup.implicitHeight, height, row.state + " " + (row.reason ?? ""));
