@@ -565,14 +565,64 @@ Item {
             compare(usage.starterWanted, {});
         }
 
+        // A change the helper couldn't write comes back in a report that
+        // shows the switch unchanged, with the reason on stderr. The switch
+        // snaps back and says why under it, and one the user turned off
+        // starts nothing until it is turned again.
         function test_refusedChangeSnapsBack() {
             start("starter-stuck");
+            const status = config.usageStatus;
+            const refused = "[Errno 13] Permission denied: '/home/user/.config/ringside/.starter.kvt5gezx.tmp'";
             const landed = spy("startersChanged");
             usage.setStarter("codex", true);
             verify(usage.starterOn("codex"));
             landed.wait(10000);
             verify(!usage.starterOn("codex"), "the helper kept it off");
             compare(usage.starterWanted, {});
+            compare(usage.starter("codex"), { enabled: false, state: "failed", reason: "switch", at: null, next: null, error: refused });
+            verify(!usage.degraded("claude") && !usage.degraded("codex"), "the readings carry no failure");
+            compare(usage.helperError, "");
+            compare(config.usageStatus, status);
+            tryVerify(() => runner().connectedSources.length === 0, 10000);
+
+            const run = commands();
+            usage.setStarter("claude", false);
+            tryVerify(() => Object.keys(usage.starterWanted).length === 0, 10000);
+            verify(usage.starterOn("claude"), "the helper kept it on");
+            compare([usage.starter("claude").reason, usage.starter("claude").error], ["switch", refused]);
+            const due = usage.starter("claude").next;
+            tryVerify(() => Date.now() / 1000 >= due, 5000);
+            starterTick().triggered();
+            compare(ran(run, " --start"), [], "the user turned it off");
+
+            usage.setStarter("claude", true);
+            tryVerify(() => Object.keys(usage.starterWanted).length === 0, 10000);
+            verify(usage.starter("claude").reason !== "switch", "turned again, the failure is gone");
+            const next = usage.starter("claude").next;
+            tryVerify(() => Date.now() / 1000 >= next, 5000);
+            starterTick().triggered();
+            compare(ran(run, " --start").length, 1);
+            tryVerify(() => runner().connectedSources.length === 0, 10000);
+        }
+
+        // Only the change last asked for can fail, and a report that shows
+        // another widget's change, with no reason on stderr, is no failure.
+        function test_refusedChangeOnlyWhenAskedAndSaid() {
+            start("starter");
+            const command = usage.helperCommand(usage.ids, " --starter-set codex=on");
+            const answer = stderr => runner().newData(command, { "exit code": 0, "exit status": 0, stderr: stderr,
+                                                                 stdout: JSON.stringify({ fetchedAt: usage.entry("codex").fetchedAt,
+                                                                                          providers: { codex: usage.entry("codex") } }) });
+            usage.starterWanted = { codex: true };
+            answer("");
+            compare(usage.switchFailures, {}, "another widget's change");
+            usage.starterWanted = { codex: false };
+            answer("[Errno 13] Permission denied\n");
+            compare(usage.switchFailures, {}, "turned again since");
+            verify(usage.starter("codex").reason !== "switch");
+            compare(usage.starterWanted, { codex: false }, "the newer change still runs");
+            tryVerify(() => runner().connectedSources.length === 0, 10000);
+            compare(usage.switchFailures, {});
         }
 
         function test_failedChangeSnapsBack() {

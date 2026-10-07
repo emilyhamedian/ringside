@@ -827,8 +827,7 @@ class StarterRuns(Isolated):
                                    "--starter-set", "codex=on")
         self.assertEqual({name: entry["starter"]["enabled"] for name, entry in report["providers"].items()},
                          {"claude": True, "codex": False})
-        self.assertIn("switch wasn't changed", err.getvalue())
-        self.assertIn("Permission denied", err.getvalue())
+        self.assertEqual(err.getvalue(), f"[Errno 13] Permission denied: '{usage.STARTER_FILE}'\n")
         self.assertEqual(self.switches(), {"claude": True})
 
     def test_a_switch_change_that_cant_get_its_lock_reports_it_unchanged(self):
@@ -839,7 +838,7 @@ class StarterRuns(Isolated):
         with mock.patch.object(usage, "LOCK_WAIT", 0.3), mock.patch("sys.stderr", new=io.StringIO()) as err:
             report = self.run_main("--providers", "claude", "--starter-set", "claude=on")
         self.assertEqual(report["providers"]["claude"]["starter"], OFF)
-        self.assertIn("another usage check is still running", err.getvalue())
+        self.assertEqual(err.getvalue(), "another usage check is still running\n")
 
     def test_bad_switches_exit_with_a_usage_error(self):
         for value in ("claude", "claude=yes", "gemini=on", "=on"):

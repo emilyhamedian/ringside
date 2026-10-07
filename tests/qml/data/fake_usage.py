@@ -11,7 +11,8 @@ nothing goes over the network.
 
 Every entry carries a session starter, off unless the scenario gives one.
 --starter-set <id>=on|off switches it in the report printed (on reads as
-waiting and due now) unless the scenario passes sticks=False. --start
+waiting and due now) unless the scenario passes sticks=False, which says
+why on stderr as usage.py does when it can't write the switch. --start
 reports each listed starter but a failed one as confirming, as a send would:
 the widget runs --start only for starters that are switched on and due, so
 the fake checks neither. Nothing is remembered between runs.
@@ -25,6 +26,8 @@ NOW = int(time.time())
 DAY = 86400
 WEEK = 7 * DAY
 SESSION = 5 * 3600
+# What usage.py prints on stderr when it can't write the switch file.
+SWITCH_REFUSED = "[Errno 13] Permission denied: '/home/user/.config/ringside/.starter.kvt5gezx.tmp'"
 # The desktop clock's zone, as usage.py adds it to every time it reports.
 ZONE = {"offset": -4 * 3600, "abbreviation": "EDT"}
 
@@ -66,6 +69,8 @@ def report(sticks=True, **entries):
     providers = {k: v for k, v in entries.items() if k in requested}
     for entry in providers.values():
         entry.setdefault("starter", starter())
+    if not sticks and values("--starter-set"):
+        print(SWITCH_REFUSED, file=sys.stderr)
     for change in values("--starter-set"):
         name, _, value = change.partition("=")
         if sticks and name in providers:

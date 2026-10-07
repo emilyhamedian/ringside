@@ -56,7 +56,7 @@ Item {
     // Per id, the --start runs in a row that gave no report: { count, at,
     // retryAt, error }. Kept until a report moves the starter on.
     property var startFailures: ({})
-    // Per id, the switch change that gave no report: { on, error }. Shown
+    // Per id, the switch change that didn't take: { on, error }. Shown
     // until the switch is turned again or reported where it was asked.
     property var switchFailures: ({})
 
@@ -122,9 +122,11 @@ Item {
     function startDue() {
         const busy = runner.connectedSources.some(s => s.endsWith(" --start") || s.includes(" --starter-set "));
         const now = Date.now() / 1000;
+        // A switch the user turned off and the helper couldn't write starts
+        // nothing either, until it is turned again.
         const due = ids.filter(id => {
             const s = starter(id);
-            return starterOn(id) && Number.isFinite(s?.next) && s.next <= now;
+            return starterOn(id) && s?.reason !== "switch" && Number.isFinite(s?.next) && s.next <= now;
         });
         if (due.length > 0 && !busy) {
             runner.connectSource(helperCommand(due, " --start"));
@@ -156,6 +158,10 @@ Item {
         if (due.length > 0) {
             startFailed(due, "");
         }
+    }
+
+    function switchRefused(id, on, error) {
+        switchFailures = Object.assign({}, switchFailures, { [id]: { on: on, error: error } });
     }
 
     function present(id) {
@@ -325,7 +331,10 @@ Item {
             disconnectSource(source);
             // A switch change is settled by this run's report, or by its
             // failure, which leaves the switch where it was reported and,
-            // like a failed --start, says so only under the switch.
+            // like a failed --start, says so only under the switch. So does
+            // a report that shows the switch unchanged with the reason the
+            // helper couldn't write it on stderr; without one, another
+            // widget's change came first, and that is no failure.
             const set = / --starter-set (\w+)=(on|off)$/.exec(source);
             const started = / --providers ([\w,]+) --start$/.exec(source);
             const settled = set && usage.starterWanted[set[1]] === (set[2] === "on") ? set[1] : "";
@@ -339,9 +348,7 @@ Item {
                 usage.startFailed(started[1].split(","), usage.failureText(Report.helperFailure(data)));
             } else if (!report?.providers && set) {
                 if (settled) {
-                    usage.switchFailures = Object.assign({}, usage.switchFailures, {
-                        [settled]: { on: set[2] === "on", error: usage.failureText(Report.helperFailure(data)) }
-                    });
+                    usage.switchRefused(settled, set[2] === "on", usage.failureText(Report.helperFailure(data)));
                 }
             } else if (!report?.providers) {
                 usage.helperError = usage.failureText(Report.helperFailure(data));
@@ -352,6 +359,11 @@ Item {
                 usage.merge(report);
                 if (started) {
                     usage.startLeftDue(started[1].split(","));
+                }
+                const reason = Report.helperFailure(data).detail;
+                if (settled && reason !== "" && report.providers[settled]?.starter
+                    && report.providers[settled].starter.enabled !== (set[2] === "on")) {
+                    usage.switchRefused(settled, set[2] === "on", reason);
                 }
             }
             if (settled) {
