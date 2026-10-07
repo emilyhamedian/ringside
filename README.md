@@ -118,8 +118,9 @@ The ring shows the weekly limit for all models, over the time left until it
 resets in its largest unit, such as "6d", "23h" or "59m"; the popup and the
 tooltip give the full time. At 100% that time turns red, since it's how long
 the limit stays reached. If your plan also has a per-model weekly limit, the
-inner ring shows it; choose which under *Sensors*. Model limits are the ones
-Anthropic's usage reply lists, under the names it gives them, such as Fable.
+inner ring shows it; choose which under *AI Providers*. Model limits are the
+ones Anthropic's usage reply lists, under the names it gives them, such as
+Fable.
 
 When the last check failed, a small amber dot sits at the ring's corner and
 the tooltip says when.
@@ -175,13 +176,13 @@ keep it awake regardless.
 Right-click the widget and choose *Configure Ringside…*.
 
 - **General**: update interval, how far back the graphs reach, Celsius or
-  Fahrenheit, network rates in bits or bytes, temperature thresholds, and how
-  often Claude and Codex are checked.
+  Fahrenheit, network rates in bits or bytes, and temperature thresholds.
 - **Panel Items**: which items show and in what order, and rings with or
   without their text. Rings grow and shrink with the panel.
 - **Sensors**: the CPU temperature source, which GPU goes on which ring, the
-  network interface, the disk and volume, the disk temperature sensor, and the
-  Claude and Codex inner rings.
+  network interface, the disk and volume, and the disk temperature sensor.
+- **AI Providers**: how often Claude and Codex are checked, and which
+  per-model limit each inner ring shows.
 
 ## What it reads
 

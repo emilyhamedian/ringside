@@ -103,6 +103,9 @@ follows [Semantic Versioning](https://semver.org/).
   three characters.
 - The Codex ring shows the Codex mark, its cloud drawn as an outline, instead
   of the OpenAI logo.
+- How often Claude and Codex are checked, and which per-model limit each
+  inner ring shows, moved from General and Sensors to a new AI Providers
+  page in the settings. Existing settings carry over.
 
 ### Removed
 
