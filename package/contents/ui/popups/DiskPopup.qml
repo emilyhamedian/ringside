@@ -18,8 +18,9 @@ PopupPage {
         monitor: popup.monitor
     }
 
-    // Read or write: the rate over a small line graph of its history, which
-    // its peak tops. Each DiskRate below names that peak on its caption line.
+    // Read or write: the rate over a graph of its history, which its peak
+    // tops, a tile across the page as the other popups open on. Each names
+    // its graph's span and peak on its caption line.
     component DiskRate: Tile {
         id: tile
 
@@ -36,13 +37,11 @@ PopupPage {
 
         Graph {
             Layout.fillWidth: true
-            Layout.preferredHeight: Math.round(Kirigami.Units.gridUnit * 1.35)
             values: tile.history
             length: tile.length
             // Anything under 1 MiB/s stays near the floor rather than filling the graph.
             maximum: Math.max(History.peak(tile.history)?.value ?? 0, 1048576)
             ceiling: false
-            fillOpacity: 0
         }
     }
 
@@ -75,18 +74,17 @@ PopupPage {
         }
     }
 
-    GridLayout {
+    ColumnLayout {
         Layout.fillWidth: true
         Layout.leftMargin: Math.round(Kirigami.Units.largeSpacing * 2)
         Layout.rightMargin: Layout.leftMargin
         Layout.topMargin: Math.round(Kirigami.Units.smallSpacing * 1.5)
         Layout.bottomMargin: Math.round(Kirigami.Units.largeSpacing * 1.5)
-        columns: 2
-        columnSpacing: Kirigami.Units.largeSpacing
-        uniformCellWidths: true
+        spacing: Kirigami.Units.largeSpacing
 
         DiskRate {
             caption: i18nc("@title:group disk reads", "Read")
+            graphSeconds: popup.monitor.historySeconds
             graphTop: words.peakText(popup.monitor.diskReadHistory, false)
             rate: popup.monitor.diskRead
             history: popup.monitor.diskReadHistory
@@ -95,6 +93,7 @@ PopupPage {
 
         DiskRate {
             caption: i18nc("@title:group disk writes", "Write")
+            graphSeconds: popup.monitor.historySeconds
             graphTop: words.peakText(popup.monitor.diskWriteHistory, false)
             rate: popup.monitor.diskWrite
             history: popup.monitor.diskWriteHistory
