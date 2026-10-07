@@ -10,8 +10,8 @@ import "../code/style.js" as Style
 // fills its graph and goes under the data. The label sits at the left end,
 // where a graph's oldest data usually lies low, or at the right end with
 // preferEnd, and moves to the other end when a line would run through it:
-// faded out and back in, while the line eases to the readings that moved
-// it. The graph maps 100 % to limitY.
+// faded out and back in on the week graph, at once on the system graphs,
+// which have no motion. The graph maps 100 % to limitY.
 Item {
     id: rule
 
@@ -19,6 +19,8 @@ Item {
     property var series: []
     // For graphs whose right end is still to come, such as the week so far.
     property bool preferEnd: false
+    // Off moves the label at once.
+    property bool fades: true
 
     // The rule's colour, which the week graph's floor and reset tick share.
     readonly property color lineColor: Qt.alpha(Kirigami.Theme.textColor, 0.12)
@@ -61,7 +63,7 @@ Item {
         if (held) {
             return;
         }
-        if (width > 0 && width === placedWidth && Kirigami.Units.longDuration > 1) {
+        if (fades && width > 0 && width === placedWidth && Kirigami.Units.longDuration > 1) {
             move.restart();
         } else {
             move.stop();

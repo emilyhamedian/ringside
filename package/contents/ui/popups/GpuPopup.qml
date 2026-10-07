@@ -205,7 +205,6 @@ PopupPage {
                     Layout.fillWidth: true
                     values: section.slot.history
                     length: section.monitor.historyLength
-                    interval: section.monitor.sampleInterval
                 }
             }
 

@@ -12,7 +12,7 @@ import "../../package/contents/ui/code/history.js" as History
 // How readings move: a ring's arc follows a new reading without passing it
 // and bends when another arrives mid-move, its colour turns as it passes 75
 // and 90 %, and the number in a popup's ring counts with it; a history
-// graph's points ease to a new sample in their slots; a week graph's new
+// graph draws a new sample in one frame, with no motion; a week graph's new
 // stretch draws on and its run-out, marker and old week fade; a second GPU's
 // ring fades its track in and then draws its arc in, and goes the other way
 // round, and its popup section fades in and out. A duration of 0, as
@@ -403,87 +403,63 @@ Item {
             return xy(History.points(values, g.length, g.width, g.height, maximum ?? g.maximum, g.topY));
         }
 
-        // A new sample: nothing is drawn ahead of it, then every point eases
-        // from the height it had in its slot, the newest from the last
-        // reading, and comes to rest on the new samples.
-        function test_easesInPlace() {
+        // The line each of a graph's ShapePaths draws, as drawn.
+        function strokes(g) {
+            return g.children.filter(c => c.preferredRendererType !== undefined)
+                .reduce((paths, shape) => paths.concat(Array.from(shape.data)), [])
+                .filter(p => p.pathElements !== undefined)
+                .map(p => xy(Array.from(p.pathElements[0].path)));
+        }
+
+        // A new sample is drawn in the frame it arrives in, each point a
+        // slot to the left, with nothing in between; a rate's new top comes
+        // with it. Every frame after it shows the new line.
+        function test_aSampleDrawsInOneFrame_data() {
+            return [{ tag: "percentage" }, { tag: "rate", maximum: 180 }];
+        }
+        function test_aSampleDrawsInOneFrame(data) {
             const g = createTemporaryObject(graphComponent, root, { values: start });
-            const before = xy(g.mainDrawn);
-            compare(before, rest(g, start));
+            const before = strokes(g);
+            compare(before[1], rest(g, start));
+            let frames = [];
+            createTemporaryObject(samplerComponent, graphs, { sample: () => frames.push(strokes(g)) });
+            wait(50);
+            frames = [];
             const next = History.push(start, 90, 12);
             g.values = next;
-            compare(xy(g.mainDrawn), before, "nothing drawn ahead of the easing");
-            tryVerify(() => g.mainFrom.length > 0, 1000, "easing");
-            compare(xy(g.mainFrom), before, "each point from its slot's old height");
-            verify(g.progress < 1);
-            tryVerify(() => g.progress === 1, 2000, "eased");
-            compare(xy(g.mainDrawn), rest(g, next));
-            compare(xy(g.mainPoints), rest(g, next), "at rest where the samples put it");
-        }
-
-        // A rate's new top comes with its sample and eases in with it, so the
-        // line meets the peak its caption names as it comes to rest.
-        function test_newTopEasesWithTheSample() {
-            const g = createTemporaryObject(graphComponent, root, { values: start, maximum: 100 });
-            const before = xy(g.mainDrawn);
-            const next = History.push(start, 180, 12);
-            g.values = next;
-            g.maximum = 180;
-            tryVerify(() => g.mainFrom.length > 0, 1000, "easing");
-            compare(xy(g.mainFrom), before, "from the line drawn at the old top");
-            tryVerify(() => g.progress === 1, 2000, "eased");
-            compare(xy(g.mainDrawn), rest(g, next, 180));
-        }
-
-        // A sample mid-ease starts from where the line is drawn, between
-        // where the last one eased from and to, not from either end.
-        function test_aSampleMidEaseStartsWhereTheLineIs() {
-            const g = createTemporaryObject(graphComponent, root, { values: start });
-            const first = History.push(start, 95, 12);
-            g.values = first;
-            tryVerify(() => g.progress > 0.2 && g.progress < 0.8, 2000, "half way");
-            const from = xy(g.mainFrom);
-            const to = rest(g, first);
-            g.values = History.push(first, 10, 12);
-            tryVerify(() => g.mainFrom.length > 0 && g.mainFrom[0].y !== from[0][1], 1000, "easing again");
-            const again = xy(g.mainFrom);
-            let between = 0;
-            for (let i = 0; i < again.length; ++i) {
-                const [low, high] = [Math.min(from[i][1], to[i][1]), Math.max(from[i][1], to[i][1])];
-                verify(again[i][1] >= low - 1e-9 && again[i][1] <= high + 1e-9, "slot " + i + " in reach");
-                between += again[i][1] > low && again[i][1] < high ? 1 : 0;
+            if (data.maximum) {
+                g.maximum = data.maximum;
             }
-            verify(between > again.length / 2, "drawn part way: " + between + " of " + again.length);
+            const after = strokes(g);
+            compare(after[1], rest(g, next, data.maximum), "drawn as it arrives");
+            wait(Math.max(3 * Kirigami.Units.longDuration, 200));
+            verify(frames.length > 2, "frames sampled: " + frames.length);
+            frames.forEach((f, i) => compare(f, after, "frame " + i));
         }
 
-        // While the history grows in, each sample moves a slot left and the
-        // new one grows out of the old end.
-        function test_growingIn() {
-            const g = createTemporaryObject(graphComponent, root, { values: [30, 60] });
-            const before = xy(g.mainDrawn);
-            g.values = [30, 60, 20];
-            tryVerify(() => g.mainFrom.length > 0, 1000, "easing");
-            compare(xy(g.mainFrom), before.concat([before[1]]));
-            tryVerify(() => g.progress === 1, 2000, "eased");
-            compare(xy(g.mainDrawn), rest(g, [30, 60, 20]));
-        }
-
-        // A sample that changes nothing drawn, and any change but a sample,
-        // such as a cleared history, are drawn at once, with no frames.
-        function test_noEasingWhereNothingMoves() {
-            const flat = Array(12).fill(0);
-            const g = createTemporaryObject(graphComponent, root, { values: flat });
-            g.values = History.push(flat, 0, 12);
+        // A sample that moves the 100 % label to the graph's other end moves
+        // it at once, in full view: the system graphs have no motion.
+        function test_ruleLabelMovesAtOnceInAGraph() {
+            const g = createTemporaryObject(graphComponent, root, { values: Array(12).fill(0) });
+            const rule = root.all(g, i => i.shownAtStart !== undefined)[0];
+            const label = rule.children.find(c => c.text !== undefined);
+            compare(label.x, 0);
+            let frames = [];
+            createTemporaryObject(samplerComponent, graphs, { sample: () => frames.push([label.x, label.opacity]) });
             wait(50);
-            compare(g.mainFrom, []);
-            compare(g.progress, 1);
-            g.values = [];
-            tryCompare(g, "mainDrawn", []);
-            compare(g.progress, 1);
+            frames = [];
+            g.values = [100, 100, 100].concat(Array(9).fill(0));
+            compare(rule.atStart, false);
+            const end = rule.width - label.implicitWidth;
+            compare(label.x, end, "moved at once");
+            wait(Math.max(3 * Kirigami.Units.shortDuration, 200));
+            verify(frames.length > 2, "frames sampled: " + frames.length);
+            frames.forEach((f, i) => compare(f, [end, 1], "frame " + i));
         }
 
-        // New readings that move the 100 % label to the other end fade it
-        // out there and back in at its new end; a resize moves it at once.
+        // On its own, as the week graph uses it, a rule whose label new
+        // readings move to the other end fades it out there and back in at
+        // its new end; a resize moves it at once.
         function test_ruleLabelFadesToItsOtherEnd() {
             const rule = createTemporaryObject(ruleComponent, root);
             const label = rule.children.find(c => c.text !== undefined);
@@ -543,26 +519,6 @@ Item {
             verify(seen.length > 0, "frames sampled");
             verify(seen.every(o => o === 1), "never dimmed: " + JSON.stringify(seen));
             rules.forEach(r => compare(r.shownAtStart, r.atStart));
-        }
-
-        // A graph is still before the next sample, however slow Plasma's
-        // animation speed.
-        function test_easesWithinHalfTheInterval() {
-            const g = createTemporaryObject(graphComponent, root, { values: start, interval: 300 });
-            compare(g.duration, Math.min(Kirigami.Units.longDuration, 150));
-            g.interval = 0;
-            compare(g.duration, Kirigami.Units.longDuration);
-            verify(Kirigami.Units.longDuration > 150, "the test runs at an animation speed the cap shortens");
-        }
-
-        // At Plasma's Instant speed a sample is drawn as it arrives.
-        function test_instant() {
-            const g = createTemporaryObject(graphComponent, root, { values: start, duration: 0 });
-            const next = History.push(start, 90, 12);
-            g.values = next;
-            compare(xy(g.mainDrawn), rest(g, next));
-            g.maximum = 180;
-            compare(xy(g.mainDrawn), rest(g, next, 180));
         }
     }
 

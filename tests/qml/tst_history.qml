@@ -145,22 +145,4 @@ TestCase {
     function test_peakOfNothingIsNull() {
         compare(History.peak([]), null);
     }
-
-    // One sample pushed, as push() makes it, is an arrival a graph eases
-    // to; anything else it draws at once.
-    function test_arrival_data() {
-        return [
-            { tag: "growing", before: [1, 2], after: [1, 2, 3], length: 4, arrival: { dropped: undefined } },
-            { tag: "full", before: [1, 2, 3], after: [2, 3, 4], length: 3, arrival: { dropped: 1 } },
-            { tag: "fullFlat", before: [0, 0, 0], after: [0, 0, 0], length: 3, arrival: { dropped: 0 } },
-            { tag: "first", before: [], after: [5], length: 3, arrival: null },
-            { tag: "cleared", before: [1, 2, 3], after: [], length: 3, arrival: null },
-            { tag: "rewritten", before: [1, 2, 3], after: [9, 3, 4], length: 3, arrival: null },
-            { tag: "twoAtOnce", before: [1, 2, 3], after: [3, 4, 5], length: 3, arrival: null },
-            { tag: "sameLengthNotFull", before: [1, 2], after: [2, 3], length: 3, arrival: null }
-        ];
-    }
-    function test_arrival(data) {
-        compare(History.arrival(data.before, data.after, data.length), data.arrival);
-    }
 }
