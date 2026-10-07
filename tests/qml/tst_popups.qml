@@ -849,7 +849,7 @@ Item {
             try {
                 for (const [popupName, captions, expected] of [
                         ["NetworkPopup", [seconds], [peak(normal.networkDownHistory.concat(normal.networkUpHistory), data.bits)]],
-                        ["DiskPopup", ["READ", "WRITE"], [peak(normal.diskReadHistory, false), peak(normal.diskWriteHistory, false)]]]) {
+                        ["DiskPopup", ["READ · 60 s", "WRITE · 60 s"], [peak(normal.diskReadHistory, false), peak(normal.diskWriteHistory, false)]]]) {
                     // Wide enough for the peaks, as in test_graphsHaveARuleOrAPeak.
                     const popup = load(popupName, normal, false, Kirigami.Units.gridUnit * 30);
                     compare(graphs(popup).map(tileCaption).map(c => c.text), captions, popupName);
@@ -885,14 +885,15 @@ Item {
         function test_rateCaptionsKeepTheirLabel_data() {
             const rows = [];
             // A 360 px page at gridUnit 18, as at 1.25 with Breeze, and the
-            // 280 px of gridUnit 14, here in the larger font. Throughput's
+            // 280 px of gridUnit 14, here in the larger font. Every rate
             // tile spans the page, and at its own width can have room for
-            // everything; the disk's half-width tiles and the narrow page
-            // always cut something.
+            // everything; on the narrow page throughput, the longest
+            // caption, always cuts something, where read and write may fit
+            // in a smaller font.
             const widths = [Kirigami.Units.gridUnit * 20, Math.round(Kirigami.Units.gridUnit * 20 * 14 / 18)];
             for (const [tag, popup, count] of [["network", "NetworkPopup", 1], ["disk", "DiskPopup", 2]]) {
                 for (const width of widths) {
-                    const squeezed = popup === "DiskPopup" || width === widths[1];
+                    const squeezed = popup === "NetworkPopup" && width === widths[1];
                     rows.push({ tag: tag + " " + width + " px", popup: popup, count: count, width: width, squeezed: squeezed,
                                 mirrored: false });
                     rows.push({ tag: tag + " " + width + " px mirrored", popup: popup, count: count, width: width, squeezed: squeezed,
@@ -1243,7 +1244,7 @@ Item {
             const disk = load("DiskPopup", normal);
             const diskTexts = texts(disk);
             compare(headerOf(disk).title, "Disk");
-            for (const t of ["Disk", normal.diskDevice, "READ", "WRITE"]) {
+            for (const t of ["Disk", normal.diskDevice, "READ · 60 s", "WRITE · 60 s"]) {
                 verify(diskTexts.includes(t), t + " in " + JSON.stringify(diskTexts));
             }
             for (const t of ["Network", "THROUGHPUT", "Since boot", normal.networkConnection, normal.networkAddress,
@@ -1252,6 +1253,26 @@ Item {
             }
             compare(all(disk, i => i.pairWidth !== undefined).length, 0, "no network rates");
             compare(graphs(disk).length, 2, "the read and write graphs");
+        }
+
+        // The disk popup opens on its graphs as the others open on theirs:
+        // read and write each across the page, drawn as the throughput graph
+        // is, with its span and its peak on its caption line, the peak still
+        // whole a third longer in every string at the page's own width.
+        function test_diskGraphsMatchThroughput() {
+            const look = g => JSON.stringify([g.width, g.height, String(g.color), g.fillOpacity]);
+            const throughput = graphs(load("NetworkPopup", normal));
+            const disk = graphs(load("DiskPopup", normal));
+            compare(disk.length, 2);
+            disk.forEach((g, n) => compare(look(g), look(throughput[0]), ["read", "write"][n]));
+            compare(disk.map(tileCaption).map(c => c.detail), ["· 60 s", "· 60 s"]);
+            root.pseudo = true;
+            try {
+                verify(graphs(load("DiskPopup", normal)).map(tileTop).every(t => t.visible && t.text !== ""),
+                       "the peaks shown");
+            } finally {
+                root.pseudo = false;
+            }
         }
 
         // The popups read everything from the Monitor, which keeps one Sensor
