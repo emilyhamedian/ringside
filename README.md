@@ -24,7 +24,7 @@ graphs take a reading every second, or at the update interval
 when that is shorter; the panel changes at the update interval. Temperature
 sensors go by plain names such as chip and hotspot.
 
-![The CPU, GPU, memory and network popups](docs/popups.png)
+![The CPU, GPU, memory, network and disk popups](docs/popups.png)
 
 - **CPU**: usage and temperature.
 - **GPU**: a discrete GPU on the outer ring and an integrated one on the inner
@@ -33,8 +33,8 @@ sensors go by plain names such as chip and hotspot.
   single line. With one GPU there is one ring.
 - **Memory**: usage and the amount in use.
 - **Network**: download and upload rates.
-- **Disk**: read and write rates. Off by default; the network popup shows disk
-  activity too.
+- **Disk**: read and write rates. Off by default; its popup adds the drive's
+  temperature, size and free space.
 - **Claude** and **Codex**: how much of the weekly limit is used and when it
   resets. Off by default; see below.
 

@@ -61,14 +61,13 @@ follows [Semantic Versioning](https://semver.org/).
   opens, where it could take four.
 - Popup numbers and the ring's centre percentage use the theme's font with
   figures of even width instead of a monospace font, which left gaps around
-  the decimal point. Units are smaller. °C and °F sit close to the digits:
-  raised level with their top in the CPU and GPU headers, on the same line
-  in the disk's caption. Process names stay monospace.
+  the decimal point. Units are smaller. °C and °F sit close to the digits,
+  raised level with their top in the CPU, GPU and disk headers. Process
+  names stay monospace.
 - Graphs lose their grid lines. Percentage graphs have a line at 100%,
   named at the end of the caption line above the graph, where no line can
   cross it; rate graphs reach up to their peak, named in the same place when
-  it fits, or to 1 Mb/s (1 MiB/s for a disk) when the peak is lower, and the
-  disk's peaks move into its captions.
+  it fits, or to 1 Mb/s (1 MiB/s for a disk) when the peak is lower.
 - The popups' graphs take a reading every second, or at the update interval
   when that is shorter, so they catch short bursts: 60 points a minute at
   the default interval and up. Each new reading moves the line a step to
@@ -89,6 +88,11 @@ follows [Semantic Versioning](https://semver.org/).
   footer's link and settings button line up with the edges of the readings
   above them. The network header gives the connection's name and its
   address a line each, so a long name no longer hides the address.
+- Network and disk each have a popup of their own, where they shared one.
+  The disk popup's header gives the device, its size and the volume's free
+  space, with the drive's temperature where the CPU and GPU headers have
+  theirs. Its read and write graphs span the popup, with their time span
+  and peak on the caption line, as the other popups' graphs do.
 - Each GPU in the GPU popup opens with the header the CPU and Claude popups
   use: its usage ring, its name, its kind and memory, and its temperature.
   A second GPU follows after a rule with a header of its own, and a
