@@ -166,6 +166,66 @@ TestCase {
         compare(sensorStates(other), off);
     }
 
+    function rateLimits(r) {
+        const limits = [];
+        for (let i = 0; i < r.sensors.count; ++i) {
+            limits.push(r.sensors.objectAt(i).updateRateLimit);
+        }
+        return limits;
+    }
+
+    // A widget that graphs every half second, beside one that graphs every
+    // second, gets a new reading for each of its samples from the leader.
+    function test_theLeaderReadsAsOftenAsTheFastestWidget() {
+        reader.rateLimit = 750;
+        reader.takeStatus("active", "auto", 1000);
+        reader.tick(1500);
+        compare(rateLimits(reader), Array(6).fill(750));
+        const other = createTemporaryObject(readerComponent, testCase, { info: reader.info, onRing: true, rateLimit: 250 });
+        other.tick(1500);
+        verify(!other.leading);
+        reader.tick(2000);
+        compare(rateLimits(reader), Array(6).fill(250));
+        other.onRing = false;
+        reader.tick(2500);
+        compare(rateLimits(reader), Array(6).fill(750));
+    }
+
+    // The panel takes a reading once per update interval, and one that
+    // appears or goes away at the next sample (see Monitor.latch()).
+    function test_panelReadingsWaitForTheInterval() {
+        const leader = createTemporaryObject(fakeLeader, testCase);
+        const follower = createTemporaryObject(readerComponent, testCase, { info: reader.info, onRing: true });
+        follower.leader = leader;
+        compare(follower.usage, 10);
+        compare(follower.panelUsage, NaN);
+        follower.latch(false);
+        compare([follower.panelUsage, follower.panelTemperature], [10, 50], "a reading that appears is taken at once");
+        leader.usage = 20;
+        leader.temperature = 55;
+        follower.latch(false);
+        compare([follower.panelUsage, follower.panelTemperature], [10, 50], "a changed reading waits");
+        follower.latch(true);
+        compare([follower.panelUsage, follower.panelTemperature], [20, 55], "and is taken at the interval");
+        leader.usage = NaN;
+        follower.latch(false);
+        compare([follower.panelUsage, follower.panelTemperature], [NaN, 55], "a reading that goes away is dropped at once");
+    }
+
+    Component {
+        id: fakeLeader
+        QtObject {
+            property string phase: "live"
+            property real usage: 10
+            property real temperature: 50
+            property real vramUsed: NaN
+            property real vramTotal: NaN
+            property real knownVramTotal: NaN
+            property real clock: NaN
+            property real power: NaN
+        }
+    }
+
     function test_integratedGpusLeaveOutPackagePower() {
         reader = createTemporaryObject(readerComponent, testCase,
                                        { info: Object.assign(discrete(false), { id: "gpu999", kind: "integrated" }),

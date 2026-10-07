@@ -31,8 +31,8 @@ GridLayout {
     readonly property bool network: item === "network"
     readonly property bool bits: network && monitor.networkBits
     readonly property var lines: network
-        ? [reading(monitor.networkDown, bits), reading(monitor.networkUp, bits)]
-        : [reading(monitor.diskRead, false), reading(monitor.diskWrite, false)]
+        ? [reading(monitor.panel.networkDown, bits), reading(monitor.panel.networkUp, bits)]
+        : [reading(monitor.panel.diskRead, false), reading(monitor.panel.diskWrite, false)]
     readonly property color markColor: Qt.alpha(Kirigami.Theme.textColor, 0.75)
     readonly property string readLetter: i18nc("@label short for disk reads", "R")
     readonly property string writeLetter: i18nc("@label short for disk writes", "W")

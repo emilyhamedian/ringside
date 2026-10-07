@@ -29,8 +29,8 @@ Item {
     readonly property bool dual: item === "gpu" && gpuView.dual
     // The GPU the ring shows: the outer one, unless it sleeps and the inner one doesn't.
     readonly property var primary: gpuView.primary
-    readonly property real hottest: Math.max(...(item === "cpu" ? [monitor.cpuTemperature]
-                                                 : item === "gpu" ? [primary.temperature, dual ? gpuInner.temperature : NaN]
+    readonly property real hottest: Math.max(...(item === "cpu" ? [monitor.panel.cpuTemperature]
+                                                 : item === "gpu" ? [primary.panelTemperature, dual ? gpuInner.panelTemperature : NaN]
                                                  : []).filter(Format.temperatureValid))
 
     // The readings in words, for screen readers and the tooltip.
@@ -118,9 +118,9 @@ Item {
         width: content.ring
         height: content.ring
         inner: content.dual
-        value: content.item === "cpu" ? content.monitor.cpuUsage
-             : content.item === "memory" ? content.monitor.memoryPercent : content.primary.usage
-        innerValue: content.gpuInner.usage
+        value: content.item === "cpu" ? content.monitor.panel.cpuUsage
+             : content.item === "memory" ? content.monitor.panel.memoryPercent : content.primary.panelUsage
+        innerValue: content.gpuInner.panelUsage
         minimumLevel: content.textShown ? 0 : content.monitor.heat(content.hottest)
         interval: content.monitor.interval
         // The cell's description covers it.

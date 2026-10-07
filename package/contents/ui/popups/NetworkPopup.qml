@@ -169,7 +169,7 @@ PopupPage {
                 second: true
                 secondValues: popup.monitor.networkUpHistory
                 length: popup.monitor.historyLength
-                interval: popup.monitor.interval
+                interval: popup.monitor.sampleInterval
                 // 1 Mb/s at least, so an idle link doesn't draw its noise at full height.
                 maximum: Math.max(History.peak(throughput.history)?.value ?? 0, 125000)
             }
@@ -259,7 +259,7 @@ PopupPage {
             rate: popup.monitor.diskRead
             history: popup.monitor.diskReadHistory
             length: popup.monitor.historyLength
-            interval: popup.monitor.interval
+            interval: popup.monitor.sampleInterval
         }
 
         DiskRate {
@@ -268,7 +268,7 @@ PopupPage {
             rate: popup.monitor.diskWrite
             history: popup.monitor.diskWriteHistory
             length: popup.monitor.historyLength
-            interval: popup.monitor.interval
+            interval: popup.monitor.sampleInterval
         }
     }
 }

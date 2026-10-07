@@ -26,6 +26,10 @@ QtObject {
     // Its popup is open, so an awake GPU stays read while someone looks.
     property bool watched: false
     property int rateLimit: 1000
+    // How often the leader's Sensors take a reading: as often as the most
+    // frequent of the widgets showing this GPU, so none of them graphs one
+    // reading twice.
+    property int leadRateLimit: rateLimit
     // Monitor's monotonic clock in milliseconds; polls are stamped with it.
     property real timeMs: 0
 
@@ -91,6 +95,10 @@ QtObject {
         : subscribed ? livePower : showsHeld ? held.power ?? NaN : NaN
     // qmllint enable missing-property
     property var history: []
+    // What the panel shows: usage and temperature as of Monitor's last
+    // update interval (see Monitor.latch()).
+    property real panelUsage: NaN
+    property real panelTemperature: NaN
 
     readonly property real liveTemperature: {
         const t = subscribed ? read(1) : NaN;
@@ -110,6 +118,15 @@ QtObject {
         sensors.count;
         const sensor = sensors.objectAt(index) as Sensors.Sensor;
         return sensor && typeof sensor.value === "number" ? sensor.value : NaN;
+    }
+
+    function latch(all) {
+        if (all || Number.isFinite(usage) !== Number.isFinite(panelUsage)) {
+            panelUsage = usage;
+        }
+        if (all || Number.isFinite(temperature) !== Number.isFinite(panelTemperature)) {
+            panelTemperature = temperature;
+        }
     }
 
     function hold(key, value) {
@@ -156,6 +173,7 @@ QtObject {
         }
         wanted = want;
         anyWatched = GpuShare.watched(info.id);
+        leadRateLimit = GpuShare.rateLimit(info.id, rateLimit);
         if (gated) {
             gate = Gate.step(gate, gateInput(now, pmStatus, pmReadAt));
         }
@@ -207,7 +225,7 @@ QtObject {
             required property string modelData
             sensorId: modelData
             enabled: reader.subscribed
-            updateRateLimit: reader.rateLimit
+            updateRateLimit: reader.leadRateLimit
         }
     }
 }

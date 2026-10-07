@@ -41,3 +41,8 @@ function wanted(id) {
 function watched(id) {
     return (interest[id] || []).some(entry => entry.watched);
 }
+
+// The shortest rate limit among the readers that want this GPU, and `own`.
+function rateLimit(id, own) {
+    return (interest[id] || []).reduce((least, entry) => Math.min(least, entry.reader.rateLimit), own);
+}

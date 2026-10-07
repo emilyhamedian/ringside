@@ -8,6 +8,8 @@ import "code/pace.js" as Pace
 
 // Each item's readings in words, for screen readers and tooltips, the short
 // readings beside a ring, and the times the Claude and Codex views show.
+// describe() and readout() speak for the panel, so they give the readings
+// it shows (Monitor.panel), not the live ones.
 QtObject {
     id: words
 
@@ -18,12 +20,12 @@ QtObject {
         switch (item) {
         case "cpu":
             return i18nc("@info:tooltip processor usage and temperature", "Usage %1, temperature %2",
-                         percentText(monitor.cpuUsage), temperatureText(monitor.cpuTemperature));
+                         percentText(monitor.panel.cpuUsage), temperatureText(monitor.panel.cpuTemperature));
         case "memory": {
-            const used = Format.bytes(monitor.memoryUsed);
-            return Number.isFinite(monitor.memoryUsed)
+            const used = Format.bytes(monitor.panel.memoryUsed);
+            return Number.isFinite(monitor.panel.memoryUsed)
                 ? i18nc("@info:tooltip memory in use; %1 %2 is e.g. 13.4 GiB, %3 a percentage", "%1 %2 in use, %3",
-                        used.value, used.unit, percentText(monitor.memoryPercent))
+                        used.value, used.unit, percentText(monitor.panel.memoryPercent))
                 : i18nc("@info:tooltip memory in use", "In use: unavailable");
         }
         case "gpu": {
@@ -35,11 +37,11 @@ QtObject {
         }
         case "network":
             return i18nc("@info:tooltip network download and upload rates", "Down %1, up %2",
-                         rateText(Format.rate(monitor.networkDown, monitor.networkBits)),
-                         rateText(Format.rate(monitor.networkUp, monitor.networkBits)));
+                         rateText(Format.rate(monitor.panel.networkDown, monitor.networkBits)),
+                         rateText(Format.rate(monitor.panel.networkUp, monitor.networkBits)));
         case "disk":
             return i18nc("@info:tooltip disk read and write rates", "Read %1, write %2",
-                         rateText(Format.rate(monitor.diskRead, false)), rateText(Format.rate(monitor.diskWrite, false)));
+                         rateText(Format.rate(monitor.panel.diskRead, false)), rateText(Format.rate(monitor.panel.diskWrite, false)));
         case "claude":
         case "codex":
             return usageText(item, nowMs ?? Date.now());
@@ -63,20 +65,20 @@ QtObject {
             ? Format.temperature(celsius, monitor.fahrenheit) + "°" : "–";
         switch (item) {
         case "cpu":
-            return { first: percent(monitor.cpuUsage), level: Format.level(monitor.cpuUsage),
-                     second: temperature(monitor.cpuTemperature), heat: monitor.heat(monitor.cpuTemperature) };
+            return { first: percent(monitor.panel.cpuUsage), level: Format.level(monitor.panel.cpuUsage),
+                     second: temperature(monitor.panel.cpuTemperature), heat: monitor.heat(monitor.panel.cpuTemperature) };
         case "gpu": {
             const gpu = Hardware.gpuView(monitor.gpuOuter, monitor.gpuInner).primary;
             if (gpu.phase === "asleep") {
                 return { first: i18nc("@info:status the GPU is powered down", "off"), off: true, second: "" };
             }
-            return { first: percent(gpu.usage), level: Format.level(gpu.usage),
-                     second: gpu.reportsTemperature ? temperature(gpu.temperature) : "",
-                     heat: gpu.reportsTemperature ? monitor.heat(gpu.temperature) : 0 };
+            return { first: percent(gpu.panelUsage), level: Format.level(gpu.panelUsage),
+                     second: gpu.reportsTemperature ? temperature(gpu.panelTemperature) : "",
+                     heat: gpu.reportsTemperature ? monitor.heat(gpu.panelTemperature) : 0 };
         }
         case "memory": {
-            const used = Format.panelBytes(monitor.memoryUsed);
-            return { first: percent(monitor.memoryPercent), level: Format.level(monitor.memoryPercent),
+            const used = Format.panelBytes(monitor.panel.memoryUsed);
+            return { first: percent(monitor.panel.memoryPercent), level: Format.level(monitor.panel.memoryPercent),
                      second: used.value + used.unit.charAt(0) };
         }
         }
@@ -271,8 +273,8 @@ QtObject {
         }
         return slot.reportsTemperature
             ? i18nc("@info:tooltip GPU usage and temperature", "Usage %1, temperature %2",
-                    percentText(slot.usage), temperatureText(slot.temperature))
-            : i18nc("@info:tooltip GPU usage; this GPU has no temperature sensor", "Usage %1", percentText(slot.usage));
+                    percentText(slot.panelUsage), temperatureText(slot.panelTemperature))
+            : i18nc("@info:tooltip GPU usage; this GPU has no temperature sensor", "Usage %1", percentText(slot.panelUsage));
     }
 
     function rateText(reading) {

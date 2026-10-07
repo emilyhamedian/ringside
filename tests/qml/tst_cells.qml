@@ -770,6 +770,39 @@ Item {
             }
         }
 
+        // The panel shows the readings Monitor holds for it, which move once
+        // per update interval, not the live ones the popups and graphs show:
+        // in its rings, its text and its words.
+        function test_panelShowsItsHeldReadings_data() {
+            return [
+                { tag: "cpu", item: "cpu", ring: 40, texts: [percent(40), degrees(70)], words: "Usage " + percent(40) },
+                { tag: "memory", item: "memory", ring: 60, texts: [percent(60), decimal(20.0) + "G"], words: percent(60) },
+                { tag: "gpu", item: "gpu", ring: 55, inner: 7, texts: [percent(55), degrees(66)], words: "Usage " + percent(55) },
+                { tag: "network", item: "network", texts: [decimal(64.0), decimal(16.0)], words: "Down " + decimal(64.0) + " Mb/s" },
+                { tag: "disk", item: "disk", texts: [decimal(50.0), decimal(1.0)], words: "Read " + decimal(50.0) + " MiB/s" }
+            ];
+        }
+        function test_panelShowsItsHeldReadings(data) {
+            const gib = monitor.gib;
+            monitor.panel = { cpuUsage: 40, cpuTemperature: 70, memoryPercent: 60, memoryUsed: 20 * gib,
+                              networkDown: 8e6, networkUp: 2e6, diskRead: 50 * 1048576, diskWrite: 1048576 };
+            monitor.gpuOuter.panelUsage = 55;
+            monitor.gpuOuter.panelTemperature = 66;
+            monitor.gpuInner.panelUsage = 7;
+            const c = cell(data.item);
+            const shown = root.texts(c);
+            for (const text of data.texts) {
+                verify(shown.includes(text), text + " in " + JSON.stringify(shown));
+            }
+            if (data.ring !== undefined) {
+                compare(gauge(c).value, data.ring);
+            }
+            if (data.inner !== undefined) {
+                compare(gauge(c).innerValue, data.inner);
+            }
+            verify(c.accessibleDescription.includes(data.words), c.accessibleDescription);
+        }
+
         function test_line2KeepsItsSpace_data() {
             return [{ tag: "two lines", twoLines: true }, { tag: "one line", twoLines: false }];
         }

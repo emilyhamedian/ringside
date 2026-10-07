@@ -23,7 +23,7 @@ PopupPage {
         readonly property var used: Format.bytes(popup.monitor.memoryUsed)
 
         ringValue: popup.monitor.memoryPercent
-        interval: popup.monitor.interval
+        interval: popup.monitor.sampleInterval
         title: i18nc("@title", "Memory")
         subtitle: {
             const m = popup.monitor;
@@ -145,7 +145,7 @@ PopupPage {
                 Layout.fillWidth: true
                 values: popup.monitor.memoryHistory
                 length: popup.monitor.historyLength
-                interval: popup.monitor.interval
+                interval: popup.monitor.sampleInterval
             }
         }
 

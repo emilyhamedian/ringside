@@ -118,6 +118,50 @@ TestCase {
         verify(config.detectedHardware.indexOf("gpu97") >= 0);
     }
 
+    // The graphs take a reading every second, or at the update interval
+    // when that is shorter, so a minute's graph has 60 points at any slower
+    // interval. The Sensors let one reading through per sample.
+    function test_graphsSampleEverySecond_data() {
+        return [500, 1000, 2500, 5000, 10000].map(ms => ({ tag: ms + " ms", interval: ms,
+                                                          sample: Math.min(ms, 1000), length: ms < 1000 ? 120 : 60 }));
+    }
+    function test_graphsSampleEverySecond(data) {
+        config.updateInterval = data.interval;
+        compare(monitor.sampleInterval, data.sample);
+        compare(monitor.historyLength, data.length);
+        const timers = Array.from(monitor.data).filter(c => c.triggeredOnStart !== undefined && c.repeat);
+        verify(timers.some(t => t.interval === data.sample && t.running), "a sampling timer");
+        verify(timers.some(t => t.interval === data.interval && t.running), "a panel timer");
+        const sensors = sensorsOf(monitor);
+        verify(sensors.length > 5);
+        verify(sensors.every(s => s.updateRateLimit === data.sample - 250),
+               sensors.map(s => s.updateRateLimit).join());
+        verify(monitor.readers().length > 0);
+        verify(monitor.readers().every(r => r.rateLimit === data.sample - 250));
+    }
+
+    // At a 4 s update interval the panel keeps its first CPU reading for
+    // the 4 s while the graph gains one every second; then it takes the
+    // latest.
+    function test_panelKeepsToTheIntervalWhileGraphsSample() {
+        const started = Date.now();
+        const slow = makeMonitor({ config: createTemporaryObject(configComponent, testCase, { updateInterval: 4000 }) });
+        tryVerify(() => Number.isFinite(slow.panel.cpuUsage), 3000, "the first reading reaches the panel at a sample");
+        const shown = slow.panel.cpuUsage;
+        const samples = slow.cpuHistory.length;
+        const live = [slow.cpuUsage];
+        while (Date.now() - started < 3600) {
+            wait(100);
+            compare(slow.panel.cpuUsage, shown, "held at " + (Date.now() - started) + " ms");
+            if (slow.cpuUsage !== live[live.length - 1]) {
+                live.push(slow.cpuUsage);
+            }
+        }
+        verify(slow.cpuHistory.length >= samples + 2, "the graph gained " + (slow.cpuHistory.length - samples));
+        verify(live.length > 1, "the live reading changed: " + live);
+        tryVerify(() => slow.panel.cpuUsage !== shown, 2000, "taken at the interval");
+    }
+
     function test_aSleepingDiscreteGpuIsNeverSubscribed() {
         const gpu = monitor.gpuOuter;
         tryVerify(() => gpu.pmStatus === "suspended", 10000);
