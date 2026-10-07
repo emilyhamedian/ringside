@@ -30,25 +30,22 @@ follows [Semantic Versioning](https://semver.org/).
 - Readings move into place instead of jumping. A ring sweeps to each new
   reading and turns amber or red as it passes 75% or 90%, and the number in
   a popup's ring counts along with it; the Claude and Codex bars do the
-  same. Graph points ease to their new heights, the week graph draws each
-  new stretch of line and fades in its run-out, and a second GPU's ring and
-  its popup section fade in and out. The motion follows Plasma's animation
+  same. The week graph draws each new stretch of line and fades in its
+  run-out, and a second GPU's ring and its popup section fade in and out.
+  The motion follows Plasma's animation
   speed, and with animations set to Instant readings change at once, as
   before.
 
 ### Changed
 
-- Panel items are as wide as their text, with the same gap between each,
-  instead of keeping room for their widest readings. When a reading gains a
-  character the items after it move at once. When it loses one they wait
-  three minutes, so a value that keeps changing width doesn't shuffle the
-  panel; when it drops further and stays there for ten to twenty seconds,
-  they close up to within a digit of it, and the rest after the wait. Rates
-  do the same but keep that room between their arrows or letters and their
-  numbers, so the gaps either side of them stay the usual size.
-- The panel countdown shows the days alone ("6d") until the last day, then
-  hours and minutes ("23h 5m"). It turns red at 100%, where it says how
-  long the limit stays reached.
+- Panel rates always show three figures, from kb/s or KiB/s up, such as
+  "8.40 Mb/s", "62.1 kb/s", or "0.00 KiB/s" when idle, and move to the next
+  unit before a fourth: 1023 KiB/s reads "1.00 MiB/s". Memory in use shows
+  three figures too, such as "9.60G", and a rate's unit sits closer to its
+  number. Tooltips and popups keep their own formats.
+- The panel countdown shows only its largest unit: "6d", "23h" or "59m";
+  the popup and the tooltip keep the full time. It turns red at 100%, where
+  it says how long the limit stays reached.
 - Top processes show a busy indicator until they are read, in the popup's
   dim text colour like its captions rather than the theme's accent. The CPU
   list, which needs two scans, fills in about two seconds after its popup
@@ -62,6 +59,11 @@ follows [Semantic Versioning](https://semver.org/).
   100%; rate graphs reach up to their peak, which the caption names, or to
   1 Mb/s (1 MiB/s for a disk) when the peak is lower, and the disk's peaks
   move into its captions.
+- The popups' graphs take a reading every second, or at the update interval
+  when that is shorter, so a minute's graph has 60 points and catches short
+  bursts. Each new reading moves the line a step to the left at once. The
+  panel still changes once per update interval, and everything in a popup
+  follows each reading, so its numbers agree with the graph under them.
 - Temperature sensors have plain names: chip, chiplet, hotspot and memory
   instead of Tctl, Tccd, junction and mem.
 - The Claude and Codex popup sets its countdown's units smaller than its
@@ -98,8 +100,8 @@ follows [Semantic Versioning](https://semver.org/).
   screen's pixels, and names were centred with the space below their
   letters and after the last one.
 - With a right-to-left language, panel rates keep each number before its
-  unit, the panel countdown reads in the same order as the popup's, and
-  the load average no longer has a dot that reads as an Arabic zero.
+  unit, and the load average no longer has a dot that reads as an Arabic
+  zero.
 - A longer translation of the Memory popup's legend wraps instead of
   widening the popup past its frame.
 - Screen readers say "unavailable" for a missing rate or load average
