@@ -490,6 +490,37 @@ Item {
             tryVerify(() => runner().connectedSources.length === 0, 10000);
         }
 
+        // A --start that fails leaves the readings alone and says so only in
+        // the starter's status. It runs again five minutes later, then ten,
+        // not on every tick, and a report that moves the starter on ends it.
+        function test_failedStartBacksOff() {
+            start("starter-start-fails");
+            const run = commands();
+            const due = usage.starter("claude").next;
+            tryVerify(() => Date.now() / 1000 >= due, 5000);
+            starterTick().triggered();
+            compare(ran(run, " --start").length, 1);
+            tryVerify(() => usage.starter("claude").state === "failed", 10000);
+            const failed = usage.starter("claude");
+            compare(failed.reason, "helper");
+            compare(failed.error, "The usage helper exited with code 1: RuntimeError: boom");
+            compare(failed.next - failed.at, 300);
+            verify(!usage.degraded("claude") && !usage.degraded("codex"), "the readings carry no failure");
+            compare(usage.helperError, "");
+            compare(usage.starter("codex").state, "off");
+            starterTick().triggered();
+            compare(ran(run, " --start").length, 1, "not before the retry");
+
+            usage.startFailures = { claude: Object.assign({}, usage.startFailures.claude, { retryAt: Date.now() / 1000 - 1 }) };
+            starterTick().triggered();
+            compare(ran(run, " --start").length, 2, "the retry is due");
+            tryVerify(() => usage.starter("claude").next - usage.starter("claude").at === 600, 10000);
+
+            poll("starter");
+            compare(usage.starter("claude").state, "waiting");
+            compare(usage.startFailures, {});
+        }
+
         function test_setStarterRunsTheHelper() {
             start("starter");
             const run = commands();
@@ -1593,13 +1624,14 @@ Item {
             { state: "weekly", enabled: true, failed: false, next: 3 * 86400 },
             { state: "failed", enabled: true, failed: true, reason: "not-installed" },
             { state: "failed", enabled: true, failed: true, reason: "signed-out" },
+            { state: "failed", enabled: true, failed: true, reason: "helper", at: -60, next: 240, error: "The usage helper exited with code 1: boom" },
             { state: "retrying", enabled: true, failed: true, at: -180, next: 120 },
             { state: "paused", enabled: true, failed: true, next: 5 * 3600 }
         ]
 
         function starterFor(row) {
             const at = monitor.usage.createdAt;
-            return { enabled: row.enabled, state: row.state, reason: row.reason ?? null,
+            return { enabled: row.enabled, state: row.state, reason: row.reason ?? null, error: row.error ?? null,
                      at: row.at !== undefined ? at + row.at : null, next: row.next !== undefined ? at + row.next : null };
         }
 
@@ -1948,6 +1980,11 @@ Item {
                 ["retrying", { state: "retrying", at: T(23, 30), next: T(23, 35) },
                  ["Couldn't confirm the session started at %1. Trying once more at %2.", T(23, 30), T(23, 35)]],
                 ["paused", { state: "paused", next: W(4, 35) }, ["Couldn't confirm two sessions in a row. Paused until %1.", W(4, 35)]],
+                // The helper itself failed to run the start; the widget retries.
+                ["startFailed", { state: "failed", reason: "helper", at: T(23, 30), next: T(23, 35), error: "The usage helper exited with code 1: boom" },
+                 ["Couldn't start a session. Trying again at %1. The usage helper exited with code 1: boom", T(23, 35)]],
+                ["startFailedTomorrow", { state: "failed", reason: "helper", at: T(23, 30), next: W(4, 35), error: "" },
+                 ["Couldn't start a session. Trying again %1.", W(4, 35)]],
                 ["pausedToday", { state: "paused", next: T(23, 55) }, ["Couldn't confirm two sessions in a row. Paused until %1.", T(23, 55)]]
             ]).concat(rows("codex", [
                 ["off", off, ["When a week ends, Ringside sends Codex a one-word message to start the next one."]],
@@ -1964,6 +2001,8 @@ Item {
                 ["retrying", { state: "retrying", at: T(23, 30), next: W(0, 5) },
                  ["Couldn't confirm the week started at %1. Trying once more %2.", T(23, 30), W(0, 5)]],
                 ["paused", { state: "paused", next: W(4, 35) }, ["Couldn't confirm two weeks in a row. Paused until %1.", W(4, 35)]],
+                ["startFailed", { state: "failed", reason: "helper", at: T(23, 30), next: T(23, 35), error: "The usage helper exited with code 1: boom" },
+                 ["Couldn't start a week. Trying again at %1. The usage helper exited with code 1: boom", T(23, 35)]],
                 ["pausedToday", { state: "paused", next: T(23, 55) }, ["Couldn't confirm two weeks in a row. Paused until %1.", T(23, 55)]]
             ]));
         }
@@ -1974,6 +2013,7 @@ Item {
             const now = epoch({ day: 6, h: 22, m: 0 });
             const week = { resetsAt: epoch({ day: 9, h: 20, m: 33 }), clockZone: { offset: -4 * 3600, abbreviation: "EDT" } };
             const starter = { enabled: data.starter.state !== "off", state: data.starter.state, reason: data.starter.reason ?? null,
+                              error: data.starter.error ?? null,
                               at: data.starter.at ? epoch(data.starter.at) : null,
                               next: data.starter.next ? epoch(data.starter.next) - (data.starter.early ?? 0) : null };
             // The expected time as the locale writes it: its time, after its
