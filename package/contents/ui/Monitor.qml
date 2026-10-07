@@ -298,6 +298,7 @@ Item {
     }
 
     Timer {
+        objectName: "sample"
         interval: monitor.sampleInterval
         running: monitor.systemShown
         repeat: true
@@ -305,6 +306,7 @@ Item {
     }
 
     Timer {
+        objectName: "latch"
         interval: monitor.interval
         running: monitor.systemShown
         repeat: true

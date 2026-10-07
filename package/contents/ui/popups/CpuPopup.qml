@@ -28,7 +28,8 @@ PopupPage {
     }
 
     // Readings only this popup shows; the Monitor never subscribes these ids.
-    Sensors.Sensor { id: frequency; sensorId: "cpu/all/averageFrequency"; updateRateLimit: popup.monitor.interval }
+    // They're read as often as the graph, so the whole popup moves together.
+    Sensors.Sensor { id: frequency; sensorId: "cpu/all/averageFrequency"; updateRateLimit: popup.monitor.readInterval }
     Sensors.Sensor { id: load1; sensorId: "cpu/loadaverages/loadaverage1" }
     Sensors.Sensor { id: load5; sensorId: "cpu/loadaverages/loadaverage5" }
     Sensors.Sensor { id: load15; sensorId: "cpu/loadaverages/loadaverage15" }
@@ -198,7 +199,7 @@ PopupPage {
                         Sensors.Sensor {
                             id: sensor
                             sensorId: "cpu/cpu" + bar.modelData + "/usage"
-                            updateRateLimit: popup.monitor.interval
+                            updateRateLimit: popup.monitor.readInterval
                         }
 
                         Rectangle {
