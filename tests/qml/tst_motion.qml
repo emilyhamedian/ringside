@@ -854,27 +854,77 @@ Item {
             verify(seen.every(([shown, percent]) => shown === 1 || percent === 0), "no arc until the track is in: " + JSON.stringify(seen));
         }
 
-        // The second GPU sleeps: the arc unwinds first, then the track fades
-        // out, the name taking its room back half way, and the cell is as
-        // it is with one ring.
+        // The second GPU sleeps: the arc unwinds out of sight first, then
+        // the track fades out as the name takes its room back, and the cell
+        // is as it is with one ring.
         function test_secondRingUnwindsThenFadesOut() {
             monitor.gpuInner.usage = 40;
             const c = cell();
             const g = gauge(c);
             const arc = innerArc(g);
+            const path = readingPath(arc);
             const room = rooms(g);
             compare(arc.percent, 40);
             const seen = [];
-            createTemporaryObject(samplerComponent, c, { sample: () => seen.push([arc.percent, g.innerShown, g.centreWidth]) });
+            createTemporaryObject(samplerComponent, c, {
+                sample: () => seen.push([arc.percent, g.innerShown, g.centreWidth, path.strokeColor.a])
+            });
             monitor.gpuInner.phase = "asleep";
             compare(g.innerShown, 1, "the track stays while the arc unwinds");
             tryCompare(g, "innerShown", 0, 2000);
             verify(!arc.visible);
             compare(g.centreWidth, room.single);
-            verify(seen.every(([percent, shown]) => percent < 0.5 || shown === 1), "the track waits for the arc: " + JSON.stringify(seen));
-            verify(seen.every(([, shown, width]) => width === (shown >= 0.5 ? room.dual : room.single)), "the room comes back half way");
+            verify(seen.every(([, shown, width, alpha]) => alpha === 0 || shown === 1 && width === room.dual),
+                   "the track and the name wait for the arc: " + JSON.stringify(seen));
+            verify(seen.every(([, shown, width]) => shown === 1 || width === room.single),
+                   "the name takes its room back as the track goes: " + JSON.stringify(seen));
             verify(seen.some(([percent]) => percent > 0.5 && percent < 39.5), "unwinding");
             tryCompare(nameIn(c), "shownSize", nameIn(c).size, 1000, "the name grows to its size");
+        }
+
+        // Two rings to one goes at the pace of the track's fade, not of a
+        // reading: the arc is out of sight in less time than the track then
+        // takes to fade.
+        function test_twoRingsToOneAtTheTracksPace() {
+            monitor.gpuInner.usage = 20;
+            const c = cell();
+            const g = gauge(c);
+            const seen = [];
+            createTemporaryObject(samplerComponent, c, { sample: () => seen.push([Date.now(), g.innerShown]) });
+            const start = Date.now();
+            monitor.gpuInner.phase = "asleep";
+            tryCompare(g, "innerShown", 0, 2000);
+            wait(50);
+            const fading = seen.find(([, shown]) => shown < 1)[0];
+            const gone = seen.find(([, shown]) => shown === 0)[0];
+            verify(fading - start < gone - fading, "unwound in " + (fading - start) + " ms, faded in " + (gone - fading) + " ms");
+        }
+
+        // A first reading, as after a GPU wakes, draws in at the track's
+        // pace; an ordinary reading over the same distance takes the ring's
+        // full settle.
+        function test_firstReadingDrawsInAtTheTracksPace() {
+            monitor.gpuOuter.usage = 0;
+            const c = cell();
+            const g = gauge(c);
+            const arc = outerArc(g);
+            const seen = [];
+            createTemporaryObject(samplerComponent, c, { sample: () => seen.push([Date.now(), arc.percent]) });
+            const timed = usage => {
+                const start = Date.now();
+                monitor.gpuOuter.usage = usage;
+                tryCompare(arc, "percent", 46, 2000);
+                wait(50);
+                return seen.find(([at, percent]) => at >= start && percent === 46)[0] - start;
+            };
+            tryVerify(() => !g.shifting, 1000);
+            const ordinary = timed(46);
+            monitor.gpuOuter.usage = NaN;
+            tryCompare(arc, "percent", 0, 2000);
+            tryVerify(() => !g.shifting, 1000);
+            const first = timed(46);
+            verify(first < 0.75 * ordinary, "first " + first + " ms, ordinary " + ordinary + " ms");
+            compare(g.arcSettle, g.settle, "and back to a reading's pace");
         }
 
         // A reading that goes missing, as when the discrete GPU wakes before
