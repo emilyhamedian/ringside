@@ -148,6 +148,18 @@ Rectangle {
         })
     }
 
+    // A drive that reports no temperature, warm or hot ones, and every disk.
+    FakeMonitor {
+        id: diskUnheated
+        diskTemperature: NaN
+    }
+
+    FakeMonitor {
+        id: diskHot
+        diskTemperature: 78
+        diskDevice: "all"
+    }
+
     // The only GPU, asleep.
     FakeMonitor {
         id: onlyAsleep
@@ -436,8 +448,13 @@ Rectangle {
             }
 
             PopupFrame {
-                label: "Network & Disk"
+                label: "Network"
                 NetworkPopup { monitor: normal }
+            }
+
+            PopupFrame {
+                label: "Disk"
+                DiskPopup { monitor: normal }
             }
         }
 
@@ -486,6 +503,16 @@ Rectangle {
             PopupFrame {
                 label: "GPU · the only GPU asleep"
                 GpuPopup { monitor: onlyAsleep }
+            }
+
+            PopupFrame {
+                label: "Disk · no temperature"
+                DiskPopup { monitor: diskUnheated }
+            }
+
+            PopupFrame {
+                label: "Disk · all disks, 78 °C"
+                DiskPopup { monitor: diskHot }
             }
         }
 
@@ -565,9 +592,15 @@ Rectangle {
                     }
 
                     PopupFrame {
-                        label: "Breeze Light · Network & Disk"
+                        label: "Breeze Light · Network"
                         flat: true
                         NetworkPopup { monitor: normal }
+                    }
+
+                    PopupFrame {
+                        label: "Breeze Light · Disk"
+                        flat: true
+                        DiskPopup { monitor: normal }
                     }
                 }
             }

@@ -53,6 +53,12 @@ RowLayout {
         const captionBaseline = (valueHeight + valueColumn.spacing - captionText.implicitHeight) / 2 + captionText.baselineOffset;
         return Math.round(subtitleBaseline - captionBaseline);
     }
+    // A detail line lengthens the name's column at its foot, which would
+    // pull a centred headline down past the title. The headline and its
+    // caption move up to centre on the title and subtitle instead, where
+    // they sit in a header without one, so the caption's shift above still
+    // holds. Each moves by its own transform, as the caption does.
+    readonly property real detailShift: header.detail !== "" ? -Math.round(detailText.implicitHeight / 2) : 0
     default property alias trailing: trailingSlot.data
 
     Layout.fillWidth: true
@@ -105,6 +111,7 @@ RowLayout {
         }
 
         Text {
+            id: detailText
             Layout.fillWidth: true
             visible: text !== ""
             text: header.detail
@@ -130,6 +137,7 @@ RowLayout {
             degreeUnit: header.degreeUnit
             color: header.valueColor
             pointSize: Kirigami.Theme.defaultFont.pointSize * 1.7
+            transform: Translate { y: header.detailShift }
         }
 
         // Follows the popup's mirroring, so under RTL the largest unit sits
@@ -142,6 +150,7 @@ RowLayout {
             spacing: Math.round(Kirigami.Theme.defaultFont.pointSize * 1.7 * 0.45)
             Accessible.role: Accessible.StaticText
             Accessible.name: header.accessibleValue
+            transform: Translate { y: header.detailShift }
 
             Repeater {
                 model: header.parts.length
@@ -173,7 +182,7 @@ RowLayout {
             font.pointSize: Kirigami.Theme.smallFont.pointSize * 0.98
             font.letterSpacing: Kirigami.Theme.smallFont.pointSize * 0.08
             textFormat: Text.PlainText
-            transform: Translate { y: header.captionShift }
+            transform: Translate { y: header.captionShift + header.detailShift }
         }
     }
 

@@ -252,6 +252,29 @@ Item {
             tryCompare(popup(applet), "visible", false, 2000, "closed with its item");
         }
 
+        // Each system item opens its own popup: network and disk one each.
+        function test_itemsOpenTheirOwnPopup() {
+            const applet = panel(false, 44);
+            const s = strip(applet);
+            const loader = popup(applet).mainItem;
+            const expected = { cpu: "CpuPopup", gpu: "GpuPopup", memory: "MemoryPopup", network: "NetworkPopup", disk: "DiskPopup" };
+            compare(applet.items, Object.keys(expected));
+            applet.items.forEach((item, n) => {
+                applet.toggle(item, s.cellAt(n));
+                settle();
+                verify(popup(applet).visible, item);
+                verify(String(loader.source).endsWith("/popups/" + expected[item] + ".qml"), item + " loads " + loader.source);
+                compare(loader.status, Loader.Ready, item);
+            });
+            const title = () => find(loader.item, i => i.partsShown !== undefined).title;
+            applet.toggle("network", s.cellAt(3));
+            settle();
+            compare(title(), "Network");
+            applet.toggle("disk", s.cellAt(4));
+            settle();
+            compare(title(), "Disk");
+        }
+
         // The global shortcut opens the first item's popup, and closes it.
         function test_shortcutOpensTheFirstItem() {
             const applet = panel(false, 44);

@@ -4,9 +4,11 @@
 import QtQuick
 import "code/format.js" as Format
 import "code/hardware.js" as Hardware
+import "code/history.js" as History
 
 // Each item's readings in words, for screen readers and tooltips, the short
-// readings beside a ring, and the times the Claude and Codex views show.
+// readings beside a ring, the times the Claude and Codex views show, and
+// the peak a rate graph's caption line names.
 // describe() and readout() speak for the panel, so they give the readings
 // it shows (Monitor.panel), not the live ones.
 QtObject {
@@ -401,6 +403,20 @@ QtObject {
     function rateText(reading) {
         return reading.value === "–" ? i18nc("@info:tooltip no reading", "unavailable")
                                      : i18nc("@info:tooltip a transfer rate, e.g. 24.8 Mb/s", "%1 %2", reading.value, reading.unit);
+    }
+
+    // What a rate graph's caption line says about its top, which is the
+    // peak in view: "peak 24.8 Mb/s", or nothing before the first sample.
+    // Under the graph's floor the top is the floor, and this still names
+    // the peak.
+    function peakText(samples, bits) {
+        const top = History.peak(samples);
+        if (top === null) {
+            return "";
+        }
+        const r = Format.rate(top.value, bits);
+        return i18nc("@title:group at the end of a rate graph's caption line, after THROUGHPUT · 60 s or READ: its highest rate, as in peak 24.8 Mb/s",
+                     "peak %1 %2", r.value, r.unit);
     }
 
     // A temperature sensor's label in plain words: k10temp's Tctl, Tdie and
