@@ -47,15 +47,18 @@ no session is running; it is left out when the reply doesn't say.
 
 Every entry carries "starter", the session starter's state: {"enabled":
 bool, "state": ..., "at": <epoch seconds> or null, "next": <epoch seconds>
-or null, "reason": "not-installed", "signed-out" or null}. The states are
-"off"; "waiting" (next is when the next window starts); "confirming" (at is
-the send, next the read that confirms it); "started" (at is when the window
-started, next when the next one starts, which the popup shows only for
-Claude); "weekly" (the weekly limit is reached; next is its reset);
-"failed" (with a reason); "retrying" (one send went unconfirmed; at is the
-send, next the retry) and "paused" (two in a row; next is when the hold
-ends). The widget runs --start once Date.now() reaches next, and
---starter-set when its switch is toggled.
+or null, "reason": ... or null}. The states are "off"; "waiting" (next is
+when the next window starts); "confirming" (at is the send, next the read
+that confirms it); "started" (at is when the window started, next when the
+next one starts, which the popup shows only for Claude); "weekly" (the
+weekly limit is reached; next is its reset); "failed" (reason says why:
+"not-installed", "signed-out", "not-subscription" for a CLI logged in
+other than with a claude.ai subscription, or "not-responding" for one
+whose check before sending failed, which backs off like a failed read);
+"retrying" (one send went unconfirmed; at is the send, next the retry) and
+"paused" (two in a row; next is when the hold ends). The widget runs
+--start once Date.now() reaches next, and --starter-set when its switch is
+toggled.
 
 Set RINGSIDE_USAGE_FAKE to a JSON report to print it instead of polling,
 limited to the requested providers and with the clock zone added as on a live
@@ -986,12 +989,17 @@ def attach_history(providers, history, now):
 
 class NotSent(Exception):
     """A send that never reached the provider; it is tried again later and
-    doesn't count as unconfirmed."""
+    doesn't count as unconfirmed. With a reason, the starter shows as
+    failed meanwhile."""
+
+    def __init__(self, reason=None):
+        super().__init__(reason)
+        self.reason = reason
 
 
 class Failed(Exception):
-    """The starter can't send until the user acts; reason is "not-installed"
-    or "signed-out"."""
+    """The starter can't send until the user acts; reason is "not-installed",
+    "signed-out" or "not-subscription"."""
 
     def __init__(self, reason):
         super().__init__(reason)
@@ -1017,7 +1025,7 @@ class Defer(Exception):
 
 
 STATES = ("waiting", "confirming", "started", "weekly", "failed", "retrying", "paused")
-REASONS = ("not-installed", "signed-out")
+REASONS = ("not-installed", "signed-out", "not-subscription", "not-responding")
 
 
 def blank_record():
@@ -1139,11 +1147,13 @@ class Starter:
         self.record.update(state=state, at=at, next=next_, reason=reason)
         self.persist()
 
-    def back_off(self, at_least=0):
+    def back_off(self, at_least=0, reason=None):
         rec = self.record
         rec["failures"] += 1
         wait = max(RETRY_DELAYS[min(rec["failures"], len(RETRY_DELAYS)) - 1], at_least)
-        if rec["state"] in ("confirming", "retrying"):
+        if reason:
+            self.set("failed", next_=self.clock() + wait, reason=reason)
+        elif rec["state"] in ("confirming", "retrying"):
             self.set(rec["state"], rec["at"], self.clock() + wait)
         else:
             self.set("waiting", next_=self.clock() + wait)
@@ -1213,9 +1223,9 @@ class Starter:
         except Failed as err:
             rec["pending"] = None
             self.set("failed", next_=now + RETRY_DELAYS[0], reason=err.reason)
-        except NotSent:
+        except NotSent as err:
             rec["pending"] = None
-            self.back_off()
+            self.back_off(reason=err.reason)
         else:
             rec.update(pending=None, sentAt=now, failures=0)
             self.set("confirming", now, now + CONFIRM_DELAY)
@@ -1335,7 +1345,10 @@ def send_claude(binary):
     the lock the caller holds, so the CLI has no reason to spend the
     single-use refresh token itself while Ringside might. `claude auth
     status` then checks the login and, since it rejects root options it
-    doesn't know, the flags; a problem there means nothing was sent.
+    doesn't know, the flags; a problem there means nothing was sent. A
+    preflight that times out, can't be read or fails otherwise shows as
+    "not-responding", and a login other than a claude.ai subscription as
+    "not-subscription".
 
     Once the send has started, the reading five minutes later decides
     whether it worked, and the CLI's output is not checked. usage-reset,
@@ -1356,16 +1369,17 @@ def send_claude(binary):
         code, out = run_cli([binary, *claude_options(), "auth", "status"], env, PREFLIGHT_TIMEOUT)
         auth = json.loads(out)
     except (OSError, subprocess.TimeoutExpired, ValueError):
-        raise NotSent() from None
+        raise NotSent("not-responding") from None
     if not isinstance(auth, dict):
-        raise NotSent()
+        raise NotSent("not-responding")
+    if auth.get("loggedIn") is not True:
+        raise Failed("signed-out")
     # An API key or a cloud provider would bill the send without starting
     # a subscription window.
-    if auth.get("loggedIn") is not True or auth.get("authMethod") != "claude.ai" \
-            or auth.get("apiProvider") != "firstParty":
-        raise Failed("signed-out")
+    if auth.get("authMethod") != "claude.ai" or auth.get("apiProvider") != "firstParty":
+        raise Failed("not-subscription")
     if code != 0:
-        raise NotSent()
+        raise NotSent("not-responding")
     try:
         run_cli([binary, *claude_options(), "-p", PROMPT], env, SEND_TIMEOUT)
     except OSError:
