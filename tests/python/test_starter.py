@@ -688,6 +688,36 @@ class StarterRuns(Isolated):
         self.run_main("--providers", "claude", "--starter-set", "claude=on")
         self.assertEqual(self.switches(), {"claude": True})
 
+    def test_a_switch_that_cant_be_written_reports_it_unchanged(self):
+        self.run_main("--providers", "claude", "--starter-set", "claude=on")
+        write = usage.write_private
+
+        # A folder the user can't write to; chmod wouldn't stop root.
+        def unwritable(path, data):
+            if path == usage.STARTER_FILE:
+                raise PermissionError(13, "Permission denied", str(path))
+            write(path, data)
+
+        with mock.patch.object(usage, "write_private", side_effect=unwritable), \
+                mock.patch("sys.stderr", new=io.StringIO()) as err:
+            report = self.run_main("--providers", "claude,codex", "--starter-set", "claude=off",
+                                   "--starter-set", "codex=on")
+        self.assertEqual({name: entry["starter"]["enabled"] for name, entry in report["providers"].items()},
+                         {"claude": True, "codex": False})
+        self.assertIn("switch wasn't changed", err.getvalue())
+        self.assertIn("Permission denied", err.getvalue())
+        self.assertEqual(self.switches(), {"claude": True})
+
+    def test_a_switch_change_that_cant_get_its_lock_reports_it_unchanged(self):
+        usage.private_state_dir()
+        fd = os.open(usage.SWITCH_LOCK, os.O_RDWR | os.O_CREAT, 0o600)
+        self.addCleanup(os.close, fd)
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        with mock.patch.object(usage, "LOCK_WAIT", 0.3), mock.patch("sys.stderr", new=io.StringIO()) as err:
+            report = self.run_main("--providers", "claude", "--starter-set", "claude=on")
+        self.assertEqual(report["providers"]["claude"]["starter"], OFF)
+        self.assertIn("another usage check is still running", err.getvalue())
+
     def test_bad_switches_exit_with_a_usage_error(self):
         for value in ("claude", "claude=yes", "gemini=on", "=on"):
             with self.subTest(value), mock.patch("sys.stderr", new=io.StringIO()), \
