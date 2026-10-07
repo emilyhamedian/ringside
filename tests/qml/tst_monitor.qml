@@ -144,24 +144,36 @@ TestCase {
 
     // At a 4 s update interval the panel keeps its first CPU reading for
     // the 4 s while the graph gains one every second; then it takes the
-    // latest.
+    // latest. Timed by the panel's timer rather than by the reading
+    // changing, which a quiet machine's CPU needn't do in 4 s.
     function test_panelKeepsToTheIntervalWhileGraphsSample() {
         const started = Date.now();
         const slow = makeMonitor({ config: createTemporaryObject(configComponent, testCase, { updateInterval: 4000 }) });
-        tryVerify(() => Number.isFinite(slow.panel.cpuUsage), 3000, "the first reading reaches the panel at a sample");
-        const shown = slow.panel.cpuUsage;
-        const samples = slow.cpuHistory.length;
-        const live = [slow.cpuUsage];
-        while (Date.now() - started < 3600) {
-            wait(100);
-            compare(slow.panel.cpuUsage, shown, "held at " + (Date.now() - started) + " ms");
-            if (slow.cpuUsage !== live[live.length - 1]) {
-                live.push(slow.cpuUsage);
+        const latch = Array.from(slow.data).find(c => c.objectName === "latch");
+        // What the panel and the live reading are as the panel's timer
+        // fires, after Monitor's own handler has run.
+        const taken = [];
+        const record = () => taken.push([slow.panel.cpuUsage, slow.cpuUsage, Date.now() - started]);
+        latch.triggered.connect(record);
+        try {
+            tryVerify(() => Number.isFinite(slow.panel.cpuUsage), 3000, "the first reading reaches the panel at a sample");
+            const shown = slow.panel.cpuUsage;
+            const samples = slow.cpuHistory.length;
+            while (Date.now() - started < 3600) {
+                wait(100);
+                compare(slow.panel.cpuUsage, shown, "held at " + (Date.now() - started) + " ms");
             }
+            compare(taken.length, 0, "no panel update before the interval");
+            verify(slow.cpuHistory.length >= samples + 2, "the graph gained " + (slow.cpuHistory.length - samples));
+            // A held value no reading could be, so the update shows even on
+            // a machine whose CPU reading hasn't moved.
+            slow.panel = Object.assign({}, slow.panel, { cpuUsage: -1 });
+            tryVerify(() => taken.length > 0, 2000, "the panel's update at the interval");
+            verify(taken[0][1] >= 0, "a live reading: " + taken[0][1]);
+            compare(taken[0][0], taken[0][1], "the panel takes the latest reading at " + taken[0][2] + " ms");
+        } finally {
+            latch.triggered.disconnect(record);
         }
-        verify(slow.cpuHistory.length >= samples + 2, "the graph gained " + (slow.cpuHistory.length - samples));
-        verify(live.length > 1, "the live reading changed: " + live);
-        tryVerify(() => slow.panel.cpuUsage !== shown, 2000, "taken at the interval");
     }
 
     function test_aSleepingDiscreteGpuIsNeverSubscribed() {
