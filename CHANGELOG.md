@@ -82,8 +82,9 @@ follows [Semantic Versioning](https://semver.org/).
   no bars, since the ring gives the number, and reads "Weekly limit". The
   week graph loses its day lines, half line and even-pace diagonal;
   midnights are short ticks on its floor.
-- Popups line up their content on one edge and their headers on shared
-  baselines, with even padding in tiles and matching dividers. The load
+- Popups line up their content on one edge, and every header sets its
+  title and reading at the same height whether or not it has a ring, with
+  even padding in tiles and matching dividers. The load
   average shows its three numbers evenly spaced, the network header's
   rates are larger, and "Since boot" puts each arrow before its total. The
   footer's link and settings button line up with the edges of the readings

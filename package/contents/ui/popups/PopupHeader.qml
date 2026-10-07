@@ -39,29 +39,29 @@ RowLayout {
     property var parts: []
     property string accessibleValue: ""
     readonly property bool partsShown: parts.length > 0
-    // How far the caption moves to sit on the subtitle's baseline. The two
-    // columns centre on the row each by its own height, so their second
-    // lines miss by a few pixels; the digits stay level with the title.
-    // Worked out from implicit sizes and applied as a transform, so moving
-    // the caption never lays the row out again.
-    readonly property real captionShift: {
-        if (!subtitleText.visible || !captionText.visible) {
-            return 0;
-        }
-        const subtitleBaseline = (titleText.implicitHeight - subtitleText.implicitHeight) / 2 + subtitleText.baselineOffset;
-        const valueHeight = partsShown ? partsRow.implicitHeight : headline.implicitHeight;
-        const captionBaseline = (valueHeight + valueColumn.spacing - captionText.implicitHeight) / 2 + captionText.baselineOffset;
-        return Math.round(subtitleBaseline - captionBaseline);
-    }
-    // A detail line lengthens the name's column at its foot, which would
-    // pull a centred headline down past the title. The headline and its
-    // caption move up to centre on the title and subtitle instead, where
-    // they sit in a header without one, so the caption's shift above still
-    // holds. Each moves by its own transform, as the caption does.
-    readonly property real detailShift: header.detail !== "" ? -Math.round(detailText.implicitHeight / 2) : 0
+    readonly property real ringSize: Math.round(Kirigami.Units.gridUnit * 2.9)
+    // Every header lays out its parts as if it had a ring, a title and
+    // subtitle, and a reading over a caption. Each part is centred on the
+    // tallest of those three, whether or not this header shows it. So the
+    // titles and digits of every popup sit at one height, nothing moves when
+    // a reading or caption comes and goes, and a detail line hangs below the
+    // subtitle instead of lifting the title.
+    readonly property real nameHeight: titleText.implicitHeight + subtitleText.implicitHeight
+    readonly property real valueHeight: (partsShown ? partsRow.implicitHeight : headline.implicitHeight)
+                                        + valueColumn.spacing + captionText.implicitHeight
+    readonly property real bandHeight: Math.max(ringSize, nameHeight, valueHeight)
+    readonly property real nameTop: Math.round((bandHeight - nameHeight) / 2)
+    readonly property real valueTop: Math.round((bandHeight - valueHeight) / 2)
+    // How far the caption moves to sit on the subtitle's baseline, as the
+    // two columns' second lines miss by a few pixels; the digits stay level
+    // with the title. Applied as a transform, so moving the caption never
+    // lays the row out again.
+    readonly property real captionShift: Math.round(nameTop + titleText.implicitHeight + subtitleText.baselineOffset
+                                                    - (valueTop + valueHeight - captionText.implicitHeight + captionText.baselineOffset))
     default property alias trailing: trailingSlot.data
 
     Layout.fillWidth: true
+    Layout.minimumHeight: bandHeight
     Layout.leftMargin: Math.round(Kirigami.Units.largeSpacing * 2)
     Layout.rightMargin: Math.round(Kirigami.Units.largeSpacing * 2)
     Layout.topMargin: Math.round(Kirigami.Units.largeSpacing * 1.75)
@@ -72,8 +72,10 @@ RowLayout {
         id: ring
         visible: header.ringShown
         Accessible.name: header.title
-        Layout.preferredWidth: Math.round(Kirigami.Units.gridUnit * 2.9)
-        Layout.preferredHeight: Layout.preferredWidth
+        Layout.alignment: Qt.AlignTop
+        Layout.topMargin: Math.round((header.bandHeight - header.ringSize) / 2)
+        Layout.preferredWidth: header.ringSize
+        Layout.preferredHeight: header.ringSize
         strokeWidth: 4
         value: header.ringValue
         interval: header.interval
@@ -85,6 +87,8 @@ RowLayout {
 
     ColumnLayout {
         Layout.fillWidth: true
+        Layout.alignment: Qt.AlignTop
+        Layout.topMargin: header.nameTop
         spacing: 0
 
         Kirigami.Heading {
@@ -126,6 +130,8 @@ RowLayout {
     ColumnLayout {
         id: valueColumn
         visible: header.value !== "" || header.partsShown
+        Layout.alignment: Qt.AlignTop
+        Layout.topMargin: header.valueTop
         spacing: Math.round(Kirigami.Units.smallSpacing * 0.75)
 
         Reading {
@@ -137,7 +143,6 @@ RowLayout {
             degreeUnit: header.degreeUnit
             color: header.valueColor
             pointSize: Kirigami.Theme.defaultFont.pointSize * 1.7
-            transform: Translate { y: header.detailShift }
         }
 
         // Follows the popup's mirroring, so under RTL the largest unit sits
@@ -150,7 +155,6 @@ RowLayout {
             spacing: Math.round(Kirigami.Theme.defaultFont.pointSize * 1.7 * 0.45)
             Accessible.role: Accessible.StaticText
             Accessible.name: header.accessibleValue
-            transform: Translate { y: header.detailShift }
 
             Repeater {
                 model: header.parts.length
@@ -182,12 +186,14 @@ RowLayout {
             font.pointSize: Kirigami.Theme.smallFont.pointSize * 0.98
             font.letterSpacing: Kirigami.Theme.smallFont.pointSize * 0.08
             textFormat: Text.PlainText
-            transform: Translate { y: header.captionShift + header.detailShift }
+            transform: Translate { y: header.captionShift }
         }
     }
 
     ColumnLayout {
         id: trailingSlot
         visible: children.length > 0
+        Layout.alignment: Qt.AlignTop
+        Layout.topMargin: Math.round(Math.max(0, header.bandHeight - implicitHeight) / 2)
     }
 }
