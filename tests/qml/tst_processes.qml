@@ -3,8 +3,10 @@
 
 import QtQuick
 import QtTest
+import org.kde.kirigami as Kirigami
 import "../../package/contents/ui/code/format.js" as Format
 import "../../package/contents/ui/code/processes.js" as Processes
+import "../../package/contents/ui/code/style.js" as Style
 import "../../package/contents/ui/popups"
 
 Item {
@@ -230,6 +232,62 @@ Item {
             verify(!list.loading);
             verify(!indicator.visible, "gone with the readings");
             compare(list.implicitHeight, height, "the list keeps its height");
+        }
+
+        // The theme draws its busy indicator in the accent colour, which the
+        // widget can't change, so the list draws its own in the popup's dim
+        // text colour: the stroke is made from that colour, and what reaches
+        // the screen is that colour and nothing else, whatever the accent.
+        function test_busyIndicatorIsMonochrome() {
+            const list = createTemporaryObject(sampleList, root, { key: "usage" });
+            verify(list);
+            waitForRendering(list);
+            const indicator = indicatorOf(list);
+            verify(indicator.visible);
+            const strokes = Array.from(indicator.contentItem.data).filter(o => o.strokeColor !== undefined);
+            compare(strokes.length, 1);
+            const text = Kirigami.Theme.textColor;
+            verify(Qt.colorEqual(strokes[0].strokeColor, Style.dim(text)), "stroke " + strokes[0].strokeColor);
+            for (const accent of [Kirigami.Theme.highlightColor, Kirigami.Theme.focusColor]) {
+                verify(!Qt.colorEqual(strokes[0].strokeColor, accent) || Qt.colorEqual(text, accent));
+            }
+
+            // Every pixel the stroke touched lies on the line from the
+            // background to the text colour, so no other hue is in it. A
+            // grab of the indicator alone comes out blank with the software
+            // renderer, so the list is grabbed and the indicator's square
+            // read from it; its corner is background.
+            const image = grabImage(list);
+            const at = indicator.mapToItem(list, Qt.point(0, 0));
+            const left = Math.round(at.x);
+            const top = Math.round(at.y);
+            const bg = [image.red(left, top), image.green(left, top), image.blue(left, top)];
+            const fg = [text.r * 255, text.g * 255, text.b * 255];
+            const axis = [0, 1, 2].reduce((best, c) => Math.abs(fg[c] - bg[c]) > Math.abs(fg[best] - bg[best]) ? c : best, 0);
+            verify(Math.abs(fg[axis] - bg[axis]) > 100, "text and background apart");
+            let solid = 0;
+            for (let y = top; y < top + indicator.height; ++y) {
+                for (let x = left; x < left + indicator.width; ++x) {
+                    const pixel = [image.red(x, y), image.green(x, y), image.blue(x, y)];
+                    const mix = (pixel[axis] - bg[axis]) / (fg[axis] - bg[axis]);
+                    const off = Math.max(...pixel.map((v, c) => Math.abs(v - (bg[c] + mix * (fg[c] - bg[c])))));
+                    verify(off <= 6, "pixel " + x + "," + y + " is " + off + " off the text colour");
+                    solid += mix > 0.3 ? 1 : 0;
+                }
+            }
+            verify(solid > 20, "only " + solid + " solid pixels drawn");
+        }
+
+        // The indicator turns while it shows and holds still when it doesn't.
+        function test_busyIndicatorTurnsOnlyWhileShown() {
+            const list = createTemporaryObject(sampleList, root, { key: "usage" });
+            verify(list);
+            waitForRendering(list);
+            const spinner = indicatorOf(list).contentItem;
+            verify(spinner.turning, "turns while shown");
+            list.sample = [{ name: "firefox", usage: 8.4, memory: 3.9 * 1024 ** 3, count: 1 }];
+            waitForRendering(list);
+            verify(!spinner.turning, "stops once hidden");
         }
 
         // A list made with its rows, as the gallery's are, never shows the

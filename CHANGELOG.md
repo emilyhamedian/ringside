@@ -49,9 +49,10 @@ follows [Semantic Versioning](https://semver.org/).
 - The panel countdown shows the days alone ("6d") until the last day, then
   hours and minutes ("23h 5m"). It turns red at 100%, where it says how
   long the limit stays reached.
-- Top processes show a busy indicator until they are read. The CPU list,
-  which needs two scans, fills in about two seconds after its popup opens,
-  where it could take four.
+- Top processes show a busy indicator until they are read, in the popup's
+  dim text colour like its captions rather than the theme's accent. The CPU
+  list, which needs two scans, fills in about two seconds after its popup
+  opens, where it could take four.
 - Popup numbers and the ring's centre percentage use the theme's font with
   figures of even width instead of a monospace font, which left gaps around
   the decimal point. Units are smaller. °C and °F sit close to the digits:
