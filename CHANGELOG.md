@@ -74,8 +74,9 @@ follows [Semantic Versioning](https://semver.org/).
   the left at once. The panel still changes once per update interval, and
   a popup's readings follow each one, so its numbers agree with the graph
   under them.
-- Temperature sensors have plain names: chip, chiplet, hotspot and memory
-  instead of Tctl, Tccd, junction and mem.
+- A CPU or GPU temperature names its sensor in plain words only when it
+  isn't the whole chip's: chiplet, hotspot and memory instead of Tccd,
+  junction and mem, and nothing for Tctl, Tdie, Package id or edge.
 - The Claude and Codex popup sets its countdown's units smaller than its
   digits; the panel's stay the size of its digits. With one limit it shows
   no bars, since the ring gives the number, and reads "Weekly limit". The

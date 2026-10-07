@@ -419,12 +419,16 @@ QtObject {
                      "peak %1 %2", r.value, r.unit);
     }
 
-    // A temperature sensor's label in plain words: k10temp's Tctl, Tdie and
-    // Tccd1, coretemp's Package id 0, amdgpu's edge, junction and mem. Any
-    // other label, such as an NVMe drive's Composite, is shown as it is.
+    // A temperature sensor's label in plain words, for the caption under a
+    // CPU or GPU temperature: k10temp's Tccd1, amdgpu's junction and mem.
+    // The whole chip's sensor (k10temp's Tctl and Tdie, coretemp's Package
+    // id 0, amdgpu's edge) gets none. Any other label, such as an NVMe
+    // drive's Composite, is shown as it is.
     function sensorName(raw) {
+        // The whole chip's own sensor goes unnamed: a CPU's or GPU's
+        // temperature is the chip's unless a caption says otherwise.
         if (/^(Tctl|Tdie|Package id \d+|edge)$/.test(raw)) {
-            return i18nc("@label temperature sensor for a whole processor or GPU chip", "chip");
+            return "";
         }
         const chiplet = /^Tccd(\d+)$/.exec(raw);
         if (chiplet) {
