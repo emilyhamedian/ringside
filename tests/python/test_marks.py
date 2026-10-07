@@ -13,13 +13,16 @@ SVG = "{http://www.w3.org/2000/svg}"
 
 
 def marks():
-    """Each mark in marks.js as (box, path), by its variable's name."""
+    """Each mark in marks.js as a dict of its fields, by its variable's name."""
     source = MARKS.read_text(encoding="utf-8")
     found = {}
-    for name, box, path in re.findall(
-        r'var (\w+) = \{\s*box: \[([^\]]*)\],\s*path: "([^"]*)"\s*\};', source
-    ):
-        found[name] = ([float(n) for n in box.split(",")], path)
+    for name, body in re.findall(r"var (\w+) = \{(.*?)\n\};", source, re.S):
+        fields = dict(re.findall(r'(\w+): ("[^"]*"|\[[^\]]*\]|[-0-9.]+)', body))
+        found[name] = {
+            key: [float(n) for n in value[1:-1].split(",")] if value.startswith("[")
+            else value[1:-1] if value.startswith('"') else float(value)
+            for key, value in fields.items()
+        }
     return found
 
 
@@ -40,16 +43,16 @@ class MarksTest(unittest.TestCase):
         self.assertEqual(sorted(found), ["CLAUDE", "CODEX"])
         for name, svg in (("CLAUDE", "claude.svg"), ("CODEX", "codex.svg")):
             with self.subTest(mark=name):
-                box, path = found[name]
+                mark = found[name]
                 view_box, fill_rule, d = icon(svg)
-                self.assertEqual(path, d)
+                self.assertEqual(mark["path"], d)
                 # RingName fills every mark by the nonzero rule, so a mark's
                 # holes must be wound against its outline.
                 self.assertEqual(fill_rule, "nonzero")
                 # RingName scales a square box; [x, y, size] is the viewBox
                 # with its equal width and height given once.
                 self.assertEqual(view_box[2], view_box[3], f"{svg} is square")
-                self.assertEqual(box, view_box[:3])
+                self.assertEqual(mark["box"], view_box[:3])
 
 
 if __name__ == "__main__":

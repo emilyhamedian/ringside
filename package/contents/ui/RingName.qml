@@ -4,6 +4,7 @@
 pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Shapes
+import QtQuick.Window
 import org.kde.kirigami as Kirigami
 import "code/items.js" as Items
 import "code/marks.js" as Marks
@@ -62,11 +63,13 @@ Item {
     // The middle is round, so a name's ink has less room than the middle's
     // width: only the chord at its cap height.
     readonly property real chord: 2 * Math.sqrt(Math.max(0, room * room / 4 - smallest.tightBoundingRect.height ** 2 / 4))
+    readonly property var art: item === "claude" ? Marks.CLAUDE : Marks.CODEX
     // A little taller than a name's line, so a mark fills its ring about as
-    // much as CPU or MEM fill theirs, kept a pixel clear of the innermost
-    // ring, and none at all where there is no room.
-    readonly property real markSize: Math.max(0, Math.min(Math.round(nameFont.height * 1.2), Math.floor(room) - 2))
+    // much as CPU or MEM fill theirs, by the mark's own scale, kept a pixel
+    // clear of the innermost ring, and none at all where there is no room.
+    readonly property real markSize: Math.max(0, Math.min(Math.round(nameFont.height * 1.2 * (art.scale ?? 1)), Math.floor(room) - 2))
     readonly property bool fits: usage ? markSize >= Kirigami.Units.iconSizes.small / 2 && markSize <= room
+                                         && markSize * Screen.devicePixelRatio >= (art.minimum ?? 0)
                                        : smallest.advanceWidth <= chord
 
     anchors.fill: parent
@@ -112,7 +115,7 @@ Item {
 
             // Names the mark for the tests, which can't read a path.
             readonly property string markName: name.item
-            readonly property var art: name.item === "claude" ? Marks.CLAUDE : Marks.CODEX
+            readonly property var art: name.art
             // Scene pixels per viewBox unit.
             readonly property real unit: name.markSize / art.box[2]
 
