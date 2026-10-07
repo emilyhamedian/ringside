@@ -212,6 +212,19 @@ TestCase {
         compare([follower.panelUsage, follower.panelTemperature], [NaN, 55], "a reading that goes away is dropped at once");
     }
 
+    // A GPU that falls asleep leaves the panel at once, ring and readout
+    // together, even before its last reading goes away.
+    function test_sleepLeavesThePanelAtOnce() {
+        const leader = createTemporaryObject(fakeLeader, testCase);
+        const follower = createTemporaryObject(readerComponent, testCase, { info: reader.info, onRing: true });
+        follower.leader = leader;
+        follower.latch(true);
+        compare([follower.panelUsage, follower.panelTemperature], [10, 50]);
+        leader.phase = "asleep";
+        compare(follower.phase, "asleep");
+        compare([follower.panelUsage, follower.panelTemperature], [NaN, NaN], "dropped with the phase");
+    }
+
     Component {
         id: fakeLeader
         QtObject {
