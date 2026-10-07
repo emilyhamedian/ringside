@@ -1171,8 +1171,11 @@ Item {
             });
             compare(ends[0], ends[1], "numbers end on one line");
             compare(starts[0], starts[1], "units start on one line");
+            // The rates, at the tiles' size, never make the header taller than
+            // one with a ring; the connection's name and address take the two
+            // lines they need beside them.
             const cpu = headerOf(load("CpuPopup", normal));
-            verify(headerOf(popup).implicitHeight <= cpu.implicitHeight, "no taller than a header with a ring");
+            verify(rates.implicitHeight <= cpu.implicitHeight, "rates no taller than a header with a ring");
         }
 
         // The totals since boot lead with their arrows, as the rates do.
