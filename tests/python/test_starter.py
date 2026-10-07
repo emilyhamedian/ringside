@@ -27,6 +27,11 @@ REAL_RUN_CLI = usage.run_cli
 AUTH = {"loggedIn": True, "authMethod": "claude.ai", "apiProvider": "firstParty", "subscriptionType": "max"}
 
 
+def switched_on():
+    """The switch, as a sender reads it just before sending."""
+    return True
+
+
 def week(percent, resets_at, seconds=WEEK):
     return {"percent": percent, "resetsAt": resets_at, "windowSeconds": seconds}
 
@@ -499,7 +504,7 @@ class Commands(Isolated):
 
     def test_the_preflight_runs_auth_status_with_every_send_flag(self):
         calls = self.runner((0, json.dumps(AUTH)), (0, "{}"))
-        usage.send_claude("/mock/claude")
+        usage.send_claude("/mock/claude", switched_on)
         argv, _, timeout = calls[0]
         self.assertEqual(argv, ["/mock/claude", *usage.claude_options(), "auth", "status"])
         self.assertNotIn("--help", argv)
@@ -512,7 +517,7 @@ class Commands(Isolated):
                   "CLAUDE_CODE_USE_VERTEX": "1", "CLAUDE_CODE_OAUTH_TOKEN": "another", "OPENAI_API_KEY": "secret"}
         with mock.patch.dict(os.environ, source, clear=True):
             calls = self.runner((0, json.dumps(AUTH)), (0, "{}"))
-            usage.send_claude("/mock/claude")
+            usage.send_claude("/mock/claude", switched_on)
         argv, env, timeout = calls[1]
         self.assertEqual(argv, ["/mock/claude", *usage.claude_options(), "-p", "Hi"])
         self.assertEqual(len(argv[-1].split()), 1)
@@ -545,7 +550,7 @@ class Commands(Isolated):
             with self.subTest(changed=changed):
                 calls = self.runner((1, json.dumps({**AUTH, **changed})))
                 with self.assertRaises(usage.Failed) as failed:
-                    usage.send_claude("/mock/claude")
+                    usage.send_claude("/mock/claude", switched_on)
                 self.assertEqual(failed.exception.reason, reason)
                 self.assertEqual(len(calls), 1)
 
@@ -555,14 +560,14 @@ class Commands(Isolated):
             with self.subTest(result=result):
                 calls = self.runner(result)
                 with self.assertRaises(usage.NotSent) as not_sent:
-                    usage.send_claude("/mock/claude")
+                    usage.send_claude("/mock/claude", switched_on)
                 self.assertEqual(not_sent.exception.reason, "not-responding")
                 self.assertEqual(len(calls), 1)
 
     def test_a_send_that_couldnt_start_never_left(self):
         self.runner((0, json.dumps(AUTH)), FileNotFoundError("claude"))
         with self.assertRaises(usage.NotSent):
-            usage.send_claude("/mock/claude")
+            usage.send_claude("/mock/claude", switched_on)
 
     # usage-reset counted these as uncertain; the reading decides now.
     def test_once_started_any_outcome_is_left_to_the_reading(self):
@@ -572,7 +577,7 @@ class Commands(Isolated):
                        subprocess.TimeoutExpired("claude", 60)):
             with self.subTest(result=result):
                 self.runner((0, json.dumps(AUTH)), result)
-                usage.send_claude("/mock/claude")
+                usage.send_claude("/mock/claude", switched_on)
 
     def test_a_login_that_cant_be_renewed_sends_nothing(self):
         calls = self.runner()
@@ -581,7 +586,7 @@ class Commands(Isolated):
             with self.subTest(failure=failure), \
                     mock.patch.object(usage, "claude_access_token", side_effect=failure), \
                     self.assertRaises(expected):
-                usage.send_claude("/mock/claude")
+                usage.send_claude("/mock/claude", switched_on)
         self.assertEqual(calls, [])
 
     def test_codex_runs_one_ephemeral_read_only_turn(self):
@@ -589,7 +594,7 @@ class Commands(Isolated):
                   "OPENAI_API_KEY": "secret", "CODEX_API_KEY": "secret", "OPENAI_BASE_URL": "https://override.example"}
         with mock.patch.dict(os.environ, source, clear=True):
             calls = self.runner((0, ""))
-            usage.send_codex("/mock/codex")
+            usage.send_codex("/mock/codex", switched_on)
         argv, env, timeout = calls[0]
         self.assertEqual(argv[:2], ["/mock/codex", "exec"])
         for flag in ("--ephemeral", "--skip-git-repo-check", "--ignore-user-config", "--ignore-rules", "--json"):
@@ -652,9 +657,9 @@ class Commands(Isolated):
     def test_codex_that_couldnt_start_never_left_and_a_timeout_did(self):
         self.runner(OSError("exec format error"))
         with self.assertRaises(usage.NotSent):
-            usage.send_codex("/mock/codex")
+            usage.send_codex("/mock/codex", switched_on)
         self.runner(subprocess.TimeoutExpired("codex", 60))
-        usage.send_codex("/mock/codex")
+        usage.send_codex("/mock/codex", switched_on)
 
     def test_a_missing_cli_is_not_installed(self):
         with self.assertRaises(usage.Failed) as failed:
@@ -741,14 +746,14 @@ class Login(Isolated):
 
     def test_a_login_expiring_within_fifteen_minutes_is_renewed_first(self):
         self.login(10 * 60)
-        usage.send_claude("/mock/claude")
+        usage.send_claude("/mock/claude", switched_on)
         self.assertEqual(self.order, ["refresh", "status", "Hi"])
         stored = json.loads(usage.CLAUDE_CREDENTIALS.read_text())["claudeAiOauth"]
         self.assertEqual(stored["refreshToken"], "new-refresh")
 
     def test_a_login_good_for_longer_is_left_alone(self):
         self.login(30 * 60)
-        usage.send_claude("/mock/claude")
+        usage.send_claude("/mock/claude", switched_on)
         self.assertEqual(self.order, ["status", "Hi"])
 
     def test_polls_keep_their_own_one_minute_margin(self):
@@ -913,6 +918,35 @@ class StarterRuns(Isolated):
         self.run_main("--providers", "claude", "--starter-set", "claude=off")
         self.run_main("--providers", "claude", "--start")
         self.assertEqual(self.calls, [])
+
+    # The switch has its own lock, so it can be turned off while a step
+    # reads, renews Claude's login or checks the CLI; nothing goes out then.
+    def test_a_switch_turned_off_during_the_step_sends_nothing(self):
+        def off(result):
+            def turn_off(*args):
+                usage.set_switches({"claude": False, "codex": False})
+                return result(*args) if callable(result) else result
+            return turn_off
+
+        for name, target, patched in (
+                ("claude", "claude_access_token", off("token")),
+                ("claude", "run_cli", off(self.run_cli)),
+                ("codex", "codex_usage", off(lambda: {"weekly": week(0, int(time.time()) + WEEK), "scoped": []}))):
+            with self.subTest(name=name, during=target):
+                self.calls.clear()
+                usage.STARTER_STATE.unlink(missing_ok=True)
+                self.run_main("--starter-set", f"{name}=on")
+                self.write_cache({})
+                with mock.patch.object(usage, target, side_effect=patched):
+                    report = self.run_main("--providers", name, "--start")
+                self.assertEqual([argv[-1] for argv in self.calls], ["status"] if name == "claude" else [])
+                self.assertEqual(report["providers"][name]["starter"], OFF)
+                stored = json.loads(usage.STARTER_STATE.read_text())[name]
+                self.assertEqual((stored["state"], stored["next"], stored["pending"], stored["sentAt"]),
+                                 ("waiting", None, None, None))
+                again = self.run_main("--providers", name, "--starter-set", f"{name}=on")["providers"][name]
+                self.assertEqual(again["starter"]["state"], "waiting")
+                self.assertLessEqual(again["starter"]["next"], int(time.time()), "due at once when switched on again")
 
     def test_a_start_that_cant_get_the_lock_still_reports(self):
         self.run_main("--starter-set", "claude=on")

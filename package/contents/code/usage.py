@@ -1006,6 +1006,11 @@ class Failed(Exception):
         self.reason = reason
 
 
+class SwitchedOff(Exception):
+    """The user switched the starter off while its step ran, before the
+    message went out."""
+
+
 class Unreadable(Exception):
     """The limits couldn't be read; the next try waits at least `wait`
     seconds, as long as the provider asked."""
@@ -1133,10 +1138,10 @@ class Starter:
 
     read(not_before) returns the provider's reading, or raises Defer when
     the cached one was taken before not_before, Failed or Unreadable.
-    check() returns the CLI or raises Failed; send(binary) raises Failed or
-    NotSent when nothing went out. running(reading, now) is the window
-    running now, or None, and period a window's length. The caller holds
-    usage.lock throughout.
+    check() returns the CLI or raises Failed; send(binary) raises Failed,
+    NotSent or SwitchedOff when nothing went out. running(reading, now) is
+    the window running now, or None, and period a window's length. The
+    caller holds usage.lock throughout.
     """
 
     def __init__(self, record, *, read, check, send, running, period, persist, clock):
@@ -1226,6 +1231,10 @@ class Starter:
         except NotSent as err:
             rec["pending"] = None
             self.back_off(reason=err.reason)
+        except SwitchedOff:
+            # Due at once should it be switched on again.
+            rec.update(pending=None, sentAt=None, uncertain=0)
+            self.set("waiting")
         else:
             rec.update(pending=None, sentAt=now, failures=0)
             self.set("confirming", now, now + CONFIRM_DELAY)
@@ -1338,8 +1347,9 @@ def claude_options():
             "--prompt-suggestions", "false", "--system-prompt", "Reply with OK."]
 
 
-def send_claude(binary):
-    """Send Claude one word so a five-hour window starts.
+def send_claude(binary, wanted):
+    """Send Claude one word so a five-hour window starts, if wanted() still
+    says so once the login and the CLI have been checked.
 
     The login is renewed first if it expires within CLI_TOKEN_MARGIN, under
     the lock the caller holds, so the CLI has no reason to spend the
@@ -1380,6 +1390,8 @@ def send_claude(binary):
         raise Failed("not-subscription")
     if code != 0:
         raise NotSent("not-responding")
+    if not wanted():
+        raise SwitchedOff()
     try:
         run_cli([binary, *claude_options(), "-p", PROMPT], env, SEND_TIMEOUT)
     except OSError:
@@ -1422,11 +1434,14 @@ def codex_command(binary):
             "--config", f'model_reasoning_effort="{effort}"', "--model", model, PROMPT]
 
 
-def send_codex(binary):
-    """Send Codex one word so a week starts. As for Claude, the reading five
-    minutes later decides whether it worked."""
+def send_codex(binary, wanted):
+    """Send Codex one word so a week starts, if wanted() still says so. As
+    for Claude, the reading five minutes later decides whether it worked."""
+    command = codex_command(binary)
+    if not wanted():
+        raise SwitchedOff()
     try:
-        run_cli(codex_command(binary), cli_environment("CODEX_HOME"), SEND_TIMEOUT)
+        run_cli(command, cli_environment("CODEX_HOME"), SEND_TIMEOUT)
     except OSError:
         raise NotSent() from None
     except subprocess.TimeoutExpired:
@@ -1441,7 +1456,11 @@ def run_starter(name):
     """Run the provider's starter step if its switch is on, holding
     usage.lock from the switch check to the last write, so no poll runs
     between a read and a send and none renews Claude's login while the CLI
-    might."""
+    might.
+
+    The switch has a lock of its own, so the user can turn it off while
+    the step reads, renews and checks the CLI, which can take most of a
+    minute; the sender reads it again just before the message goes out."""
     with locked():
         if name not in read_switches():
             return
@@ -1452,10 +1471,11 @@ def run_starter(name):
             private_state_dir()
             write_private(STARTER_STATE, states)
 
+        sender = send_claude if name == "claude" else send_codex
         Starter(record,
                 read=lambda not_before: starter_read(name, int(time.time()), not_before),
                 check=lambda: installed(name),
-                send=send_claude if name == "claude" else send_codex,
+                send=lambda binary: sender(binary, lambda: name in read_switches()),
                 running=claude_running if name == "claude" else codex_running,
                 period=SESSION_SECONDS if name == "claude" else WEEK_SECONDS,
                 persist=persist, clock=lambda: int(time.time())).step()
