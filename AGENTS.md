@@ -11,7 +11,8 @@ GPL-3.0-or-later.
   the single popup; `Monitor.qml` is the only place that subscribes to
   ksystemstats; `GpuReader.qml` with `code/gpugate.js` decides when a discrete
   GPU may be read; `UsageData.qml` runs `contents/code/usage.py` for the
-  Claude and Codex items; `contents/code/ringside-info.sh` reports hardware
+  Claude and Codex items and their opt-in session starter;
+  `contents/code/ringside-info.sh` reports hardware
   facts ksystemstats doesn't publish. `code/pace.js` projects a weekly
   limit's pace for the panel and the popup.
 - `tests/` holds the QtTest suites (`tests/qml/tst_*.qml`), the sh helper's
@@ -35,6 +36,11 @@ GPL-3.0-or-later.
 - The Claude helper shares a tight rate limit and single-use refresh tokens
   with Claude Code and other tools on the same machine. Keep the 5-minute
   floor, the cache, the lock and the re-read-before-write on refresh.
+- The session starter is the only thing in Ringside that sends anything to
+  Claude or Codex: off by default, switched per user, one minimal message
+  through their own CLI once a window has ended. It holds the usage lock
+  across a send, never sends while a window is running or the weekly limit
+  is reached, and stops after two sends it can't confirm.
 - Numbers go through `code/format.js` (locale digits, binary units);
   user-visible strings through `i18nc` in QML, since `.pragma library` files
   can't translate. Colours come from the Plasma theme.
