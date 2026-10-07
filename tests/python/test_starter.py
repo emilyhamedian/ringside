@@ -737,6 +737,19 @@ class StarterRuns(Isolated):
         self.assertEqual((starter["state"], starter["at"], starter["next"]), ("started", sent, sent + SESSION + 1))
         self.assertEqual(self.calls, [])
 
+    def test_a_reply_that_cant_tell_a_session_sends_nothing(self):
+        weekly = {"utilization": 10, "resets_at": int(time.time()) + 86400}
+        for body in ({"seven_day": weekly}, {"seven_day": weekly, "five_hour": "soon"}):
+            with self.subTest(body=body):
+                self.write_cache({})
+                usage.STARTER_STATE.unlink(missing_ok=True)
+                self.claude.side_effect = lambda: usage.parse_claude(body)
+                self.run_main("--providers", "claude", "--starter-set", "claude=on")
+                starter = self.run_main("--providers", "claude", "--start")["providers"]["claude"]["starter"]
+                self.assertEqual(self.calls, [])
+                self.assertEqual(starter["state"], "waiting")
+                self.assertGreater(starter["next"], int(time.time()))
+
     def test_turning_the_switch_off_stops_the_next_start(self):
         self.run_main("--starter-set", "claude=on")
         self.run_main("--providers", "claude", "--starter-set", "claude=off")
@@ -876,7 +889,6 @@ class Report(Isolated):
 class Session(Isolated):
     def test_claude_reports_its_five_hour_window(self):
         body = json.loads((FIXTURES / "claude_usage.json").read_text())
-        self.assertIsNone(usage.parse_claude(body)["session"])
         body["five_hour"] = None
         self.assertIsNone(usage.parse_claude(body)["session"])
         body["five_hour"] = {"utilization": 12.4, "resets_at": "2026-09-02T02:00:00.512345+00:00"}
@@ -884,6 +896,26 @@ class Session(Isolated):
                          {"percent": 12, "resetsAt": 1788314400, "windowSeconds": SESSION})
         body["five_hour"] = {"utilization": 0, "resets_at": None}
         self.assertEqual(usage.parse_claude(body)["session"]["resetsAt"], None)
+
+    # Only an explicit null, or 0% with no reset, says no session runs.
+    def test_a_missing_or_malformed_five_hour_leaves_the_session_unknown(self):
+        body = json.loads((FIXTURES / "claude_usage.json").read_text())
+        self.assertNotIn("five_hour", body)
+        self.assertNotIn("session", usage.parse_claude(body))
+        for five_hour in ("soon", [], 12, {"utilization": 40}, {"utilization": "40", "resets_at": None},
+                          {"utilization": True, "resets_at": "2026-09-02T02:00:00Z"},
+                          {"utilization": 40, "resets_at": None}, {"utilization": 0, "resets_at": "soon"}):
+            with self.subTest(five_hour=five_hour):
+                body["five_hour"] = five_hour
+                reading = usage.parse_claude(body)
+                self.assertNotIn("session", reading)
+                self.assertEqual(reading["weekly"]["percent"], 62)
+
+    def test_a_reading_that_cant_tell_a_session_is_a_failed_read(self):
+        fetch = mock.Mock(return_value={"weekly": week(5, NOW + 86400), "scoped": []})
+        with mock.patch.object(usage, "claude_usage", fetch), usage.locked(), self.assertRaises(usage.Unreadable):
+            usage.starter_read("claude", NOW, None)
+        fetch.assert_called_once()
 
     def test_a_malformed_cached_session_reads_as_no_reading(self):
         entry = dict(claude(NOW - 10), session={"percent": "x"})
