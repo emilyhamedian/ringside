@@ -5,10 +5,14 @@
                    "weekly": {"percent": 62, "resetsAt": 1788556800, "windowSeconds": 604800,
                               "history": [[1787952000, 0], [1788130000, 31], [1788321000, 62]]},
                    "scoped": [{"id": "Fable", "label": "Fable", "percent": 78, "resetsAt": 1788556800,
-                               "windowSeconds": 604800}]},
+                               "windowSeconds": 604800}],
+                   "session": {"percent": 14, "resetsAt": 1788330000, "windowSeconds": 18000},
+                   "starter": {"enabled": true, "state": "started", "at": 1788312000, "next": 1788330001,
+                               "reason": null}},
         "codex": {"status": "ok", "fetchedAt": 1788321000,
                   "weekly": {"percent": 34, "resetsAt": 1788926677, "windowSeconds": 604800},
                   "scoped": [{"id": "codex_bengalfox", "label": "GPT-5.3-Codex-Spark",
-                              "percent": 5, "resetsAt": 1788926677, "windowSeconds": 604800}]}
+                              "percent": 5, "resetsAt": 1788926677, "windowSeconds": 604800}],
+                  "starter": {"enabled": true, "state": "waiting", "at": null, "next": 1788926678, "reason": null}}
     }
 }
