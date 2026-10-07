@@ -525,6 +525,33 @@ Item {
             compare(usage.startFailures, {});
         }
 
+        // A --start that reports but leaves the starter due, or leaves it
+        // out, backs off as a failed one does rather than running on every
+        // tick. The readings it brings are taken.
+        function test_startLeftDueBacksOff() {
+            start("starter");
+            const due = usage.starter("claude").next;
+            tryVerify(() => Date.now() / 1000 >= due, 5000);
+            const command = usage.helperCommand(["claude"], " --start");
+            const answer = providers => runner().newData(command, { "exit code": 0, "exit status": 0, stderr: "",
+                                                                    stdout: JSON.stringify({ fetchedAt: due, providers: providers }) });
+            const stuck = { enabled: true, state: "waiting", at: null, next: due, reason: null };
+            answer({ claude: Object.assign({}, usage.entry("claude"), { starter: stuck }) });
+            const failed = usage.starter("claude");
+            compare([failed.state, failed.reason, failed.error], ["failed", "helper", ""]);
+            compare(failed.next - failed.at, 300);
+            verify(!usage.degraded("claude"));
+            compare(usage.helperError, "");
+            const run = commands();
+            starterTick().triggered();
+            compare(ran(run, " --start"), [], "not before the retry");
+
+            answer({});
+            compare(usage.starter("claude").next - usage.starter("claude").at, 600, "left out, it backs off further");
+            poll("starter");
+            compare(usage.starter("claude").state, "waiting", "a report that moves it on ends the back-off");
+        }
+
         function test_setStarterRunsTheHelper() {
             start("starter");
             const run = commands();

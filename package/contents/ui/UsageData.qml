@@ -143,6 +143,19 @@ Item {
         startFailures = failures;
     }
 
+    // A --start that reported but left a starter due, or didn't report it,
+    // would run again on every tick, so it backs off as a failed one does.
+    function startLeftDue(startedIds) {
+        const now = Date.now() / 1000;
+        const due = startedIds.filter(id => {
+            const s = starters[id];
+            return s?.enabled === true && Number.isFinite(s.next) && s.next <= now;
+        });
+        if (due.length > 0) {
+            startFailed(due, "");
+        }
+    }
+
     function present(id) {
         const e = entry(id);
         return e !== null && e.status !== "signed_out";
@@ -335,6 +348,9 @@ Item {
             } else {
                 usage.helperError = "";
                 usage.merge(report);
+                if (started) {
+                    usage.startLeftDue(started[1].split(","));
+                }
             }
             if (settled) {
                 const wanted = Object.assign({}, usage.starterWanted);
