@@ -17,6 +17,10 @@ import "code/reset.js" as Reset
 // marks its item with a dot; one that fails before its first reading gets
 // no entry, so it stays hidden and the settings page says why from
 // usageStatus.
+//
+// It also drives the opt-in session starter: the helper reports each
+// provider's starter in every report, and the widget runs the helper with
+// --start when one is due and with --starter-set when its switch is turned.
 Item {
     id: usage
 
@@ -41,11 +45,14 @@ Item {
     // Split by sh quoting rules, whether KProcess starts python3 itself or
     // hands the line to sh, so a quote in the install path is closed, escaped
     // and reopened. -B keeps Python from writing bytecode into the package.
-    readonly property string command: ids.length > 0
-        ? "python3 -B '" + helperPath.replace(/'/g, "'\\''") + "' --providers " + ids.join(",") : ""
+    readonly property string command: helperCommand(ids, "")
     readonly property var innerChoices: ({ claude: config.claudeInnerLimit, codex: config.codexInnerLimit })
     // The last poll's status per id, as the settings page reads it.
     property var statuses: ({})
+    // The session starter per id, as the last report gave it.
+    property var starters: ({})
+    // The switch positions asked for and not yet reported back, per id.
+    property var starterWanted: ({})
 
     // Windows that just started over (see code/reset.js), sent before
     // `entries` changes so a ring can play the reset from its old reading.
@@ -53,6 +60,51 @@ Item {
 
     function entry(id) {
         return entries[id] ?? null;
+    }
+
+    function helperCommand(providerIds, args) {
+        return providerIds.length > 0
+            ? "python3 -B '" + helperPath.replace(/'/g, "'\\''") + "' --providers " + providerIds.join(",") + args : "";
+    }
+
+    function starter(id) {
+        return starters[id] ?? null;
+    }
+
+    // Where the switch stands: as asked while the helper writes it, then as
+    // reported, so a change that didn't stick snaps back.
+    function starterOn(id) {
+        return starterWanted[id] ?? starter(id)?.enabled === true;
+    }
+
+    function setStarter(id, on) {
+        if (!ids.includes(id)) {
+            return;
+        }
+        starterWanted = Object.assign({}, starterWanted, { [id]: on });
+        writeStarter();
+    }
+
+    // One --starter-set at a time, so a quick on and off land in order.
+    function writeStarter() {
+        const id = Object.keys(starterWanted)[0];
+        if (id !== undefined && !runner.connectedSources.some(s => s.includes(" --starter-set "))) {
+            runner.connectSource(helperCommand(ids, " --starter-set " + id + "=" + (starterWanted[id] ? "on" : "off")));
+        }
+    }
+
+    // Runs --start for the providers whose starter is due, never while one
+    // already runs: a send can take minutes, and the helper holds its lock
+    // throughout.
+    function startDue() {
+        const now = Date.now() / 1000;
+        const due = ids.filter(id => {
+            const s = starters[id];
+            return s && s.enabled && Number.isFinite(s.next) && s.next <= now;
+        });
+        if (due.length > 0 && !runner.connectedSources.some(s => s.endsWith(" --start"))) {
+            runner.connectSource(helperCommand(due, " --start"));
+        }
     }
 
     function present(id) {
@@ -88,6 +140,12 @@ Item {
         if (Object.keys(entries).some(id => !ids.includes(id))) {
             entries = only(entries);
         }
+        if (Object.keys(starters).some(id => !ids.includes(id))) {
+            starters = only(starters);
+        }
+        if (Object.keys(starterWanted).some(id => !ids.includes(id))) {
+            starterWanted = only(starterWanted);
+        }
         if (Object.keys(statuses).some(id => !ids.includes(id)) || ids.length === 0 && helperError !== "") {
             statuses = only(statuses);
             if (ids.length === 0) {
@@ -101,9 +159,13 @@ Item {
         const at = report.fetchedAt ?? Math.floor(Date.now() / 1000);
         const merged = {};
         const latest = {};
+        const starting = Object.assign({}, starters);
         for (const id of ids) {
             const was = entries[id];
             const next = report.providers[id];
+            if (next?.starter) {
+                starting[id] = next.starter;
+            }
             if (!next) {
                 if (was) {
                     merged[id] = was;
@@ -126,6 +188,7 @@ Item {
         }
         entries = merged;
         statuses = latest;
+        starters = starting;
         rememberLimits();
         writeStatus();
     }
@@ -193,6 +256,10 @@ Item {
         connectedSources: []
         onNewData: (source, data) => {
             disconnectSource(source);
+            // A switch change is settled by this run's report, or by its
+            // failure, which leaves the switch where it was reported.
+            const set = / --starter-set (\w+)=(on|off)$/.exec(source);
+            const settled = set && usage.starterWanted[set[1]] === (set[2] === "on") ? set[1] : "";
             let report = null;
             try {
                 report = JSON.parse(data.stdout);
@@ -203,10 +270,18 @@ Item {
                 usage.helperError = usage.failureText(Report.helperFailure(data));
                 usage.entries = Report.markFailed(usage.entries, usage.helperError, Math.floor(Date.now() / 1000));
                 usage.writeStatus();
-                return;
+            } else {
+                usage.helperError = "";
+                usage.merge(report);
             }
-            usage.helperError = "";
-            usage.merge(report);
+            if (settled) {
+                const wanted = Object.assign({}, usage.starterWanted);
+                delete wanted[settled];
+                usage.starterWanted = wanted;
+            }
+            if (set) {
+                usage.writeStarter();
+            }
         }
     }
 
@@ -216,5 +291,14 @@ Item {
         repeat: true
         triggeredOnStart: true
         onTriggered: usage.refresh()
+    }
+
+    // Due times are compared with the wall clock, so after a suspend the
+    // next tick, at most 30 s after waking, starts what came due meanwhile.
+    Timer {
+        interval: 30000
+        running: usage.ids.some(id => usage.starters[id]?.enabled === true && Number.isFinite(usage.starters[id].next))
+        repeat: true
+        onTriggered: usage.startDue()
     }
 }

@@ -397,6 +397,121 @@ Item {
             // python3 can't open it; the helper failure says so.
             tryVerify(() => usage.helperError.startsWith("The usage helper exited with code 2"), 10000, usage.helperError);
         }
+
+        function runner() {
+            return usage.resources.find(r => r.engine === "executable");
+        }
+
+        // The helper commands run from now on, in order.
+        function commands() {
+            return createTemporaryObject(spyComponent, data, { target: runner(), signalName: "sourceConnected" });
+        }
+
+        function ran(spy, suffix) {
+            return spy.signalArguments.map(a => a[0]).filter(c => c.endsWith(suffix));
+        }
+
+        function starterTick() {
+            return timers().find(t => t.interval === 30000);
+        }
+
+        function test_startersFromEveryReport() {
+            start("starter");
+            compare(usage.starter("claude").state, "waiting");
+            verify(usage.starterOn("claude"));
+            compare(usage.starter("codex"), { enabled: false, state: "off", at: null, next: null, reason: null });
+            verify(!usage.starterOn("codex"));
+            // A failed check still reports the starter.
+            poll("failed");
+            compare(usage.starter("claude").state, "off");
+            verify(usage.degraded("claude"));
+        }
+
+        function test_starterTickOnlyWhileOneIsOn() {
+            start("ok");
+            verify(!starterTick().running, "every starter is off");
+            poll("starter");
+            verify(starterTick().running);
+        }
+
+        // --start runs once the starter's time has come, not before, and
+        // never twice at once.
+        function test_startRunsOnceWhenDue() {
+            start("starter");
+            const run = commands();
+            starterTick().triggered();
+            compare(ran(run, " --start"), [], "not due yet");
+            const due = usage.starter("claude").next;
+            tryVerify(() => Date.now() / 1000 >= due, 5000);
+            starterTick().triggered();
+            // Codex comes due too while Claude's start runs: it waits for
+            // the next tick rather than starting beside it.
+            usage.starters = Object.assign({}, usage.starters, { codex: { enabled: true, state: "waiting", at: null, next: due, reason: null } });
+            starterTick().triggered();
+            compare(ran(run, " --start"), [usage.helperCommand(["claude"], " --start")]);
+            tryVerify(() => usage.starter("claude").state === "confirming", 10000);
+            starterTick().triggered();
+            compare(ran(run, " --start"), [usage.helperCommand(["claude"], " --start"), usage.helperCommand(["codex"], " --start")],
+                    "Claude's confirmation isn't due yet; Codex is");
+            tryVerify(() => runner().connectedSources.length === 0, 10000);
+        }
+
+        function test_setStarterRunsTheHelper() {
+            start("starter");
+            const run = commands();
+            const landed = spy("startersChanged");
+            usage.setStarter("codex", true);
+            verify(usage.starterOn("codex"), "the switch shows the change at once");
+            compare(ran(run, "=on"), [usage.helperCommand(["claude", "codex"], " --starter-set codex=on")]);
+            landed.wait(10000);
+            verify(usage.starter("codex").enabled);
+            verify(usage.starterOn("codex"));
+            compare(usage.starterWanted, {});
+        }
+
+        function test_refusedChangeSnapsBack() {
+            start("starter-stuck");
+            const landed = spy("startersChanged");
+            usage.setStarter("codex", true);
+            verify(usage.starterOn("codex"));
+            landed.wait(10000);
+            verify(!usage.starterOn("codex"), "the helper kept it off");
+            compare(usage.starterWanted, {});
+        }
+
+        function test_failedChangeSnapsBack() {
+            start("starter");
+            poll("traceback");
+            usage.setStarter("codex", true);
+            verify(usage.starterOn("codex"));
+            tryVerify(() => !usage.starterOn("codex"), 10000);
+            compare(usage.starter("codex").enabled, false);
+        }
+
+        // A quick on and off run one after the other, so the last one wins.
+        function test_changesRunInOrder() {
+            start("starter");
+            const run = commands();
+            usage.setStarter("codex", true);
+            usage.setStarter("codex", false);
+            verify(!usage.starterOn("codex"));
+            compare(runner().connectedSources.filter(c => c.includes("--starter-set")).length, 1);
+            tryVerify(() => Object.keys(usage.starterWanted).length === 0, 10000);
+            compare(ran(run, "=on").length + ran(run, "=off").length, 2);
+            verify(run.signalArguments.findIndex(a => a[0].endsWith("=on")) < run.signalArguments.findIndex(a => a[0].endsWith("=off")));
+            compare(usage.starter("codex").state, "off");
+        }
+
+        function test_droppedProviderDropsItsStarter() {
+            start("starter");
+            usage.setStarter("codex", true);
+            usage.providers = ["claude"];
+            compare(Object.keys(usage.starters), ["claude"]);
+            compare(usage.starterWanted, {});
+            usage.setStarter("codex", true);
+            compare(usage.starterWanted, {}, "an unpolled provider has no switch");
+            tryVerify(() => runner().connectedSources.length === 0, 10000);
+        }
     }
 
     TestCase {
@@ -1420,6 +1535,148 @@ Item {
             compare(String(ring(popup).outerTone), red);
         }
 
+        function starterSwitch(popup) {
+            return root.find(popup, i => i.visualPosition !== undefined);
+        }
+
+        function starterStatus(popup) {
+            return root.find(popup, i => i.maximumLineCount === 2 && i.elide === Text.ElideRight);
+        }
+
+        function configureButton(popup) {
+            return root.find(popup, i => i.icon !== undefined && i.icon.name === "configure");
+        }
+
+        function setStarter(item, starter) {
+            monitor.usage.starters = Object.assign({}, monitor.usage.starters, { [item]: Object.assign({ at: null, next: null, reason: null }, starter) });
+        }
+
+        readonly property var starterStates: [
+            { state: "off", enabled: false, failed: false },
+            { state: "waiting", enabled: true, failed: false, next: 3600 },
+            { state: "confirming", enabled: true, failed: false, at: -180, next: 120 },
+            { state: "started", enabled: true, failed: false, at: -180, next: 5 * 3600 },
+            { state: "weekly", enabled: true, failed: false, next: 3 * 86400 },
+            { state: "failed", enabled: true, failed: true, reason: "not-installed" },
+            { state: "failed", enabled: true, failed: true, reason: "signed-out" },
+            { state: "retrying", enabled: true, failed: true, at: -180, next: 120 },
+            { state: "paused", enabled: true, failed: true, next: 5 * 3600 }
+        ]
+
+        function starterFor(row) {
+            const at = monitor.usage.createdAt;
+            return { enabled: row.enabled, state: row.state, reason: row.reason ?? null,
+                     at: row.at !== undefined ? at + row.at : null, next: row.next !== undefined ? at + row.next : null };
+        }
+
+        function test_starterSwitch_data() {
+            return [{ tag: "claude", item: "claude", label: "Start a new session when one ends" },
+                    { tag: "codex", item: "codex", label: "Start a new week when one ends" }];
+        }
+
+        // The switch sits in the footer, left of the configure button, its
+        // label the same in every state and its status under it: dim while
+        // the starter holds as planned, full when something went wrong.
+        function test_starterSwitch(data) {
+            const popup = load(data.item);
+            const toggle = starterSwitch(popup);
+            const status = starterStatus(popup);
+            verify(toggle && status);
+            const button = configureButton(popup);
+            verify(toggle.mapToItem(popup, Qt.point(0, 0)).y > popup.height / 2, "in the footer");
+            // The rest of the footer's width, up to a gap before the button.
+            fuzzyCompare(toggle.mapToItem(popup, Qt.point(toggle.width, 0)).x,
+                         button.mapToItem(popup, Qt.point(0, 0)).x - Kirigami.Units.largeSpacing - Kirigami.Units.smallSpacing, 0.5);
+            compare(toggle.mapToItem(popup, Qt.point(0, 0)).x, Math.round(Kirigami.Units.largeSpacing * 2), "on the readings' edge");
+            verify(status.mapToItem(popup, Qt.point(0, 0)).y >= toggle.mapToItem(popup, Qt.point(0, toggle.height)).y, "under the label");
+            const texts = toggle.parent.texts;
+            starterStates.forEach(row => {
+                const starter = starterFor(row);
+                setStarter(data.item, starter);
+                compare(toggle.text, data.label, row.state);
+                compare(toggle.checked, row.enabled, row.state);
+                compare(status.text, texts.starterStatus(data.item, starter, popup.weekly, popup.nowMs), row.state);
+                verify(status.text !== "", row.state);
+                compare(String(status.color), String(row.failed ? Kirigami.Theme.textColor : Style.dim(Kirigami.Theme.textColor)), row.state);
+                compare(toggle.Accessible.name, data.label, row.state);
+                compare(toggle.Accessible.description, status.text, row.state);
+                verify(status.Accessible.ignored, "read once, from the switch");
+            });
+        }
+
+        function test_starterToggle_data() {
+            return [{ tag: "sticks", sticks: true }, { tag: "refused", sticks: false }];
+        }
+
+        // A click asks the helper for the change and shows it at once; the
+        // helper's report then decides, and a refused change snaps back.
+        function test_starterToggle(data) {
+            const usage = monitor.usage;
+            usage.starterSticks = data.sticks;
+            const popup = load("codex");
+            const toggle = starterSwitch(popup);
+            mouseClick(toggle);
+            compare(usage.starterRequests, [["codex", true]]);
+            verify(toggle.checked, "shown as asked while the helper runs");
+            usage.answerStarter();
+            compare(toggle.checked, data.sticks);
+            compare(usage.starter("codex").enabled, data.sticks);
+            // The switch still follows the reports after a click.
+            setStarter("codex", { enabled: true, state: "waiting", next: usage.createdAt + 3600 });
+            verify(toggle.checked);
+            setStarter("codex", { enabled: false, state: "off" });
+            verify(!toggle.checked);
+            compare(usage.starterRequests.length, 1, "a report runs nothing");
+        }
+
+        // Tab reaches the switch, then the configure button; Space and Return
+        // turn it.
+        function test_starterKeyboard() {
+            const popup = load("claude");
+            const toggle = starterSwitch(popup);
+            const button = configureButton(popup);
+            verify(toggle.activeFocusOnTab && button.activeFocusOnTab);
+            compare(toggle.nextItemInFocusChain(true), button);
+            compare(button.nextItemInFocusChain(false), toggle);
+            toggle.forceActiveFocus();
+            keyClick(Qt.Key_Space);
+            keyClick(Qt.Key_Return);
+            compare(monitor.usage.starterRequests, [["claude", true], ["claude", false]]);
+        }
+
+        // The footer keeps two lines for the status in every state, so the
+        // popup doesn't change height under the pointer while it is open.
+        function test_starterKeepsTheHeight_data() {
+            return [{ tag: "claude", item: "claude" }, { tag: "codex", item: "codex" }];
+        }
+
+        function test_starterKeepsTheHeight(data) {
+            const popup = load(data.item);
+            const height = popup.implicitHeight;
+            const status = starterStatus(popup);
+            const lines = new Set();
+            // An unknown state says nothing, the shortest status there is.
+            starterStates.concat([{ state: "later", enabled: true }]).forEach(row => {
+                setStarter(data.item, starterFor(row));
+                waitForRendering(popup);
+                compare(popup.implicitHeight, height, row.state + " " + (row.reason ?? ""));
+                verify(status.contentHeight <= status.height + 0.5, status.text);
+                lines.add(status.lineCount);
+            });
+            verify(lines.has(1) && lines.has(2), "statuses of one line and of two: " + Array.from(lines));
+        }
+
+        function test_starterMirrors() {
+            const popup = load("claude", true);
+            const toggle = starterSwitch(popup);
+            const status = starterStatus(popup);
+            const right = i => i.mapToItem(popup, Qt.point(i.width, 0)).x;
+            compare(right(toggle), popup.width - Math.round(Kirigami.Units.largeSpacing * 2), "on the readings' edge");
+            verify(configureButton(popup).mapToItem(popup, Qt.point(0, 0)).x < toggle.mapToItem(popup, Qt.point(0, 0)).x);
+            fuzzyCompare(right(status), right(toggle) - (toggle.leftPadding + toggle.indicator.width + toggle.spacing), 0.5);
+            compare(status.effectiveHorizontalAlignment, Text.AlignRight);
+        }
+
         function test_signedOut() {
             monitor.usage.entries = { claude: { status: "signed_out" } };
             const shown = root.texts(load("claude"));
@@ -1635,6 +1892,94 @@ Item {
         // it or coarser: Qt 6.6's C locale gives its short time with seconds,
         // which the floor's tests run in. Where the locale's short time has
         // no seconds, it is the one shown.
+        // The session starter's status for each state, Claude and Codex, with
+        // a time today and on another day. Times are on the week's clock,
+        // New York's here: it is Tuesday 6 October 2026, 10 PM there.
+        function test_starterStatus_data() {
+            const T = (h, m) => ({ day: 6, h: h, m: m });
+            const W = (h, m) => ({ day: 7, h: h, m: m });
+            const F = (h, m) => ({ day: 9, h: h, m: m });
+            const rows = (item, list) => list.map(r => ({ tag: item + ":" + r[0], item: item, starter: r[1], expected: r[2] }));
+            const off = { enabled: false, state: "off" };
+            return rows("claude", [
+                ["off", off, ["When a session ends, Ringside sends Claude a one-word message to start the next one."]],
+                ["waiting", { state: "waiting", next: T(23, 40) }, ["The next session starts at %1.", T(23, 40)]],
+                ["waitingTomorrow", { state: "waiting", next: W(1, 46) }, ["The next session starts %1.", W(1, 46)]],
+                ["confirming", { state: "confirming", at: T(23, 30), next: T(23, 35) },
+                 ["Started a session at %1. Confirming at %2.", T(23, 30), T(23, 35)]],
+                ["started", { state: "started", at: T(23, 30), next: W(4, 30) },
+                 ["Started a session at %1. The next one starts %2.", T(23, 30), W(4, 30)]],
+                // Claude's reset comes a second early; it reads to the minute.
+                ["weekly", { state: "weekly", next: F(20, 33), early: 1 },
+                 ["Weekly limit reached. The next session starts %1, when the limit resets.", F(20, 33)]],
+                ["notInstalled", { state: "failed", reason: "not-installed" }, ["Can't start a session: Claude Code isn't installed."]],
+                ["signedOut", { state: "failed", reason: "signed-out" },
+                 ["Can't start a session: Claude Code is signed out. Run claude in a terminal to sign in."]],
+                ["retrying", { state: "retrying", at: T(23, 30), next: T(23, 35) },
+                 ["Couldn't confirm the session started at %1. Trying once more at %2.", T(23, 30), T(23, 35)]],
+                ["paused", { state: "paused", next: W(4, 35) }, ["Couldn't confirm two sessions in a row. Paused until %1.", W(4, 35)]],
+                ["pausedToday", { state: "paused", next: T(23, 55) }, ["Couldn't confirm two sessions in a row. Paused until %1.", T(23, 55)]]
+            ]).concat(rows("codex", [
+                ["off", off, ["When a week ends, Ringside sends Codex a one-word message to start the next one."]],
+                ["waiting", { state: "waiting", next: { day: 12, h: 3, m: 33 } }, ["The next week starts %1.", { day: 12, h: 3, m: 33 }]],
+                ["waitingToday", { state: "waiting", next: T(23, 40) }, ["The next week starts at %1.", T(23, 40)]],
+                ["confirming", { state: "confirming", at: T(23, 30), next: T(23, 35) },
+                 ["Started a week at %1. Confirming at %2.", T(23, 30), T(23, 35)]],
+                ["started", { state: "started", at: T(23, 30) }, ["Started this week at %1.", T(23, 30)]],
+                ["startedYesterday", { state: "started", at: { day: 5, h: 23, m: 30 } }, ["Started this week %1.", { day: 5, h: 23, m: 30 }]],
+                ["weekly", { state: "weekly", next: F(2, 33) }, ["Weekly limit reached. The next week starts %1, when the limit resets.", F(2, 33)]],
+                ["notInstalled", { state: "failed", reason: "not-installed" }, ["Can't start a week: Codex isn't installed."]],
+                ["signedOut", { state: "failed", reason: "signed-out" },
+                 ["Can't start a week: Codex is signed out. Run codex in a terminal to sign in."]],
+                ["retrying", { state: "retrying", at: T(23, 30), next: W(0, 5) },
+                 ["Couldn't confirm the week started at %1. Trying once more %2.", T(23, 30), W(0, 5)]],
+                ["paused", { state: "paused", next: W(4, 35) }, ["Couldn't confirm two weeks in a row. Paused until %1.", W(4, 35)]],
+                ["pausedToday", { state: "paused", next: T(23, 55) }, ["Couldn't confirm two weeks in a row. Paused until %1.", T(23, 55)]]
+            ]));
+        }
+
+        function test_starterStatus(data) {
+            // New York's wall clock in October, four hours behind UTC.
+            const epoch = t => Date.UTC(2026, 9, t.day, t.h + 4, t.m) / 1000;
+            const now = epoch({ day: 6, h: 22, m: 0 });
+            const week = { resetsAt: epoch({ day: 9, h: 20, m: 33 }), clockZone: { offset: -4 * 3600, abbreviation: "EDT" } };
+            const starter = { enabled: data.starter.state !== "off", state: data.starter.state, reason: data.starter.reason ?? null,
+                              at: data.starter.at ? epoch(data.starter.at) : null,
+                              next: data.starter.next ? epoch(data.starter.next) - (data.starter.early ?? 0) : null };
+            // The expected time as the locale writes it: its time, after its
+            // short day name on another day.
+            const spelled = t => {
+                const date = new Date(2026, 9, t.day, t.h, t.m);
+                const time = words.shortTime(date);
+                return t.day === 6 ? time : Qt.locale().dayName(date.getDay(), Locale.ShortFormat) + " " + time;
+            };
+            const [text, ...times] = data.expected;
+            compare(words.starterStatus(data.item, starter, week, now * 1000), root.substitute(text, times.map(spelled)));
+        }
+
+        // Today is the week's day, not system time's: in a clock zone twelve
+        // hours from system time, the two disagree on which day it is.
+        function test_starterStatusTodayOnTheWeeksClock() {
+            const base = Date.UTC(2026, 9, 6, 12, 0) / 1000;
+            const systemOffset = -new Date(base * 1000).getTimezoneOffset() * 60;
+            const zone = { offset: systemOffset + (systemOffset <= 0 ? 12 : -12) * 3600, abbreviation: "XYZ" };
+            const week = { resetsAt: base + 3 * 86400, clockZone: zone };
+            // An epoch whose wall clock in the zone reads October `day`, h:m.
+            const at = (day, h, m) => Date.UTC(2026, 9, day, h, m) / 1000 - zone.offset;
+            const time = (day, h, m) => words.shortTime(new Date(2026, 9, day, h, m));
+            compare(words.starterStatus("claude", { state: "waiting", next: at(6, 23, 30) }, week, at(6, 0, 30) * 1000),
+                    "The next session starts at " + time(6, 23, 30) + ".");
+            compare(words.starterStatus("claude", { state: "waiting", next: at(7, 0, 30) }, week, at(6, 23, 30) * 1000),
+                    "The next session starts " + Qt.locale().dayName(3, Locale.ShortFormat) + " " + time(7, 0, 30) + ".");
+        }
+
+        function test_starterStatusOfAnUnknownState() {
+            compare(words.starterStatus("claude", { enabled: true, state: "failed", reason: "elsewhere" }, null, 0), "");
+            compare(words.starterStatus("claude", { enabled: true, state: "later" }, null, 0), "");
+            compare(words.starterStatus("claude", null, null, 0),
+                    "When a session ends, Ringside sends Claude a one-word message to start the next one.");
+        }
+
         function test_timesHaveNoSeconds() {
             const digits = new RegExp("[0-9" + [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map(d => Format.whole(d)).join("") + "]+", "g");
             const numbers = text => (text.match(digits) ?? []).length;

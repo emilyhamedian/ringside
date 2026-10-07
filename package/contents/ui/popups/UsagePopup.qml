@@ -15,6 +15,7 @@ import ".."
 // with a sentence under one of them on where the current pace leads, and
 // the week so far as a graph. With one limit the header's ring is its bar.
 // A failed check or a signed-out CLI is said in a line under the header.
+// The footer holds the session starter's switch.
 PopupPage {
     id: popup
 
@@ -105,6 +106,13 @@ PopupPage {
     }
 
     systemMonitorShown: false
+    footerLeading: StarterSwitch {
+        item: popup.item
+        usage: popup.usage
+        weekly: popup.weekly
+        nowMs: popup.nowMs
+        texts: words
+    }
 
     Words {
         id: words

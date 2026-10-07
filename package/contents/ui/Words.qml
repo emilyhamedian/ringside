@@ -213,6 +213,64 @@ QtObject {
                      Qt.locale().dayName(date.getDay(), Locale.ShortFormat), shortTime(date));
     }
 
+    // What the session starter is doing, under its switch in the Claude or
+    // Codex popup. `starter` is the helper's { enabled, state, at, next,
+    // reason } (see usage.py). Times are to the minute on the week's clock,
+    // as the reset is, and the tile's caption names the zone once: "at 11:40
+    // PM" today, "Wed 1:46 AM" on another day.
+    function starterStatus(item, starter, window, nowMs) {
+        const s = starter ?? { state: "off" };
+        const claude = item === "claude";
+        const minute = epoch => Math.round(epoch / 60) * 60;
+        const today = epoch => zonedDate(minute(epoch), window).toDateString()
+            === zonedDate(nowMs / 1000, window).toDateString();
+        const stamp = epoch => today(epoch) ? shortTime(zonedDate(minute(epoch), window)) : weekdayTime(minute(epoch), window);
+        const when = epoch => today(epoch)
+            ? i18nc("@info a time today after a verb, e.g. starts at 11:40 PM", "at %1", stamp(epoch)) : stamp(epoch);
+        switch (s.state) {
+        case "off":
+            return claude
+                ? i18nc("@info under the session starter's switch while it is off", "When a session ends, Ringside sends Claude a one-word message to start the next one.")
+                : i18nc("@info under the session starter's switch while it is off", "When a week ends, Ringside sends Codex a one-word message to start the next one.");
+        case "waiting":
+            return claude
+                ? i18nc("@info %1 is a time, e.g. The next session starts at 11:40 PM. or The next session starts Wed 1:46 AM.", "The next session starts %1.", when(s.next))
+                : i18nc("@info %1 is a time, e.g. The next week starts Mon 3:33 AM.", "The next week starts %1.", when(s.next));
+        case "confirming":
+            return claude
+                ? i18nc("@info %1 and %2 are times, e.g. Started a session at 11:30 PM. Confirming at 11:35 PM.", "Started a session %1. Confirming %2.", when(s.at), when(s.next))
+                : i18nc("@info %1 and %2 are times, e.g. Started a week at 11:30 PM. Confirming at 11:35 PM.", "Started a week %1. Confirming %2.", when(s.at), when(s.next));
+        case "started":
+            return claude
+                ? i18nc("@info %1 and %2 are times, e.g. Started a session at 11:30 PM. The next one starts Wed 4:30 AM.", "Started a session %1. The next one starts %2.", when(s.at), when(s.next))
+                : i18nc("@info %1 is a time, e.g. Started this week at 11:30 PM.", "Started this week %1.", when(s.at));
+        case "weekly":
+            return claude
+                ? i18nc("@info %1 is a time, e.g. Weekly limit reached. The next session starts Fri 8:33 PM, when the limit resets.", "Weekly limit reached. The next session starts %1, when the limit resets.", when(s.next))
+                : i18nc("@info %1 is a time, e.g. Weekly limit reached. The next week starts Fri 2:33 AM, when the limit resets.", "Weekly limit reached. The next week starts %1, when the limit resets.", when(s.next));
+        case "failed":
+            if (s.reason === "not-installed") {
+                return claude ? i18nc("@info", "Can't start a session: Claude Code isn't installed.")
+                              : i18nc("@info", "Can't start a week: Codex isn't installed.");
+            }
+            if (s.reason === "signed-out") {
+                return claude
+                    ? i18nc("@info", "Can't start a session: Claude Code is signed out. Run claude in a terminal to sign in.")
+                    : i18nc("@info", "Can't start a week: Codex is signed out. Run codex in a terminal to sign in.");
+            }
+            break;
+        case "retrying":
+            return claude
+                ? i18nc("@info %1 and %2 are times, e.g. Couldn't confirm the session started at 11:30 PM. Trying once more at 11:35 PM.", "Couldn't confirm the session started %1. Trying once more %2.", when(s.at), when(s.next))
+                : i18nc("@info %1 and %2 are times, e.g. Couldn't confirm the week started at 11:30 PM. Trying once more at 11:35 PM.", "Couldn't confirm the week started %1. Trying once more %2.", when(s.at), when(s.next));
+        case "paused":
+            return claude
+                ? i18nc("@info %1 is a time, e.g. Couldn't confirm two sessions in a row. Paused until Wed 4:35 AM.", "Couldn't confirm two sessions in a row. Paused until %1.", stamp(s.next))
+                : i18nc("@info %1 is a time, e.g. Couldn't confirm two weeks in a row. Paused until Wed 4:35 AM.", "Couldn't confirm two weeks in a row. Paused until %1.", stamp(s.next));
+        }
+        return "";
+    }
+
     // A Date whose fields read as the wall clock at `epoch` for a window: in
     // its clock zone when that differs from system time at the reset, else in
     // system time, which keeps daylight saving right across the week.

@@ -14,6 +14,8 @@ PlasmaExtras.PlasmoidHeading {
     required property var monitor
     // Claude and Codex have nothing to show in System Monitor.
     property bool systemMonitorShown: true
+    // A popup's own control, such as the usage popups' starter switch.
+    property alias leading: lead.data
 
     position: T.ToolBar.Footer
 
@@ -28,11 +30,26 @@ PlasmaExtras.PlasmoidHeading {
             onClicked: footer.monitor.systemMonitorRequested()
         }
 
+        // Takes the room the System Monitor link leaves.
+        ColumnLayout {
+            id: lead
+            visible: children.length > 0
+            Layout.fillWidth: true
+            // On the readings' edge.
+            Layout.leftMargin: Math.round(Kirigami.Units.largeSpacing * 2) - footer.leftPadding
+            // Clear of the configure button, so a long status doesn't run into it.
+            Layout.rightMargin: Kirigami.Units.largeSpacing
+            spacing: 0
+        }
+
         Item {
+            visible: !lead.visible
             Layout.fillWidth: true
         }
 
         PlasmaComponents.ToolButton {
+            // Level with the switch, above the status under it.
+            Layout.alignment: lead.visible ? Qt.AlignTop : Qt.AlignVCenter
             icon.name: "configure"
             display: T.AbstractButton.IconOnly
             text: i18nc("@action:button", "Configure Ringside…")

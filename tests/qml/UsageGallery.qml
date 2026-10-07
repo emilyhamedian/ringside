@@ -11,9 +11,10 @@ import "../../package/contents/ui/popups"
 import "../../package/contents/ui/code/style.js" as Style
 
 // A section of Gallery.qml: Claude and Codex in the panel beside two system
-// items, then their popups in each state, then panels and popups under
-// Breeze Light. The monitor's readings are FakeUsage's; the section's own
-// come with made-up weeks of use.
+// items, then their popups in each state, the session starter's footer in
+// each of its states, then panels and popups under Breeze Light. The
+// monitor's readings are FakeUsage's; the section's own come with made-up
+// weeks of use.
 ColumnLayout {
     id: section
 
@@ -156,6 +157,34 @@ ColumnLayout {
             entries: ({ codex: { status: "signed_out" } })
         }
     }
+
+    // The session starter on, waiting for Claude's session to end, and
+    // unable to start Codex's week while the CLI is signed out.
+    FakeMonitor {
+        id: starting
+        usage: FakeUsage {
+            id: startingUsage
+            starters: ({
+                claude: { enabled: true, state: "waiting", at: null, next: startingUsage.createdAt + 2 * 3600 + 13 * 60, reason: null },
+                codex: { enabled: true, state: "failed", at: null, next: null, reason: "signed-out" }
+            })
+        }
+    }
+
+    // The starter's states, as [label, state, at, next, reason] with times
+    // in minutes from now.
+    readonly property var starterStates: [
+        ["off", "off"],
+        ["on, waiting", "waiting", null, 133],
+        ["on, waiting, another day", "waiting", null, 26 * 60],
+        ["sent, confirming", "confirming", -3, 2],
+        ["started, confirmed", "started", -3, 297],
+        ["weekly limit reached", "weekly", null, 3 * 24 * 60],
+        ["failed: not installed", "failed", null, null, "not-installed"],
+        ["failed: signed out", "failed", null, null, "signed-out"],
+        ["one send unconfirmed, retrying", "retrying", -3, 2],
+        ["two unconfirmed, paused", "paused", null, 302]
+    ]
 
     component Note: Text {
         color: Style.dim(Kirigami.Theme.textColor)
@@ -345,6 +374,60 @@ ColumnLayout {
             label: "Codex · one limit at 40 %, on pace to run out"
             UsagePopup { monitor: codexPace; item: "codex" }
         }
+
+        Frame {
+            label: "Claude · session starter on, waiting"
+            UsagePopup { monitor: starting; item: "claude" }
+        }
+
+        Frame {
+            label: "Codex · week starter can't run: signed out (full text)"
+            UsagePopup { monitor: starting; item: "codex" }
+        }
+    }
+
+    // The footer alone, Claude's beside Codex's, in each starter state.
+    GridLayout {
+        columns: 4
+        columnSpacing: 2 * Kirigami.Units.gridUnit
+        rowSpacing: Kirigami.Units.gridUnit
+
+        Repeater {
+            model: section.starterStates.length * 2
+
+            delegate: Frame {
+                id: starterFrame
+
+                required property int index
+                readonly property string item: index % 2 === 0 ? "claude" : "codex"
+                readonly property var row: section.starterStates[Math.floor(index / 2)]
+                readonly property FakeUsage fake: FakeUsage {
+                    id: fake
+                    starters: ({
+                        [starterFrame.item]: {
+                            enabled: starterFrame.row[1] !== "off", state: starterFrame.row[1], reason: starterFrame.row[4] ?? null,
+                            at: starterFrame.row[2] === null || starterFrame.row[2] === undefined ? null : fake.createdAt + starterFrame.row[2] * 60,
+                            next: starterFrame.row[3] === null || starterFrame.row[3] === undefined ? null : fake.createdAt + starterFrame.row[3] * 60
+                        }
+                    })
+                }
+
+                label: (item === "claude" ? "Claude" : "Codex") + " · starter " + row[0]
+
+                PopupFooter {
+                    width: Kirigami.Units.gridUnit * 20
+                    monitor: section.monitor
+                    systemMonitorShown: false
+                    leading: StarterSwitch {
+                        item: starterFrame.item
+                        usage: starterFrame.fake
+                        weekly: section.monitor.usage.entry(starterFrame.item).weekly
+                        nowMs: starterFrame.fake.createdAt * 1000
+                        texts: Words { monitor: section.monitor }
+                    }
+                }
+            }
+        }
     }
 
     // Breeze Light's colours, for the contrast of dim text and level colours
@@ -401,6 +484,18 @@ ColumnLayout {
                     label: "Breeze Light · Codex · one limit, the pace sentence"
                     flat: true
                     UsagePopup { monitor: codexPace; item: "codex" }
+                }
+
+                Frame {
+                    label: "Breeze Light · Claude · session starter on, waiting (dim)"
+                    flat: true
+                    UsagePopup { monitor: starting; item: "claude" }
+                }
+
+                Frame {
+                    label: "Breeze Light · Codex · week starter signed out (full)"
+                    flat: true
+                    UsagePopup { monitor: starting; item: "codex" }
                 }
             }
         }
