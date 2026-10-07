@@ -75,9 +75,10 @@ Item {
             ? "python3 -B '" + helperPath.replace(/'/g, "'\\''") + "' --providers " + providerIds.join(",") + args : "";
     }
 
-    // As reported; after a switch change that gave no report, "failed" with
-    // reason "switch" and the helper's error; after a --start that gave
-    // none, "failed" with reason "helper", the error, and next at the retry.
+    // As reported; after a switch change the helper couldn't write, "failed"
+    // with reason "switch" and its error; after a --start that failed or
+    // left the starter due, "failed" with reason "helper", the error, and
+    // next at the retry.
     function starter(id) {
         const s = starters[id] ?? null;
         const w = switchFailures[id];
