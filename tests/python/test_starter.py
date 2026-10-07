@@ -901,8 +901,10 @@ class Report(Isolated):
             ("claude", dict(blank, pending=NOW - 5), ("confirming", NOW - 5, NOW + 295, None)),
             ("claude", dict(blank, state="started", at=NOW - 60, next=NOW + SESSION - 59),
              ("started", NOW - 60, NOW + SESSION - 59, None)),
-            ("codex", dict(blank, state="started", at=NOW - 60, next=NOW + WEEK - 59), ("started", NOW - 60, None, None)),
-            ("codex", dict(blank, state="started", at=NOW - WEEK, next=NOW - 5), ("waiting", None, NOW - 5, None)),
+            # The widget starts the next week on time; the popup doesn't show when.
+            ("codex", dict(blank, state="started", at=NOW - 60, next=NOW + WEEK - 59),
+             ("started", NOW - 60, NOW + WEEK - 59, None)),
+            ("codex", dict(blank, state="started", at=NOW - WEEK, next=NOW - 5), ("started", NOW - WEEK, NOW - 5, None)),
             ("claude", dict(blank, state="weekly", next=NOW + 86400), ("weekly", None, NOW + 86400, None)),
             ("claude", dict(blank, state="failed", next=NOW + 300, reason="signed-out"),
              ("failed", None, NOW + 300, "signed-out")),
