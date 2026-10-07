@@ -133,24 +133,18 @@ PopupPage {
         }
     }
 
-    Loader {
-        id: addresses
-        active: popup.compared
-        visible: active
+    // Hidden, and so taking no room, while the public address is off.
+    AddressBlock {
+        visible: popup.compared
         Layout.fillWidth: true
         Layout.leftMargin: Math.round(Kirigami.Units.largeSpacing * 2)
         Layout.rightMargin: Layout.leftMargin
         Layout.bottomMargin: Kirigami.Units.smallSpacing
-
-        sourceComponent: AddressBlock {
-            // The layout sizes the loader; the block follows it.
-            width: addresses.width
-            localAddress: popup.monitor.networkAddress
-            localInterface: popup.monitor.networkInterface
-            info: popup.publicInfo
-            onAccepted: popup.lookup.answer(true)
-            onDeclined: popup.lookup.answer(false)
-        }
+        localAddress: popup.monitor.networkAddress
+        localInterface: popup.monitor.networkInterface
+        info: popup.publicInfo
+        onAccepted: popup.lookup.answer(true)
+        onDeclined: popup.lookup.answer(false)
     }
 
     Tile {

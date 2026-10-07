@@ -340,7 +340,7 @@ Item {
         }
 
         function test_address_data() {
-            const long = "1".repeat(65);
+            const tooLong = "1".repeat(65);
             return [
                 { tag: "IPv4", body: "203.0.113.7", family: "v4", address: "203.0.113.7" },
                 { tag: "IPv4 with a newline", body: "203.0.113.7\n", family: "v4", address: "203.0.113.7" },
@@ -355,7 +355,7 @@ Item {
                 { tag: "JSON", body: "{\"ip\":\"1.2.3.4\"}", family: "v4", address: "" },
                 { tag: "empty", body: "", family: "v4", address: "" },
                 { tag: "not text", body: null, family: "v4", address: "" },
-                { tag: "too long", body: long, family: "v4", address: "" },
+                { tag: "too long", body: tooLong, family: "v4", address: "" },
                 { tag: "IPv6 asked for IPv4", body: "2001:db8::1", family: "v4", address: "" },
                 { tag: "IPv6", body: "2001:db8::1c\n", family: "v6", address: "2001:db8::1c" },
                 { tag: "IPv6 in capitals", body: "2001:DB8::1C", family: "v6", address: "2001:db8::1c" },
@@ -674,7 +674,12 @@ Item {
             for (const monitor of [plain, shownIn({}, { publicAddress: "off" }).monitor]) {
                 const page = popup(monitor);
                 compare(header(page).detail, [monitor.networkAddress, monitor.networkInterface].join(" · "));
-                compare(block(page), null, "no address block");
+                const hidden = block(page);
+                compare(hidden.visible, false, "no address block");
+                const head = header(page);
+                const tile = find(page, i => i.graphSeconds !== undefined);
+                const gap = tile.mapToItem(page, Qt.point(0, 0)).y - head.mapToItem(page, Qt.point(0, head.height)).y;
+                verify(gap < hidden.implicitHeight, "the throughput tile takes the block's place: " + gap);
             }
         }
 
@@ -697,7 +702,7 @@ Item {
             compare(set.config.publicAddress, data.setting);
             compare(set.made.length, data.setting === "on" ? 2 : 0);
             if (data.setting === "off") {
-                compare(block(page), null);
+                compare(block(page).visible, false);
                 compare(header(page).detail, "192.168.99.123 · enp195s0f3u1");
             }
         }
