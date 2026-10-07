@@ -40,9 +40,23 @@ The APIs only report the current percentage, so each real poll also adds it to
 the window's history in the same folder. A window's "history" holds the
 points of its current span, oldest first.
 
+Claude's entry also carries "session", its five-hour window, or null when
+no session is running.
+
+Every entry carries "starter", the session starter's state: {"enabled":
+bool, "state": ..., "at": <epoch seconds> or null, "next": <epoch seconds>
+or null, "reason": "not-installed", "signed-out" or null}. The states are
+"off"; "waiting" (next is when the next window starts); "confirming" (at is
+the send, next the read that confirms it); "started" (at is when the window
+started, next when the next one starts, null for Codex); "weekly" (the
+weekly limit is reached; next is its reset); "failed" (with a reason);
+"retrying" (one send went unconfirmed; at is the send, next the retry) and
+"paused" (two in a row; next is when the hold ends). The widget runs --start
+once Date.now() reaches next, and --starter-set when its switch is toggled.
+
 Set RINGSIDE_USAGE_FAKE to a JSON report to print it instead of polling,
 limited to the requested providers and with the clock zone added as on a live
-run.
+run. --start and --starter-set change nothing then.
 """
 
 import argparse
@@ -98,9 +112,11 @@ CACHE_FILE = CACHE_DIR / "usage.json"
 HISTORY_FILE = CACHE_DIR / "usage-history.json"
 LOCK_FILE = CACHE_DIR / "usage.lock"
 CACHE_TTL = 5 * 60
-# How long a run waits for another to finish before giving up; one run
-# takes at most about 50 s (Codex, then a token refresh and a poll).
-LOCK_WAIT = 90
+# How long a run waits for another to finish before giving up. A poll takes
+# at most about 50 s (Codex, then a token refresh and a poll); a starter
+# send, which holds the lock throughout, about 110 s (a poll, a renewal,
+# the preflight and the send).
+LOCK_WAIT = 150
 # The longest a refusal holds a provider back, whatever Retry-After says.
 HOLD_MAX = 24 * 3600
 # A week of polls five minutes apart is 2016 points; flat stretches collapse,
@@ -109,9 +125,41 @@ HISTORY_POINTS = 2100
 # A fall of this many points means the provider cleared the window early.
 HISTORY_CLEARED = 20
 
-APPLETSRC = (Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
-             / "plasma-org.kde.plasma.desktop-appletsrc")
+CONFIG_HOME = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
+APPLETSRC = CONFIG_HOME / "plasma-org.kde.plasma.desktop-appletsrc"
 CLOCK_PLUGIN = "org.kde.plasma.digitalclock"
+
+# The session starter's per-user switch, its runtime state, and the empty
+# folder the CLIs run in, so no project's instructions or settings load.
+STARTER_FILE = CONFIG_HOME / "ringside" / "starter.json"
+STATE_DIR = Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local" / "state") / "ringside"
+STARTER_STATE = STATE_DIR / "starter.json"
+SWITCH_LOCK = STATE_DIR / "starter.lock"
+WORK_DIR = STATE_DIR / "work"
+SESSION_SECONDS = 5 * 3600
+# A send is confirmed by a reading taken this long after it. One taken
+# sooner than CONFIRM_SLACK after it can't confirm it: a week Codex started
+# during a send of up to SEND_TIMEOUT must sit clear of ROLLING_SLACK.
+CONFIRM_DELAY = 5 * 60
+CONFIRM_SLACK = 4 * 60
+# Failed reads and sends that never left wait 5, 15, then 60 minutes.
+RETRY_DELAYS = (5 * 60, 15 * 60, 3600)
+# Two unconfirmed sends in a row hold the starter this long.
+PAUSE = 5 * 3600
+# Codex reports an idle account's window as a week from the moment it is
+# asked; a reset within this many seconds of that is no window at all.
+ROLLING_SLACK = 120
+# Renew Claude's login before a send if it expires within this many
+# seconds, so the CLI has no reason to spend the refresh token itself.
+CLI_TOKEN_MARGIN = 15 * 60
+CLAUDE_MODEL = "haiku"
+# The Codex models known to be its smallest, newest first; one is passed
+# only while the CLI's own model list offers it, else the CLI picks.
+CODEX_MODELS = ("gpt-6-luna", "gpt-5.6-luna")
+CODEX_MODEL_CACHE = CODEX_AUTH.parent / "models_cache.json"
+PROMPT = "Hi"
+PREFLIGHT_TIMEOUT = 20
+SEND_TIMEOUT = 60
 
 
 class SignedOut(Exception):
@@ -132,13 +180,13 @@ class RateLimited(Exception):
 # --- Codex -----------------------------------------------------------------
 
 
-def find_codex():
-    """~/.local/bin/codex if executable, else codex on PATH, which in a Plasma
-    session may lack ~/.local/bin."""
-    wrapper = Path.home() / ".local" / "bin" / "codex"
+def find_cli(name):
+    """~/.local/bin/<name> if executable, else name on PATH, which in a
+    Plasma session may lack ~/.local/bin."""
+    wrapper = Path.home() / ".local" / "bin" / name
     if os.access(wrapper, os.X_OK):
         return str(wrapper)
-    return shutil.which("codex")
+    return shutil.which(name)
 
 
 def codex_rate_limits(binary):
@@ -263,7 +311,7 @@ def parse_codex(result):
 def codex_usage():
     if not CODEX_AUTH.exists():
         raise SignedOut()
-    binary = find_codex()
+    binary = find_cli("codex")
     if not binary:
         raise RuntimeError("codex CLI not found")
     try:
@@ -354,9 +402,9 @@ def generation(oauth):
     return oauth.get("accessToken"), oauth.get("refreshToken"), oauth.get("expiresAt")
 
 
-def expired(oauth):
+def expired(oauth, margin=CLAUDE_EXPIRY_MARGIN):
     try:
-        return float(oauth.get("expiresAt") or 0) / 1000 - time.time() <= CLAUDE_EXPIRY_MARGIN
+        return float(oauth.get("expiresAt") or 0) / 1000 - time.time() <= margin
     except (TypeError, ValueError, OverflowError):
         return True
 
@@ -510,13 +558,15 @@ def store_claude(path, spent, fresh):
     raise RuntimeError("Claude Code's credentials kept changing; the renewed login wasn't saved")
 
 
-def claude_access_token():
+def claude_access_token(margin=CLAUDE_EXPIRY_MARGIN):
+    """A usable access token, renewed first if it expires within margin
+    seconds."""
     path = CLAUDE_CREDENTIALS
     if not path.exists():
         raise SignedOut()
     path = path.resolve()
     oauth, _ = read_oauth(path)
-    if not expired(oauth):
+    if not expired(oauth, margin):
         return oauth["accessToken"]
     if not usable(oauth.get("refreshToken")):
         raise SignedOut()
@@ -526,7 +576,7 @@ def claude_access_token():
     check_writable(path)
     current, _ = read_oauth(path)
     if generation(current) != generation(oauth):
-        if not expired(current):
+        if not expired(current, margin):
             return current["accessToken"]
         if not usable(current.get("refreshToken")):
             raise SignedOut()
@@ -534,7 +584,7 @@ def claude_access_token():
         fresh = refresh_claude(current)
     except Exception:
         latest, _ = read_oauth(path)
-        if generation(latest) != generation(current) and not expired(latest):
+        if generation(latest) != generation(current) and not expired(latest, margin):
             return latest["accessToken"]
         raise
     store_claude(path, current["refreshToken"], fresh)
@@ -551,7 +601,8 @@ def parse_claude(usage):
     "scoped" in the order listed. Each is keyed by the model's display name:
     the endpoint leaves the model id empty today, and staying on the name keeps
     a pinned choice valid if ids appear later. Entries scoped to something
-    other than a model are skipped.
+    other than a model are skipped. "session" is the five-hour window, null
+    while no session is running.
     """
     weekly = usage.get("seven_day")
     if not weekly:
@@ -562,8 +613,11 @@ def parse_claude(usage):
         if limit.get("kind") == "weekly_scoped" and name and all(s["id"] != name for s in scoped):
             scoped.append({"id": name, "label": name,
                            **window_from(limit.get("percent"), limit.get("resets_at"), WEEK_SECONDS)})
+    session = usage.get("five_hour")
     return {"weekly": window_from(weekly.get("utilization"), weekly.get("resets_at"), WEEK_SECONDS),
-            "scoped": scoped}
+            "scoped": scoped,
+            "session": (window_from(session.get("utilization"), session.get("resets_at"), SESSION_SECONDS)
+                        if isinstance(session, dict) else None)}
 
 
 def claude_usage():
@@ -629,7 +683,6 @@ def poll(fetch):
     return report
 
 
-@contextlib.contextmanager
 def locked():
     """Hold usage.lock until the block ends, waiting up to LOCK_WAIT seconds
     for another run to finish.
@@ -638,9 +691,14 @@ def locked():
     leaves behind cannot keep holding the lock after this run exits.
     """
     CACHE_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
-    fd = os.open(LOCK_FILE, os.O_RDWR | os.O_CREAT, 0o600)
+    return flocked(LOCK_FILE, LOCK_WAIT)
+
+
+@contextlib.contextmanager
+def flocked(path, wait):
+    fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o600)
     try:
-        deadline = time.monotonic() + LOCK_WAIT
+        deadline = time.monotonic() + wait
         while True:
             try:
                 fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -690,6 +748,7 @@ def fresh(entry, now):
     return (isinstance(entry, dict) and entry.get("status") == "ok"
             and type(entry.get("fetchedAt")) is int and 0 <= now - entry["fetchedAt"] < CACHE_TTL
             and well_formed(entry.get("weekly")) and isinstance(entry.get("scoped", []), list)
+            and (entry.get("session") is None or well_formed(entry["session"]))
             and all(well_formed(w, scoped=True) for w in entry.get("scoped", [])))
 
 
@@ -742,39 +801,46 @@ def collect(fetchers, now=None):
     """
     with locked():
         now = int(time.time()) if now is None else now
-        cache = read_cache()
-        providers, polled = {}, {}
-        stepped = False
-        for name, fetch in fetchers.items():
-            entry = cache.get(name)
-            if fresh(entry, now):
-                providers[name] = entry
-                continue
-            wait = held(entry, now)
-            if wait:
-                if entry["heldUntil"] - now > wait:
-                    entry["heldUntil"] = now + wait
-                    stepped = True
-                providers[name] = replay(entry, wait)
-                continue
-            report = poll(fetch)
-            if report["status"] == "ok":
-                report["fetchedAt"] = now
-                cache[name] = providers[name] = report
-            else:
-                cache[name] = hold(report, now)
-                providers[name] = replay(cache[name], cache[name]["holdSeconds"])
-            polled[name] = report
-        history = read_history()
-        if polled or stepped:
-            write_private(CACHE_FILE, cache)
-        if polled:
-            updated = record_history(history, polled, now)
-            if updated != history:
-                write_private(HISTORY_FILE, updated)
-                history = updated
+        providers, history = collect_locked(fetchers, now)
     attach_history(providers, history, now)
     return providers
+
+
+def collect_locked(fetchers, now):
+    """collect's work, for a caller already holding the lock: the entries
+    and the history, which isn't attached yet."""
+    cache = read_cache()
+    providers, polled = {}, {}
+    stepped = False
+    for name, fetch in fetchers.items():
+        entry = cache.get(name)
+        if fresh(entry, now):
+            providers[name] = entry
+            continue
+        wait = held(entry, now)
+        if wait:
+            if entry["heldUntil"] - now > wait:
+                entry["heldUntil"] = now + wait
+                stepped = True
+            providers[name] = replay(entry, wait)
+            continue
+        report = poll(fetch)
+        if report["status"] == "ok":
+            report["fetchedAt"] = now
+            cache[name] = providers[name] = report
+        else:
+            cache[name] = hold(report, now)
+            providers[name] = replay(cache[name], cache[name]["holdSeconds"])
+        polled[name] = report
+    history = read_history()
+    if polled or stepped:
+        write_private(CACHE_FILE, cache)
+    if polled:
+        updated = record_history(history, polled, now)
+        if updated != history:
+            write_private(HISTORY_FILE, updated)
+            history = updated
+    return providers, history
 
 
 # --- history ---------------------------------------------------------------
@@ -888,6 +954,463 @@ def attach_history(providers, history, now):
             window["history"] = within(series["scoped"].get(window["id"], []), window, now)
 
 
+# --- session starter -------------------------------------------------------
+
+
+class NotSent(Exception):
+    """A send that never reached the provider; it is tried again later and
+    doesn't count as unconfirmed."""
+
+
+class Failed(Exception):
+    """The starter can't send until the user acts; reason is "not-installed"
+    or "signed-out"."""
+
+    def __init__(self, reason):
+        super().__init__(reason)
+        self.reason = reason
+
+
+class Unreadable(Exception):
+    """The limits couldn't be read; the next try waits at least `wait`
+    seconds, as long as the provider asked."""
+
+    def __init__(self, wait=0):
+        super().__init__()
+        self.wait = wait
+
+
+class Defer(Exception):
+    """The cache holds a reading too old to decide on and too young to
+    replace; the step runs again once it is stale."""
+
+    def __init__(self, until):
+        super().__init__()
+        self.until = until
+
+
+STATES = ("waiting", "confirming", "started", "weekly", "failed", "retrying", "paused")
+REASONS = ("not-installed", "signed-out")
+
+
+def blank_record():
+    """A provider's starter state. Besides what the report shows: sentAt, the
+    last send not yet confirmed; pending, a send under way, written before
+    it starts so a run that dies mid-send still confirms it; uncertain,
+    unconfirmed sends in a row; failures, failed reads or sends in a row."""
+    return {"state": "waiting", "at": None, "next": None, "reason": None,
+            "sentAt": None, "pending": None, "uncertain": 0, "failures": 0}
+
+
+def record_from(raw):
+    """A stored record with anything malformed replaced by its default.
+    Losing a record costs at most one extra send."""
+    record = blank_record()
+    if not isinstance(raw, dict):
+        return record
+    for key in ("at", "next", "sentAt", "pending"):
+        if type(raw.get(key)) is int:
+            record[key] = raw[key]
+    for key in ("uncertain", "failures"):
+        if type(raw.get(key)) is int and raw[key] >= 0:
+            record[key] = raw[key]
+    if raw.get("reason") in REASONS:
+        record["reason"] = raw["reason"]
+    state = raw.get("state")
+    if (state in STATES and (state != "failed" or record["reason"])
+            and (state not in ("confirming", "retrying") or record["sentAt"] is not None)):
+        record["state"] = state
+    return record
+
+
+def read_starter_states():
+    try:
+        data = read_json(STARTER_STATE)
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return {name: record_from(data[name]) for name in PROVIDERS if name in data}
+
+
+def read_switches():
+    """The providers whose starter the user switched on; anything unreadable
+    is off."""
+    try:
+        data = read_json(STARTER_FILE)
+    except (OSError, ValueError):
+        return set()
+    return {name for name in PROVIDERS if isinstance(data, dict) and data.get(name) is True}
+
+
+def private_state_dir():
+    STATE_DIR.parent.mkdir(parents=True, exist_ok=True)
+    STATE_DIR.mkdir(mode=0o700, exist_ok=True)
+
+
+def set_switches(changes):
+    """Apply changes, {provider: bool}, to the switch file. A lock of its
+    own keeps two widgets from losing each other's change without waiting
+    for a send."""
+    private_state_dir()
+    with flocked(SWITCH_LOCK, LOCK_WAIT):
+        try:
+            data = read_json(STARTER_FILE)
+        except (OSError, ValueError):
+            data = {}
+        if not isinstance(data, dict):
+            data = {}
+        data.update(changes)
+        STARTER_FILE.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        write_private(STARTER_FILE, data)
+
+
+class Starter:
+    """One provider's session starter, run when its next time comes.
+
+    It reads the limits and holds while a window runs (until its reset and a
+    second) or while the weekly limit is reached (until that resets).
+    Otherwise it sends one word, and five minutes later reads again: a
+    running window confirms the send. An unconfirmed send is tried once
+    more after another five minutes; two in a row pause the starter for
+    five hours. Reads go through the cache, so they keep its five-minute
+    floor, and failed reads and sends that never left back off 5, 15, then
+    60 minutes.
+
+    read(not_before) returns the provider's reading, or raises Defer when
+    the cached one was taken before not_before, Failed or Unreadable.
+    check() returns the CLI or raises Failed; send(binary) raises Failed or
+    NotSent when nothing went out. running(reading, now) is the window
+    running now, or None, and period a window's length. The caller holds
+    usage.lock throughout.
+    """
+
+    def __init__(self, record, *, read, check, send, running, period, persist, clock):
+        self.record, self.read, self.check, self.send = record, read, check, send
+        self.running, self.period, self.persist, self.clock = running, period, persist, clock
+
+    def set(self, state, at=None, next_=None, reason=None):
+        self.record.update(state=state, at=at, next=next_, reason=reason)
+        self.persist()
+
+    def back_off(self, at_least=0):
+        rec = self.record
+        rec["failures"] += 1
+        wait = max(RETRY_DELAYS[min(rec["failures"], len(RETRY_DELAYS)) - 1], at_least)
+        if rec["state"] in ("confirming", "retrying"):
+            self.set(rec["state"], rec["at"], self.clock() + wait)
+        else:
+            self.set("waiting", next_=self.clock() + wait)
+
+    def step(self):
+        rec, now = self.record, self.clock()
+        if rec["pending"] is not None:
+            rec["sentAt"], rec["pending"] = rec["pending"], None
+            self.set("confirming", rec["sentAt"], rec["sentAt"] + CONFIRM_DELAY)
+        if rec["next"] is not None and now < rec["next"]:
+            return
+        # Claim the step before reading: should it fail part-way, the
+        # widget tries again in five minutes rather than every 30 seconds,
+        # and a state that can't be written stops it before any read.
+        rec["next"] = now + RETRY_DELAYS[0]
+        self.persist()
+        if rec["state"] == "paused":
+            rec["uncertain"] = 0
+        # A send older than a window can no longer be told apart from one
+        # that never started, as after a long time switched off.
+        if rec["sentAt"] is not None and now - rec["sentAt"] >= self.period:
+            rec.update(sentAt=None, state="waiting")
+        try:
+            binary = self.check()
+            reading = self.read(rec["sentAt"] + CONFIRM_SLACK if rec["state"] == "confirming" else None)
+        except Failed as err:
+            self.set("failed", next_=now + RETRY_DELAYS[0], reason=err.reason)
+            return
+        except Defer as err:
+            rec["next"] = err.until
+            self.persist()
+            return
+        except Unreadable as err:
+            self.back_off(err.wait)
+            return
+        weekly = reading["weekly"]
+        if weekly["percent"] >= 100 and weekly["resetsAt"] is not None and weekly["resetsAt"] > now:
+            rec.update(sentAt=None, uncertain=0, failures=0)
+            self.set("weekly", next_=weekly["resetsAt"] + 1)
+            return
+        window = self.running(reading, now)
+        if window:
+            ours = rec["sentAt"] is not None or (rec["state"] == "started" and rec["next"] == window["resetsAt"] + 1)
+            rec.update(sentAt=None, uncertain=0, failures=0)
+            if ours:
+                self.set("started", window["resetsAt"] - window.get("windowSeconds", self.period),
+                         window["resetsAt"] + 1)
+            else:
+                self.set("waiting", next_=window["resetsAt"] + 1)
+            return
+        if rec["state"] == "confirming":
+            rec["uncertain"] += 1
+            if rec["uncertain"] >= 2:
+                rec["sentAt"] = None
+                self.set("paused", next_=now + PAUSE)
+            else:
+                self.set("retrying", rec["sentAt"], now + CONFIRM_DELAY)
+            return
+        rec["pending"] = now
+        self.persist()
+        try:
+            self.send(binary)
+        except Failed as err:
+            rec["pending"] = None
+            self.set("failed", next_=now + RETRY_DELAYS[0], reason=err.reason)
+        except NotSent:
+            rec["pending"] = None
+            self.back_off()
+        else:
+            rec.update(pending=None, sentAt=now, failures=0)
+            self.set("confirming", now, now + CONFIRM_DELAY)
+
+
+def claude_running(reading, now):
+    """Claude's five-hour window while it runs, else None."""
+    session = reading.get("session")
+    if session and session["resetsAt"] is not None and session["resetsAt"] > now:
+        return session
+    return None
+
+
+def codex_running(reading, now):
+    """Codex's week while it runs, else None. An idle account reports 0% and
+    a reset a week from whenever it is asked, which moves with the clock;
+    that is no window, and the next message starts one."""
+    week = reading["weekly"]
+    reset = week["resetsAt"]
+    if reset is None or reset <= now:
+        return None
+    if week["percent"] == 0 and abs(reset - reading["fetchedAt"] - week.get("windowSeconds", WEEK_SECONDS)) \
+            <= ROLLING_SLACK:
+        return None
+    return week
+
+
+def starter_read(name, now, not_before):
+    """The provider's reading, through the cache and its floor as any poll.
+    A confirmation needs a reading taken after the send; while the cache
+    still holds an older one, the step waits for it to go stale. Readings
+    cached by 0.2, which lack Claude's session, wait the same way."""
+    entry = read_cache().get(name)
+    if fresh(entry, now) and ((not_before is not None and entry["fetchedAt"] < not_before)
+                              or (name == "claude" and "session" not in entry)):
+        raise Defer(entry["fetchedAt"] + CACHE_TTL)
+    entry = collect_locked({name: fetchers()[name]}, now)[0][name]
+    if entry["status"] == "signed_out":
+        raise Failed("signed-out")
+    if entry["status"] != "ok":
+        raise Unreadable(entry.get("retryAfter", 0))
+    return entry
+
+
+def installed(name):
+    binary = find_cli(name)
+    if not binary:
+        raise Failed("not-installed")
+    return binary
+
+
+def run_cli(argv, env, timeout):
+    """Run a CLI in WORK_DIR with no input; its exit code and output.
+
+    It runs in a session of its own, and whatever it leaves running there
+    is killed once it exits or runs out of time. Output goes to a file, so
+    a process that survives outside the session can't stall the read.
+    Raises OSError when it can't start and subprocess.TimeoutExpired when
+    it ran out of time.
+    """
+    private_state_dir()
+    WORK_DIR.mkdir(mode=0o700, exist_ok=True)
+    with tempfile.TemporaryFile(dir=STATE_DIR) as out:
+        proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.DEVNULL,
+                                cwd=WORK_DIR, env=env, start_new_session=True)
+        try:
+            code = proc.wait(timeout=timeout)
+        finally:
+            with contextlib.suppress(ProcessLookupError):
+                os.killpg(proc.pid, signal.SIGKILL)
+            proc.wait()
+        out.seek(0)
+        return code, out.read().decode("utf-8", "replace")
+
+
+# Only what the CLIs need to run and reach the network. An API key or a
+# provider override in the session would bill the send to it instead of
+# the subscription, and starting a window on the subscription is the point.
+CLI_ENVIRONMENT = ("HOME", "USER", "LOGNAME", "PATH", "LANG", "TZ", "XDG_RUNTIME_DIR", "XDG_CONFIG_HOME",
+                   "XDG_CACHE_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME", "DBUS_SESSION_BUS_ADDRESS",
+                   "SSL_CERT_FILE", "SSL_CERT_DIR", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "ALL_PROXY",
+                   "http_proxy", "https_proxy", "no_proxy", "all_proxy")
+
+
+def cli_environment(config_home, settings=None):
+    env = {key: value for key, value in os.environ.items()
+           if key in CLI_ENVIRONMENT or key == config_home or key.startswith("LC_")}
+    env.update(settings or {})
+    return env
+
+
+def claude_environment():
+    return cli_environment("CLAUDE_CONFIG_DIR", {
+        "MAX_THINKING_TOKENS": "0", "CLAUDE_CODE_MAX_OUTPUT_TOKENS": "8",
+        "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1", "CLAUDE_CODE_DISABLE_TERMINAL_TITLE": "1",
+        "CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION": "false", "CLAUDE_CODE_DISABLE_ADVISOR_TOOL": "1",
+        "CLAUDE_CODE_SKIP_PROMPT_HISTORY": "1"})
+
+
+def claude_options():
+    """A send that loads no settings, tools, MCP servers, skills or project
+    files, keeps no session, and ends after one short reply."""
+    return ["--model", CLAUDE_MODEL, "--safe-mode", "--setting-sources", "",
+            "--tools", "", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}',
+            "--disable-slash-commands", "--no-session-persistence", "--permission-prompts", "none",
+            "--max-turns", "1", "--output-format", "json", "--no-chrome",
+            "--prompt-suggestions", "false", "--system-prompt", "Reply with OK."]
+
+
+def send_claude(binary):
+    """Send Claude one word so a five-hour window starts.
+
+    The login is renewed first if it expires within CLI_TOKEN_MARGIN, under
+    the lock the caller holds, so the CLI has no reason to spend the
+    single-use refresh token itself while Ringside might. `claude auth
+    status` then checks the login and, since it rejects root options it
+    doesn't know, the flags; a problem there means nothing was sent.
+
+    Once the send has started, the reading five minutes later decides
+    whether it worked, and the CLI's output is not checked. usage-reset,
+    which this ports, also required a JSON result with no error, a reply
+    and exactly the pinned model: 3 of the 13 sends its journal still
+    holds failed that check although the next reading showed a window
+    started at the send. It kept no output, so which part failed is
+    unknown.
+    """
+    try:
+        claude_access_token(CLI_TOKEN_MARGIN)
+    except SignedOut:
+        raise Failed("signed-out") from None
+    except Exception:  # noqa: BLE001 - a login that couldn't be renewed sends nothing
+        raise NotSent() from None
+    env = claude_environment()
+    try:
+        code, out = run_cli([binary, *claude_options(), "auth", "status"], env, PREFLIGHT_TIMEOUT)
+        auth = json.loads(out)
+    except (OSError, subprocess.TimeoutExpired, ValueError):
+        raise NotSent() from None
+    if not isinstance(auth, dict):
+        raise NotSent()
+    # An API key or a cloud provider would bill the send without starting
+    # a subscription window.
+    if auth.get("loggedIn") is not True or auth.get("authMethod") != "claude.ai" \
+            or auth.get("apiProvider") != "firstParty":
+        raise Failed("signed-out")
+    if code != 0:
+        raise NotSent()
+    try:
+        run_cli([binary, *claude_options(), "-p", PROMPT], env, SEND_TIMEOUT)
+    except OSError:
+        raise NotSent() from None
+    except subprocess.TimeoutExpired:
+        pass
+
+
+def codex_model():
+    """The first of CODEX_MODELS the CLI's model list offers, or None for the
+    CLI's default. The list is the CLI's own cache; anything odd in it
+    means the default."""
+    try:
+        listed = {model["slug"] for model in read_json(CODEX_MODEL_CACHE)["models"]
+                  if model.get("visibility") == "list"}
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        return None
+    return next((slug for slug in CODEX_MODELS if slug in listed), None)
+
+
+def codex_command(binary):
+    """One turn that keeps no session, needs no git repository, loads none of
+    the user's config or rules, can only read, and thinks as little as the
+    model allows."""
+    model = codex_model()
+    return [binary, "exec", "--ephemeral", "--skip-git-repo-check", "--ignore-user-config", "--ignore-rules",
+            "--sandbox", "read-only", "--color", "never", "--json", "--cd", str(WORK_DIR),
+            "--config", 'model_reasoning_effort="low"', *(["--model", model] if model else []), PROMPT]
+
+
+def send_codex(binary):
+    """Send Codex one word so a week starts. As for Claude, the reading five
+    minutes later decides whether it worked."""
+    try:
+        run_cli(codex_command(binary), cli_environment("CODEX_HOME"), SEND_TIMEOUT)
+    except OSError:
+        raise NotSent() from None
+    except subprocess.TimeoutExpired:
+        pass
+
+
+def fetchers():
+    return {"claude": claude_usage, "codex": codex_usage}
+
+
+def run_starter(name):
+    """Run the provider's starter step if its switch is on, holding
+    usage.lock from the switch check to the last write, so no poll runs
+    between a read and a send and none renews Claude's login while the CLI
+    might."""
+    with locked():
+        if name not in read_switches():
+            return
+        states = read_starter_states()
+        record = states.setdefault(name, blank_record())
+
+        def persist():
+            private_state_dir()
+            write_private(STARTER_STATE, states)
+
+        Starter(record,
+                read=lambda not_before: starter_read(name, int(time.time()), not_before),
+                check=lambda: installed(name),
+                send=send_claude if name == "claude" else send_codex,
+                running=claude_running if name == "claude" else codex_running,
+                period=SESSION_SECONDS if name == "claude" else WEEK_SECONDS,
+                persist=persist, clock=lambda: int(time.time())).step()
+
+
+STARTER_OFF = {"enabled": False, "state": "off", "at": None, "next": None, "reason": None}
+
+
+def starter_report(name, switches, states, now):
+    """What the report says of a provider's starter."""
+    if name not in switches:
+        return dict(STARTER_OFF)
+    record = states.get(name) or blank_record()
+    state, at, next_ = record["state"], record["at"], record["next"]
+    if record["pending"] is not None:
+        state, at, next_ = "confirming", record["pending"], record["pending"] + CONFIRM_DELAY
+    elif name == "codex" and state == "started":
+        # A week started has no next start until it ends; then one is due.
+        if next_ is not None and next_ <= now:
+            state, at = "waiting", None
+        else:
+            next_ = None
+    elif next_ is None:
+        next_ = now
+    return {"enabled": True, "state": state, "at": at, "next": next_,
+            "reason": record["reason"] if state == "failed" else None}
+
+
+def attach_starters(providers, now):
+    switches, states = read_switches(), read_starter_states()
+    for name, entry in providers.items():
+        entry["starter"] = starter_report(name, switches, states, now)
+
+
 # --- clock zone ------------------------------------------------------------
 
 
@@ -967,30 +1490,51 @@ def provider_list(text):
     return ids
 
 
+def switch(text):
+    name, _, value = text.partition("=")
+    if name not in PROVIDERS or value not in ("on", "off"):
+        raise argparse.ArgumentTypeError(f"expected <provider>=on or <provider>=off, not {text!r}")
+    return name, value == "on"
+
+
 def arguments(argv):
     parser = argparse.ArgumentParser(description="Report the weekly usage of Claude Code and Codex as JSON.")
     parser.add_argument("--providers", type=provider_list, default=list(PROVIDERS),
                         help="comma-separated providers to poll and report (default: claude,codex)")
+    parser.add_argument("--start", action="store_true",
+                        help="run the session starter of each listed provider that is switched on and due")
+    parser.add_argument("--starter-set", type=switch, action="append", default=[], metavar="PROVIDER=on|off",
+                        help="switch a provider's session starter on or off for this user")
     return parser.parse_args(argv)
 
 
 def main(argv=None):
-    ids = arguments(argv).providers
+    args = arguments(argv)
+    ids = args.providers
     fake = os.environ.get("RINGSIDE_USAGE_FAKE")
     if fake:
         report = read_json(fake)
         report["providers"] = {name: entry for name, entry in (report.get("providers") or {}).items()
                                if name in ids}
         for entry in report["providers"].values():
+            entry.setdefault("starter", dict(STARTER_OFF))
             for window in windows(entry):
                 window.setdefault("history", [])
     else:
-        fetchers = {"claude": claude_usage, "codex": codex_usage}
+        if args.starter_set:
+            set_switches(dict(args.starter_set))
+        if args.start:
+            for name in ids:
+                # A state that can't be written stops the starter, never the report.
+                with contextlib.suppress(Busy, OSError):
+                    run_starter(name)
+        sources = fetchers()
         try:
-            providers = collect({name: fetchers[name] for name in ids})
+            providers = collect({name: sources[name] for name in ids})
         except Busy as err:
             providers = waiting(ids, str(err))
         report = {"fetchedAt": int(time.time()), "providers": providers}
+        attach_starters(providers, report["fetchedAt"])
     # Read on every run, cached or not, so a change of clock zone shows by the
     # next poll; the cache itself never holds it.
     zone = clock_zone()

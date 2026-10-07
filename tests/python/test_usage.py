@@ -26,6 +26,8 @@ ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 HELPER = ROOT / "package" / "contents" / "code" / "usage.py"
 WEEK = 7 * 24 * 3600
+# What every entry says of its session starter while it is switched off.
+OFF = {"enabled": False, "state": "off", "at": None, "next": None, "reason": None}
 
 
 def load_helper():
@@ -57,7 +59,8 @@ def reading(percent, resets_at, **scoped):
 
 class Isolated(unittest.TestCase):
     """Points every path the helper uses into a temporary folder and fails any
-    network call, so no test reaches the real ~/.claude, ~/.codex, cache or API."""
+    network call or CLI run, so no test reaches the real ~/.claude, ~/.codex,
+    cache, config, state, API or CLIs."""
 
     def setUp(self):
         folder = tempfile.TemporaryDirectory()
@@ -68,6 +71,7 @@ class Isolated(unittest.TestCase):
             "HOME": str(self.tmp / "home"),
             "XDG_CACHE_HOME": str(self.tmp / "cache"),
             "XDG_CONFIG_HOME": str(self.tmp / "config"),
+            "XDG_STATE_HOME": str(self.tmp / "state"),
             "CLAUDE_CONFIG_DIR": str(self.tmp / "claude"),
             "CODEX_HOME": str(self.tmp / "codex"),
             "RINGSIDE_USAGE_FAKE": "",
@@ -75,9 +79,12 @@ class Isolated(unittest.TestCase):
         paths = load_helper()
         self.enterContext(mock.patch.multiple(usage, **{name: getattr(paths, name) for name in (
             "CLAUDE_CREDENTIALS", "CODEX_AUTH", "CACHE_DIR", "CACHE_FILE", "HISTORY_FILE",
-            "LOCK_FILE", "APPLETSRC")}))
+            "LOCK_FILE", "APPLETSRC", "STARTER_FILE", "STATE_DIR", "STARTER_STATE", "SWITCH_LOCK",
+            "WORK_DIR", "CODEX_MODEL_CACHE")}))
         self.enterContext(mock.patch.object(usage.urllib.request, "urlopen",
                                             side_effect=AssertionError("a test reached the network")))
+        self.enterContext(mock.patch.object(usage, "run_cli", side_effect=AssertionError("a test ran a CLI")))
+        self.enterContext(mock.patch.object(usage, "find_cli", return_value=None))
 
     def write_cache(self, data):
         usage.CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -586,7 +593,7 @@ class Polling(Isolated):
 
     def test_codex_login_errors_read_as_signed_out(self):
         with mock.patch.object(usage, "CODEX_AUTH", Path(__file__)), \
-             mock.patch.object(usage, "find_codex", return_value="codex"), \
+             mock.patch.object(usage, "find_cli", return_value="codex"), \
              mock.patch.object(usage, "codex_rate_limits",
                                side_effect=RuntimeError("Not logged in")):
             self.assertEqual(usage.poll(usage.codex_usage), {"status": "signed_out"})
@@ -638,7 +645,7 @@ class ReadingCache(Isolated):
         with mock.patch.object(usage, "claude_usage", side_effect=RuntimeError(failed["message"])) as claude:
             reports = [self.run_main("--providers", "claude")["providers"] for _ in range(2)]
         claude.assert_called_once()
-        self.assertEqual(reports, [{"claude": failed}] * 2)
+        self.assertEqual(reports, [{"claude": dict(failed, starter=OFF)}] * 2)
 
     # A refusal holds the provider back for every run until Retry-After has
     # passed, and only that provider.
@@ -731,7 +738,7 @@ class ReadingCache(Isolated):
         fetch = mock.Mock(return_value=reading(1, 5))
         with mock.patch.object(usage, "LOCK_WAIT", 0.3), mock.patch.object(usage, "codex_usage", fetch):
             report = self.run_main("--providers", "codex")
-        self.assertEqual(report["providers"], {"codex": {"status": "error",
+        self.assertEqual(report["providers"], {"codex": {"status": "error", "starter": OFF,
                                                          "message": "another usage check is still running"}})
         fetch.assert_not_called()
 
@@ -746,7 +753,7 @@ class ReadingCache(Isolated):
         self.assertEqual(report["providers"]["codex"]["weekly"]["percent"], 4)
         self.assertEqual(report["providers"]["codex"]["weekly"]["history"], [])
         self.assertEqual(report["providers"]["claude"],
-                         {"status": "error", "message": "another usage check is still running"})
+                         {"status": "error", "message": "another usage check is still running", "starter": OFF})
 
     # ...and a failure it still holds, as a run with the lock would.
     def test_a_busy_run_replays_a_held_failure(self):
@@ -757,8 +764,8 @@ class ReadingCache(Isolated):
         with mock.patch.object(usage, "LOCK_WAIT", 0.3):
             report = self.run_main("--providers", "claude,codex")
         self.assertEqual(report["providers"], {
-            "claude": {"status": "signed_out"},
-            "codex": {"status": "error", "message": "another usage check is still running"}})
+            "claude": {"status": "signed_out", "starter": OFF},
+            "codex": {"status": "error", "message": "another usage check is still running", "starter": OFF}})
 
     def test_malformed_cache_entries_read_as_missing(self):
         window = {"percent": 1, "resetsAt": 5, "windowSeconds": WEEK}
