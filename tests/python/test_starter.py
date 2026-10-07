@@ -337,6 +337,44 @@ class Steps(unittest.TestCase):
         h.step(NOW + 900)
         self.assertEqual((h.record["state"], h.record["reason"]), ("confirming", None))
 
+    # A send whose confirming read finds the CLI gone or signed out counts
+    # as unconfirmed: it is confirmed should a later read find its window,
+    # and the second such send pauses the starter.
+    def test_a_confirmation_cut_short_by_a_sign_out_goes_unconfirmed(self):
+        for cause in ("signed-out", "not-installed"):
+            with self.subTest(cause=cause):
+                h = Harness(NOW)
+                h.step()
+
+                def fail():
+                    if cause == "signed-out":
+                        h.reading = usage.Failed("signed-out")
+                    else:
+                        h.missing = True
+
+                fail()
+                h.step(NOW + 300)
+                self.assertEqual((h.record["state"], h.record["reason"]), ("failed", cause))
+                self.assertEqual((h.record["sentAt"], h.record["uncertain"]), (NOW, 1))
+                h.reading, h.missing = claude(NOW + 600), False
+                h.step(NOW + 600)
+                self.assertEqual(h.count("send"), 2)
+                fail()
+                h.step(NOW + 900)
+                self.assertEqual(h.shows(), ("paused", None, NOW + 900 + usage.PAUSE))
+                h.reading, h.missing = claude(NOW + 1200), False
+                h.step(NOW + 1200)
+                self.assertEqual(h.count("send"), 2)
+
+        h = Harness(NOW)
+        h.step()
+        h.reading = usage.Failed("signed-out")
+        h.step(NOW + 300)
+        h.reading = claude(NOW + 600, session=NOW + SESSION)
+        h.step(NOW + 600)
+        self.assertEqual(h.shows(), ("started", NOW, NOW + SESSION + 1))
+        self.assertEqual(h.record["uncertain"], 0)
+
     # A send from before the starter was switched off, older than a window,
     # can't be confirmed or refuted any more.
     def test_a_send_older_than_a_window_is_forgotten_not_counted(self):
