@@ -281,6 +281,24 @@ class Steps(unittest.TestCase):
         self.assertEqual(h.shows(), ("confirming", now, now + 300))
         self.assertEqual(h.record["failures"], 0)
 
+    # A CLI that doesn't answer its check shows as failed, backing off as a
+    # send that never left does, and a retry it held up still counts.
+    def test_a_cli_not_responding_fails_and_backs_off(self):
+        now = NOW
+        h = Harness(now, outcome=usage.NotSent("not-responding"),
+                    record=dict(usage.blank_record(), state="retrying", at=NOW - 300, sentAt=NOW - 300, uncertain=1))
+        for attempt, delay in enumerate((300, 900, 3600)):
+            h.step(now)
+            self.assertEqual(h.count("send"), attempt + 1)
+            self.assertEqual((h.record["state"], h.record["reason"], h.record["next"]),
+                             ("failed", "not-responding", now + delay))
+            now += delay
+        h.outcome = None
+        h.step(now)
+        self.assertEqual((h.record["state"], h.record["reason"], h.record["failures"]), ("confirming", None, 0))
+        h.step(now + 300)
+        self.assertEqual(h.record["state"], "paused")
+
     def test_a_missing_cli_or_login_fails_and_checks_again_in_five_minutes(self):
         h = Harness(NOW)
         h.missing = True
@@ -517,22 +535,28 @@ class Commands(Isolated):
                     "CLAUDE_CODE_OAUTH_TOKEN", "OPENAI_API_KEY"):
             self.assertNotIn(key, env)
 
-    def test_a_login_that_isnt_a_subscription_is_signed_out(self):
-        for changed in ({"loggedIn": False}, {"authMethod": "apiKey"}, {"apiProvider": "bedrock"}, {"loggedIn": None}):
+    # An API key, Bedrock or Vertex would bill the send without starting a
+    # subscription window, and the user is told so rather than signed out.
+    def test_a_login_that_isnt_a_subscription_says_so(self):
+        for changed, reason in (({"loggedIn": False}, "signed-out"), ({"loggedIn": None}, "signed-out"),
+                                ({"authMethod": "apiKey"}, "not-subscription"),
+                                ({"apiProvider": "bedrock"}, "not-subscription"),
+                                ({"apiProvider": "vertex", "authMethod": None}, "not-subscription")):
             with self.subTest(changed=changed):
                 calls = self.runner((1, json.dumps({**AUTH, **changed})))
                 with self.assertRaises(usage.Failed) as failed:
                     usage.send_claude("/mock/claude")
-                self.assertEqual(failed.exception.reason, "signed-out")
+                self.assertEqual(failed.exception.reason, reason)
                 self.assertEqual(len(calls), 1)
 
-    def test_a_preflight_that_fails_sends_nothing(self):
+    def test_a_preflight_that_fails_sends_nothing_and_isnt_responding(self):
         for result in (OSError("no such file"), subprocess.TimeoutExpired("claude", 20), (1, "error: unknown option"),
                        (0, "[]"), (1, json.dumps(AUTH))):
             with self.subTest(result=result):
                 calls = self.runner(result)
-                with self.assertRaises(usage.NotSent):
+                with self.assertRaises(usage.NotSent) as not_sent:
                     usage.send_claude("/mock/claude")
+                self.assertEqual(not_sent.exception.reason, "not-responding")
                 self.assertEqual(len(calls), 1)
 
     def test_a_send_that_couldnt_start_never_left(self):
@@ -874,6 +898,16 @@ class StarterRuns(Isolated):
                 self.assertEqual(starter["state"], "waiting")
                 self.assertGreater(starter["next"], int(time.time()))
 
+    def test_a_cli_that_rejects_a_flag_reports_not_responding(self):
+        self.run_main("--starter-set", "claude=on")
+        rejects = mock.patch.object(usage, "run_cli", side_effect=lambda argv, env, timeout: self.calls.append(argv)
+                                    or (1, "error: unknown option '--max-turns'"))
+        with rejects:
+            starter = self.run_main("--providers", "claude", "--start")["providers"]["claude"]["starter"]
+        self.assertEqual((starter["state"], starter["reason"]), ("failed", "not-responding"))
+        self.assertGreater(starter["next"], int(time.time()))
+        self.assertEqual([argv[-1] for argv in self.calls], ["status"])
+
     def test_turning_the_switch_off_stops_the_next_start(self):
         self.run_main("--starter-set", "claude=on")
         self.run_main("--providers", "claude", "--starter-set", "claude=off")
@@ -967,6 +1001,10 @@ class Report(Isolated):
              ("failed", None, NOW + 300, "signed-out")),
             ("codex", dict(blank, state="failed", next=NOW + 300, reason="not-installed"),
              ("failed", None, NOW + 300, "not-installed")),
+            ("claude", dict(blank, state="failed", next=NOW + 300, reason="not-subscription"),
+             ("failed", None, NOW + 300, "not-subscription")),
+            ("claude", dict(blank, state="failed", next=NOW + 900, reason="not-responding", failures=2),
+             ("failed", None, NOW + 900, "not-responding")),
             ("claude", dict(blank, state="retrying", at=NOW - 300, next=NOW + 300, sentAt=NOW - 300),
              ("retrying", NOW - 300, NOW + 300, None)),
             ("claude", dict(blank, state="paused", next=NOW + 5 * HOUR), ("paused", None, NOW + 5 * HOUR, None)),
