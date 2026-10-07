@@ -54,8 +54,11 @@ that confirms it); "started" (at is when the window started, next when the
 next one starts, which the popup shows only for Claude); "weekly" (the
 weekly limit is reached; next is its reset); "failed" (reason says why:
 "not-installed", "signed-out", "not-subscription" for a CLI logged in
-other than with a claude.ai subscription, or "not-responding" for one
-whose check before sending failed, which backs off like a failed read);
+other than with a claude.ai subscription, "not-responding" for one whose
+check before sending failed, "unchecked" for a failed read or a reading
+that doesn't say when a reached weekly limit or a running week ends, or
+"not-sent" for a send that never left; the last three back off, with next
+the retry);
 "retrying" (one send went unconfirmed; at is the send, next the retry) and
 "paused" (two in a row; next is when the hold ends). The widget runs
 --start once Date.now() reaches next, and --starter-set when its switch is
@@ -1002,8 +1005,8 @@ def attach_history(providers, history, now):
 
 class NotSent(Exception):
     """A send that never reached the provider; it is tried again later and
-    doesn't count as unconfirmed. With a reason, the starter shows as
-    failed meanwhile."""
+    doesn't count as unconfirmed. The starter shows as failed meanwhile,
+    with the reason or "not-sent"."""
 
     def __init__(self, reason=None):
         super().__init__(reason)
@@ -1043,7 +1046,7 @@ class Defer(Exception):
 
 
 STATES = ("waiting", "confirming", "started", "weekly", "failed", "retrying", "paused")
-REASONS = ("not-installed", "signed-out", "not-subscription", "not-responding")
+REASONS = ("not-installed", "signed-out", "not-subscription", "not-responding", "unchecked", "not-sent")
 
 
 def blank_record():
@@ -1167,16 +1170,16 @@ class Starter:
         self.record.update(state=state, at=at, next=next_, reason=reason)
         self.persist()
 
-    def back_off(self, at_least=0, reason=None):
+    def back_off(self, at_least=0, reason="unchecked"):
         rec = self.record
         rec["failures"] += 1
         wait = max(RETRY_DELAYS[min(rec["failures"], len(RETRY_DELAYS)) - 1], at_least)
-        if reason:
-            self.set("failed", next_=self.clock() + wait, reason=reason)
-        elif rec["state"] in ("confirming", "retrying"):
+        # A failed read while a send awaits its confirmation or its retry
+        # leaves that to the next try.
+        if reason == "unchecked" and rec["state"] in ("confirming", "retrying"):
             self.set(rec["state"], rec["at"], self.clock() + wait)
         else:
-            self.set("waiting", next_=self.clock() + wait)
+            self.set("failed", next_=self.clock() + wait, reason=reason)
 
     def unconfirmed(self, now):
         """Count the send being confirmed as unconfirmed. The second in a
@@ -1259,7 +1262,7 @@ class Starter:
             self.set("failed", next_=now + RETRY_DELAYS[0], reason=err.reason)
         except NotSent as err:
             rec["pending"] = None
-            self.back_off(reason=err.reason)
+            self.back_off(reason=err.reason or "not-sent")
         except SwitchedOff:
             # Due at once should it be switched on again.
             rec.update(pending=None, sentAt=None, uncertain=0)

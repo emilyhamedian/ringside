@@ -184,6 +184,8 @@ ColumnLayout {
         ["failed: signed out", "failed", null, null, "signed-out"],
         ["failed: not a subscription (Claude only)", "failed", null, null, "not-subscription"],
         ["failed: not responding, retrying", "failed", null, 5, "not-responding"],
+        ["failed: couldn't check the limits, retrying", "failed", null, 15, "unchecked"],
+        ["failed: the message never left, retrying", "failed", null, 5, "not-sent"],
         ["the helper failed to start one, retrying", "failed", -1, 4, "helper",
          "The usage helper exited with code 1: RuntimeError: boom"],
         ["the switch couldn't be turned off", "failed", null, null, "switch",
