@@ -37,7 +37,7 @@ KCM.SimpleKCM {
             // Stepped only: the desktop style rewrites the text on every
             // keystroke, which fights the unit suffix.
             editable: false
-            textFromValue: (value, locale) => i18nc("@item:valuesuffix seconds between readings", "%1 s",
+            textFromValue: (value, locale) => i18nc("@item:valuesuffix seconds between panel updates", "%1 s",
                                                     Number(value / 1000).toLocaleString(locale, "f", 1))
             Accessible.name: i18nc("@label:spinbox", "Update interval")
             onValueModified: page.cfg_updateInterval = value
