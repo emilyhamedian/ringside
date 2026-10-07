@@ -215,8 +215,9 @@ QtObject {
 
     // What the session starter is doing, under its switch in the Claude or
     // Codex popup. `starter` is the helper's { enabled, state, at, next,
-    // reason } (see usage.py), or after a --start that gave no report
-    // UsageData's "failed" with reason "helper" and the helper's error.
+    // reason } (see usage.py), or UsageData's "failed" with the helper's
+    // error and reason "helper" after a --start that gave no report, or
+    // "switch" after a switch change that gave none.
     // Times are to the minute on the week's clock, as the reset is, and the
     // tile's caption names the zone once. Each sentence has a string for a
     // time today ("at 11:40 PM") and one for another day, with the weekday
@@ -283,6 +284,10 @@ QtObject {
                     : onDay(s.next, i18nc("@info %1 is a time today", "Couldn't start a week. Trying again at %1.", time(s.next)),
                             i18nc("@info %1 is a weekday, %2 a time", "Couldn't start a week. Trying again %1 %2.", day(s.next), time(s.next)));
                 return s.error ? both(retry, s.error) : retry;
+            }
+            if (s.reason === "switch") {
+                return i18nc("@info under the session starter's switch, which snapped back; %1 is the error the usage helper printed",
+                             "Couldn't change the switch: %1", s.error);
             }
             break;
         case "retrying":

@@ -56,6 +56,9 @@ Item {
     // Per id, the --start runs in a row that gave no report: { count, at,
     // retryAt, error }. Kept until a report moves the starter on.
     property var startFailures: ({})
+    // Per id, the switch change that gave no report: { on, error }. Shown
+    // until the switch is turned again or reported where it was asked.
+    property var switchFailures: ({})
 
     // Windows that just started over (see code/reset.js), sent before
     // `entries` changes so a ring can play the reset from its old reading.
@@ -70,12 +73,16 @@ Item {
             ? "python3 -B '" + helperPath.replace(/'/g, "'\\''") + "' --providers " + providerIds.join(",") + args : "";
     }
 
-    // As reported, or after a --start that gave no report, "failed" with
-    // reason "helper", the helper's error, and next at the retry.
+    // As reported; after a switch change that gave no report, "failed" with
+    // reason "switch" and the helper's error; after a --start that gave
+    // none, "failed" with reason "helper", the error, and next at the retry.
     function starter(id) {
         const s = starters[id] ?? null;
+        const w = switchFailures[id];
         const f = startFailures[id];
-        return s && f ? Object.assign({}, s, { state: "failed", reason: "helper", at: f.at, next: f.retryAt, error: f.error }) : s;
+        return s && w && s.enabled !== w.on ? Object.assign({}, s, { state: "failed", reason: "switch", error: w.error })
+             : s && f ? Object.assign({}, s, { state: "failed", reason: "helper", at: f.at, next: f.retryAt, error: f.error })
+             : s;
     }
 
     // Where the switch stands: as asked while the helper writes it, then as
@@ -89,6 +96,11 @@ Item {
             return;
         }
         starterWanted = Object.assign({}, starterWanted, { [id]: on });
+        if (switchFailures[id]) {
+            const failures = Object.assign({}, switchFailures);
+            delete failures[id];
+            switchFailures = failures;
+        }
         writeStarter();
     }
 
@@ -172,6 +184,9 @@ Item {
         }
         if (Object.keys(startFailures).some(id => !ids.includes(id))) {
             startFailures = only(startFailures);
+        }
+        if (Object.keys(switchFailures).some(id => !ids.includes(id))) {
+            switchFailures = only(switchFailures);
         }
         if (Object.keys(statuses).some(id => !ids.includes(id)) || ids.length === 0 && helperError !== "") {
             statuses = only(statuses);
@@ -294,7 +309,8 @@ Item {
         onNewData: (source, data) => {
             disconnectSource(source);
             // A switch change is settled by this run's report, or by its
-            // failure, which leaves the switch where it was reported.
+            // failure, which leaves the switch where it was reported and,
+            // like a failed --start, says so only under the switch.
             const set = / --starter-set (\w+)=(on|off)$/.exec(source);
             const started = / --providers ([\w,]+) --start$/.exec(source);
             const settled = set && usage.starterWanted[set[1]] === (set[2] === "on") ? set[1] : "";
@@ -306,6 +322,12 @@ Item {
             }
             if (!report?.providers && started) {
                 usage.startFailed(started[1].split(","), usage.failureText(Report.helperFailure(data)));
+            } else if (!report?.providers && set) {
+                if (settled) {
+                    usage.switchFailures = Object.assign({}, usage.switchFailures, {
+                        [settled]: { on: set[2] === "on", error: usage.failureText(Report.helperFailure(data)) }
+                    });
+                }
             } else if (!report?.providers) {
                 usage.helperError = usage.failureText(Report.helperFailure(data));
                 usage.entries = Report.markFailed(usage.entries, usage.helperError, Math.floor(Date.now() / 1000));

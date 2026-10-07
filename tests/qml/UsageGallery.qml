@@ -184,6 +184,8 @@ ColumnLayout {
         ["failed: signed out", "failed", null, null, "signed-out"],
         ["the helper failed to start one, retrying", "failed", -1, 4, "helper",
          "The usage helper exited with code 1: RuntimeError: boom"],
+        ["the switch couldn't be turned off", "failed", null, null, "switch",
+         "The usage helper exited with code 1: PermissionError: [Errno 13] Permission denied: 'starter.json'"],
         ["one send unconfirmed, retrying", "retrying", -3, 2],
         ["two unconfirmed, paused", "paused", null, 302]
     ]

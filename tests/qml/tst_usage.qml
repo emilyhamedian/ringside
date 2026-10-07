@@ -557,6 +557,38 @@ Item {
             compare(usage.starter("codex").enabled, false);
         }
 
+        // A switch change that gives no report leaves the readings and the
+        // settings page alone. The switch snaps back and says why under it
+        // until it is turned again.
+        function test_unwrittenChangeSaysSoUnderTheSwitch() {
+            start("starter");
+            const status = config.usageStatus;
+            usage.starterWanted = { codex: true };
+            runner().newData(usage.helperCommand(usage.ids, " --starter-set codex=on"),
+                             { "exit code": 1, "exit status": 0, stdout: "",
+                               stderr: "Traceback (most recent call last):\nPermissionError: [Errno 13] Permission denied: 'starter.json'\n" });
+            verify(!usage.starterOn("codex"), "snapped back");
+            compare(usage.starterWanted, {});
+            verify(!usage.degraded("claude") && !usage.degraded("codex"), "the readings carry no failure");
+            compare(usage.helperError, "");
+            compare(config.usageStatus, status);
+            compare(usage.starter("codex"), { enabled: false, state: "failed", reason: "switch", at: null, next: null,
+                                              error: "The usage helper exited with code 1: PermissionError: [Errno 13] Permission denied: 'starter.json'" });
+            compare(usage.starter("claude").state, "waiting", "the other switch is untouched");
+            // Another widget's change, once reported, ends it.
+            const reported = usage.starters;
+            usage.starters = Object.assign({}, reported, { codex: { enabled: true, state: "started", at: null, next: null, reason: null } });
+            compare(usage.starter("codex").state, "started");
+            usage.starters = reported;
+            compare(usage.starter("codex").reason, "switch");
+
+            usage.setStarter("codex", true);
+            compare(usage.starter("codex").state, "off", "turned again, the failure is gone");
+            tryVerify(() => usage.starter("codex").enabled, 10000);
+            verify(usage.starter("codex").reason !== "switch");
+            tryVerify(() => runner().connectedSources.length === 0, 10000);
+        }
+
         // A quick on and off run one after the other, so the last one wins.
         function test_changesRunInOrder() {
             start("starter");
@@ -1629,6 +1661,7 @@ Item {
             { state: "failed", enabled: true, failed: true, reason: "not-installed" },
             { state: "failed", enabled: true, failed: true, reason: "signed-out" },
             { state: "failed", enabled: true, failed: true, reason: "helper", at: -60, next: 240, error: "The usage helper exited with code 1: boom" },
+            { state: "failed", enabled: false, failed: true, reason: "switch", error: "The usage helper exited with code 1: boom" },
             { state: "retrying", enabled: true, failed: true, at: -180, next: 120 },
             { state: "paused", enabled: true, failed: true, next: 5 * 3600 }
         ]
@@ -1989,7 +2022,9 @@ Item {
                  ["Couldn't start a session. Trying again at %1. The usage helper exited with code 1: boom", T(23, 35)]],
                 ["startFailedTomorrow", { state: "failed", reason: "helper", at: T(23, 30), next: W(4, 35), error: "" },
                  ["Couldn't start a session. Trying again %1.", W(4, 35)]],
-                ["pausedToday", { state: "paused", next: T(23, 55) }, ["Couldn't confirm two sessions in a row. Paused until %1.", T(23, 55)]]
+                ["pausedToday", { state: "paused", next: T(23, 55) }, ["Couldn't confirm two sessions in a row. Paused until %1.", T(23, 55)]],
+                ["switchFailed", { state: "failed", reason: "switch", error: "The usage helper exited with code 1: boom" },
+                 ["Couldn't change the switch: The usage helper exited with code 1: boom"]]
             ]).concat(rows("codex", [
                 ["off", off, ["When a week ends, Ringside sends Codex a one-word message to start the next one."]],
                 ["waiting", { state: "waiting", next: { day: 12, h: 3, m: 33 } }, ["The next week starts %1.", { day: 12, h: 3, m: 33 }]],
@@ -2007,7 +2042,9 @@ Item {
                 ["paused", { state: "paused", next: W(4, 35) }, ["Couldn't confirm two weeks in a row. Paused until %1.", W(4, 35)]],
                 ["startFailed", { state: "failed", reason: "helper", at: T(23, 30), next: T(23, 35), error: "The usage helper exited with code 1: boom" },
                  ["Couldn't start a week. Trying again at %1. The usage helper exited with code 1: boom", T(23, 35)]],
-                ["pausedToday", { state: "paused", next: T(23, 55) }, ["Couldn't confirm two weeks in a row. Paused until %1.", T(23, 55)]]
+                ["pausedToday", { state: "paused", next: T(23, 55) }, ["Couldn't confirm two weeks in a row. Paused until %1.", T(23, 55)]],
+                ["switchFailed", { state: "failed", reason: "switch", error: "The usage helper exited with code 1: boom" },
+                 ["Couldn't change the switch: The usage helper exited with code 1: boom"]]
             ]));
         }
 
