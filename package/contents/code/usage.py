@@ -1626,11 +1626,12 @@ def main(argv=None):
     else:
         if args.starter_set:
             # A switch that can't be written stays as it was, and the report
-            # shows it so, which moves the widget's switch back.
+            # shows it so, which moves the widget's switch back. The widget
+            # shows the line on stderr under the switch as the reason.
             try:
                 set_switches(dict(args.starter_set))
             except (Busy, OSError) as err:
-                print(f"usage.py: the session starter's switch wasn't changed: {err}", file=sys.stderr)
+                print(err, file=sys.stderr)
         if args.start:
             for name in ids:
                 # A state that can't be written stops the starter, never the report.
