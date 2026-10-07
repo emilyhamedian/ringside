@@ -107,13 +107,14 @@ QtObject {
         starterWanted = Object.assign({}, starterWanted, { [id]: on });
     }
 
-    // Stands in for the helper's report after --starter-set.
+    // Stands in for the helper's report after --starter-set: a starter just
+    // switched on is due at once.
     function answerStarter() {
         const next = Object.assign({}, starters);
         if (starterSticks) {
             for (const id in starterWanted) {
                 next[id] = { enabled: starterWanted[id], state: starterWanted[id] ? "waiting" : "off",
-                             at: null, next: starterWanted[id] ? createdAt + 3600 : null, reason: null };
+                             at: null, next: starterWanted[id] ? Math.floor(Date.now() / 1000) : null, reason: null };
             }
         }
         starters = next;
