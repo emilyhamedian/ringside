@@ -33,14 +33,14 @@ GPL-3.0-or-later.
 - One Sensor per ksystemstats id in a widget, and one reader per GPU across
   widgets (`code/gpushare.js`): duplicate subscriptions leak in ksystemstats
   and keep a discrete GPU awake. Never subscribe a suspended GPU.
-- The Claude helper shares a tight rate limit and single-use refresh tokens
-  with Claude Code and other tools on the same machine. Keep the 5-minute
-  floor, the cache, the lock and the re-read-before-write on refresh.
-- The session starter is the only thing in Ringside that sends anything to
-  Claude or Codex: off by default, switched per user, one minimal message
-  through their own CLI once a window has ended. It holds the usage lock
-  across a send, never sends while a window is running or the weekly limit
-  is reached, and stops after two sends it can't confirm.
+- Private by default. A fresh install contacts nothing beyond this machine.
+  Anything that reaches the internet is the user's choice: off until they
+  turn it on, plain about what it sends and to whom, sending no more than it
+  needs and as rarely as it can, and keeping what it learns on the machine.
+- A guest in the user's Claude and Codex accounts. Their own tools share the
+  same logins and limits, so Ringside never costs them a sign-in, a rate
+  limit or usage they didn't ask for, and anything that spends usage is a
+  switch only the user turns on.
 - Numbers go through `code/format.js` (locale digits, binary units);
   user-visible strings through `i18nc` in QML, since `.pragma library` files
   can't translate. Colours come from the Plasma theme.
