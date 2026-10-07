@@ -14,8 +14,9 @@ QtObject {
     id: monitor
 
     property int interval: 1000
+    property int sampleInterval: Math.min(interval, 1000)
     property int historySeconds: 60
-    property int historyLength: Math.max(2, Math.round(historySeconds * 1000 / interval))
+    property int historyLength: Math.max(2, Math.round(historySeconds * 1000 / sampleInterval))
     property var hardware: ({
         memory: { type: "DDR5", speed: 5600, modules: [17179869184, 17179869184] },
         swap: ["zram"]
@@ -106,6 +107,12 @@ QtObject {
     property var diskReadHistory: bursts(diskRead, 30 * 1048576, 7)
     property var diskWriteHistory: bursts(diskWrite, 8 * 1048576, 8)
 
+    // The panel's readings follow the live ones here; Monitor holds them
+    // for an update interval.
+    property var panel: ({ cpuUsage: cpuUsage, cpuTemperature: cpuTemperature, memoryPercent: memoryPercent,
+                           memoryUsed: memoryUsed, networkDown: networkDown, networkUp: networkUp,
+                           diskRead: diskRead, diskWrite: diskWrite })
+
     property bool fahrenheit: false
     property bool highlightTemperatures: true
     property real warmCelsius: 75
@@ -168,5 +175,7 @@ QtObject {
         property real clock: NaN
         property real power: NaN
         property var history: []
+        property real panelUsage: usage
+        property real panelTemperature: temperature
     }
 }

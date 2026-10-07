@@ -18,6 +18,13 @@ import "code/items.js" as Items
 //
 // Numbers are NaN until a reading arrives. Bytes are bytes, rates are bytes
 // per second, temperatures are °C, clocks MHz, power W, percentages 0–100.
+//
+// Readings arrive, and the graphs take them, every sampleInterval: a second,
+// or the update interval when that is shorter, so a graph catches a short
+// burst whatever the panel's pace. The popups show these live readings, so a
+// header agrees with the graph under it. The panel shows `panel` and the GPU
+// readers' panel readings, which move to the latest readings once per update
+// interval.
 Item {
     id: monitor
 
@@ -25,8 +32,19 @@ Item {
     required property var config
 
     readonly property int interval: config.updateInterval
+    readonly property int sampleInterval: Math.min(interval, 1000)
+    // ksystemstats sends a frame every 500 ms. A rate limit half a frame
+    // short of the sampling period lets one reading through per period even
+    // when a frame comes a little early.
+    readonly property int readInterval: sampleInterval - 250
     readonly property int historySeconds: config.historySeconds
-    readonly property int historyLength: Math.max(2, Math.round(historySeconds * 1000 / interval))
+    readonly property int historyLength: Math.max(2, Math.round(historySeconds * 1000 / sampleInterval))
+
+    // The readings the panel shows, as of the last update interval. A
+    // reading that appears or goes away is taken at the next sample, so the
+    // panel doesn't wait an interval to show one or keep one that has gone.
+    property var panel: ({ cpuUsage: NaN, cpuTemperature: NaN, memoryPercent: NaN, memoryUsed: NaN,
+                           networkDown: NaN, networkUp: NaN, diskRead: NaN, diskWrite: NaN })
 
     // The helper's report (see code/ringside-info.sh), {} until it answers.
     property var hardware: ({})
@@ -245,6 +263,25 @@ Item {
         networkUpHistory = History.push(networkUpHistory, networkUp, n);
         diskReadHistory = History.push(diskReadHistory, diskRead, n);
         diskWriteHistory = History.push(diskWriteHistory, diskWrite, n);
+        latch(false);
+    }
+
+    // Moves the panel to the live readings: all of them, or only those that
+    // have appeared or gone away.
+    function latch(all) {
+        const next = {};
+        let changed = false;
+        for (const key of Object.keys(panel)) {
+            const live = monitor[key];
+            next[key] = all || Number.isFinite(live) !== Number.isFinite(panel[key]) ? live : panel[key];
+            changed = changed || !Object.is(next[key], panel[key]);
+        }
+        if (changed) {
+            panel = next;
+        }
+        for (const r of readers()) {
+            r.latch(all);
+        }
     }
 
     // A new interval or span would mix samples of different ages.
@@ -261,10 +298,17 @@ Item {
     }
 
     Timer {
-        interval: monitor.interval
+        interval: monitor.sampleInterval
         running: monitor.systemShown
         repeat: true
         onTriggered: monitor.sample()
+    }
+
+    Timer {
+        interval: monitor.interval
+        running: monitor.systemShown
+        repeat: true
+        onTriggered: monitor.latch(true)
     }
 
     // The clock: steps every GPU reader (leadership, interest, sleep gates)
@@ -285,7 +329,7 @@ Item {
     }
 
     component Reader: Sensors.Sensor {
-        updateRateLimit: monitor.interval
+        updateRateLimit: monitor.readInterval
         enabled: monitor.systemShown
     }
 
@@ -351,7 +395,7 @@ Item {
         delegate: GpuReader {
             required property var modelData
             info: modelData
-            rateLimit: monitor.interval
+            rateLimit: monitor.readInterval
             timeMs: monitor.clockMs
             onRing: monitor.gpuShown
                     && [monitor.gpuChoice.outer, monitor.gpuChoice.inner].some(g => g !== null && g.id === modelData.id)

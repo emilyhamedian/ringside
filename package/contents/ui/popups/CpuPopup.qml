@@ -35,7 +35,7 @@ PopupPage {
 
     PopupHeader {
         ringValue: popup.monitor.cpuUsage
-        interval: popup.monitor.interval
+        interval: popup.monitor.sampleInterval
         title: i18nc("@title", "CPU")
         subtitle: {
             const m = popup.monitor;
@@ -78,7 +78,7 @@ PopupPage {
                 Layout.fillWidth: true
                 values: popup.monitor.cpuHistory
                 length: popup.monitor.historyLength
-                interval: popup.monitor.interval
+                interval: popup.monitor.sampleInterval
             }
         }
 

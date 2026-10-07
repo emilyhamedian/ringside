@@ -158,7 +158,7 @@ PopupPage {
 
         PopupHeader {
             ringValue: section.slot.usage
-            interval: section.monitor.interval
+            interval: section.monitor.sampleInterval
             title: section.slot.name
             subtitle: {
                 const slot = section.slot;
@@ -205,7 +205,7 @@ PopupPage {
                     Layout.fillWidth: true
                     values: section.slot.history
                     length: section.monitor.historyLength
-                    interval: section.monitor.interval
+                    interval: section.monitor.sampleInterval
                 }
             }
 
