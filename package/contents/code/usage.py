@@ -1188,11 +1188,13 @@ class Starter:
             return
         window = self.running(reading, now)
         if window:
-            ours = rec["sentAt"] is not None or (rec["state"] == "started" and rec["next"] == window["resetsAt"] + 1)
+            start = window["resetsAt"] - window.get("windowSeconds", self.period)
+            # A step again within the window it started, as after the clock
+            # stepped back, finds it started still.
+            ours = rec["sentAt"] is not None or (rec["state"] == "started" and rec["at"] == start)
             rec.update(sentAt=None, uncertain=0, failures=0)
             if ours:
-                self.set("started", window["resetsAt"] - window.get("windowSeconds", self.period),
-                         window["resetsAt"] + 1)
+                self.set("started", start, window["resetsAt"] + 1)
             else:
                 self.set("waiting", next_=window["resetsAt"] + 1)
             return
