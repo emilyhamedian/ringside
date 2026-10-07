@@ -9,6 +9,7 @@ import org.kde.ksvg as KSvg
 import "../../package/contents/ui"
 import "../../package/contents/ui/popups"
 import "../../package/contents/ui/code/style.js" as Style
+import "starterstates.js" as StarterStates
 
 // A section of Gallery.qml: Claude and Codex in the panel beside two system
 // items, then their popups in each state, the session starter's footer in
@@ -171,28 +172,17 @@ ColumnLayout {
         }
     }
 
-    // The starter's states, as [label, state, at, next, reason, error] with
-    // times in minutes from now.
-    readonly property var starterStates: [
-        ["off", "off"],
-        ["on, waiting", "waiting", null, 133],
-        ["on, waiting, another day", "waiting", null, 26 * 60],
-        ["sent, confirming", "confirming", -3, 2],
-        ["started, confirmed", "started", -3, 297],
-        ["weekly limit reached", "weekly", null, 3 * 24 * 60],
-        ["failed: not installed", "failed", null, null, "not-installed"],
-        ["failed: signed out", "failed", null, null, "signed-out"],
-        ["failed: not a subscription (Claude only)", "failed", null, null, "not-subscription"],
-        ["failed: not responding, retrying", "failed", null, 5, "not-responding"],
-        ["failed: couldn't check the limits, retrying", "failed", null, 15, "unchecked"],
-        ["failed: the message never left, retrying", "failed", null, 5, "not-sent"],
-        ["the helper failed to start one, retrying", "failed", -1, 4, "helper",
-         "The usage helper exited with code 1: RuntimeError: boom"],
-        ["the switch couldn't be turned off", "failed", null, null, "switch",
-         "The usage helper exited with code 1: PermissionError: [Errno 13] Permission denied: 'starter.json'"],
-        ["one send unconfirmed, retrying", "retrying", -3, 2],
-        ["two unconfirmed, paused", "paused", null, 302]
-    ]
+    // Each of the starter's states for Claude and for Codex, but those for
+    // one of them only.
+    readonly property var starterFooters: {
+        const footers = [];
+        StarterStates.ROWS.forEach(row => ["claude", "codex"].forEach(item => {
+            if ((row.only ?? item) === item) {
+                footers.push({ item: item, row: row });
+            }
+        }));
+        return footers;
+    }
 
     component Note: Text {
         color: Style.dim(Kirigami.Theme.textColor)
@@ -401,27 +391,19 @@ ColumnLayout {
         rowSpacing: Kirigami.Units.gridUnit
 
         Repeater {
-            model: section.starterStates.length * 2
+            model: section.starterFooters
 
             delegate: Frame {
                 id: starterFrame
 
-                required property int index
-                readonly property string item: index % 2 === 0 ? "claude" : "codex"
-                readonly property var row: section.starterStates[Math.floor(index / 2)]
+                required property var modelData
+                readonly property string item: modelData.item
                 readonly property FakeUsage fake: FakeUsage {
                     id: fake
-                    starters: ({
-                        [starterFrame.item]: {
-                            enabled: starterFrame.row[1] !== "off", state: starterFrame.row[1], reason: starterFrame.row[4] ?? null,
-                            error: starterFrame.row[5] ?? null,
-                            at: starterFrame.row[2] === null || starterFrame.row[2] === undefined ? null : fake.createdAt + starterFrame.row[2] * 60,
-                            next: starterFrame.row[3] === null || starterFrame.row[3] === undefined ? null : fake.createdAt + starterFrame.row[3] * 60
-                        }
-                    })
+                    starters: ({ [starterFrame.item]: StarterStates.starter(starterFrame.modelData.row, fake.createdAt) })
                 }
 
-                label: (item === "claude" ? "Claude" : "Codex") + " · starter " + row[0]
+                label: (item === "claude" ? "Claude" : "Codex") + " · starter " + modelData.row.label
 
                 PopupFooter {
                     width: Kirigami.Units.gridUnit * 20
