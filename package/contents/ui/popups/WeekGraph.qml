@@ -23,7 +23,7 @@ import "../code/style.js" as Style
 // floor, in the colour of that limit's level as its bar has it.
 // A poll that adds a reading draws the new stretch of line on from the old
 // end, and a run-out it brings fades in once the line has landed. A run-out
-// that goes fades out where it was, the marker for now and a first
+// that goes fades out where and as it was, the marker for now and a first
 // reading's dot fade in and out, and a week that starts over while the
 // popup is open fades out the last week's line, run-out and marker. Any
 // other change is drawn at once.
@@ -90,12 +90,11 @@ Item {
     // the pace clears, and eases along the axis when a poll moves it.
     property bool runOutShown: false
     property real runOutOpacity: 0
-    property string runOutSeries: "main"
     property real shownRunOutAt: NaN
     property string shownRunOutText: ""
-    readonly property real runOutX: Math.round(Math.max(0, Math.min(width - 1, xAt(shownRunOutAt))))
     // Its limit's level, 0 to 2, as its bar and ring show it.
-    readonly property int runOutLevel: Format.level((runOutSeries === "second" ? secondWindow : window)?.percent)
+    property int shownRunOutLevel: 0
+    readonly property real runOutX: Math.round(Math.max(0, Math.min(width - 1, xAt(shownRunOutAt))))
     // The marker for now as drawn, kept where it was as it fades out.
     property bool markerShown: stale
     property real markerShownX: markerX
@@ -159,7 +158,7 @@ Item {
             ghostRunOutX = runOutOpacity > 0
                 ? Math.round(Math.max(0, Math.min(width - 1, (shownRunOutAt - begin) / (end - begin) * width))) : -1;
             ghostRunOutText = shownRunOutText;
-            ghostRunOutLevel = runOutLevel;
+            ghostRunOutLevel = shownRunOutLevel;
             ghostMarkerX = markerShown ? markerShownX : -1;
             // The new week's own run-out and marker fade in once placed.
             fadeIn.stop();
@@ -207,13 +206,11 @@ Item {
     }
 
     // The run-out follows the pace, fading in once the line has landed, or
-    // out from where it was.
+    // out from where it was and as it was.
     function placeRunOut() {
         const out = Number.isFinite(runOutAt);
         if (out) {
-            runOutSeries = projected;
-            shownRunOutAt = runOutAt;
-            shownRunOutText = runOutText;
+            keepRunOut();
         }
         if (out !== runOutShown) {
             runOutShown = out;
@@ -227,14 +224,20 @@ Item {
         }
     }
 
+    // A limit's level moves only with its percent, which moves the run-out,
+    // so the level kept here is current for as long as the run-out shows.
+    function keepRunOut() {
+        shownRunOutAt = runOutAt;
+        shownRunOutText = runOutText;
+        shownRunOutLevel = Format.level((projected === "second" ? secondWindow : window)?.percent);
+    }
+
     Component.onCompleted: {
         seenMain = seen(window);
         seenSecond = seen(secondWindow);
         runOutShown = Number.isFinite(runOutAt);
         if (runOutShown) {
-            runOutSeries = projected;
-            shownRunOutAt = runOutAt;
-            shownRunOutText = runOutText;
+            keepRunOut();
         }
         runOutOpacity = runOutShown ? 1 : 0;
         mainDotAt = mainPoints[0] ?? Qt.point(0, 0);
@@ -546,7 +549,7 @@ Item {
         visible: graph.runOutOpacity > 0
         opacity: graph.runOutOpacity
         at: graph.runOutX
-        level: graph.runOutLevel
+        level: graph.shownRunOutLevel
         text: graph.shownRunOutText
     }
 

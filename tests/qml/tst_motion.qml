@@ -564,6 +564,25 @@ Item {
             verify(!g.timeShown, "and then its room");
         }
 
+        // An amber run-out that goes because the limit is used up fades out
+        // amber, as it was, though the limit is now red.
+        function test_runOutFadesOutInItsLevel() {
+            const at = start + 3 * day;
+            const g = make({ window: window([[start, 0], [at, 80]], 80), pollAt: at, nowMs: at * 1000 });
+            const shown = runOutOf(g);
+            compare(g.runOutOpacity, 1);
+            compare(shown.level, 1, "amber");
+            const levels = [];
+            createTemporaryObject(samplerComponent, weeks, { sample: () => { if (shown.visible) levels.push(shown.level); } });
+            g.window = window([[start, 0], [at, 80], [at + 3600, 100]], 100);
+            g.pollAt = at + 3600;
+            g.nowMs = g.pollAt * 1000;
+            verify(!Number.isFinite(g.runOutAt), "used up");
+            tryCompare(shown, "opacity", 0, 2000);
+            verify(levels.length > 3);
+            verify(levels.every(l => l === 1), "faded out amber: " + JSON.stringify(levels));
+        }
+
         // The marker for now fades in once the reading is hours old.
         function test_staleMarkerFades() {
             const g = make();
@@ -580,12 +599,13 @@ Item {
         // line, run-out and marker for now fade out together as the new
         // week's first reading fades in as a dot.
         function test_newWeekFadesTheOldOneOut() {
-            const g = make({ window: window([[start, 0], [start + 3 * day, 60]], 60), pollAt: start + 3 * day,
+            const g = make({ window: window([[start, 0], [start + 3 * day, 95]], 95), pollAt: start + 3 * day,
                              nowMs: (start + 3 * day + 3 * 3600) * 1000, runOutText: "Sat 12:00 AM" });
             compare(g.runOutOpacity, 1);
             verify(g.markerShown);
             const old = g.mainPoints.map(p => [p.x, p.y]);
-            const runOut = [g.runOutX, g.shownRunOutText, g.runOutLevel];
+            const runOut = [g.runOutX, g.shownRunOutText, runOutOf(g).level];
+            compare(runOut[2], 2, "red, as the new week's 1 % isn't");
             verify(g.runOutX > 0 && g.shownRunOutText !== "");
             const markerX = g.markerShownX;
             g.window = { resetsAt: start + 2 * week, windowSeconds: week, percent: 1, history: [[start + week + 3600, 1]] };
@@ -604,6 +624,24 @@ Item {
             tryCompare(g, "ghostOpacity", 0, 2000);
             tryCompare(dot, "opacity", 1, 1000);
             verify(!g.timeShown);
+        }
+
+        // At a new week with the model's run-out shown, the model's window
+        // may change before the week's: last week's run-out still fades out
+        // in its own level.
+        function test_newWeekKeepsTheSecondRunOutLevel() {
+            const at = start + 3 * day;
+            const g = make({ window: window([[start, 0], [at, 60]], 60), projected: "second", pollAt: at,
+                             nowMs: (at + 3 * 3600) * 1000, runOutText: "Fri 12:00 AM",
+                             secondWindow: window([[start, 0], [at, 95]], 95) });
+            compare(g.runOutOpacity, 1);
+            compare(runOutOf(g).level, 2);
+            const next = history => ({ resetsAt: start + 2 * week, windowSeconds: week, percent: 1, history: history });
+            g.secondWindow = next([[start + week + 3600, 1]]);
+            g.window = next([[start + week + 3600, 1]]);
+            compare(g.ghostOpacity, 1);
+            compare(g.ghostRunOutLevel, 2, "last week's red");
+            tryCompare(g, "ghostOpacity", 0, 2000);
         }
 
         // A reset time that jitters by a second between polls is the same
