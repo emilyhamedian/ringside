@@ -71,9 +71,11 @@ PopupPage {
     PopupHeader {
         ringShown: false
         title: i18nc("@title", "Network & Disk")
-        // The interface name goes last: when the line runs long, it's the part to lose.
-        subtitle: [popup.monitor.networkConnection, popup.monitor.networkAddress, popup.monitor.networkInterface]
-            .filter(s => s !== "").join(" · ")
+        // The connection's name on one line and its address on the next, so a
+        // long name doesn't push the address out. The interface name goes
+        // last: when the line runs long, it's the part to lose.
+        subtitle: popup.monitor.networkConnection
+        detail: [popup.monitor.networkAddress, popup.monitor.networkInterface].filter(s => s !== "").join(" · ")
 
         // The arrows in a column that follows the layout's direction, and
         // each rate's number and unit left to right beside them, as in the

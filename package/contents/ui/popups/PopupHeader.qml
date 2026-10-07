@@ -21,6 +21,9 @@ RowLayout {
     property int interval: 0
     property string title: ""
     property string subtitle: ""
+    // A second line under the subtitle, in its style, for what would be lost
+    // at the end of a long one.
+    property string detail: ""
     property string value: ""
     property string unit: ""
     // "C" or "F" for a temperature.
@@ -96,6 +99,17 @@ RowLayout {
             text: header.subtitle
             color: Style.dim(Kirigami.Theme.textColor)
             font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.88
+            elide: Text.ElideRight
+            textFormat: Text.PlainText
+            horizontalAlignment: Text.AlignLeft
+        }
+
+        Text {
+            Layout.fillWidth: true
+            visible: text !== ""
+            text: header.detail
+            color: subtitleText.color
+            font: subtitleText.font
             elide: Text.ElideRight
             textFormat: Text.PlainText
             horizontalAlignment: Text.AlignLeft

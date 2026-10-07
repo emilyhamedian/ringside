@@ -87,7 +87,8 @@ follows [Semantic Versioning](https://semver.org/).
   average shows its three numbers evenly spaced, the network header's
   rates are larger, and "Since boot" puts each arrow before its total. The
   footer's link and settings button line up with the edges of the readings
-  above them.
+  above them. The network header gives the connection's name and its
+  address a line each, so a long name no longer hides the address.
 - Each GPU in the GPU popup opens with the header the CPU and Claude popups
   use: its usage ring, its name, its kind and memory, and its temperature.
   A second GPU follows after a rule with a header of its own, and a
