@@ -49,15 +49,45 @@ Item {
     // durations are a millisecond or two rather than none.
     property real settle: Kirigami.Units.longDuration > 1
         ? Math.min(Kirigami.Units.veryLongDuration, interval > 0 ? interval / 2 : Infinity) : 0
+    // An inner ring that comes or goes, or an outer reading that comes from
+    // none or goes to none, is a change of rings rather than of readings:
+    // both arcs move at the pace of the inner track's fade until they and
+    // the track are still, as when a GPU sleeps and the ring turns to the
+    // other one.
+    property bool shifting: false
+    readonly property real arcSettle: shifting ? Math.min(Kirigami.Units.longDuration, settle) : settle
     readonly property bool hasValue: Number.isFinite(value)
+    readonly property bool still: !outerFollower.moving && !innerFollower.moving && innerShown === (innerHeld ? 1 : 0)
+
+    // Checked once the bindings have caught up with the change: the track's
+    // fade can end a frame before the inner arc starts to draw in.
+    function endShift() {
+        if (still) {
+            shifting = false;
+        }
+    }
+
+    function shift() {
+        shifting = settle > 0;
+        Qt.callLater(endShift);
+    }
+
+    onInnerChanged: shift()
+    onHasValueChanged: shift()
+    onStillChanged: {
+        if (shifting) {
+            Qt.callLater(endShift);
+        }
+    }
     default property alias centre: face.data
 
-    // The inner ring is held while it comes or until its arc has unwound,
-    // and its track is shown, 0 to 1, fading in or out as it is held or let
-    // go; its arc is drawn once the track is in. The arc is watched only
-    // when the arcs move: at Plasma's Instant speed it follows the reading
-    // at once, and these would then depend on each other in a circle.
-    readonly property bool innerHeld: inner || settle > 0 && innerFollower.shown >= 0.5
+    // The inner ring is held while it comes or until its arc has unwound out
+    // of sight, and its track is shown, 0 to 1, fading in or out as it is
+    // held or let go; its arc is drawn once the track is in. The arc is
+    // watched only when the arcs move: at Plasma's Instant speed it follows
+    // the reading at once, and these would then depend on each other in a
+    // circle.
+    readonly property bool innerHeld: inner || settle > 0 && innerArc.drawn
     property real innerShown: innerHeld ? 1 : 0
     readonly property bool innerDrawn: inner && innerShown === 1
 
@@ -69,11 +99,10 @@ Item {
     // How far the outer ring reaches from the middle.
     readonly property real reach: outer.radius + strokeWidth / 2
     // The clear width in the middle, a pixel in from the innermost ring, for
-    // a name or mark there: inside the inner ring as soon as it is held, so
-    // a name makes room as it comes, and until its track is half gone, so a
-    // name takes the room back only as it goes.
-    readonly property real centreWidth: Math.max(0, 2 * ((innerHeld || innerShown >= 0.5 ? innerRadius - innerStrokeWidth / 2
-                                                                                        : outer.radius - strokeWidth / 2) - 1))
+    // a name or mark there: inside the inner ring while it is held, so a
+    // name makes room as it comes and takes it back as the track goes.
+    readonly property real centreWidth: Math.max(0, 2 * ((innerHeld ? innerRadius - innerStrokeWidth / 2
+                                                                    : outer.radius - strokeWidth / 2) - 1))
     // The readings' colours, for the readings beside the ring.
     readonly property color outerTone: tone(Math.max(Format.level(value), minimumLevel))
     readonly property color innerTone: tone(Math.max(Format.level(innerValue), innerMinimumLevel))
@@ -133,7 +162,7 @@ Item {
     Follower {
         id: outerFollower
         target: Math.round(gauge.clamped(gauge.value))
-        settle: gauge.visible ? gauge.settle : 0
+        settle: gauge.visible ? gauge.arcSettle : 0
         precision: gauge.along(0.25, outer.radius)
         enabled: !outer.animating
     }
@@ -141,7 +170,7 @@ Item {
     Follower {
         id: innerFollower
         target: gauge.innerDrawn ? Math.round(gauge.clamped(gauge.innerValue)) : 0
-        settle: gauge.visible ? gauge.settle : 0
+        settle: gauge.visible ? gauge.arcSettle : 0
         precision: gauge.along(0.25, gauge.innerRadius)
         enabled: gauge.innerShown > 0 && !innerArc.animating
     }
