@@ -17,12 +17,11 @@ ColumnLayout {
     required property string item
     // UsageData, or FakeUsage in the tests.
     required property var usage
-    required property var weekly
     required property real nowMs
     required property Words texts
 
     readonly property var starter: usage.starter(item)
-    readonly property string status: texts.starterStatus(item, starter, weekly, nowMs)
+    readonly property string status: texts.starterStatus(item, starter, nowMs)
     // Something the user has to fix, or a send that didn't take, rather than
     // the starter holding as planned.
     readonly property bool failed: ["failed", "retrying", "paused"].includes(starter?.state)
