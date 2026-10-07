@@ -24,7 +24,8 @@ PlasmaExtras.PlasmoidHeading {
 
         Kirigami.LinkButton {
             visible: footer.systemMonitorShown
-            Layout.leftMargin: Kirigami.Units.largeSpacing
+            // On the readings' edge, as the lead is.
+            Layout.leftMargin: Math.round(Kirigami.Units.largeSpacing * 2) - footer.leftPadding
             text: i18nc("@action:button", "Open System Monitor")
             font.underline: false
             onClicked: footer.monitor.systemMonitorRequested()
@@ -48,8 +49,11 @@ PlasmaExtras.PlasmoidHeading {
         }
 
         PlasmaComponents.ToolButton {
+            id: configure
             // Level with the switch, above the status under it.
             Layout.alignment: lead.visible ? Qt.AlignTop : Qt.AlignVCenter
+            // The icon on the readings' far edge, in every popup alike.
+            Layout.rightMargin: Math.round(Kirigami.Units.largeSpacing * 2) - footer.rightPadding - configure.rightPadding
             icon.name: "configure"
             display: T.AbstractButton.IconOnly
             text: i18nc("@action:button", "Configure Ringside…")
