@@ -53,6 +53,20 @@ PopupPage {
     // Stepped by the timer below, for the countdowns and the paces.
     property real nowMs: Date.now()
 
+    // When a limit on pace to run out does, as the pace sentence and the
+    // graph give it: to ten minutes on the clock it is shown in, which in a
+    // zone such as Nepal's is not the UTC grid, since a projection to the
+    // minute claims more than it knows. Rounded up, it could land on the
+    // reset or after it, so there it rounds down, and stays at least a
+    // minute before it.
+    function runOutWhen(limit, p) {
+        const second = Math.floor(p.runOut);
+        const clock = words.zonedDate(second, popup.weekly);
+        const down = second - (clock.getMinutes() * 60 + clock.getSeconds()) % 600;
+        const nearest = p.runOut - down >= 300 ? down + 600 : down;
+        return words.weekdayTime(nearest <= limit.resetsAt - 60 ? nearest : down, popup.weekly);
+    }
+
     function paceSentence(limit, p) {
         const all = limit.id === "";
         switch (p.state) {
@@ -64,16 +78,7 @@ PopupPage {
                                : i18nc("@info a model's limit is used up, e.g. Fable limit reached", "%1 limit reached", limit.label));
         }
         case "out": {
-            // To ten minutes on the clock it is shown in, which in a zone
-            // such as Nepal's is not the UTC grid: a projection to the minute
-            // claims more than it knows. Rounded up, it could land on the
-            // reset or after it, so there it rounds down, and stays at least a
-            // minute before it.
-            const second = Math.floor(p.runOut);
-            const clock = words.zonedDate(second, popup.weekly);
-            const down = second - (clock.getMinutes() * 60 + clock.getSeconds()) % 600;
-            const nearest = p.runOut - down >= 300 ? down + 600 : down;
-            const when = words.weekdayTime(nearest <= limit.resetsAt - 60 ? nearest : down, popup.weekly);
+            const when = popup.runOutWhen(limit, p);
             // Projected from a reading hours old, while checks fail, the
             // run-out can already lie behind now: then it may have happened.
             if (p.runOut <= popup.nowMs / 1000) {
@@ -301,7 +306,7 @@ PopupPage {
         Tile {
             caption: i18nc("@title:group the current weekly window", "This week")
             graphTop: i18nc("@info a percentage", "%1%", Format.percent(100))
-            foot: popup.innerLimit !== null ? allModels : null
+            foot: popup.innerLimit !== null ? allModels : week.foot
             detail: {
                 const date = words.resetDate(popup.weekly);
                 return date ? i18nc("@title:group after THIS WEEK: when the week starts over, e.g. · resets Sun 7:00 AM EDT",
@@ -309,6 +314,7 @@ PopupPage {
             }
 
             WeekGraph {
+                id: week
                 Layout.fillWidth: true
                 window: popup.weekly
                 secondWindow: popup.innerLimit
@@ -320,6 +326,10 @@ PopupPage {
                     const e = popup.paceEvent;
                     return !e ? "" : e.index === 0 ? "main"
                          : popup.innerLimit !== null && popup.limits[e.index].id === popup.innerLimit.id ? "second" : "";
+                }
+                runOutText: {
+                    const e = popup.paceEvent;
+                    return e && e.p.state === "out" ? popup.runOutWhen(popup.limits[e.index], e.p) : "";
                 }
             }
 

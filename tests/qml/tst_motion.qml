@@ -13,7 +13,8 @@ import "../../package/contents/ui/code/history.js" as History
 // and bends when another arrives mid-move, its colour turns as it passes 75
 // and 90 %, and the number in a popup's ring counts with it; a history
 // graph draws a new sample in one frame, with no motion; a week graph's new
-// stretch draws on and its run-out, marker and old week fade; a second GPU's
+// stretch draws on, its run-out fades in after it and eases when a poll
+// moves it, and its run-out, marker and old week fade; a second GPU's
 // ring fades its track in and then draws its arc in, and goes the other way
 // round, and its popup section fades in and out. A duration of 0, as
 // Plasma's Instant animation speed gives, puts everything in place at once.
@@ -470,24 +471,59 @@ Item {
             return [p.x, p.y];
         }
 
+        // The run-out's line and time, as drawn: the graph's own, not the
+        // last week's.
+        function runOutOf(g) {
+            return g.children.find(i => i.level !== undefined && i.label !== undefined);
+        }
+
         // The new stretch draws on from the old end and lands on the new
-        // reading; the run-out it brings waits until then and fades in.
+        // reading; the run-out it brings, its line and its time, waits until
+        // then and fades in.
         function test_drawsOnThenTheRunOutFadesIn() {
             const g = make();
             const old = end(g.mainPoints);
+            const shown = runOutOf(g);
             compare(g.runOutOpacity, 0);
+            verify(!shown.visible);
             const seen = [];
-            createTemporaryObject(samplerComponent, weeks, { sample: () => seen.push([g.drawClock, g.runOutOpacity]) });
+            createTemporaryObject(samplerComponent, weeks, { sample: () => seen.push([g.drawClock, shown.opacity]) });
             poll(g);
             compare(end(g.mainDrawn), old, "from the old end");
             verify(g.drawClock < 1);
-            compare(g.projection.length, 2, "on course to run out");
+            verify(Number.isFinite(g.runOutAt), "on course to run out");
             tryVerify(() => g.drawClock === 1, 2000, "drawn on");
             compare(end(g.mainDrawn), end(g.mainPoints), "on the new reading");
-            tryCompare(g, "runOutOpacity", 1, 2000);
+            tryCompare(shown, "opacity", 1, 2000);
+            verify(shown.visible);
             verify(seen.length > 3);
             verify(seen.every(([clock, opacity]) => clock === 1 || opacity === 0), "no run-out while it draws on: " + JSON.stringify(seen));
-            compare(g.runOutEnd.x, g.projection[1].x);
+            verify(seen.some(([, opacity]) => opacity > 0 && opacity < 1), "faded in: " + JSON.stringify(seen));
+            compare(g.runOutX, Math.round(g.xAt(g.runOutAt)));
+        }
+
+        // A poll that moves the run-out eases the line along the axis to its
+        // new place, slowing as it lands, and the time follows at once.
+        function test_runOutEasesToItsNewPlace() {
+            const g = make({ window: window([[start, 0], [start + 2 * day, 50]], 50), runOutText: "Thu 12:00 AM" });
+            compare(g.runOutOpacity, 1);
+            const from = g.runOutX;
+            const xs = [];
+            createTemporaryObject(samplerComponent, weeks, { sample: () => xs.push(g.runOutX) });
+            g.window = window([[start, 0], [start + 2 * day, 50], [start + 3 * day, 60]], 60);
+            g.pollAt = start + 3 * day;
+            g.nowMs = g.pollAt * 1000;
+            g.runOutText = "Fri 12:00 AM";
+            const to = Math.round(g.xAt(g.runOutAt));
+            verify(to > from + 20, from + " to " + to);
+            tryCompare(g, "runOutX", to, 2000);
+            compare(g.runOutOpacity, 1, "shown all along");
+            compare(g.shownRunOutText, "Fri 12:00 AM");
+            const moving = xs.filter(x => x > from && x < to);
+            verify(moving.length > 2, "eased: " + JSON.stringify(xs));
+            verify(xs.every((x, i) => i === 0 || x >= xs[i - 1]), "one way: " + JSON.stringify(xs));
+            const steps = xs.map((x, i) => i === 0 ? 0 : x - xs[i - 1]).filter(step => step > 0);
+            verify(steps[0] > steps[steps.length - 1], "slowing as it lands: " + JSON.stringify(steps));
         }
 
         // A poll while the line still draws on puts the rest of that stretch
@@ -516,18 +552,23 @@ Item {
             const g = make({ window: window([[start, 0], [start + 3 * day, 60]], 60), pollAt: start + 3 * day,
                              nowMs: (start + 3 * day) * 1000 });
             compare(g.runOutOpacity, 1, "shown at once when the popup opens");
-            const at = g.shownRunOutAt;
+            const x = g.runOutX;
+            const shown = runOutOf(g);
             g.projected = "";
-            compare(g.projection.length, 0);
-            tryVerify(() => g.runOutOpacity > 0 && g.runOutOpacity < 1, 1000, "fading out");
-            compare(g.shownRunOutAt, at, "where it was");
-            tryCompare(g, "runOutOpacity", 0, 1000);
+            verify(!Number.isFinite(g.runOutAt));
+            tryVerify(() => shown.opacity > 0 && shown.opacity < 1, 1000, "fading out");
+            compare(g.runOutX, x, "where it was");
+            verify(g.timeShown, "its time with it");
+            tryCompare(shown, "opacity", 0, 1000);
+            verify(!shown.visible);
+            verify(!g.timeShown, "and then its room");
         }
 
         // The marker for now fades in once the reading is hours old.
         function test_staleMarkerFades() {
             const g = make();
-            const marker = g.children.find(i => i.width === 1 && i.radius !== undefined && i.y > 0 && i.height > 10);
+            const marker = g.children.find(i => i.width === 1 && i.radius !== undefined
+                                               && String(i.color) === String(Qt.alpha(g.color, 0.45 * g.color.a)));
             verify(marker && !marker.visible);
             g.nowMs = (start + 2 * day + 3 * 3600) * 1000;
             verify(g.stale);
@@ -540,17 +581,18 @@ Item {
         // week's first reading fades in as a dot.
         function test_newWeekFadesTheOldOneOut() {
             const g = make({ window: window([[start, 0], [start + 3 * day, 60]], 60), pollAt: start + 3 * day,
-                             nowMs: (start + 3 * day + 3 * 3600) * 1000 });
+                             nowMs: (start + 3 * day + 3 * 3600) * 1000, runOutText: "Sat 12:00 AM" });
             compare(g.runOutOpacity, 1);
             verify(g.markerShown);
             const old = g.mainPoints.map(p => [p.x, p.y]);
-            const runOut = g.projection.map(p => [p.x, p.y]);
+            const runOut = [g.runOutX, g.shownRunOutText, g.runOutLevel];
+            verify(g.runOutX > 0 && g.shownRunOutText !== "");
             const markerX = g.markerShownX;
             g.window = { resetsAt: start + 2 * week, windowSeconds: week, percent: 1, history: [[start + week + 3600, 1]] };
             g.pollAt = start + week + 3600;
             g.nowMs = g.pollAt * 1000;
             compare(g.ghostMain.map(p => [p.x, p.y]), old);
-            compare(g.ghostRunOut.map(p => [p.x, p.y]), runOut);
+            compare([g.ghostRunOutX, g.ghostRunOutText, g.ghostRunOutLevel], runOut);
             compare(g.ghostMarkerX, markerX);
             compare(g.ghostOpacity, 1);
             compare(g.runOutOpacity, 0, "the new week's own run-out starts out");
@@ -558,8 +600,10 @@ Item {
             const dot = g.children.find(i => i.shown !== undefined && i.color === g.color);
             verify(dot.shown);
             verify(dot.opacity < 1, "the new week's dot fades in");
+            verify(g.timeShown, "last week's time keeps its room while it fades");
             tryCompare(g, "ghostOpacity", 0, 2000);
             tryCompare(dot, "opacity", 1, 1000);
+            verify(!g.timeShown);
         }
 
         // A reset time that jitters by a second between polls is the same
@@ -592,7 +636,7 @@ Item {
             compare(g.drawClock, 1);
             compare(g.mainDrawn, g.mainPoints);
             compare(g.runOutOpacity, 1);
-            compare(g.runOutEnd.x, g.projection[1].x);
+            compare(g.runOutX, Math.round(g.xAt(g.runOutAt)));
             g.window = { resetsAt: start + 2 * week, windowSeconds: week, percent: 1, history: [[start + week + 3600, 1]] };
             compare(g.ghostOpacity, 0);
         }

@@ -3,7 +3,6 @@
 
 import QtQuick
 import QtTest
-import QtQuick.Shapes
 import org.kde.kirigami as Kirigami
 import "../../package/contents/ui"
 import "../../package/contents/ui/popups"
@@ -1601,7 +1600,7 @@ Item {
                 const plotBottom = top(g) + (g.plotHeight ?? g.height);
                 const written = [];
                 const look = i => {
-                    if (i.visible && typeof i.text === "string" && i.text !== "" && top(i) < plotBottom) {
+                    if (i.visible && i.font !== undefined && typeof i.text === "string" && i.text !== "" && top(i) < plotBottom) {
                         written.push(i.text);
                     }
                     i.children.forEach(look);
@@ -1637,19 +1636,33 @@ Item {
         }
 
         // The week's tile ends on its legend's baseline with a model limit,
-        // on the graph's floor without one; either sits as far from the
-        // tile's bottom as the caption's capitals from its top.
+        // without one on the run-out's time under the graph while it shows,
+        // else on the graph's floor; each sits as far from the tile's bottom
+        // as the caption's capitals from its top.
         function test_weekTilePadding_data() {
-            return [{ tag: "legend", item: "claude", legend: true }, { tag: "graph", item: "codex", legend: false }];
+            return [{ tag: "legend", item: "claude", legend: true },
+                    { tag: "graph", item: "codex", legend: false },
+                    { tag: "runOut", item: "claude", legend: false, runOut: true }];
         }
         function test_weekTilePadding(data) {
+            if (data.runOut) {
+                const usage = monitor.usage;
+                setClaude({ weekly: usage.window(60, 4 * usage.day, [[3, 0], [0, 60]]), scoped: [] });
+            }
             const popup = load(data.item);
             const tile = root.find(popup, i => i.visible && i.graphTop !== undefined);
-            compare(tile.foot !== null, data.legend);
+            const week = root.find(tile, i => i.mainPoints !== undefined);
+            compare(tile.foot !== null, data.legend || data.runOut === true);
+            if (data.runOut) {
+                verify(week.timeShown);
+                compare(tile.foot, week.runOutTime);
+            } else if (!data.legend) {
+                verify(!week.timeShown);
+            }
             const caption = root.find(tile, i => i.label !== undefined && i.detail !== undefined);
             const capTop = caption.mapToItem(tile, Qt.point(0, caption.baselineOffset)).y - tile.capHeight;
             const graph = root.find(tile, i => i.mainPoints !== undefined);
-            const foot = data.legend ? tile.height - tile.foot.mapToItem(tile, Qt.point(0, tile.foot.baselineOffset)).y
+            const foot = tile.foot ? tile.height - tile.foot.mapToItem(tile, Qt.point(0, tile.foot.baselineOffset)).y
                                      : tile.height - graph.mapToItem(tile, Qt.point(0, graph.height)).y;
             fuzzyCompare(foot, capTop, 1, "the foot's ink " + foot + " from the bottom, the capitals " + capTop + " from the top");
         }
@@ -2109,14 +2122,20 @@ Item {
             compare(popup.paceEvent.index, data.said);
             verify(sentence(rows(popup)[data.said]).visible);
             const g = graph(popup);
-            const red = String(Kirigami.Theme.negativeTextColor);
-            const ends = g.children.filter(i => i.visible && i.radius > 0 && String(i.color) === red);
             if (!data.drawn) {
-                compare(ends.length, 0, "no run-out drawn");
+                verify(!Number.isFinite(g.runOutAt));
+                compare(g.runOutOpacity, 0, "no run-out drawn");
+                verify(!g.timeShown);
                 return;
             }
-            compare(ends.length, 1, "one run-out drawn");
-            fuzzyCompare(ends[0].x + ends[0].width / 2, g.xAt(popup.paces[data.said].runOut), 1e-6);
+            compare(g.runOutOpacity, 1, "a run-out drawn");
+            const said = popup.paces[data.said];
+            compare(g.runOutX, Math.round(g.xAt(said.runOut)));
+            compare(g.runOutLevel, rows(popup)[data.said].level, "in its limit's level");
+            const when = popup.runOutWhen(popup.limits[data.said], said);
+            compare(g.runOutTime.text, when);
+            verify(g.runOutTime.visible);
+            verify(sentence(rows(popup)[data.said]).text.endsWith(" " + when), "the time the sentence gives");
         }
 
         function test_emptyHistory() {
@@ -2126,7 +2145,7 @@ Item {
             verify(g.placed);
             compare(g.mainPoints.length, 0);
             verify(!g.stale);
-            compare(g.projection.length, 0);
+            verify(!Number.isFinite(g.runOutAt));
         }
 
         function test_fullWeek() {
@@ -2580,6 +2599,7 @@ Item {
             return createTemporaryObject(graphComponent, root, {
                 window: { resetsAt: start + week, windowSeconds: week, percent: o.percent ?? NaN, history: history },
                 projected: o.projected ?? "",
+                runOutText: o.runOutText ?? "",
                 pollAt: o.at ?? NaN,
                 nowMs: (o.now ?? o.at ?? start + day) * 1000
             });
@@ -2590,10 +2610,10 @@ Item {
         }
 
         // Where a percentage lands: 100 % on the rule, 0 % half a stroke
-        // above the bottom.
+        // above the plot's bottom.
         function yOf(g, percent) {
             const top = rule(g).limitY;
-            return top + (1 - percent / 100) * (g.height - 0.75 - top);
+            return top + (1 - percent / 100) * (g.plotHeight - 0.75 - top);
         }
 
         // The graph's own Rectangles, outside the rule.
@@ -2604,7 +2624,7 @@ Item {
         function test_pointsSpanTheWindow() {
             const g = make([[start - 10, 5], [start, 0], [start + week / 2, 50], [start + week, 100], [start + week + 10, 7]]);
             compare(g.mainPoints.map(p => p.x), [0, 350, 700]);
-            fuzzyCompare(g.mainPoints[0].y, g.height - 0.75, 1e-9);
+            fuzzyCompare(g.mainPoints[0].y, g.plotHeight - 0.75, 1e-9);
             fuzzyCompare(g.mainPoints[1].y, yOf(g, 50), 1e-9);
             fuzzyCompare(g.mainPoints[2].y, rule(g).limitY, 1e-9);
             verify(rule(g).limitY >= 1.5, "room over 100 % for a line's stroke");
@@ -2628,32 +2648,65 @@ Item {
             tryVerify(() => rectangles(g).length === 0, 1000, "no floor, tick, marker or dot");
         }
 
-        // A faint floor across the whole width and a short tick at the
-        // reset, in the rule's colour.
-        function test_baselineAndResetTick() {
-            const g = make([[start, 0], [start + day, 9]], { percent: 9, at: start + day });
-            const r = rule(g);
-            const floor = rectangles(g).find(i => i.height === 1);
-            verify(floor);
-            compare(floor.x, 0);
-            compare(floor.y, g.height - 1);
-            compare(floor.width, g.width);
-            compare(String(floor.color), String(r.lineColor));
-            const tick = rectangles(g).find(i => i.width === 1 && i.height > 1);
-            verify(tick);
-            compare(tick.x, g.width - 1);
-            compare(tick.y + tick.height, g.height);
-            verify(tick.height <= Kirigami.Units.smallSpacing + 1, tick.height);
-            compare(String(tick.color), String(r.lineColor));
+        // The frame, in the rule's colour: a floor across the whole width, a
+        // short tick rising from it at each midnight on the clock the
+        // popup's times are told in, and an edge at the reset from the rule
+        // down to the floor, the lines meeting without overlapping.
+        function test_frame_data() {
+            return [{ tag: "systemTime", zoned: false }, { tag: "desktopClock", zoned: true }];
         }
 
-        // Round dots from the last point to 100 % at the run-out, ending in a
-        // dot on the rule, only for a limit on course to run out before the
-        // reset, in the red of a limit running out: a projection, not more
-        // readings.
-        function test_projectionOnlyWhenOut_data() {
+        function test_frame(data) {
+            const g = make([[start, 0], [start + day, 9]], { percent: 9, at: start + day });
+            let offset = -new Date((start + week) * 1000).getTimezoneOffset() * 60;
+            if (data.zoned) {
+                // A zone a quarter hour off the hour, unlike system time's.
+                offset = offset === 20700 ? 31500 : 20700;
+                g.window = Object.assign({}, g.window, { clockZone: { offset: offset, abbreviation: "NPT" } });
+            }
+            const r = rule(g);
+            const lines = rectangles(g).filter(i => String(i.color) === String(r.lineColor));
+            const floor = lines.find(i => i.height === 1);
+            verify(floor);
+            compare([floor.x, floor.y, floor.width], [0, g.plotHeight - 1, g.width]);
+            compare(floor.y, g.floorY);
+            const edge = lines.find(i => i.width === 1 && i.x === g.width - 1);
+            verify(edge);
+            compare(edge.y, r.ruleY + 1);
+            compare(edge.y + edge.height, floor.y);
+            const ticks = lines.filter(i => i.width === 1 && i !== edge).sort((a, b) => a.x - b.x);
+            const midnights = [];
+            for (let t = (Math.floor((start + offset) / day) + 1) * day - offset; t < start + week; t += day) {
+                midnights.push(Math.round((t - start) / week * g.width));
+            }
+            compare(midnights.length, 7);
+            compare(ticks.map(t => t.x), midnights);
+            ticks.forEach(t => {
+                compare(t.y + t.height, floor.y);
+                compare(t.height, Math.round(Kirigami.Units.smallSpacing / 2));
+            });
+        }
+
+        // The run-out as drawn: the graph's own, not the last week's.
+        function runOutOf(g) {
+            return g.children.find(i => i.level !== undefined && i.label !== undefined);
+        }
+
+        function dashes(runOut) {
+            return runOut.children.filter(i => i.radius !== undefined).sort((a, b) => a.y - b.y);
+        }
+
+        // Only for a limit on course to run out before the reset: a dashed
+        // line from the rule to the floor at the moment it runs out, and the
+        // pace sentence's time centred under the floor, inside the graph. It
+        // takes its limit's level, as the limit's bar and ring do: the text
+        // colour with the time dim below 75 %, amber from 75 and red from 90.
+        function test_runOutOnlyWhenOut_data() {
             return [
-                { tag: "out", percent: 60, at: start + 3 * day, runOut: start + 5 * day },
+                { tag: "out", percent: 60, at: start + 3 * day, runOut: start + 5 * day, level: 0 },
+                { tag: "outAmber", percent: 80, at: start + 3 * day, runOut: start + 3 * day * 100 / 80, level: 1 },
+                { tag: "outRed", percent: 95, at: start + 3 * day, runOut: start + 3 * day * 100 / 95, level: 2 },
+                { tag: "nearTheReset", percent: 97, at: start + 6.75 * day, runOut: start + 6.75 * day * 100 / 97, level: 2, atTheEnd: true },
                 { tag: "lasts", percent: 30, at: start + 3 * day },
                 { tag: "reached", percent: 100, at: start + 3 * day },
                 { tag: "tooEarlyToTell", percent: 5, at: start + 3 * 3600 },
@@ -2661,74 +2714,70 @@ Item {
             ];
         }
 
-        // The run-outs' Shape and its one path.
-        function runOutPath(g) {
-            const shape = g.children.find(i => i.data !== undefined
-                && Array.from(i.data).some(p => p.capStyle === ShapePath.RoundCap));
-            return shape ? { shape: shape, path: Array.from(shape.data).find(p => p.capStyle !== undefined) } : null;
-        }
-
-        // A run-out's end: a dot centred on 100 % where it runs out.
-        function endDot(g, end) {
-            return rectangles(g).find(i => i.radius > 0 && Math.abs(i.x + i.width / 2 - end.x) < 1e-9
-                                         && Math.abs(i.y + i.height / 2 - end.y) < 1e-9);
-        }
-
-        function test_projectionOnlyWhenOut(data) {
-            const g = make([[start, 0], [data.at, data.percent]], Object.assign({ projected: "main" }, data));
-            const dotted = runOutPath(g);
-            verify(dotted);
-            const red = String(Kirigami.Theme.negativeTextColor);
-            compare(String(dotted.path.strokeColor), red);
-            compare(dotted.path.strokeStyle, ShapePath.DashLine);
-            verify(dotted.path.dashPattern[0] < 0.1 && dotted.path.dashPattern[1] >= 2.5,
-                   "round caps on dashes this short are dots, apart: " + dotted.path.dashPattern);
+        function test_runOutOnlyWhenOut(data) {
+            const g = make([[start, 0], [data.at, data.percent]], Object.assign({ projected: "main", runOutText: "Fri 7:20 AM" }, data));
+            const r = runOutOf(g);
+            verify(r);
             if (data.runOut === undefined) {
-                compare(g.projection.length, 0);
-                verify(!dotted.shape.visible);
-                verify(!rectangles(g).some(i => i.radius > 0), "no end dot");
+                verify(!Number.isFinite(g.runOutAt));
+                compare(g.runOutOpacity, 0);
+                verify(!r.visible);
+                verify(!g.timeShown);
+                compare(g.foot, null);
+                compare(g.implicitHeight, g.plotHeight, "no room kept for a time");
                 return;
             }
-            verify(dotted.shape.visible);
-            const end = endDot(g, g.projection[1]);
-            verify(end, "a dot where it runs out");
-            compare(String(end.color), red);
-            compare(g.projection.length, 2);
-            const last = g.mainPoints[g.mainPoints.length - 1];
-            compare([g.projection[0].x, g.projection[0].y], [last.x, last.y]);
-            fuzzyCompare(g.projection[1].x, (data.runOut - start) / week * g.width, 1e-9);
-            fuzzyCompare(g.projection[1].y, rule(g).limitY, 1e-9);
+            verify(r.visible);
+            compare(g.runOutOpacity, 1);
+            const x = Math.round((data.runOut - start) / week * g.width);
+            compare(g.runOutX, x);
+            const d = dashes(r);
+            verify(d.length > 5, d.length + " dashes");
+            d.forEach(i => fuzzyCompare(i.x + i.width / 2, x + 0.5, 1e-9));
+            compare(d[0].y, rule(g).ruleY);
+            const bottom = d[d.length - 1].y + d[d.length - 1].height;
+            verify(bottom <= g.floorY && bottom > g.floorY - 3, "down to the floor: " + bottom);
+            verify(d.every((i, n) => n === 0 || i.y > d[n - 1].y + d[n - 1].height), "dashed");
+            const colour = [Kirigami.Theme.textColor, Kirigami.Theme.neutralTextColor, Kirigami.Theme.negativeTextColor][data.level];
+            compare(g.runOutLevel, data.level);
+            d.forEach(i => compare(String(i.color), String(Qt.alpha(colour, 0.6 * colour.a))));
+            const time = r.label;
+            verify(time.visible);
+            compare(time.text, "Fri 7:20 AM");
+            compare(String(time.color), String(data.level === 0 ? Style.dim(Kirigami.Theme.textColor) : colour));
+            verify(time.y >= g.floorY + 1, "under the floor");
+            if (data.atTheEnd) {
+                compare(time.x + time.implicitWidth, g.width, "kept inside the graph");
+            } else {
+                fuzzyCompare(time.x + time.implicitWidth / 2, x + 0.5, 0.5);
+            }
+            compare(g.foot, time);
+            compare(g.implicitHeight, time.y + time.implicitHeight);
         }
 
         // With both limits on course to run out, only the named one's run-out
-        // is drawn, from its own line; naming neither draws none.
+        // is drawn, in its own level; naming neither draws none.
         function test_onlyTheNamedRunOut_data() {
-            return [{ tag: "main", runOut: start + 3 * day * 100 / 60 },
-                    { tag: "second", runOut: start + 3 * day * 100 / 70 },
+            return [{ tag: "main", runOut: start + 3 * day * 100 / 60, level: 0 },
+                    { tag: "second", runOut: start + 3 * day * 100 / 80, level: 1 },
                     { tag: "none" }];
         }
 
         function test_onlyTheNamedRunOut(data) {
             const at = start + 3 * day;
             const g = make([[start, 0], [at, 60]], { percent: 60, at: at, projected: data.runOut ? data.tag : "" });
-            g.secondWindow = { resetsAt: start + week, windowSeconds: week, percent: 70, history: [[start, 0], [at, 70]] };
+            g.secondWindow = { resetsAt: start + week, windowSeconds: week, percent: 80, history: [[start, 0], [at, 80]] };
             // A run-out the model's window brings fades in.
             tryCompare(g, "runOutOpacity", data.runOut === undefined ? 0 : 1, 1000);
-            const ends = rectangles(g).filter(i => i.radius > 0);
             if (data.runOut === undefined) {
-                compare(g.projection.length, 0);
-                verify(!runOutPath(g).shape.visible);
-                compare(ends.length, 0, "no end dot");
+                verify(!Number.isFinite(g.runOutAt));
+                verify(!runOutOf(g).visible);
                 return;
             }
-            const series = data.tag === "main" ? g.mainPoints : g.secondPoints;
-            const last = series[series.length - 1];
-            compare(g.projection.length, 2);
-            compare([g.projection[0].x, g.projection[0].y], [last.x, last.y]);
-            fuzzyCompare(g.projection[1].x, (data.runOut - start) / week * g.width, 1e-9);
-            verify(runOutPath(g).shape.visible);
-            compare(ends.length, 1, "one end dot");
-            verify(endDot(g, g.projection[1]), "where the named limit runs out");
+            verify(runOutOf(g).visible);
+            compare(g.runOutSeries, data.tag);
+            compare(g.runOutX, Math.round((data.runOut - start) / week * g.width));
+            compare(g.runOutLevel, data.level);
         }
 
         function test_singleReadingIsADot() {
@@ -2739,13 +2788,13 @@ Item {
             const p = g.mainPoints[0];
             fuzzyCompare(dot.x + dot.width / 2, p.x, 1e-9);
             fuzzyCompare(dot.y + dot.height / 2, p.y, 1e-9);
-            // A week that lasts, so no run-out ends in a dot either.
+            // A week that lasts, so no run-out either.
             const line = make([[start, 0], [start + day, 10]], { percent: 10, at: start + day, projected: "second" });
             verify(!rectangles(line).some(i => i.radius > 0), "a line has no dot");
 
             // The same for the model's limit, in its dashed line's colour.
             line.secondWindow = { resetsAt: start + week, windowSeconds: week, percent: 10, history: [[start + day, 10]] };
-            compare(line.projection.length, 0);
+            verify(!Number.isFinite(line.runOutAt));
             compare(line.secondPoints.length, 1);
             tryVerify(() => rectangles(line).some(i => i.radius > 0 && i.opacity === 1), 1000, "the model's single reading is a dot");
             const second = rectangles(line).find(i => i.radius > 0);
@@ -2768,11 +2817,12 @@ Item {
             const now = data.now;
             const g = make([[start, 0], [now - data.age, 20]], { percent: 20, at: now - data.age, now: now });
             compare(g.stale, data.stale);
-            const marker = rectangles(g).find(i => i.width === 1 && i.y === rule(g).ruleY);
+            const marker = rectangles(g).find(i => i.width === 1 && String(i.color) === String(Qt.alpha(g.color, 0.45 * g.color.a)));
             compare(marker !== undefined, data.stale);
             if (data.stale) {
                 compare(marker.x, data.x(g));
-                compare(marker.y + marker.height, g.height);
+                compare(marker.y, rule(g).ruleY + 1);
+                compare(marker.y + marker.height, g.floorY);
             }
             verify(!make([], { percent: 0, at: now - data.age, now: now }).stale, "no line, nothing to mark");
         }
