@@ -117,6 +117,8 @@ Item {
     // can take minutes, and the helper holds its lock throughout) and never
     // while a switch change is being written, so a start the user just
     // turned off can't race the change. A change that lands calls this again.
+    // A switch turned off while a --start runs is the helper's to catch: it
+    // reads the switch again just before it sends.
     function startDue() {
         const busy = runner.connectedSources.some(s => s.endsWith(" --start") || s.includes(" --starter-set "));
         const now = Date.now() / 1000;
