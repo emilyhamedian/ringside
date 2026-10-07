@@ -1,0 +1,2 @@
+A tap device is an Ethernet one (type 1) known as a tunnel by its
+tun_flags. IPv6 has only an unreachable route, which ip prints with status 0.

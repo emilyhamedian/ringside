@@ -1,0 +1,2 @@
+4 wg0-mullvad 1
+6 enp5s0 0

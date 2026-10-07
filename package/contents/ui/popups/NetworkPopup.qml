@@ -1,11 +1,13 @@
 // SPDX-FileCopyrightText: 2026 Emily Hamedian <me@emily.dev>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
 import "../code/format.js" as Format
 import "../code/history.js" as History
+import "../code/publicaddress.js" as Lookup
 import ".."
 
 PopupPage {
@@ -19,6 +21,43 @@ PopupPage {
     // Legend and detail text: caption-sized, set as written.
     component Note: Caption {}
 
+    // The public address lookup (PublicAddress.qml), or null where the
+    // monitor has none, which reads as switched off.
+    readonly property var lookup: popup.monitor.publicAddress ?? null
+    readonly property string publicState: lookup ? lookup.status : "off"
+    readonly property bool compared: publicState !== "off"
+    // What AddressBlock shows, built from the lookup's shared record.
+    readonly property var publicInfo: {
+        if (!compared) {
+            return { state: "off" };
+        }
+        const hosts = lookup.service.hosts;
+        const record = lookup.record;
+        const shown = publicState === "shown"
+            ? Lookup.lines(record.result, record.egress, popup.monitor.networkInterface) : { v4: null, v6: null, leak: null };
+        const at = ms => words.timeOfDay(ms / 1000, lookup.clock());
+        const changed = shown.v4 && record.changed.v4 ? record.changed.v4 : shown.v6 && record.changed.v6 ? record.changed.v6 : null;
+        const seen = publicState === "failed" && record ? record.seen.v4 ?? record.seen.v6 : null;
+        let note = null;
+        if (shown.leak) {
+            note = { warn: true, text: shown.leak.family === "v6"
+                ? i18nc("@info %1 is a VPN's network interface", "IPv6 doesn't go through %1", shown.leak.through)
+                : i18nc("@info %1 is a VPN's network interface", "IPv4 doesn't go through %1", shown.leak.through) };
+        } else if (changed) {
+            note = { warn: false, text: i18nc("@info %1 is a time, %2 the address before", "Changed at %1, was %2",
+                                              at(changed.at), changed.was) };
+        } else if (seen) {
+            note = { warn: false, text: i18nc("@info %1 is an address, %2 a time", "Last seen %1 at %2", seen.address, at(seen.at)) };
+        }
+        return {
+            state: publicState,
+            service: hosts.length === 2 ? i18nc("@info two services' host names", "%1 and %2", hosts[0], hosts[1]) : hosts[0] ?? "",
+            v4: shown.v4,
+            v6: shown.v6,
+            note: note
+        };
+    }
+
     PopupHeader {
         ringShown: false
         title: i18nc("@title", "Network")
@@ -26,7 +65,9 @@ PopupPage {
         // long name doesn't push the address out. The interface name goes
         // last: when the line runs long, it's the part to lose.
         subtitle: popup.monitor.networkConnection
-        detail: [popup.monitor.networkAddress, popup.monitor.networkInterface].filter(s => s !== "").join(" · ")
+        // With the public address on, both addresses go under the header,
+        // where a long IPv6 address has the popup's width.
+        detail: popup.compared ? "" : [popup.monitor.networkAddress, popup.monitor.networkInterface].filter(s => s !== "").join(" · ")
 
         // The arrows in a column that follows the layout's direction, and
         // each rate's number and unit left to right beside them, as in the
@@ -89,6 +130,26 @@ PopupPage {
                     accessibleIgnored: true
                 }
             }
+        }
+    }
+
+    Loader {
+        id: addresses
+        active: popup.compared
+        visible: active
+        Layout.fillWidth: true
+        Layout.leftMargin: Math.round(Kirigami.Units.largeSpacing * 2)
+        Layout.rightMargin: Layout.leftMargin
+        Layout.bottomMargin: Kirigami.Units.smallSpacing
+
+        sourceComponent: AddressBlock {
+            // The layout sizes the loader; the block follows it.
+            width: addresses.width
+            localAddress: popup.monitor.networkAddress
+            localInterface: popup.monitor.networkInterface
+            info: popup.publicInfo
+            onAccepted: popup.lookup.answer(true)
+            onDeclined: popup.lookup.answer(false)
         }
     }
 

@@ -1,0 +1,1 @@
+export RINGSIDE_IP="$FIXTURES/egress-no-ip/missing-ip" RINGSIDE_SYSFS="$FIXTURES/egress-vpn/sys"

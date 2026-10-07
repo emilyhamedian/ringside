@@ -17,4 +17,5 @@ JSON
         done
         ;;
     route) echo eth9 ;;
+    egress) printf '4 eth9 0\n6  0\n' ;;
 esac
