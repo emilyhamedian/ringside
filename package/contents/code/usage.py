@@ -1128,7 +1128,8 @@ class Starter:
     """One provider's session starter, run when its next time comes.
 
     It reads the limits and holds while a window runs (until its reset and a
-    second) or while the weekly limit is reached (until that resets).
+    second) or while the weekly limit is reached (until that resets, or
+    as after a failed read when the reading doesn't say when).
     Otherwise it sends one word, and five minutes later reads again: a
     running window confirms the send. An unconfirmed send is tried once
     more after another five minutes; two in a row pause the starter for
@@ -1197,7 +1198,11 @@ class Starter:
             self.back_off(err.wait)
             return
         weekly = reading["weekly"]
-        if weekly["percent"] >= 100 and weekly["resetsAt"] is not None and weekly["resetsAt"] > now:
+        if weekly["percent"] >= 100 and weekly["resetsAt"] is None:
+            # Reached, with no word of when it resets: as good as unread.
+            self.back_off()
+            return
+        if weekly["percent"] >= 100 and weekly["resetsAt"] > now:
             rec.update(sentAt=None, uncertain=0, failures=0)
             self.set("weekly", next_=weekly["resetsAt"] + 1)
             return
