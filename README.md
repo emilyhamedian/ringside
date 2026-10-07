@@ -11,8 +11,9 @@ and Codex usage limits if you want them.
 
 Each item is a ring with its name inside and its readings beside it, or a
 pair of rates. Each item keeps room for its widest readings, so the panel
-stays the same width as the numbers change. Rates show three figures, such
-as 8.40 Mb/s or 353 KiB/s, and so does the memory in use, such as 9.60G.
+stays the same width as the numbers change. Across a horizontal panel,
+rates show three figures, such as 8.40 Mb/s or 353 KiB/s, and so does the
+memory in use, such as 9.60G.
 
 Click an item for its popup: history graphs, per-thread load, top
 processes, VRAM, clocks, power, swap, memory pressure and disk activity.

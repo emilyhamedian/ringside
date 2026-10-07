@@ -38,11 +38,13 @@ follows [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
-- Panel rates always show three figures, from kb/s or KiB/s up, such as
-  "8.40 Mb/s", "62.1 kb/s", or "0.00 KiB/s" when idle, and move to the next
-  unit before a fourth: 1023 KiB/s reads "1.00 MiB/s". Memory in use shows
-  three figures too, such as "9.60G", and a rate's unit sits closer to its
-  number. Tooltips and popups keep their own formats.
+- Across a horizontal panel, rates always show three figures, from kb/s or
+  KiB/s up, such as "8.40 Mb/s", "62.1 kb/s", or "0.00 KiB/s" when idle,
+  and move to the next unit before a fourth: 1023 KiB/s reads "1.00 MiB/s".
+  A rate's unit sits closer to its number. Memory in use shows three
+  figures too, such as "9.60G". Tooltips and popups keep their own formats.
+- Panel items sit further apart, twice the gap between a ring and its
+  readings, so each item's readings read as its own ring's.
 - The panel countdown shows only its largest unit: "6d", "23h" or "59m";
   the popup and the tooltip keep the full time. It turns red at 100%, where
   it says how long the limit stays reached.
@@ -60,10 +62,11 @@ follows [Semantic Versioning](https://semver.org/).
   1 Mb/s (1 MiB/s for a disk) when the peak is lower, and the disk's peaks
   move into its captions.
 - The popups' graphs take a reading every second, or at the update interval
-  when that is shorter, so a minute's graph has 60 points and catches short
-  bursts. Each new reading moves the line a step to the left at once. The
-  panel still changes once per update interval, and everything in a popup
-  follows each reading, so its numbers agree with the graph under them.
+  when that is shorter, so they catch short bursts: 60 points a minute at
+  the default interval and up. Each new reading moves the line a step to
+  the left at once. The panel still changes once per update interval, and
+  a popup's readings follow each one, so its numbers agree with the graph
+  under them.
 - Temperature sensors have plain names: chip, chiplet, hotspot and memory
   instead of Tctl, Tccd, junction and mem.
 - The Claude and Codex popup sets its countdown's units smaller than its
