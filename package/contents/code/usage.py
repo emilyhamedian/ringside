@@ -1644,9 +1644,12 @@ def main(argv=None):
                 print(err, file=sys.stderr)
         if args.start:
             for name in ids:
-                # A state that can't be written stops the starter, never the report.
-                with contextlib.suppress(Busy, OSError):
+                # A state that can't be written stops the starter, never the
+                # report; the widget shows the reason under the switch.
+                try:
                     run_starter(name)
+                except (Busy, OSError) as err:
+                    print(err, file=sys.stderr)
         sources = fetchers()
         try:
             providers = collect({name: sources[name] for name in ids})

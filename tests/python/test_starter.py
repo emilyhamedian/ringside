@@ -973,10 +973,12 @@ class StarterRuns(Isolated):
 
     def test_a_state_that_cant_be_written_stops_the_send_not_the_report(self):
         self.run_main("--starter-set", "claude=on")
-        with mock.patch.object(usage, "write_private", side_effect=OSError(28, "No space left on device")):
+        with mock.patch.object(usage, "write_private", side_effect=OSError(28, "No space left on device")), \
+                mock.patch("sys.stderr", new=io.StringIO()) as err:
             report = self.run_main("--providers", "claude", "--start")
         self.assertEqual(self.calls, [])
         self.assertIn("starter", report["providers"]["claude"])
+        self.assertEqual(err.getvalue(), "[Errno 28] No space left on device\n")
 
     def test_the_lock_is_held_from_the_read_to_the_end_of_the_send(self):
         self.run_main("--starter-set", "claude=on")
