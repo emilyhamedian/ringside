@@ -120,14 +120,22 @@ QtObject {
         return sensor && typeof sensor.value === "number" ? sensor.value : NaN;
     }
 
+    // Asleep, the GPU has no reading for the panel whatever its sensors last
+    // said, and it leaves the panel as it falls asleep, with the readout's
+    // "off", not at the next sample.
     function latch(all) {
-        if (all || Number.isFinite(usage) !== Number.isFinite(panelUsage)) {
-            panelUsage = usage;
+        const awake = phase !== "asleep";
+        const u = awake ? usage : NaN;
+        const t = awake ? temperature : NaN;
+        if (all || Number.isFinite(u) !== Number.isFinite(panelUsage)) {
+            panelUsage = u;
         }
-        if (all || Number.isFinite(temperature) !== Number.isFinite(panelTemperature)) {
-            panelTemperature = temperature;
+        if (all || Number.isFinite(t) !== Number.isFinite(panelTemperature)) {
+            panelTemperature = t;
         }
     }
+
+    onPhaseChanged: latch(false)
 
     function hold(key, value) {
         if (subscribed && Number.isFinite(value)) {
