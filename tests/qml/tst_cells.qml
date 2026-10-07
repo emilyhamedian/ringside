@@ -537,7 +537,7 @@ Item {
             }
         }
 
-        // Where its ring has the room, the Codex cloud is drawn 1.3 times a
+        // Where its ring has the room, the Codex cloud is drawn 1.15 times a
         // name's line, larger than the Claude star, and hollow: its outline,
         // filled by the nonzero rule, leaves the cloud's middle clear round
         // the prompt. Under 16 device pixels, where its line breaks up, it is
@@ -552,7 +552,7 @@ Item {
             const shape = mark(name);
             verify(name.visible);
             const metrics = createTemporaryObject(metricsComponent, root, { font: label(name).font });
-            const scaled = Math.round(metrics.height * 1.2 * 1.3);
+            const scaled = Math.round(metrics.height * 1.2 * 1.15);
             verify(scaled < Math.floor(name.room) - 2, "room for the scale: " + scaled + " in " + name.room);
             compare(name.markSize, scaled);
             // Whether the mark draws at a point in its viewBox units: the
