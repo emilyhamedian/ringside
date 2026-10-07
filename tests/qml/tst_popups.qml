@@ -1018,8 +1018,9 @@ Item {
             return text.mapToItem(popup, Qt.point(0, text.baselineOffset)).y;
         }
 
-        // The header's two columns centre on the ring each by its own height;
-        // the caption still shares the subtitle's baseline.
+        // The header's columns centre each by its own height on the tallest
+        // of the ring, the name and the reading; the caption still shares
+        // the subtitle's baseline.
         function test_headerBaselines_data() {
             return [{ tag: "cpu", popup: "CpuPopup", mirrored: false },
                     { tag: "cpuMirrored", popup: "CpuPopup", mirrored: true },
@@ -1212,6 +1213,13 @@ Item {
             // lines they need beside them.
             const cpu = headerOf(load("CpuPopup", normal));
             verify(rates.implicitHeight <= cpu.implicitHeight, "rates no taller than a header with a ring");
+            // They centre on the band the CPU header centres its ring, name
+            // and reading on, within the half pixel rounding leaves.
+            const header = headerOf(popup);
+            compare(header.bandHeight, cpu.bandHeight, "the CPU header's band");
+            const centre = rates.mapToItem(header, Qt.point(0, rates.height / 2)).y;
+            verify(Math.abs(centre - cpu.bandHeight / 2) <= 0.5,
+                   "the rates centred on the band: " + centre + " against " + cpu.bandHeight / 2);
         }
 
         // The totals since boot lead with their arrows, as the rates do.
@@ -1361,6 +1369,71 @@ Item {
             fuzzyCompare(disk.below, cpu.below, 1, "the digits against the title");
             compare(disk.edge, cpu.edge, "on the far edge");
             compare(disk.titleEdge, Math.round(Kirigami.Units.largeSpacing * 2), "the title on the near edge");
+        }
+
+        // Every header's title and digits sit as far below its top as the CPU
+        // header's do, with a ring or without, with a third line, without a
+        // reading, or with the countdown's parts, so the popups read level
+        // with each other. A third line hangs below; a header with a ring is
+        // as tall as the CPU's, which is as tall as its tallest part. Plain
+        // and mirrored.
+        function test_headersLevel_data() {
+            return [{ tag: "plain", mirrored: false }, { tag: "mirrored", mirrored: true }];
+        }
+
+        function test_headersLevel(data) {
+            const headers = (popup, monitor, item) => {
+                const loader = createTemporaryObject(data.mirrored ? mirroredHost : host, root);
+                loader.setSource(Qt.resolvedUrl("../../package/contents/ui/popups/" + popup + ".qml"),
+                                 item ? { monitor: monitor, item: item } : { monitor: monitor });
+                compare(loader.status, Loader.Ready, popup);
+                waitForRendering(loader.item);
+                return all(loader.item, i => i.visible && i.partsShown !== undefined);
+            };
+            const found = [].concat(headers("CpuPopup", normal), headers("GpuPopup", normal), headers("GpuPopup", intel),
+                                    headers("MemoryPopup", normal), headers("MemoryPopup", uncaptioned),
+                                    headers("NetworkPopup", normal), headers("DiskPopup", normal),
+                                    headers("UsagePopup", normal, "claude"), headers("UsagePopup", normal, "codex"));
+            const place = header => {
+                const title = shownText(header, header.title);
+                const digits = readings(header).find(r => r.visible && r.pointSize === Kirigami.Theme.defaultFont.pointSize * 1.7);
+                const ring = gauges(header).find(g => g.visible);
+                return { title: baselineY(title, header),
+                         digits: digits ? digits.mapToItem(header, Qt.point(0, digits.baselineOffset)).y : null,
+                         ring: ring ? ring.mapToItem(header, Qt.point(0, 0)).y : null,
+                         height: header.height,
+                         tallest: Math.max(...header.children.filter(c => c.visible).map(c => c.height)) };
+            };
+            const cpu = place(found[0]);
+            compare(found[0].title, "CPU");
+            verify(cpu.digits !== null && cpu.ring !== null);
+            compare(cpu.height, cpu.tallest, "the CPU header as tall as its tallest part");
+            const withoutDigits = [];
+            found.forEach(header => {
+                const tag = header.title + (header.detail !== "" ? " (three lines)" : "");
+                const p = place(header);
+                compare(p.title, cpu.title, tag + ": the title's baseline");
+                if (p.digits === null) {
+                    withoutDigits.push(header.title);
+                } else {
+                    compare(p.digits, cpu.digits, tag + ": the digits' baseline");
+                }
+                if (p.ring !== null) {
+                    compare(p.ring, cpu.ring, tag + ": the ring");
+                    compare(p.height, cpu.height, tag + ": the height of a header with a ring");
+                } else {
+                    const detail = shownText(header, header.detail);
+                    verify(detail, tag + ": a third line");
+                    const subtitle = shownText(header, header.subtitle);
+                    compare(detail.mapToItem(header, Qt.point(0, 0)).y, subtitle.mapToItem(header, Qt.point(0, subtitle.height)).y,
+                            tag + ": the third line under the subtitle");
+                    compare(p.height, Math.max(cpu.height, detail.mapToItem(header, Qt.point(0, detail.height)).y),
+                            tag + ": as tall as the CPU's or down to the third line");
+                }
+            });
+            compare(found.map(h => h.title), ["CPU", "AMD Radeon 780M Graphics", "AMD Radeon RX 7700S", "Intel Iris Xe Graphics",
+                                              "NVIDIA GeForce RTX 3060 Laptop GPU", "Memory", "Memory", "Network", "Disk", "Claude", "Codex"]);
+            compare(withoutDigits, ["Intel Iris Xe Graphics", "Network"]);
         }
 
         // The drive's temperature takes the level colours, judged in Celsius,
