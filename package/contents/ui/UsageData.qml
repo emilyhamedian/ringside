@@ -93,16 +93,19 @@ Item {
         }
     }
 
-    // Runs --start for the providers whose starter is due, never while one
-    // already runs: a send can take minutes, and the helper holds its lock
-    // throughout.
+    // Runs --start for the providers whose starter is due and whose switch
+    // is on as the user last set it, never while one already runs (a send
+    // can take minutes, and the helper holds its lock throughout) and never
+    // while a switch change is being written, so a start the user just
+    // turned off can't race the change. A change that lands calls this again.
     function startDue() {
+        const busy = runner.connectedSources.some(s => s.endsWith(" --start") || s.includes(" --starter-set "));
         const now = Date.now() / 1000;
         const due = ids.filter(id => {
             const s = starters[id];
-            return s && s.enabled && Number.isFinite(s.next) && s.next <= now;
+            return starterOn(id) && Number.isFinite(s?.next) && s.next <= now;
         });
-        if (due.length > 0 && !runner.connectedSources.some(s => s.endsWith(" --start"))) {
+        if (due.length > 0 && !busy) {
             runner.connectSource(helperCommand(due, " --start"));
         }
     }
@@ -281,6 +284,7 @@ Item {
             }
             if (set) {
                 usage.writeStarter();
+                usage.startDue();
             }
         }
     }
