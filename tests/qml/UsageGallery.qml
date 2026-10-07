@@ -38,8 +38,8 @@ ColumnLayout {
 
     spacing: 2 * Kirigami.Units.gridUnit
 
-    // Red three ways: Claude at 81 % only from its pace, Fable over 90 %,
-    // Codex at its limit.
+    // Claude at 81 % is amber, and runs out before its reset at this pace;
+    // Fable over 90 % and Codex at its limit are red.
     FakeMonitor {
         id: hot
         usage: FakeUsage {
@@ -119,7 +119,8 @@ ColumnLayout {
     }
 
     // Two days into the week, Claude at 25 % lasts it, while Fable at 55 %
-    // is red only because it runs out before the reset at this pace.
+    // runs out before the reset at this pace. The pace sentence says so;
+    // neither is coloured, as a colour comes from the reading alone.
     FakeMonitor {
         id: fablePace
         usage: FakeUsage {
@@ -276,12 +277,12 @@ ColumnLayout {
     }
 
     Panel {
-        label: "Claude & Codex · panel · 46 px · Claude 52 % with Fable 78 % inside (red, on pace to run out), Codex 24 %"
+        label: "Claude & Codex · panel · 46 px · Claude 52 % with Fable 78 % inside (amber), Codex 24 %"
         thickness: 46
     }
 
     Panel {
-        label: "Claude & Codex · panel · 46 px · Claude 25 %, Fable 55 % (red only from its pace)"
+        label: "Claude & Codex · panel · 46 px · Claude 25 %, Fable 55 % (on pace to run out, not coloured)"
         thickness: 46
         monitor: fablePace
         items: ["cpu", "memory", "claude"]
@@ -293,7 +294,7 @@ ColumnLayout {
     }
 
     Panel {
-        label: "Claude & Codex · panel · 46 px · Claude 81 % (red, on pace to run out) with Fable 93 % (red), Codex 100 % (red)"
+        label: "Claude & Codex · panel · 46 px · Claude 81 % (amber) with Fable 93 % (red), Codex 100 % (red)"
         thickness: 46
         monitor: hot
     }
@@ -340,7 +341,7 @@ ColumnLayout {
         spacing: 2 * Kirigami.Units.gridUnit
 
         Frame {
-            label: "Claude · 81 % (red, on pace to run out), Fable 93 % (red)"
+            label: "Claude · 81 % (amber, on pace to run out), Fable 93 % (red)"
             UsagePopup { monitor: hot; item: "claude" }
         }
 
@@ -364,7 +365,7 @@ ColumnLayout {
         spacing: 2 * Kirigami.Units.gridUnit
 
         Frame {
-            label: "Claude · 25 %, Fable 55 % (red only from its pace)"
+            label: "Claude · 25 %, Fable 55 % (on pace to run out, not coloured)"
             UsagePopup { monitor: fablePace; item: "claude" }
         }
 
@@ -449,7 +450,7 @@ ColumnLayout {
             spacing: 2 * Kirigami.Units.gridUnit
 
             Panel {
-                label: "Breeze Light · Claude & Codex · panel · 46 px · Claude 81 % (red, on pace to run out), Codex 100 % (red)"
+                label: "Breeze Light · Claude & Codex · panel · 46 px · Claude 81 % (amber), Codex 100 % (red)"
                 thickness: 46
                 monitor: hot
             }
