@@ -1018,9 +1018,10 @@ def blank_record():
     """A provider's starter state. Besides what the report shows: sentAt, the
     last send not yet confirmed; pending, a send under way, written before
     it starts so a run that dies mid-send still confirms it; uncertain,
-    unconfirmed sends in a row; failures, failed reads or sends in a row."""
+    unconfirmed sends in a row; failures, failed reads or sends in a row;
+    steppedAt, when a step last ran."""
     return {"state": "waiting", "at": None, "next": None, "reason": None,
-            "sentAt": None, "pending": None, "uncertain": 0, "failures": 0}
+            "sentAt": None, "pending": None, "uncertain": 0, "failures": 0, "steppedAt": None}
 
 
 def record_from(raw):
@@ -1029,7 +1030,7 @@ def record_from(raw):
     record = blank_record()
     if not isinstance(raw, dict):
         return record
-    for key in ("at", "next", "sentAt", "pending"):
+    for key in ("at", "next", "sentAt", "pending", "steppedAt"):
         if type(raw.get(key)) is int:
             record[key] = raw[key]
     for key in ("uncertain", "failures"):
@@ -1042,6 +1043,24 @@ def record_from(raw):
             and (state not in ("confirming", "retrying") or record["sentAt"] is not None)):
         record["state"] = state
     return record
+
+
+def unstep(record, now):
+    """Move the times the last step set back with the clock, if it has
+    stepped back since that step ran, as before NTP corrects a clock that
+    was fast: each wait is then as long from now as it was when set, and a
+    send no later than now. True when it moved them."""
+    if record["steppedAt"] is None or now >= record["steppedAt"]:
+        return False
+    shift = record["steppedAt"] - now
+    for key in ("next", "sentAt", "pending"):
+        if record[key] is not None:
+            record[key] -= shift
+    # Only these states' at is a send; a started window's comes from the provider.
+    if record["state"] in ("confirming", "retrying") and record["at"] is not None:
+        record["at"] -= shift
+    record["steppedAt"] = now
+    return True
 
 
 def read_starter_states():
@@ -1125,6 +1144,8 @@ class Starter:
 
     def step(self):
         rec, now = self.record, self.clock()
+        if unstep(rec, now):
+            self.persist()
         if rec["pending"] is not None:
             rec["sentAt"], rec["pending"] = rec["pending"], None
             self.set("confirming", rec["sentAt"], rec["sentAt"] + CONFIRM_DELAY)
@@ -1133,7 +1154,7 @@ class Starter:
         # Claim the step before reading: should it fail part-way, the
         # widget tries again in five minutes rather than every 30 seconds,
         # and a state that can't be written stops it before any read.
-        rec["next"] = now + RETRY_DELAYS[0]
+        rec.update(next=now + RETRY_DELAYS[0], steppedAt=now)
         self.persist()
         if rec["state"] == "paused":
             rec["uncertain"] = 0
@@ -1414,6 +1435,9 @@ def starter_report(name, switches, states, now):
     if name not in switches:
         return dict(STARTER_OFF)
     record = states.get(name) or blank_record()
+    # Should the clock have stepped back, the starter is due, so a --start
+    # moves its times back for good.
+    stepped = unstep(record, now)
     state, at, next_ = record["state"], record["at"], record["next"]
     if record["pending"] is not None:
         state, at, next_ = "confirming", record["pending"], record["pending"] + CONFIRM_DELAY
@@ -1424,6 +1448,8 @@ def starter_report(name, switches, states, now):
         else:
             next_ = None
     elif next_ is None:
+        next_ = now
+    if stepped:
         next_ = now
     return {"enabled": True, "state": state, "at": at, "next": next_,
             "reason": record["reason"] if state == "failed" else None}

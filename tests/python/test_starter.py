@@ -188,7 +188,7 @@ class Steps(unittest.TestCase):
         h = Harness(NOW, RuntimeError("a bug"), record=dict(usage.blank_record(), next=NOW))
         with self.assertRaises(RuntimeError):
             h.step()
-        self.assertEqual(h.events[0], ("persist", dict(usage.blank_record(), next=NOW + 300)))
+        self.assertEqual(h.events[0], ("persist", dict(usage.blank_record(), next=NOW + 300, steppedAt=NOW)))
         self.assertEqual(h.shows(), ("waiting", None, NOW + 300))
         h.step(NOW + 299)
         self.assertEqual(h.count("read"), 1)
@@ -205,7 +205,8 @@ class Steps(unittest.TestCase):
         h = Harness(NOW)
         h.step()
         sent = next(i for i, (event, _) in enumerate(h.events) if event == "send")
-        self.assertEqual(h.events[sent - 1], ("persist", dict(usage.blank_record(), pending=NOW, next=NOW + 300)))
+        self.assertEqual(h.events[sent - 1], ("persist", dict(usage.blank_record(), pending=NOW, next=NOW + 300,
+                                                             steppedAt=NOW)))
 
     def test_a_restart_mid_send_confirms_it_then_pauses_after_two(self):
         h = Harness(NOW, record=dict(usage.blank_record(), pending=NOW))
@@ -295,6 +296,42 @@ class Steps(unittest.TestCase):
         h.step(NOW + 300)
         self.assertEqual(h.shows(), ("confirming", NOW, NOW + 350))
         self.assertEqual(h.record["uncertain"], 0)
+
+    # A step while the clock ran a day fast, before NTP stepped it back:
+    # the send it made is confirmed five minutes on, not a day later.
+    def test_a_clock_stepped_back_moves_a_confirmation_back_with_it(self):
+        fast = NOW + 86400
+        h = Harness(fast)
+        h.step()
+        self.assertEqual(h.shows(), ("confirming", fast, fast + 300))
+        persisted = h.count("persist")
+        h.step(NOW + 60)
+        self.assertEqual(h.shows(), ("confirming", NOW + 60, NOW + 360))
+        self.assertEqual((h.record["sentAt"], h.record["steppedAt"], h.count("read")), (NOW + 60, NOW + 60, 1))
+        self.assertEqual((h.count("persist"), h.events[-1]), (persisted + 1, ("persist", h.record)))
+        h.reading = claude(NOW + 360, session=NOW + SESSION)
+        h.step(NOW + 360)
+        self.assertEqual(h.events[-2], ("read", NOW + 60 + usage.CONFIRM_SLACK))
+        self.assertEqual(h.shows(), ("started", NOW, NOW + SESSION + 1))
+        self.assertEqual(h.count("send"), 1)
+
+    # Each wait keeps its length from the moment the clock went back, so a
+    # pause still lasts and a Retry-After is still kept.
+    def test_a_clock_stepped_back_keeps_each_wait_as_long_as_it_was(self):
+        fast = NOW + 86400
+        for record, reading, wait in (
+                (dict(usage.blank_record(), uncertain=1, state="confirming", at=fast - 300, sentAt=fast - 300),
+                 claude(fast), usage.PAUSE),
+                (None, usage.Unreadable(4000), 4000), (None, usage.Unreadable(), 300)):
+            with self.subTest(wait=wait):
+                h = Harness(fast, reading, record=record)
+                h.step()
+                self.assertEqual(h.record["next"], fast + wait)
+                reads = h.count("read")
+                h.step(NOW)
+                self.assertEqual((h.record["next"], h.count("read"), h.count("send")), (NOW + wait, reads, 0))
+                h.step(NOW + wait - 1)
+                self.assertEqual(h.count("read"), reads)
 
     # Owner decision: no guard for extra usage or credits; users on them
     # switch the starter off. The reading the starter sees has no such field.
@@ -880,6 +917,25 @@ class Report(Isolated):
                 self.assertEqual(self.report(name, record),
                                  {"enabled": True, "state": state, "at": at, "next": next_, "reason": reason})
         self.assertEqual(self.report("claude", dict(blank, state="paused"), switches=()), OFF)
+
+    # The widget runs --start only once next comes, so a clock stepped back
+    # since the last step makes the starter due, and that run moves its
+    # times back for good.
+    def test_a_clock_stepped_back_makes_the_starter_due(self):
+        fast = NOW + 86400
+        blank = usage.blank_record()
+        for record, at in ((dict(blank, state="confirming", at=fast, next=fast + 300, sentAt=fast, steppedAt=fast),
+                            NOW),
+                           (dict(blank, pending=fast, next=fast + 300, steppedAt=fast), NOW),
+                           (dict(blank, state="paused", next=fast + 5 * HOUR, steppedAt=fast), None),
+                           (dict(blank, state="started", at=NOW - HOUR, next=NOW + 4 * HOUR + 1, steppedAt=fast),
+                            NOW - HOUR)):
+            with self.subTest(record=record):
+                reported = self.report("claude", record)
+                self.assertEqual((reported["state"], reported["at"], reported["next"]),
+                                 (record["state"] if not record["pending"] else "confirming", at, NOW))
+                self.assertEqual(self.report("claude", dict(record, steppedAt=NOW))["next"],
+                                 record["next"] if not record["pending"] else record["pending"] + 300)
 
     def test_malformed_records_read_as_blank_parts(self):
         blank = usage.blank_record()
