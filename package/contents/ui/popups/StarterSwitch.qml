@@ -61,10 +61,12 @@ ColumnLayout {
         Layout.leftMargin: toggle.leftPadding + toggle.indicator.width + toggle.spacing
         Layout.bottomMargin: Math.round(Kirigami.Units.smallSpacing / 2)
         // Always two lines' room, so the popup keeps its height while it is
-        // open and the state changes under it. A longer status elides here
-        // and is read in full from the switch's description. The room is
-        // measured on two laid-out lines, not the font's metrics: Qt 6.6
-        // rounds each line up, and drops a line that doesn't fit.
+        // open and the state changes under it. A longer status, such as one
+        // with the helper's error, elides here and reads in full from a
+        // tool tip, or from the switch's description in a screen reader.
+        // The room is measured on two laid-out lines, not the font's
+        // metrics: Qt 6.6 rounds each line up, and drops a line that
+        // doesn't fit.
         Layout.preferredHeight: twoLines.implicitHeight
         maximumLineCount: 2
         elide: Text.ElideRight
@@ -84,6 +86,16 @@ ColumnLayout {
             text: " \n "
             font: statusText.font
             textFormat: Text.PlainText
+        }
+
+        HoverHandler {
+            id: statusHover
+        }
+
+        PlasmaComponents.ToolTip {
+            text: row.status
+            visible: statusText.truncated && (statusHover.hovered || toggle.hovered || toggle.visualFocus)
+            delay: Kirigami.Units.toolTipDelay
         }
     }
 }

@@ -1876,6 +1876,42 @@ Item {
             verify(lines.has(1) && lines.has(2), "statuses of one line and of two: " + Array.from(lines));
         }
 
+        // A status too long for its two lines, such as one with a long
+        // error, reads in full from a tool tip while the pointer is on the
+        // status or the switch, or the switch has keyboard focus.
+        function test_starterLongStatusHasAToolTip() {
+            const popup = load("claude");
+            const toggle = starterSwitch(popup);
+            const status = starterStatus(popup);
+            const tip = status.resources.find(r => r.delay !== undefined && r.text !== undefined);
+            verify(tip);
+            setStarter("claude", { enabled: true, state: "failed", reason: "not-installed" });
+            waitForRendering(popup);
+            verify(!status.truncated);
+            mouseMove(status, 2, 2);
+            wait(tip.delay + 200);
+            verify(!tip.visible, "a status that fits needs none");
+
+            const error = "The usage helper exited with code 1: PermissionError: [Errno 13] Permission denied: "
+                        + "'/home/someone/.local/state/ringside/.starter.kvt5gezx.tmp'";
+            setStarter("claude", { enabled: true, state: "failed", reason: "switch", error: error });
+            waitForRendering(popup);
+            verify(status.truncated);
+            const full = toggle.parent.texts.starterStatus("claude", monitor.usage.starter("claude"), popup.nowMs);
+            verify(full.endsWith(error));
+            mouseMove(status, 3, 3);
+            tryVerify(() => tip.visible, 5000);
+            compare(tip.text, full);
+            mouseMove(popup, 1, 1);
+            tryVerify(() => !tip.visible, 5000);
+            mouseMove(toggle, toggle.width / 2, toggle.height / 2);
+            tryVerify(() => tip.visible, 5000);
+            mouseMove(popup, 1, 1);
+            tryVerify(() => !tip.visible, 5000);
+            toggle.forceActiveFocus(Qt.TabFocusReason);
+            tryVerify(() => tip.visible, 5000);
+        }
+
         function test_starterMirrors() {
             const popup = load("claude", true);
             const toggle = starterSwitch(popup);
