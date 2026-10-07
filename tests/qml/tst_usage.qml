@@ -1635,6 +1635,17 @@ Item {
             }
         }
 
+        // A week the helper gives no reset time draws no rule, so its
+        // caption line names no scale.
+        function test_noScaleWithoutAReset() {
+            setClaude({ weekly: Object.assign(monitor.usage.window(0, 6 * monitor.usage.day, []), { resetsAt: null }) });
+            const popup = load("claude");
+            const tile = root.find(popup, i => i.visible && i.graphTop !== undefined);
+            verify(!graph(popup).placed);
+            compare(tile.graphTop, "");
+            verify(!root.find(tile, i => i.visible && i.text === root.localized("100%")), "no 100% on the caption line");
+        }
+
         // The week's tile ends on its legend's baseline with a model limit,
         // without one on the run-out's time under the graph while it shows,
         // else on the graph's floor; each sits as far from the tile's bottom
