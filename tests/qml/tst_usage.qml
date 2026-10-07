@@ -496,7 +496,8 @@ Item {
 
         // A --start that fails leaves the readings alone and says so only in
         // the starter's status. It runs again five minutes later, then ten,
-        // not on every tick, and a report that moves the starter on ends it.
+        // twenty and so on up to five hours, not on every tick, and a report
+        // that moves the starter on ends it.
         function test_failedStartBacksOff() {
             start("starter-start-fails");
             const run = commands();
@@ -515,10 +516,20 @@ Item {
             starterTick().triggered();
             compare(ran(run, " --start").length, 1, "not before the retry");
 
-            usage.startFailures = { claude: Object.assign({}, usage.startFailures.claude, { retryAt: Date.now() / 1000 - 1 }) };
-            starterTick().triggered();
-            compare(ran(run, " --start").length, 2, "the retry is due");
-            tryVerify(() => usage.starter("claude").next - usage.starter("claude").at === 600, 10000);
+            const retry = count => {
+                const before = count ?? usage.startFailures.claude.count;
+                usage.startFailures = { claude: Object.assign({}, usage.startFailures.claude,
+                                                              { retryAt: Date.now() / 1000 - 1, count: before }) };
+                const runs = ran(run, " --start").length;
+                starterTick().triggered();
+                compare(ran(run, " --start").length, runs + 1, "the retry is due");
+                tryVerify(() => usage.startFailures.claude.count === before + 1, 10000);
+                return usage.starter("claude").next - usage.starter("claude").at;
+            };
+            compare(retry(), 600);
+            compare(retry(), 1200);
+            compare(retry(6), 5 * 3600);
+            compare(retry(), 5 * 3600);
 
             poll("starter");
             compare(usage.starter("claude").state, "waiting");
