@@ -151,7 +151,8 @@ class Steps(unittest.TestCase):
         self.assertEqual(h.count("send"), 1)
 
     # A reached limit that doesn't say when it resets sends nothing; it is
-    # read again as after a failed read.
+    # read again as after a failed read, and says so rather than promising
+    # a start at the retry.
     def test_a_weekly_limit_without_a_reset_holds_like_a_failed_read(self):
         for provider, reading in (("claude", dict(claude(NOW), weekly=week(100, None))),
                                   ("codex", codex(NOW, 100, None))):
@@ -159,9 +160,10 @@ class Steps(unittest.TestCase):
                 h = Harness(NOW, reading, provider=provider)
                 h.step()
                 self.assertEqual(h.count("send"), 0)
-                self.assertEqual(h.shows(), ("waiting", None, NOW + 300))
+                self.assertEqual(h.shows(), ("failed", None, NOW + 300))
+                self.assertEqual(h.record["reason"], "unchecked")
                 h.step(NOW + 300)
-                self.assertEqual(h.shows(), ("waiting", None, NOW + 300 + 900))
+                self.assertEqual(h.shows(), ("failed", None, NOW + 300 + 900))
                 self.assertEqual(h.count("send"), 0)
 
     # A cached reading from before the weekly reset still says 100%; the
@@ -206,7 +208,8 @@ class Steps(unittest.TestCase):
         h = Harness(now, usage.Unreadable())
         for delay in (300, 900, 3600, 3600):
             h.step(now)
-            self.assertEqual(h.shows(), ("waiting", None, now + delay))
+            self.assertEqual(h.shows(), ("failed", None, now + delay))
+            self.assertEqual(h.record["reason"], "unchecked")
             now += delay
         h.reading = usage.Unreadable(4000)
         h.step(now)
@@ -293,12 +296,13 @@ class Steps(unittest.TestCase):
             self.assertEqual(h.count("send"), attempt + 1)
             self.assertIsNone(h.record["pending"])
             self.assertEqual(h.record["uncertain"], 0)
-            self.assertEqual(h.shows(), ("waiting", None, now + delay))
+            self.assertEqual(h.shows(), ("failed", None, now + delay))
+            self.assertEqual(h.record["reason"], "not-sent")
             now += delay
         h.outcome = None
         h.step(now)
         self.assertEqual(h.shows(), ("confirming", now, now + 300))
-        self.assertEqual(h.record["failures"], 0)
+        self.assertEqual((h.record["failures"], h.record["reason"]), (0, None))
 
     # A CLI that doesn't answer its check shows as failed, backing off as a
     # send that never left does, and a retry it held up still counts.
@@ -1103,6 +1107,10 @@ class Report(Isolated):
              ("failed", None, NOW + 300, "not-subscription")),
             ("claude", dict(blank, state="failed", next=NOW + 900, reason="not-responding", failures=2),
              ("failed", None, NOW + 900, "not-responding")),
+            ("claude", dict(blank, state="failed", next=NOW + 900, reason="unchecked", failures=2),
+             ("failed", None, NOW + 900, "unchecked")),
+            ("codex", dict(blank, state="failed", next=NOW + 300, reason="not-sent", failures=1),
+             ("failed", None, NOW + 300, "not-sent")),
             ("claude", dict(blank, state="retrying", at=NOW - 300, next=NOW + 300, sentAt=NOW - 300),
              ("retrying", NOW - 300, NOW + 300, None)),
             ("claude", dict(blank, state="paused", next=NOW + 5 * HOUR), ("paused", None, NOW + 5 * HOUR, None)),

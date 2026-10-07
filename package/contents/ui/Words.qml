@@ -295,7 +295,12 @@ QtObject {
                     : onDay(s.next, i18nc("@info %1 is a time today", "Can't start a week: Codex isn't responding. Trying again at %1.", time(s.next)),
                             i18nc("@info %1 is a weekday, %2 a time", "Can't start a week: Codex isn't responding. Trying again %1 %2.", day(s.next), time(s.next)));
             }
-            if (s.reason === "helper") {
+            if (s.reason === "unchecked") {
+                return onDay(s.next, i18nc("@info %1 is a time today", "Couldn't check the limits. Trying again at %1.", time(s.next)),
+                             i18nc("@info %1 is a weekday, %2 a time", "Couldn't check the limits. Trying again %1 %2.", day(s.next), time(s.next)));
+            }
+            // A send that never left, or a --start that didn't run.
+            if (s.reason === "not-sent" || s.reason === "helper") {
                 const retry = claude
                     ? onDay(s.next, i18nc("@info %1 is a time today", "Couldn't start a session. Trying again at %1.", time(s.next)),
                             i18nc("@info %1 is a weekday, %2 a time", "Couldn't start a session. Trying again %1 %2.", day(s.next), time(s.next)))
