@@ -2199,7 +2199,7 @@ Item {
         // The session starter's status for each state, Claude and Codex, with
         // a time today and on another day. Times are on the clock the helper
         // gives the starter, New York's here: it is Tuesday 6 October 2026,
-        // 10 PM there.
+        // 10 PM there. Day -1 is 29 September.
         function test_starterStatus_data() {
             const T = (h, m) => ({ day: 6, h: h, m: m });
             const W = (h, m) => ({ day: 7, h: h, m: m });
@@ -2217,6 +2217,8 @@ Item {
                 // Claude's reset comes a second early; it reads to the minute.
                 ["weekly", { state: "weekly", next: F(20, 33), early: 1 },
                  ["Weekly limit reached. The next session starts %1, when the limit resets.", F(20, 33)]],
+                ["weeklyNextWeek", { state: "weekly", next: { day: 12, h: 23, m: 0 } },
+                 ["Weekly limit reached. The next session starts %1, when the limit resets.", { day: 12, h: 23, m: 0 }]],
                 ["notInstalled", { state: "failed", reason: "not-installed" }, ["Can't start a session: Claude Code isn't installed."]],
                 ["signedOut", { state: "failed", reason: "signed-out" },
                  ["Can't start a session: Claude Code is signed out. Run claude in a terminal to sign in."]],
@@ -2246,6 +2248,10 @@ Item {
             ]).concat(rows("codex", [
                 ["off", off, ["When a week ends, Ringside sends Codex a one-word message to start the next one."]],
                 ["waiting", { state: "waiting", next: { day: 12, h: 3, m: 33 } }, ["The next week starts %1.", { day: 12, h: 3, m: 33 }]],
+                // Six days or more away, the weekday comes with the date, as
+                // it could be today's.
+                ["waitingNextWeek", { state: "waiting", next: { day: 13, h: 3, m: 33 } }, ["The next week starts %1.", { day: 13, h: 3, m: 33 }]],
+                ["startedLastWeek", { state: "started", at: { day: -1, h: 23, m: 30 } }, ["Started this week %1.", { day: -1, h: 23, m: 30 }]],
                 ["waitingToday", { state: "waiting", next: T(23, 40) }, ["The next week starts at %1.", T(23, 40)]],
                 ["confirming", { state: "confirming", at: T(23, 30), next: T(23, 35) },
                  ["Started a week at %1. Confirming at %2.", T(23, 30), T(23, 35)]],
@@ -2286,11 +2292,15 @@ Item {
                               at: data.starter.at ? epoch(data.starter.at) : null,
                               next: data.starter.next ? epoch(data.starter.next) - (data.starter.early ?? 0) : null };
             // The expected time as the locale writes it: its time, after its
-            // short day name on another day.
+            // short day name on another day, and that after its short date
+            // six days or more away.
             const spelled = t => {
                 const date = new Date(2026, 9, t.day, t.h, t.m);
                 const time = words.shortTime(date);
-                return t.day === 6 ? time : Qt.locale().dayName(date.getDay(), Locale.ShortFormat) + " " + time;
+                const day = Qt.locale().dayName(date.getDay(), Locale.ShortFormat);
+                return t.day === 6 ? time
+                     : Math.abs(epoch(t) - now) < 6 * 86400 ? day + " " + time
+                     : day + " " + date.toLocaleDateString(Qt.locale(), Locale.ShortFormat) + " " + time;
             };
             const [text, ...times] = data.expected;
             compare(words.starterStatus(data.item, starter, now * 1000), root.substitute(text, times.map(spelled)));
