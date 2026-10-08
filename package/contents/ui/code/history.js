@@ -58,18 +58,29 @@ function runs(samples, points) {
     return out;
 }
 
-// A temperature graph's scale, { low, high }, in the samples' unit. The top
-// is the hot threshold, so the line's height says how near hot it runs, or
-// a round five over the peak when the line runs hotter, so it is never cut
-// off. The floor is a round ten at least `margin` under the coolest reading
-// rather than zero: from zero a steady 45 °C would sit halfway up, where a
-// change of a degree or two hardly shows. Round ends keep the scale, and the
-// caption naming it, still while the readings wander.
-function temperatureScale(samples, hot, margin) {
-    const readings = samples.filter(v => Number.isFinite(v));
-    const coolest = readings.reduce((a, b) => Math.min(a, b), hot);
-    const peak = readings.reduce((a, b) => Math.max(a, b), -Infinity);
-    return { low: Math.floor((coolest - margin) / 10) * 10, high: peak > hot ? Math.ceil(peak / 5) * 5 : hot };
+// A temperature graph's floor: a round ten at least `margin` under the
+// coolest reading rather than zero, since from zero a steady 45 °C would sit
+// halfway up, where a change of a degree or two hardly shows. Given the
+// floor it had, it keeps it while the coolest reading stays at least
+// `margin` over it and under ten and two margins over it, so a reading that
+// dips across a round number moves the line once rather than again as it
+// leaves the graph's span. NaN with no reading.
+function temperatureFloor(samples, margin, previous) {
+    const coolest = samples.reduce((a, v) => Number.isFinite(v) ? Math.min(a, v) : a, Infinity);
+    if (coolest === Infinity) {
+        return NaN;
+    }
+    if (coolest >= previous + margin && coolest < previous + 10 + 2 * margin) {
+        return previous;
+    }
+    return Math.floor((coolest - margin) / 10) * 10;
+}
+
+// A temperature graph's top: the hot threshold, so the line's height says
+// how near hot it runs, or the peak when the line runs hotter, as a rate
+// graph's top is its peak. With no threshold, -Infinity, it is the peak.
+function temperatureTop(samples, hot) {
+    return samples.reduce((a, v) => Number.isFinite(v) ? Math.max(a, v) : a, hot);
 }
 
 // A temperature line cut where it crosses the warm and hot thresholds, so

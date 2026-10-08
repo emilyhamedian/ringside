@@ -228,10 +228,12 @@ Rectangle {
         highlightTemperatures: false
     }
 
-    // The discrete GPU alone, awake for the last 35 s, in °F.
+    // The discrete GPU alone, awake for the last 35 s, in °F. Asleep it had
+    // no temperature and, as Monitor records it, no usage.
     FakeMonitor {
         id: woken
         fahrenheit: true
+        gpuOuter.history: Array.from({ length: woken.historyLength }, (_, i) => i < 25 ? 0 : 12 + 3 * Math.sin(i))
         gpuOuter.temperatureHistory: Array.from({ length: woken.historyLength }, (_, i) =>
             i < 25 ? NaN : 48 - 6 * Math.exp(-(i - 25) / 6))
         gpuInner.present: false
