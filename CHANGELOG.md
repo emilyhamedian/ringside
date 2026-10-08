@@ -84,6 +84,10 @@ follows [Semantic Versioning](https://semver.org/).
   The motion follows Plasma's animation
   speed, and with animations set to Instant readings change at once, as
   before.
+- A logo: the gauge ring over the name, at the top of the README and as the
+  widget's icon in Add Widgets and the panel. The About page shows it from
+  Plasma 6.7; earlier Plasma shows nothing there. `scripts/logo.py` draws
+  the files.
 
 ### Changed
 

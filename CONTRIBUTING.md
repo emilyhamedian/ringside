@@ -7,6 +7,7 @@ sh scripts/test.sh        # qmllint, the QML tests, the helpers' tests, shellche
 sh scripts/test-floor.sh  # the tests and the gallery on Plasma 6.0, which CI runs on Fedora 40
 sh scripts/gallery.sh     # renders every view to /tmp/ringside-gallery.png
 sh scripts/pictures.sh    # renders the README's pictures in docs/ from sample readings
+python3 scripts/logo.py   # draws the logo in docs/ and the widget's icon; needs fontTools, Nunito and rsvg-convert
 ```
 
 Apart from `scripts/test-floor.sh`, they need a Plasma 6.5 or later desktop
