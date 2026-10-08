@@ -207,6 +207,11 @@ memory. Each request is an HTTPS GET whose User-Agent names Ringside and its
 version, and it sends no languages; the service sees your address, as any
 website does.
 
+To see a city too, choose *am.i.mullvad.net* as the service: Mullvad's
+connection check, which answers with the address and the place it puts it.
+Mullvad says the check keeps no logs, and publishes no terms for this kind of
+use.
+
 To use another service, choose *Custom* as the service and give its https
 addresses for IPv4 and IPv6. Only that service is asked; leave one empty to
 skip that family. The service has to answer from its own host, with the
@@ -214,7 +219,8 @@ address alone as plain text or with JSON whose `ip` is the address: an answer
 redirected to another host or to http is ignored. A JSON answer may name a
 `city` and `country` too, as a self-hosted
 [echoip](https://github.com/mpolden/echoip) does at `/json`, and the popup
-then shows the place under the address. It is approximate, often the
+then shows the place under the address. A place, from Mullvad or your own
+service, is approximate, often the
 internet provider's nearest hub city rather than yours; through a VPN it
 tells you which exit you are on.
 

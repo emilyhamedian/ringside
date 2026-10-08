@@ -46,7 +46,7 @@
       <default>false</default>
     </entry>
     <entry name="publicAddressUrl4" type="String">
-      <label>An https URL that answers with the IPv4 address, alone or as JSON with ip, city and country; with this or the IPv6 one set, only these are asked</label>
+      <label>An https URL that answers with the IPv4 address, alone or as JSON with ip, city and country; with this or the IPv6 one set, only these are asked; Mullvad's pair is the am.i.mullvad.net choice</label>
       <default></default>
     </entry>
     <entry name="publicAddressUrl6" type="String">

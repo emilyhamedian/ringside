@@ -50,12 +50,14 @@ Mainly the two helpers Ringside runs:
   isn't running, which clears every widget's steps.
 - The public address in the network popup, off until you turn it on
   under General, sends one HTTPS GET per address family to `api.ipify.org`
-  and `api6.ipify.org`, or only to the URLs you set instead. A request goes
+  and `api6.ipify.org`, to `ipv4.am.i.mullvad.net` and
+  `ipv6.am.i.mullvad.net` when you choose Mullvad, or only to the URLs you
+  set instead. A request goes
   out when that popup opens, unless any Ringside widget asked in the last
   minute, and when the route changes while it stays open, never sooner than
   a minute after the last; *Try again* after a failed check asks at once;
   never while the popup is closed or there is no connection, and never to
-  ipify.org when a URL of your own is set or invalid. It carries the
+  ipify.org when Mullvad or a URL of your own is chosen, valid or not. It carries the
   User-Agent `ringside/<version>` and `Accept-Language: *`, not your
   languages. The service sees your address, as any website does. Answers
   stay in memory. Qt keeps any cookie the
@@ -63,8 +65,9 @@ Mainly the two helpers Ringside runs:
   Qt follows a redirect, to another host or to plain http alike, with the
   same headers; Ringside then ignores any answer that didn't
   come over HTTPS from the host it asked. Of a reply it reads only the
-  address, or from a Custom service's JSON reply only `ip`, `city` and
-  `country`, and shows nothing else of it. A reply over 16 KB is ignored
+  address, or from Mullvad's or a Custom service's JSON reply only `ip`,
+  `city` and `country`, and shows nothing else of it. Mullvad says its
+  check keeps no logs; it publishes no terms for this kind of use. A reply over 16 KB is ignored
   too, but Qt has no way to stop reading it, so a service that never stops
   sending keeps doing so until Plasma restarts.
 - The Claude item sends your Claude Code login only to Anthropic

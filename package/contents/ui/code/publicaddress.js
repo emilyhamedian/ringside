@@ -11,6 +11,9 @@
 // Nothing here is ever written to disk or to the configuration.
 
 const IPIFY = { name: "ipify.org", v4: "https://api.ipify.org", v6: "https://api6.ipify.org" };
+// Mullvad's connection check, offered beside ipify.org because it also
+// names a city. Each family has a host of its own, and it answers in JSON.
+const MULLVAD = { name: "am.i.mullvad.net", v4: "https://ipv4.am.i.mullvad.net/json", v6: "https://ipv6.am.i.mullvad.net/json" };
 
 const FAMILIES = ["v4", "v6"];
 
@@ -118,14 +121,15 @@ function placeName(value) {
 }
 
 // A service's reply for one family as { address, city, country }, with ""
-// for what it lacks. The reply is the address alone or, from a Custom
-// service only, a JSON object whose "ip" is the address and whose "city"
+// for what it lacks. The reply is the address alone or, from a service
+// that may answer in JSON (Mullvad or Custom, not ipify.org), a JSON
+// object whose "ip" is the address and whose "city"
 // and "country", where it has them, say where the service places it;
 // nothing else in it is read. A country without a city says too little to
 // show, so it goes too.
-function reply(body, family, custom) {
+function reply(body, family, json) {
     const text = typeof body === "string" && body.length <= REPLY_LIMIT ? body.trim() : "";
-    if (custom !== true || text.charAt(0) !== "{") {
+    if (json !== true || text.charAt(0) !== "{") {
         return { address: address(text, family), city: "", country: "" };
     }
     let data = {};
@@ -165,21 +169,29 @@ function host(url) {
     return parts[1].toLowerCase();
 }
 
-// The service the settings name. With both custom URLs empty, ipify.org.
-// With either set, only those: an empty one leaves its family unchecked,
-// and an invalid one makes the whole service invalid, so nothing is asked
-// rather than falling back to ipify.org. `hosts` names the service by the
-// hosts of the URLs that are valid; `key` tells services apart in the
-// shared record.
+// The service the settings name. With both custom URLs empty, ipify.org;
+// with Mullvad's pair, Mullvad. With other URLs, only those: an empty one
+// leaves its family unchecked, and an invalid one makes the whole service
+// invalid, so nothing is asked rather than falling back to ipify.org.
+// `preset` names a listed service, `json` says whether its replies may be
+// JSON, `hosts` names the service by the hosts of the URLs that are valid,
+// and `key` tells services apart in the shared record.
 function service(url4, url6) {
     const urls = { v4: String(url4 || "").trim(), v6: String(url6 || "").trim() };
     if (urls.v4 === "" && urls.v6 === "") {
-        return { custom: false, valid: true, v4: IPIFY.v4, v6: IPIFY.v6, hosts: [IPIFY.name], key: "ipify" };
+        return { custom: false, preset: "ipify", json: false, valid: true, v4: IPIFY.v4, v6: IPIFY.v6,
+                 hosts: [IPIFY.name], key: "ipify" };
+    }
+    if (urls.v4 === MULLVAD.v4 && urls.v6 === MULLVAD.v6) {
+        return { custom: false, preset: "mullvad", json: true, valid: true, v4: MULLVAD.v4, v6: MULLVAD.v6,
+                 hosts: [MULLVAD.name], key: "mullvad" };
     }
     const hosts = FAMILIES.map(f => urls[f] === "" ? "" : host(urls[f]));
     const valid = FAMILIES.every((f, i) => urls[f] === "" || hosts[i] !== "");
     return {
         custom: true,
+        preset: "",
+        json: true,
         valid: valid,
         v4: valid ? urls.v4 : "",
         v6: valid ? urls.v6 : "",

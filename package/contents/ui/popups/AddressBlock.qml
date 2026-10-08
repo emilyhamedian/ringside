@@ -42,6 +42,11 @@ GridLayout {
             return [i18nc("@info %1 is a place, such as Amsterdam, Netherlands", "IPv4 near %1", p4),
                     i18nc("@info %1 is a place, such as Amsterdam, Netherlands", "IPv6 near %1", p6)];
         }
+        // With both addresses shown, a place only one of them has says which.
+        if (lines.length === 2 && (p4 === "") !== (p6 === "")) {
+            return [p4 !== "" ? i18nc("@info %1 is a place, such as Amsterdam, Netherlands", "IPv4 near %1", p4)
+                              : i18nc("@info %1 is a place, such as Amsterdam, Netherlands", "IPv6 near %1", p6)];
+        }
         const one = p4 || p6;
         return one !== "" ? [i18nc("@info %1 is a place, such as Amsterdam, Netherlands", "Near %1", one)] : [];
     }
