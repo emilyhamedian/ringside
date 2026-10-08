@@ -1139,64 +1139,224 @@ Item {
             compare(cell("claude", { textShown: false }).children[0].outerTone, gauge.outerTone, "the ring alone keeps its level");
         }
 
+        // What merge() adds to an entry whose check failed, with the reading
+        // taken `age` seconds before now.
+        function failure(age) {
+            const now = Date.now() / 1000;
+            return { fetchedAt: now - age, lastError: "can't reach api.anthropic.com: Name or service not known",
+                     lastErrorAt: Math.floor(now), reason: "offline", host: "api.anthropic.com", retryAt: Math.floor(now) + 300 };
+        }
+
+        // Claude near its limit, with Fable on the inner ring.
+        function hotClaude() {
+            const usage = monitor.usage;
+            setEntry("claude", Object.assign({}, usage.entries.claude, { weekly: usage.window(95, lastHours, []) }));
+            return usage.entries.claude;
+        }
+
+        // The ring's middle, which holds the mark, and the stroke.
+        function middle(cell) {
+            const face = outerArc(cell).parent;
+            let item = mark(cell);
+            while (item.parent !== face) {
+                item = item.parent;
+            }
+            return item;
+        }
+
+        function strike(cell) {
+            return root.find(cell.children[0], i => i.lineWidth !== undefined);
+        }
+
+        function strikePath(cell) {
+            return Array.from(strike(cell).data).find(o => o.strokeColor !== undefined);
+        }
+
         // The rings of thin panels too: a strip 18 to 24 px thick has rings
         // of 15 to 20 px.
-        function test_failedCheckShowsADot_data() {
+        function test_failedCheckStrikesTheRing_data() {
             return [{ tag: "34", ring: 34 }, { tag: "22", ring: 22 }, { tag: "52", ring: 52 },
                     { tag: "34 mirrored", ring: 34, mirrored: true }, { tag: "15", ring: 15 }, { tag: "16", ring: 16 },
                     { tag: "18", ring: 18 }, { tag: "20", ring: 20 }, { tag: "16 mirrored", ring: 16, mirrored: true }];
         }
 
-        // A failed check keeps the last reading and puts a small dot in the
-        // ring's corner above the readings, clear of the arc and still while
-        // the ring breathes; on a small ring it sits out from the corner as
-        // far as that takes. The words say when the check failed.
-        function test_failedCheckShowsADot(data) {
-            claudeAt(95, lastHours);
+        // A reading two check intervals old that couldn't be renewed is
+        // gone: the arcs unwind, the inner ring goes, the mark greys, a
+        // stroke in the track's own colour crosses the ring from its bottom
+        // left to its top right, inside it, in every direction of writing,
+        // and the readings go to dim dashes. Nothing breathes. The words say
+        // when and why it failed, the last reading and the next check. The
+        // next good check puts it all back.
+        function test_failedCheckStrikesTheRing(data) {
+            const ok = hotClaude();
             const c = cell("claude", { ring: data.ring });
             c.LayoutMirroring.enabled = data.mirrored ?? false;
             c.LayoutMirroring.childrenInherit = true;
             const gauge = c.children[0];
-            const dot = Array.from(c.children).find(i => i.border !== undefined);
-            verify(!dot.visible, "no dot while the checks succeed");
-            const reading = [line(c, "first").text, line(c, "second").text, gauge.outerTone];
-
-            const entries = monitor.usage.entries;
-            monitor.usage.entries = Object.assign({}, entries, {
-                claude: Object.assign({}, entries.claude, { lastError: "HTTP Error 500", lastErrorAt: monitor.usage.createdAt })
-            });
-            waitForRendering(c);
-            verify(dot.visible, "a dot");
-            compare([line(c, "first").text, line(c, "second").text, gauge.outerTone], reading, "the last reading stays");
-            compare(c.opacity, 1, "no fade");
-            compare(gauge.opacity, 1);
-            compare(dot.color, Kirigami.Theme.neutralTextColor);
-            compare([dot.border.width, dot.border.color], [1, Kirigami.Theme.backgroundColor]);
-            compare(dot.width, Math.max(4, Math.round(data.ring / 6)));
-            compare(dot.height, dot.width);
-            compare(dot.radius, dot.width / 2);
-            verify(dot.Accessible.ignored);
-            verify(gauge.pulsing && dot.parent === c, "outside the breathing face");
-
-            const at = dot.mapToItem(gauge, Qt.point(0, 0));
-            const outset = -at.y;
-            verify(outset >= 0 && outset < 1, "at the top, or just above it: " + outset);
-            if (data.ring >= 22) {
-                compare(outset, 0, "in the corner");
-            }
-            compare(at.x, data.mirrored ? -outset : gauge.width - dot.width + outset,
-                    data.mirrored ? "at the left, above the readings" : "at the right");
-            verify(data.mirrored ? line(c, "first").mapToItem(gauge, Qt.point(0, 0)).x < 0
-                                 : line(c, "first").mapToItem(gauge, Qt.point(0, 0)).x > gauge.width, "the readings on its side");
-            const r = dot.width / 2;
-            const clear = Math.hypot(at.x + r - gauge.width / 2, at.y + r - gauge.height / 2) - r;
             const arc = outerArc(c);
-            verify(clear >= arc.radius + arc.strokeWidth / 2 - 1e-9, "clear of the arc: " + clear + " from the centre, the arc to "
-                   + (arc.radius + arc.strokeWidth / 2));
-            verify(c.accessibleDescription.indexOf(". Last check failed at ") > 0, c.accessibleDescription);
+            const face = arc.parent;
+            verify(!strike(c).visible, "no stroke while the checks succeed");
+            verify(gauge.pulsing);
 
-            monitor.usage.entries = entries;
-            verify(!dot.visible, "gone with the next good check");
+            setEntry("claude", Object.assign({}, ok, failure(600)));
+            tryCompare(gauge, "struck", 1, 3000);
+            tryCompare(arc, "percent", 0, 3000);
+            tryCompare(gauge, "innerShown", 0, 3000);
+            verify(gauge.cancelled && !gauge.stale);
+            compare([line(c, "first").text, line(c, "second").text], ["––%", "–d"]);
+            const dim = String(Style.dim(Kirigami.Theme.textColor));
+            compare([String(line(c, "first").color), String(line(c, "second").color)], [dim, dim]);
+            fuzzyCompare(middle(c).opacity, 0.4, 1e-6);
+
+            const s = strike(c);
+            const path = strikePath(c);
+            verify(s.visible);
+            compare(s.opacity, 1);
+            compare(path.strokeColor, arc.trackColor, "the track's own colour");
+            compare(arc.trackColor, Qt.alpha(Kirigami.Theme.textColor, 0.16 * Kirigami.Theme.textColor.a));
+            const end = path.pathElements[0];
+            const mid = gauge.width / 2;
+            verify(path.startX < mid && path.startY > mid, "from the bottom left");
+            fuzzyCompare(end.x, gauge.width - path.startX, 1e-6);
+            fuzzyCompare(end.y, gauge.height - path.startY, 1e-6);
+            verify(end.x - path.startX >= 2 * s.lineWidth, "long enough to read as a stroke at " + data.ring + " px");
+            const tip = Math.hypot(path.startX - mid, path.startY - mid) + s.lineWidth / 2;
+            const inside = arc.radius - arc.strokeWidth / 2;
+            fuzzyCompare(tip, inside, 1e-6, "its caps end on the track's inner edge");
+
+            // A breath under way ends, and no other starts.
+            tryCompare(face, "opacity", 1, 2500);
+            wait(1200);
+            compare(face.opacity, 1, "no breathing");
+            verify(gauge.Accessible.ignored);
+            const lines = c.accessibleDescription.split("\n");
+            compare(lines.length, 3, c.accessibleDescription);
+            verify(/^Last check failed at .+\. Can't reach api\.anthropic\.com\.$/.test(lines[0]), lines[0]);
+            verify(lines[1].startsWith("Last reading at ") && lines[1].endsWith(": " + root.localized("95%") + " used, Fable "
+                                                                                 + root.localized("78%") + ", resets in 5 hours."), lines[1]);
+            verify(/^Next check at .+\.$/.test(lines[2]), lines[2]);
+
+            setEntry("claude", ok);
+            tryCompare(gauge, "struck", 0, 3000);
+            tryCompare(arc, "percent", 95, 3000);
+            verify(!strike(c).visible);
+            compare([line(c, "first").text, line(c, "second").text], ["95%", "5h"].map(root.localized));
+            fuzzyCompare(middle(c).opacity, 1, 1e-6);
+            compare(c.accessibleDescription, root.localized("95%") + " used, Fable " + root.localized("78%") + ", resets in 5 hours");
+        }
+
+        // Until the reading is two check intervals old, and while its week
+        // runs, a failed check keeps it in grey: the arcs and readings stay
+        // where they were, with no amber, red or breathing, and no stroke.
+        function test_failedCheckGreysFirst_data() {
+            return [{ tag: "first failure", age: 60, interval: 5, grey: true },
+                    { tag: "under two intervals", age: 570, interval: 5, grey: true },
+                    { tag: "two intervals", age: 600, interval: 5, grey: false },
+                    { tag: "under two longer intervals", age: 1770, interval: 15, grey: true },
+                    { tag: "two longer intervals", age: 1800, interval: 15, grey: false },
+                    { tag: "the week has reset", age: 60, interval: 5, grey: false, reset: true }];
+        }
+
+        function test_failedCheckGreysFirst(data) {
+            const usage = monitor.usage;
+            usage.refreshMinutes = data.interval;
+            const ok = hotClaude();
+            const c = cell("claude");
+            const gauge = c.children[0];
+            const arc = outerArc(c);
+            const changes = failure(data.age);
+            if (data.reset) {
+                changes.weekly = usage.window(95, -600, []);
+            }
+            setEntry("claude", Object.assign({}, ok, changes));
+            compare(gauge.stale, data.grey);
+            compare(gauge.cancelled, !data.grey);
+            if (!data.grey) {
+                tryCompare(gauge, "struck", 1, 3000);
+                return;
+            }
+            tryCompare(gauge, "greyed", 1, 3000);
+            wait(2 * Kirigami.Units.longDuration);
+            compare(gauge.struck, 0, "no stroke");
+            verify(!strike(c).visible);
+            compare(arc.percent, 95, "the arc stays");
+            compare(innerArc(c).percent, 78);
+            compare([line(c, "first").text, line(c, "second").text], ["95%", "5h"].map(root.localized));
+            const dim = String(Style.dim(Kirigami.Theme.textColor));
+            compare([String(line(c, "first").color), String(line(c, "second").color)], [dim, dim]);
+            compare(arc.color, Qt.alpha(Kirigami.Theme.textColor, 0.42 * Kirigami.Theme.textColor.a), "grey, not red");
+            compare(innerArc(c).color, Qt.alpha(Kirigami.Theme.textColor, 0.55 * Kirigami.Theme.textColor.a), "grey, not amber");
+            fuzzyCompare(middle(c).opacity, 0.4, 1e-6);
+            tryCompare(arc.parent, "opacity", 1, 2500);
+            wait(1200);
+            compare(arc.parent.opacity, 1, "no breathing");
+            verify(c.accessibleDescription.startsWith("Last check failed at "), c.accessibleDescription);
+
+            // The check that finds it two intervals old strikes it.
+            setEntry("claude", Object.assign({}, ok, failure(2 * data.interval * 60)));
+            verify(gauge.cancelled && !gauge.stale);
+            tryCompare(gauge, "struck", 1, 3000);
+            compare(line(c, "first").text, "––%");
+        }
+
+        // At Plasma's Instant speed the arcs, the stroke and the dashes
+        // change together, in one frame each way.
+        function test_strikeAtInstant() {
+            const ok = hotClaude();
+            const c = cell("claude");
+            const gauge = c.children[0];
+            gauge.settle = 0;
+            setEntry("claude", Object.assign({}, ok, failure(600)));
+            compare(outerArc(c).percent, 0, "the arc at once");
+            compare([gauge.struck, line(c, "first").text], [0, root.localized("95%")], "neither the stroke nor the dashes yet");
+            wait(0);
+            compare([gauge.struck, line(c, "first").text, line(c, "second").text], [1, "––%", "–d"], "both");
+            setEntry("claude", ok);
+            wait(0);
+            compare([gauge.struck, outerArc(c).percent, line(c, "first").text], [0, 95, root.localized("95%")]);
+        }
+
+        // The words of a failed check, from the reason the helper gives.
+        function test_failureWords_data() {
+            return [
+                { tag: "offline", entry: { reason: "offline", host: "api.anthropic.com" }, text: "Can't reach api.anthropic.com." },
+                { tag: "timeout", entry: { reason: "timeout", host: "api.anthropic.com" },
+                  text: "api.anthropic.com didn't answer in time." },
+                { tag: "codex timeout", item: "codex", entry: { reason: "timeout", host: "" }, text: "Codex didn't answer in time." },
+                { tag: "server", entry: { reason: "server", host: "api.anthropic.com" }, text: "api.anthropic.com answered with an error." },
+                { tag: "rate limit", entry: { reason: "rate-limited", retryAt: Date.now() / 1000 + 3000 }, text: /^Anthropic asked Ringside to wait until .+\.$/ },
+                { tag: "codex rate limit", item: "codex", entry: { reason: "rate-limited", retryAt: Date.now() / 1000 + 3000 }, text: /^OpenAI asked Ringside to wait until .+\.$/ },
+                { tag: "files", entry: { reason: "files" }, text: "The usage helper couldn't read or write its files." },
+                { tag: "helper", entry: { reason: "helper" }, text: "The usage helper stopped with an error." },
+                { tag: "other", entry: { reason: "other", lastError: "codex CLI not found" }, text: "Codex CLI not found." },
+                { tag: "no reason", entry: { lastError: "Claude Code's credentials can't be read" },
+                  text: "Claude Code's credentials can't be read." },
+                { tag: "a sentence", entry: { reason: "other", lastError: "Stopped!" }, text: "Stopped!" },
+                { tag: "offline, no host", entry: { reason: "offline", host: "", lastError: "can't reach it" }, text: "Can't reach it." }
+            ];
+        }
+
+        function test_failureWords(data) {
+            const c = cell(data.item ?? "claude");
+            const words = Array.from(c.data).find(o => o.failureReason !== undefined);
+            const text = words.failureReason(data.item ?? "claude", Object.assign({ lastError: "x" }, data.entry), Date.now());
+            if (typeof data.text === "string") {
+                compare(text, data.text);
+            } else {
+                verify(data.text.test(text), text);
+            }
+        }
+
+        // The next check, or that one is running.
+        function test_failedWordsNameTheNextCheck() {
+            const ok = hotClaude();
+            const c = cell("claude");
+            setEntry("claude", Object.assign({}, ok, failure(60)));
+            verify(/\nNext check at .+\.$/.test(c.accessibleDescription), c.accessibleDescription);
+            monitor.usage.checking = true;
+            verify(c.accessibleDescription.endsWith("\nChecking now."), c.accessibleDescription);
+            setEntry("claude", Object.assign({}, ok, failure(60), { weekly: monitor.usage.window(95, -600, []) }));
+            verify(/\nThe week reset at .+, with no reading since\.\n/.test(c.accessibleDescription), c.accessibleDescription);
         }
 
         // The percentages in the locale's digits; the stand-in i18ncp

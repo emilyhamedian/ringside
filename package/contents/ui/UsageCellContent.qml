@@ -9,8 +9,10 @@ import org.kde.kirigami as Kirigami
 // and beside it the weekly percentage over the time left until the week
 // resets. The ring and its percentage turn amber or red with the weekly
 // reading, and the inner ring with the model's limit. The ring breathes from
-// 90 % until the limit is hit. A failed check keeps the last reading and
-// marks the ring with a dot.
+// 90 % until the limit is hit. A failed check keeps the last reading in
+// grey while it is under two check intervals old and its week runs; after
+// that the ring is struck through and the readings go to dashes, until a
+// check succeeds.
 Item {
     id: content
 
@@ -24,9 +26,15 @@ Item {
     readonly property var entry: usage.entry(item)
     readonly property var weekly: entry && entry.weekly ? entry.weekly : null
     readonly property var innerLimit: usage.inner(item)
-    // Stepped by the minute timer below, for the countdown.
+    // Stepped by the minute timer below, for the countdown, and with each
+    // report, so a ring is struck by the check that finds its reading too old.
     property real nowMs: Date.now()
-    readonly property var lines: words.readout(item, nowMs)
+    onEntryChanged: nowMs = Date.now()
+    readonly property bool failed: usage.degraded(item)
+    readonly property bool staleShown: failed && weekly !== null && weekly.resetsAt > nowMs / 1000
+        && nowMs / 1000 - entry.fetchedAt < 2 * usage.refreshMinutes * 60
+    // Dashes while the ring is struck, coming and going with its stroke.
+    readonly property var lines: words.readout(item, nowMs, gauge.dashed)
 
     // The readings in words, for screen readers and the tooltip.
     readonly property string accessibleDescription: words.describe(item, nowMs)
@@ -70,7 +78,10 @@ Item {
         inner: content.innerLimit !== null
         innerValue: content.innerLimit ? content.innerLimit.percent : NaN
         pulsing: value >= 90 && value < 100
-        // The cell's description covers it.
+        cancelled: content.failed && !content.staleShown
+        stale: content.staleShown
+        // The cell's description covers it, saying which it was, how old
+        // and why.
         Accessible.ignored: true
 
         RingName {
@@ -80,29 +91,6 @@ Item {
             // rings there are too small to name them all.
             active: content.twoLines || !content.textShown
         }
-    }
-
-    // A failed last check: a dot in the gauge's corner above the readings,
-    // outside the circle, ringed in the background colour so it stands apart
-    // from the arc. A small ring leaves too little corner for it, so there
-    // it sits out along the diagonal as far as that takes, into the cell's
-    // margin. It stays still while the ring breathes. The cell's
-    // description says when the check failed.
-    Rectangle {
-        readonly property real outset: Math.max(0, (gauge.reach + width / 2) / Math.SQRT2 - (gauge.width - width) / 2)
-
-        anchors.top: gauge.top
-        anchors.right: gauge.right
-        anchors.topMargin: -outset
-        anchors.rightMargin: -outset
-        width: Math.max(4, Math.round(content.ring / 6))
-        height: width
-        radius: width / 2
-        visible: content.usage.degraded(content.item)
-        color: Kirigami.Theme.neutralTextColor
-        border.width: 1
-        border.color: Kirigami.Theme.backgroundColor
-        Accessible.ignored: true
     }
 
     Readout {

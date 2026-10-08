@@ -58,8 +58,9 @@ QtObject {
     // the words and the popup. A countdown keeps to its largest unit, "6d",
     // "23h", "12m"; the popup and the words give more. With the limit reached
     // it turns red, as in the popup, since it then says how long the lock-out
-    // lasts.
-    function readout(item, nowMs) {
+    // lasts. After a failed check both are dim, and with `cancelled`, while
+    // the ring is struck, dashes.
+    function readout(item, nowMs, cancelled) {
         const percent = value => Number.isFinite(value) ? i18nc("@info:status a percentage", "%1%", Format.percent(value)) : "–";
         const temperature = celsius => Format.temperatureValid(celsius)
             ? Format.temperature(celsius, monitor.fahrenheit) + "°" : "–";
@@ -85,7 +86,17 @@ QtObject {
         const entry = monitor.usage.entry(item);
         const weekly = entry && entry.weekly ? entry.weekly : null;
         const now = nowMs ?? Date.now();
+        // Two dashes where the figures go, in the percentage's own pattern
+        // so a language's sign keeps its place, and one before the days'
+        // letter.
+        if (cancelled) {
+            return { first: i18nc("@info:status a percentage", "%1%", "––"), off: true,
+                     second: "–" + timeParts("", "", "")[0].unit, heat: 0 };
+        }
         const parts = countdownParts(weekly ? weekly.resetsAt : null, now, true);
+        if (entry && entry.lastError !== undefined) {
+            return { first: percent(weekly ? weekly.percent : NaN), off: true, second: spelled(parts) || "–", heat: 0 };
+        }
         return { first: percent(weekly ? weekly.percent : NaN), level: Format.level(weekly ? weekly.percent : NaN),
                  second: spelled(parts) || "–", heat: parts.length > 0 && weekly.percent >= 100 ? 2 : 0 };
     }
@@ -108,7 +119,7 @@ QtObject {
     }
 
     // A Claude or Codex item: its weekly use, the limit on its inner ring,
-    // when the week resets, and a failed last check.
+    // when the week resets, and a failed last check (see failedText()).
     function usageText(item, nowMs) {
         const usage = monitor.usage;
         const entry = usage.entry(item);
@@ -117,6 +128,9 @@ QtObject {
         }
         if (entry.status === "signed_out") {
             return i18nc("@info:tooltip", "Signed out");
+        }
+        if (!entry.weekly && entry.lastError !== undefined) {
+            return failedText(item, entry, "", nowMs);
         }
         const used = percentText(entry.weekly ? entry.weekly.percent : NaN);
         const left = duration(entry.weekly ? entry.weekly.resetsAt : null, nowMs);
@@ -132,9 +146,72 @@ QtObject {
                                 "%1 used, resets in %2", used, left)
                         : i18nc("@info:tooltip weekly share used, e.g. 62% used", "%1 used", used);
         }
-        return entry.lastError === undefined ? text
-            : i18nc("@info:tooltip a reading, then when checking it last failed", "%1. Last check failed at %2.",
-                    text, timeOfDay(entry.lastErrorAt, nowMs));
+        return entry.lastError === undefined ? text : failedText(item, entry, text, nowMs);
+    }
+
+    // A failed check in words, a sentence a line: when it failed and why;
+    // the last reading and when it was taken, or that the week has reset
+    // since; and when the next check runs.
+    function failedText(item, entry, reading, nowMs) {
+        const weekly = entry.weekly ?? null;
+        const lines = [i18nc("@info:tooltip %1 is a time, %2 why, a sentence, e.g. Can't reach api.anthropic.com.",
+                             "Last check failed at %1. %2", timeOfDay(entry.lastErrorAt, nowMs), failureReason(item, entry, nowMs))];
+        if (weekly && weekly.resetsAt <= nowMs / 1000) {
+            lines.push(i18nc("@info:tooltip %1 is a time", "The week reset at %1, with no reading since.",
+                             timeOfDay(weekly.resetsAt, nowMs)));
+        } else if (weekly) {
+            lines.push(i18nc("@info:tooltip %1 is a time, %2 the reading, e.g. 52% used, resets in 2 days 21 hours",
+                             "Last reading at %1: %2.", timeOfDay(entry.fetchedAt, nowMs), reading));
+        }
+        lines.push(nextCheckText(item, nowMs));
+        return lines.join("\n");
+    }
+
+    // "Checking now." or "Next check at 4:15 PM.", after a failed check.
+    function nextCheckText(item, nowMs) {
+        const usage = monitor.usage;
+        return usage.checking ? i18nc("@info", "Checking now.")
+            : i18nc("@info %1 is a time", "Next check at %1.", timeOfDay(usage.nextCheck(item), nowMs));
+    }
+
+    // Why a check failed, as a sentence, from the reason the helper gives
+    // (see usage.py and code/report.js): the network, a server, a provider
+    // asking to wait, or the helper itself. The helper's own message, which
+    // names the Python error, is for the settings page and screen readers.
+    // Anything else is the helper's message as it gave it.
+    function failureReason(item, entry, nowMs) {
+        const host = entry.host ?? "";
+        switch (entry.reason) {
+        case "offline":
+            if (host) {
+                return i18nc("@info %1 is a server, such as api.anthropic.com", "Can't reach %1.", host);
+            }
+            break;
+        case "timeout":
+            if (host) {
+                return i18nc("@info %1 is a server, such as api.anthropic.com", "%1 didn't answer in time.", host);
+            }
+            if (item === "codex") {
+                return i18nc("@info", "Codex didn't answer in time.");
+            }
+            break;
+        case "server":
+            if (host) {
+                return i18nc("@info %1 is a server, such as api.anthropic.com", "%1 answered with an error.", host);
+            }
+            break;
+        case "rate-limited":
+            return item === "claude"
+                ? i18nc("@info %1 is a time", "Anthropic asked Ringside to wait until %1.", timeOfDay(entry.retryAt, nowMs))
+                : i18nc("@info %1 is a time", "OpenAI asked Ringside to wait until %1.", timeOfDay(entry.retryAt, nowMs));
+        case "files":
+            return i18nc("@info", "The usage helper couldn't read or write its files.");
+        case "helper":
+            return i18nc("@info", "The usage helper stopped with an error.");
+        }
+        const message = String(entry.lastError);
+        const sentence = message.charAt(0).toUpperCase() + message.slice(1);
+        return /[.!?]$/.test(sentence) ? sentence : i18nc("@info a message that lacks its full stop", "%1.", sentence);
     }
 
     // Time to a reset in the panel's letters: "2d 21h", "5h 12m", "12m";
