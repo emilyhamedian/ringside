@@ -7,16 +7,24 @@ GPL-3.0-or-later.
 
 ## Where things are
 
-- `package/` is the widget. `contents/ui/main.qml` hosts the panel strip and
-  the single popup; `Monitor.qml` is the only place that subscribes to
-  ksystemstats; `GpuReader.qml` with `code/gpugate.js` decides when a discrete
-  GPU may be read; `UsageData.qml` runs `contents/code/usage.py` for the
-  Claude and Codex items and their opt-in session starter;
-  `contents/code/ringside-info.sh` reports hardware
-  facts ksystemstats doesn't publish. `code/pace.js` projects a weekly
-  limit's pace for the panel and the popup.
-- `tests/` holds the QtTest suites (`tests/qml/tst_*.qml`), the sh helper's
-  fixtures (`tests/helper/`) and the Python helper's tests (`tests/python/`).
+- `package/contents/` is the widget:
+  - `ui/main.qml`: the panel strip and the single popup.
+  - `ui/Monitor.qml`: every reading; the only place that subscribes to
+    ksystemstats.
+  - `ui/GpuReader.qml` with `ui/code/gpugate.js`: when a discrete GPU may
+    be read.
+  - `ui/UsageData.qml`: runs `code/usage.py` for the Claude and Codex items
+    and their opt-in session starter.
+  - `ui/PublicAddress.qml`: asks for the address the network popup shows.
+  - `ui/HistoryStore.qml`: keeps the graphs' hour and day when that setting
+    is on; the only file that imports Qt's optional LocalStorage module.
+  - `ui/code/pace.js`: a weekly limit's pace, for the panel and the popup.
+  - `code/ringside-info.sh`: hardware facts ksystemstats doesn't publish.
+- `tests/`:
+  - `qml/tst_*.qml`: the QtTest suites.
+  - `helper/`: the sh helper's fixtures.
+  - `python/`: the Python helper's tests.
+  - `floor/`: a stand-in Plasma module for the Plasma 6.0 floor run.
 - `scripts/`: install, test, test-floor, gallery, pictures, package.
 
 ## Direction
