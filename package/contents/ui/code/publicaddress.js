@@ -177,8 +177,9 @@ function lines(result, egress, localInterface) {
 
 // The last check of each service, by key:
 //   attemptAt  when a check last began (ms since the epoch), or -1
-//   route      the route key it began under; egress, the route facts
-//   busy       a check is under way
+//   route      the route key the result was asked under; egress, the
+//              route facts then, which go with its addresses
+//   busy       a check is under way; asking, { route, egress } it began under
 //   result     { at, v4, v6 } of the last finished check, "" for a family
 //              that failed or wasn't asked; null before any
 //   seen       per family, { address, at } of its last good answer
@@ -189,7 +190,7 @@ const listeners = [];
 
 function record(key) {
     if (!records[key]) {
-        records[key] = { attemptAt: -1, route: "", egress: null, busy: false, result: null,
+        records[key] = { attemptAt: -1, route: "", egress: null, busy: false, asking: null, result: null,
                          seen: { v4: null, v6: null }, changed: { v4: null, v6: null } };
     }
     return records[key];
@@ -221,8 +222,7 @@ function notify() {
 function begin(key, now, route, egress) {
     const r = record(key);
     r.attemptAt = now;
-    r.route = route;
-    r.egress = egress;
+    r.asking = { route: route, egress: egress };
     r.busy = true;
     notify();
 }
@@ -230,6 +230,9 @@ function begin(key, now, route, egress) {
 function finish(key, now, found) {
     const r = record(key);
     r.busy = false;
+    r.route = r.asking.route;
+    r.egress = r.asking.egress;
+    r.asking = null;
     r.result = { at: now, v4: found.v4 || "", v6: found.v6 || "" };
     for (const f of FAMILIES) {
         const before = r.seen[f];
@@ -247,6 +250,7 @@ function finish(key, now, found) {
 function abandon(key) {
     const r = record(key);
     r.busy = false;
+    r.asking = null;
     notify();
 }
 

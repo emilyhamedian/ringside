@@ -208,8 +208,9 @@ default_interface() {
 
 # The interface the kernel would send a packet to a public address through.
 # `ip route get` only looks the route up in the kernel's tables: nothing is
-# sent, to that address or anywhere. An unreachable or blackhole route
-# answers with loopback, which counts as no route.
+# sent, to that address or anywhere. A missing, unreachable, blackhole or
+# prohibited route makes ip fail with no output; a route to a local address
+# answers with loopback. Both count as no route.
 egress_dev() {
     "$ip" "$@" 2>/dev/null | awk 'NR == 1 { for (i = 1; i < NF; i++) if ($i == "dev") { print $(i + 1); exit } }'
 }
