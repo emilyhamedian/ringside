@@ -60,16 +60,14 @@ ColumnLayout {
         Layout.preferredWidth: 0
         Layout.leftMargin: toggle.leftPadding + toggle.indicator.width + toggle.spacing
         // The last line's baseline as far from the popup's edge as the
-        // switch's label is from the footer's rule, as a tile's foot is.
-        Layout.bottomMargin: Math.round(Kirigami.Units.largeSpacing * 2 - (twoLines.implicitHeight / 2 - twoLines.baselineOffset))
-        // Always two lines' room, so the popup keeps its height while it is
-        // open and the state changes under it. A longer status, such as one
-        // with the helper's error, elides here and reads in full from a
-        // tool tip, or from the switch's description in a screen reader.
-        // The room is measured on two laid-out lines, not the font's
-        // metrics: Qt 6.6 rounds each line up, and drops a line that
-        // doesn't fit.
-        Layout.preferredHeight: twoLines.implicitHeight
+        // switch's label is from the footer's rule, as a tile's foot is,
+        // whether the status takes one line or two. The room under the
+        // baseline is measured on a laid-out line, not the font's metrics:
+        // Qt 6.6 rounds each line up.
+        Layout.bottomMargin: Math.round(Kirigami.Units.largeSpacing * 2 - (line.implicitHeight - line.baselineOffset))
+        // A longer status, such as one with the helper's error, elides at
+        // two lines and reads in full from a tool tip, or from the switch's
+        // description in a screen reader.
         maximumLineCount: 2
         elide: Text.ElideRight
         text: row.status
@@ -83,9 +81,9 @@ ColumnLayout {
         Accessible.ignored: true
 
         Text {
-            id: twoLines
+            id: line
             visible: false
-            text: " \n "
+            text: " "
             font: statusText.font
             textFormat: Text.PlainText
         }
