@@ -246,6 +246,19 @@ Item {
     }
 
     // As main.qml hosts a popup's page: Escape there closes the popup.
+    // A widget just started at an hour or a day: its first buckets are
+    // still open, so those spans have nothing to draw yet.
+    Component {
+        id: freshStart
+        FakeMonitor {
+            cpuHistory: graphSpan === "minute" ? [20, 21] : []
+            cpuHighs: []
+            cpuTemperatureHistory: graphSpan === "minute" ? [60, 61] : []
+            cpuTemperatureHighs: []
+            cpuTemperatureExtent: [60, 61]
+        }
+    }
+
     Component {
         id: escapeHost
         Loader {
@@ -2037,6 +2050,64 @@ Item {
                 compare(temperatureTiles(load("CpuPopup", firstReading)).length, 1);
             } finally {
                 firstReading.cpuTemperatureHistory = sample;
+            }
+        }
+
+        // At an hour or a day a bucket between gaps is a mark of its own, so
+        // it has a graph where a lone reading at a minute has none, and the
+        // tile stays while the sensor has read anything, though its first
+        // bucket is still open.
+        function test_aLoneBucketHasAGraph() {
+            const was = [firstReading.cpuTemperatureHistory, firstReading.cpuTemperatureHighs, firstReading.cpuTemperatureExtent];
+            try {
+                const popup = load("CpuPopup", firstReading);
+                firstReading.chooseSpan("day");
+                firstReading.cpuTemperatureHistory = [NaN, 60, NaN];
+                firstReading.cpuTemperatureHighs = [NaN, 62, NaN];
+                compare(temperatureTiles(popup).length, 1, "a lone bucket");
+                firstReading.cpuTemperatureHistory = [];
+                firstReading.cpuTemperatureHighs = [];
+                compare(temperatureTiles(popup).length, 0, "nothing read");
+                firstReading.cpuTemperatureExtent = [60, 61];
+                compare(temperatureTiles(popup).length, 1, "read, in a bucket still open");
+                firstReading.chooseSpan("minute");
+                firstReading.cpuTemperatureHistory = [NaN, 60, NaN];
+                compare(temperatureTiles(popup).length, 0, "a lone reading at a minute");
+            } finally {
+                firstReading.chooseSpan("minute");
+                [firstReading.cpuTemperatureHistory, firstReading.cpuTemperatureHighs, firstReading.cpuTemperatureExtent] = was;
+            }
+        }
+
+        // Picking a day from the temperature's own caption, on a widget
+        // whose first buckets are still open, keeps the tile where it was,
+        // and the focus on its span.
+        function test_aFreshTileStaysAsTheSpanChanges() {
+            const fresh = createTemporaryObject(freshStart, root);
+            const host = createTemporaryObject(escapeHost, root, { width: Kirigami.Units.gridUnit * 30 });
+            host.setSource(Qt.resolvedUrl("../../package/contents/ui/popups/CpuPopup.qml"), { monitor: fresh });
+            try {
+                const popup = host.item;
+                waitForRendering(popup);
+                const tile = temperatureTiles(popup)[0];
+                verify(tile);
+                const height = popup.implicitHeight;
+                const span = spanOf(tile);
+                span.forceActiveFocus(Qt.TabFocusReason);
+                keyClick(Qt.Key_Space);
+                tryVerify(() => span.menu.opened, 2000);
+                keyClick(Qt.Key_Down);
+                keyClick(Qt.Key_Down);
+                keyClick(Qt.Key_Return);
+                tryVerify(() => !span.menu.visible, 2000);
+                compare(fresh.graphSpan, "day");
+                compare(fresh.cpuTemperatureHistory, []);
+                verify(tile.visible, "the tile stays");
+                compare(popup.implicitHeight, height, "and the popup's height");
+                tryVerify(() => span.activeFocus && span.visualFocus, 2000, "the focus is back on its span");
+            } finally {
+                // The popup goes before its monitor.
+                host.active = false;
             }
         }
 

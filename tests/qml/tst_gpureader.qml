@@ -89,6 +89,24 @@ TestCase {
         compare(reader.usage, 0);
     }
 
+    // The hour and the day take a discrete GPU's usage as 0 only while it
+    // is known to be suspended: before its state is polled, or with an
+    // awake state the gate hasn't acted on yet, it is a gap.
+    function test_recordsZeroOnlyWhenKnownSuspended() {
+        compare(reader.phase, "asleep");
+        verify(Number.isNaN(reader.recordedUsage), "not polled yet");
+        reader.takeStatus("suspended", "auto", 1000);
+        reader.tick(1500);
+        compare(reader.recordedUsage, 0);
+        reader.takeStatus("active", "auto", 3000);
+        compare(reader.phase, "asleep", "until the next tick");
+        verify(Number.isNaN(reader.recordedUsage));
+        reader.tick(3500);
+        compare(reader.phase, "live");
+        reader.takeStatus("suspended", "auto", 5000);
+        compare(reader.recordedUsage, 0, "suspended, whatever the gate still says");
+    }
+
     // A state read before the GPU went onto a ring may predate its going to
     // sleep, so the reader waits for a newer one.
     function test_joiningARingWaitsForANewerState() {

@@ -2866,4 +2866,30 @@ Item {
             compare(g.mainPoints[0].x, 0);
         }
     }
+
+    // A graph's span, "1 day", has its 1 in the locale's digits. It is
+    // here as this suite runs in German and Egyptian Arabic too.
+    TestCase {
+        name: "SpanDigits"
+        when: windowShown
+
+        Component {
+            id: spanComponent
+            SpanButton {
+                monitor: QtObject {
+                    property string graphSpan: "day"
+                }
+            }
+        }
+
+        function test_theOneIsInTheLocalesDigits() {
+            const span = createTemporaryObject(spanComponent, root);
+            const one = Number(1).toLocaleString(Qt.locale(), "f", 0);
+            compare(span.text, one + " day");
+            compare(span.labels.minute, one + " min");
+            compare(span.labels.hour, one + " h");
+            compare(span.Accessible.name, "Graph span: " + one + " day");
+            compare([span.names.minute, span.names.hour], [one + " minute", one + " hour"]);
+        }
+    }
 }

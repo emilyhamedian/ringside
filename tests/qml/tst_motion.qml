@@ -565,9 +565,9 @@ Item {
             const shown = runOutOf(g);
             g.projected = "";
             verify(!Number.isFinite(g.runOutAt));
-            tryVerify(() => shown.opacity > 0 && shown.opacity < 1, 1000, "fading out");
+            // Read together: a slow machine can see the fade at any point.
+            tryVerify(() => shown.opacity > 0 && shown.opacity < 1 && g.timeShown, 1000, "fading out, its time with it");
             compare(g.runOutX, x, "where it was");
-            verify(g.timeShown, "its time with it");
             tryCompare(shown, "opacity", 0, 1000);
             verify(!shown.visible);
             verify(!g.timeShown, "and then its room");

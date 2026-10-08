@@ -650,9 +650,24 @@ TestCase {
         s.day.highs = [99];
         s.day.means = [1];
         monitor.sample(t + 31000);
-        compare(monitor.cpuTemperatureExtent, [1, 99]);
+        compare(monitor.cpuTemperatureExtent, [monitor.cpuTemperature, monitor.cpuTemperature],
+                "a reading only widens it");
+        monitor.sample(t + 60000);
+        compare(monitor.cpuTemperatureExtent, [1, 99], "worked out afresh as a bucket closes");
         config.graphSpan = "day";
         compare(monitor.cpuTemperatureExtent, [1, 99], "the same at every span");
+        config.graphSpan = "minute";
+        s.minute = s.minute.concat([200]);
+        monitor.sample(t + 61000);
+        compare(monitor.cpuTemperatureExtent, [1, 99]);
+        monitor.cpuTemperatureExtent = [0, 1000];
+        monitor.sample(t + 62000);
+        compare(monitor.cpuTemperatureExtent, [0, 1000], "a reading inside it leaves it");
+        monitor.cpuTemperatureExtent = [];
+        monitor.sample(t + 63000);
+        compare(monitor.cpuTemperatureExtent, [monitor.cpuTemperature, monitor.cpuTemperature], "and one outside widens it");
+        monitor.sample(t + 90000);
+        compare(monitor.cpuTemperatureExtent, [1, 200]);
     }
 
     // Any graph's caption picks the span for all of them, through the
@@ -669,6 +684,23 @@ TestCase {
         compare(monitor.historyLength, monitor.minuteLength);
     }
 
+    // A GPU item shown again has new readers, which show the span's
+    // history at once rather than as the next bucket closes.
+    function test_aReshownGpuShowsItsHistoryAtOnce() {
+        sampling(monitor);
+        config.graphSpan = "hour";
+        const t = tenMinutes(1);
+        monitor.sample(t);
+        monitor.sample(t + 30000);
+        compare(monitor.gpuOuter.history.length, 1);
+        config.hiddenItems = ["disk", "gpu"];
+        verify(!monitor.gpuOuter.present);
+        config.hiddenItems = ["disk"];
+        tryVerify(() => monitor.gpuOuter.present, 5000);
+        tryVerify(() => monitor.gpuOuter.history.length === 1, 1000, "shown at once");
+        compare(monitor.gpuOuter.history, monitor.series["gpu:gpu97"].hour.means);
+    }
+
     // A discrete GPU asleep is truly idle, so its hour and day take 0; one
     // awake but unread, resting say, is unknown, so a gap, though the
     // minute shows the 0 and the held reading the panel does. Sampling it
@@ -681,6 +713,7 @@ TestCase {
         const t = tenMinutes(1);
         monitor.sample(t);
         gpu.held = { temperature: 55 };
+        gpu.pmStatus = "active";
         gpu.gate = { phase: "resting", since: 0, quietSince: -1, holdMs: 5000 };
         compare(gpu.phase, "resting");
         monitor.sample(t + 30000);
@@ -728,28 +761,169 @@ TestCase {
                                          properties ?? {}));
     }
 
-    // Kept, a bucket is saved as it closes, not as readings come, each
-    // series to a tenth.
-    function test_bucketsAreSavedAsTheyClose() {
+    // Stands in for a widget's store, counting its saves.
+    Component {
+        id: countingStore
+        QtObject {
+            property QtObject store
+            property int saves: 0
+            function save(rows) {
+                ++saves;
+                store.save(rows);
+            }
+            function load(tier) {
+                return store.load(tier);
+            }
+            function clear() {
+                store.clear();
+            }
+        }
+    }
+
+    // A widget whose discrete GPU is known to be suspended, by this widget
+    // or by the one leading it, and whose readings have come.
+    function suspended(m) {
+        tryVerify(() => m.gpuOuter.knownAsleep, 10000, "the GPU's state arrives");
+        return sampling(m);
+    }
+
+    function counted(m) {
+        m.store = countingStore.createObject(m, { store: m.store });
+        return m.store;
+    }
+
+    // Kept, closed buckets are saved with the day's, every 10 minutes,
+    // since each save is a commit on Plasma's main thread, and what waits
+    // is saved as the widget stops. Each series goes to a tenth.
+    function test_bucketsAreSavedEveryTenMinutes() {
         forget();
-        const m = sampling(keeping("w1", true));
-        verify(m.store !== null);
+        const m = suspended(keeping("w1", true));
+        const store = counted(m);
         const t = tenMinutes(1);
         const cpu = m.cpuUsage;
         m.sample(t);
         m.sample(t + 1000);
-        compare(saved("w1").length, 0, "nothing while the buckets are open");
         m.sample(t + 30000);
-        let rows = saved("w1");
-        compare(rows.map(r => [r.tier, r.at]), [["hour", t / 30000]]);
-        compare(rows[0].data.cpu, [Math.round(cpu * 10) / 10, Math.round(cpu * 10) / 10]);
-        verify(rows[0].data.memory !== undefined);
-        compare(rows[0].data["gpu:gpu97"], [0, 0], "a sleeping GPU is idle");
-        verify(rows[0].data["diskTemperature:"] === undefined, "a series with no reading is left out");
+        m.sample(t + 60000);
+        compare(store.saves, 0, "hour buckets wait");
+        compare(saved("w1").length, 0);
         m.sample(t + 600000);
-        rows = saved("w1");
-        compare(rows.map(r => [r.tier, r.at]), [["day", t / 600000], ["hour", t / 30000], ["hour", t / 30000 + 1]]);
+        compare(store.saves, 1, "saved with the day's");
+        const rows = saved("w1");
+        compare(rows.map(r => [r.tier, r.at]),
+                [["day", t / 600000], ["hour", t / 30000], ["hour", t / 30000 + 1], ["hour", t / 30000 + 2]]);
+        const hour = rows[1].data;
+        compare(hour.cpu, [Math.round(cpu * 10) / 10, Math.round(cpu * 10) / 10]);
+        verify(hour.memory !== undefined);
+        compare(hour["gpu:gpu97"], [0, 0], "a suspended GPU is idle");
+        verify(hour["diskTemperature:"] === undefined, "a series with no reading is left out");
+        m.sample(t + 601000);
+        m.sample(t + 630000);
+        compare(store.saves, 1);
+        m.destroy();
+        wait(0);
+        compare(saved("w1").map(r => [r.tier, r.at]).slice(-2), [["hour", t / 30000 + 2], ["hour", t / 30000 + 20]],
+                "what waited, as the widget stops");
         forget();
+    }
+
+    // A series left unsampled for a while, a GPU off the rings say, closes
+    // its old bucket when it comes back: saved under that bucket's own
+    // time, as it is held, not with the buckets closing beside it.
+    function test_aLateBucketIsSavedUnderItsOwnTime() {
+        forget();
+        const m = suspended(keeping("w1", true));
+        const t = tenMinutes(1);
+        m.sample(t);
+        m.config.outerGpu = "none";
+        m.config.innerGpu = "none";
+        verify(!m.gpuOuter.present);
+        m.sample(t + 1000);
+        m.sample(t + 30000);
+        m.sample(t + 60000);
+        m.config.outerGpu = "";
+        m.config.innerGpu = "";
+        verify(m.gpuOuter.present);
+        m.sample(t + 90000);
+        const held = m.series["gpu:gpu97"].hour;
+        compare(held.means[0], 0);
+        verify(held.means.length === 3 && held.means.slice(1).every(v => Number.isNaN(v)), JSON.stringify(held.means));
+        m.flush();
+        const rows = saved("w1").filter(r => r.tier === "hour");
+        compare(rows.map(r => r.at - t / 30000), [0, 1, 2], "the CPU's");
+        compare(rows.filter(r => r.data["gpu:gpu97"] !== undefined).map(r => r.at - t / 30000), [0], "the GPU's");
+        forget();
+    }
+
+    // By default the disk's temperature sensor comes from the helper's
+    // report, which arrives after the widget has restored its history:
+    // what was saved under that sensor stays for it, and another sensor's
+    // goes once the report is in.
+    function test_aRestoredDiskTemperatureWaitsForItsSensor_data() {
+        return [{ tag: "reported", helper: "fake-info-disk-temperature.sh", kept: true },
+                { tag: "none", helper: "fake-info.sh", kept: false }];
+    }
+
+    function test_aRestoredDiskTemperatureWaitsForItsSensor(data) {
+        forget();
+        const hour = Math.floor(Date.now() / 30000);
+        const key = "diskTemperature:disk/vdz/temperature";
+        database().transaction(tx => tx.executeSql("INSERT INTO buckets VALUES ('w9', 'hour', ?, ?)", [hour - 2, JSON.stringify(
+            { cpu: [5, 6], [key]: [40, 41], "diskTemperature:disk/old/temperature": [30, 31] })]));
+        const m = keeping("w9", true, { helperPath: dataPath(data.helper) });
+        stopTimers(m);
+        compare(m.diskTemperatureSensorId, "", "the report hasn't come");
+        verify(m.series[key] !== undefined, "restored");
+        tryVerify(() => m.hardware.cpu !== undefined, 10000);
+        wait(0);
+        compare(m.diskTemperatureSensorId, data.kept ? "disk/vdz/temperature" : "");
+        verify(m.series["diskTemperature:disk/old/temperature"] === undefined, "another sensor's goes");
+        compare(m.series[key] !== undefined, data.kept);
+        if (data.kept) {
+            compare(m.series[key].hour.means.filter(v => Number.isFinite(v)), [40]);
+            m.chooseSpan("hour");
+            compare(m.diskTemperatureHistory, m.series[key].hour.means);
+        }
+        forget();
+    }
+
+    // A saved row or series not in the store's shape, from a damaged file
+    // say, is a gap, and the rest is restored.
+    function test_malformedRowsAreGaps() {
+        failOnWarning(/graph history|RangeError/);
+        forget();
+        const hour = Math.floor(Date.now() / 30000);
+        database().transaction(tx => {
+            for (const [at, data] of [[hour - 7, "null"], [hour - 6, '{"cpu":null}'], [hour - 5, "[1, 2]"],
+                                      [hour - 4.5, '{"cpu":[9,9]}'], [hour - 4, "not JSON"], [hour - 3, '{"cpu":[5,6]}'],
+                                      [hour - 2, '{"cpu":[7,8],"memory":"x","networkUp":[1]}']]) {
+                tx.executeSql("INSERT INTO buckets VALUES ('w1', 'hour', ?, ?)", [at, data]);
+            }
+        });
+        const m = keeping("w1", true);
+        stopTimers(m);
+        compare(m.series.cpu.hour.means.filter(v => Number.isFinite(v)), [5, 7]);
+        verify(["memory", "networkUp"].every(key => !m.series[key].hour.means.some(v => Number.isFinite(v))));
+        forget();
+    }
+
+    // A database that can't be used says so once, however often it is
+    // tried, and the history stays in memory.
+    function test_aBrokenStoreSaysSoOnce() {
+        Sql.LocalStorage.openDatabaseSync("ringside-tests-broken", "", "", 1000000)
+            .transaction(tx => tx.executeSql("CREATE TABLE IF NOT EXISTS buckets (x TEXT)"));
+        ignoreWarning(/^ringside: graph history store:/);
+        failOnWarning(/graph history/);
+        const m = sampling(keeping("w1", true, { storeUrl: Qt.resolvedUrl("data/BrokenStore.qml") }));
+        verify(m.store.failed);
+        const t = tenMinutes(1);
+        m.sample(t);
+        m.sample(t + 30000);
+        m.sample(t + 600000);
+        m.flush();
+        compare(m.series.cpu.hour.means.length, 20);
+        m.config.keepGraphHistory = false;
+        compare(m.store, null);
     }
 
     // A widget that starts with the setting on picks up where it left
@@ -790,6 +964,7 @@ TestCase {
         const t = tenMinutes(1);
         first.sample(t);
         first.sample(t + 30000);
+        first.flush();
         verify(saved("w1").length > 0);
         const other = keeping("w2", true);
         verify(other.series.cpu === undefined || other.series.cpu.hour.means.length === 0, "w2 restores nothing of w1's");
@@ -805,7 +980,7 @@ TestCase {
         const t = tenMinutes(1);
         m.sample(t);
         m.sample(t + 30000);
-        m.store.save([]);
+        m.flush();
         database().transaction(tx => tx.executeSql("INSERT INTO buckets VALUES ('w2', 'hour', ?, '{}')", [t / 30000]));
         verify(saved("w1").length > 0);
         m.config.keepGraphHistory = false;
@@ -814,6 +989,9 @@ TestCase {
         compare(saved("w2").length, 1, "another widget's kept");
         compare(m.series.cpu.hour.means.length, 1, "still shown");
         m.sample(t + 60000);
+        m.sample(t + 600000);
+        m.destroy();
+        wait(0);
         compare(saved("w1").length, 0, "and no more saved");
         forget();
     }
@@ -826,11 +1004,11 @@ TestCase {
         const t = tenMinutes(1);
         m.sample(t);
         m.sample(t + 30000);
-        m.sample(t + 60000);
+        m.sample(t + 600000);
         compare(m.store, null, "not loaded while off");
         compare(saved("w1").length, 0);
         m.config.keepGraphHistory = true;
-        compare(saved("w1").map(r => [r.tier, r.at]), [["hour", t / 30000], ["hour", t / 30000 + 1]]);
+        compare(saved("w1").map(r => [r.tier, r.at]), [["day", t / 600000], ["hour", t / 30000], ["hour", t / 30000 + 1]]);
         forget();
     }
 
@@ -853,6 +1031,9 @@ TestCase {
         compare(kept.filter(r => r.tier === "day").length, 145);
         verify(kept.every(r => r.at <= (r.tier === "hour" ? hour : day)), "nothing ahead of the clock");
         compare(saved("gone").length, 0, "a removed widget's old buckets go too");
+        m.store.save([{ tier: "hour", at: hour, data: { cpu: [7, 8] } }]);
+        compare(saved("w1").find(r => r.tier === "hour" && r.at === hour).data, { cpu: [7, 8] },
+                "a bucket closed again, after the clock was set back, replaces what was saved");
         forget();
     }
 

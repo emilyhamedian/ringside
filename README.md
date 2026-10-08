@@ -39,7 +39,8 @@ The last hour is drawn in 30-second steps and the last day in 10-minute
 ones, each step's average as the line, with a faint band up to its highest
 reading. Time the computer was asleep, or Plasma wasn't running, is left
 empty. The graphs record whether a popup is open or not, from when the
-widget starts; to keep the hour and the day across restarts, see Settings.
+widget starts: the hour's first step shows after 30 seconds and the day's
+after 10 minutes. To keep them across restarts, see Settings.
 
 ![The CPU, GPU, memory, network and disk popups](docs/popups.png)
 
@@ -238,10 +239,12 @@ which sends nothing.
 
 The graphs' history stays in memory. With *Keep the last hour and day
 across restarts* on, which is off by default, each 30-second and 10-minute
-step's average and highest reading is saved as it ends, through Qt's
-LocalStorage, in a database under
+step's average and highest reading is saved every 10 minutes and as the
+widget stops, through Qt's LocalStorage, in a database under
 `~/.local/share/plasmashell/QML/OfflineStorage/Databases/`. It holds about
-a day, and turning the setting off deletes what that widget saved.
+a day, and turning the setting off deletes what that widget saved. Turn it
+off before removing a widget, or its steps stay until another Ringside
+widget's save drops them, within a day.
 
 The Claude and Codex items run
 [`usage.py`](package/contents/code/usage.py). It sends your Claude Code login

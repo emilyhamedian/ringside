@@ -12,8 +12,8 @@ import "code/history.js" as History
 // memory. Qt keeps the database in plasmashell's data folder, under
 // QML/OfflineStorage/Databases: one SQLite file for every Ringside widget,
 // each row a closed bucket of one widget's graphs. A save also drops every
-// widget's buckets older than its span, a removed widget's too, so the file
-// holds about a day.
+// widget's buckets older than its span, a removed widget's too, so while
+// any widget keeps its history the file holds about a day.
 QtObject {
     id: store
 
@@ -23,6 +23,10 @@ QtObject {
     property string name: "ringside"
 
     property var db: null
+    // Set by the first failure, a database that can't be read or written
+    // say, after which failures go unsaid rather than fill the journal
+    // every 10 minutes.
+    property bool failed: false
 
     function open() {
         if (!db) {
@@ -34,8 +38,8 @@ QtObject {
         return db;
     }
 
-    // Runs `work` in a transaction, reporting a failure rather than throwing
-    // into the sample timer.
+    // Runs `work` in a transaction, reporting the first failure rather than
+    // throwing into the sample timer.
     function run(work, readOnly) {
         try {
             const d = open();
@@ -46,23 +50,40 @@ QtObject {
             }
             return true;
         } catch (err) {
-            console.warn("ringside: graph history store:", err.message ?? err);
+            if (!failed) {
+                console.warn("ringside: graph history store:", err.message ?? err);
+            }
+            failed = true;
             return false;
         }
     }
 
     // This widget's buckets of a tier, oldest first: [{ at, data }], data
-    // each series' [average, highest] by its key.
+    // each series' [average, highest] by its key. A row or a series that
+    // isn't in that shape is a gap.
     function load(tier) {
         const rows = [];
         run(tx => {
             const r = tx.executeSql("SELECT at, data FROM buckets WHERE widget = ? AND tier = ? ORDER BY at", [widget, tier]);
             for (let i = 0; i < r.rows.length; ++i) {
+                const at = r.rows.item(i).at;
+                let data = null;
                 try {
-                    rows.push({ at: r.rows.item(i).at, data: JSON.parse(r.rows.item(i).data) });
+                    data = JSON.parse(r.rows.item(i).data);
                 } catch (err) {
-                    // A row that doesn't parse is a gap.
+                    continue;
                 }
+                if (!Number.isInteger(at) || at < 0 || data === null || typeof data !== "object" || Array.isArray(data)) {
+                    continue;
+                }
+                const kept = {};
+                for (const key of Object.keys(data)) {
+                    const v = data[key];
+                    if (Array.isArray(v) && v.length === 2 && v.every(n => typeof n === "number")) {
+                        kept[key] = v;
+                    }
+                }
+                rows.push({ at: at, data: kept });
             }
         }, true);
         return rows;
