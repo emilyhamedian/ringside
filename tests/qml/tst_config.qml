@@ -257,6 +257,20 @@ Item {
             }
         }
 
+        // A setting left on where the module has since gone shows ticked,
+        // and can be switched off, but not on again.
+        function test_keepGraphHistoryLeftOnWithoutTheModule() {
+            const page = make(general, { storeUrl: Qt.resolvedUrl("data/MissingStore.qml"), cfg_keepGraphHistory: true });
+            const box = find(page, i => i.text === "Keep the last hour and day across restarts" && i.checked !== undefined);
+            verify(box.enabled);
+            verify(box.checked);
+            box.forceActiveFocus();
+            keyClick(Qt.Key_Space);
+            compare(page.cfg_keepGraphHistory, false);
+            verify(!box.checked);
+            verify(!box.enabled, "greyed out once off");
+        }
+
         function test_providers() {
             const page = make(providers);
             const every = combo(page, "Check every");

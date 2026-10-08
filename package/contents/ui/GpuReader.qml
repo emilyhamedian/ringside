@@ -93,11 +93,15 @@ QtObject {
         : subscribed ? read(4) : showsHeld ? held.clock ?? NaN : NaN
     readonly property real power: !leading ? (leader ? leader.power : NaN)
         : subscribed ? livePower : showsHeld ? held.power ?? NaN : NaN
+    // The latest power state polled, by this reader or its leader: the
+    // gate's "asleep" also stands for a GPU whose state isn't known yet.
+    readonly property bool knownAsleep: Gate.sleeping(leading ? pmStatus : leader ? leader.pmStatus : "")
     // qmllint enable missing-property
-    // What the hour's and the day's buckets take: asleep the GPU's usage is
-    // truly 0, but awake and unread, resting say, nothing is known, so a
-    // gap rather than the 0 and the held readings shown meanwhile.
-    readonly property real recordedUsage: phase === "asleep" ? 0 : live ? usage : NaN
+    // What the hour's and the day's buckets take: suspended, the GPU's usage
+    // is truly 0, but awake and unread, resting say, or in a state not yet
+    // polled, nothing is known, so a gap rather than the 0 and the held
+    // readings shown meanwhile.
+    readonly property real recordedUsage: knownAsleep ? 0 : live ? usage : NaN
     readonly property real recordedTemperature: live ? temperature : NaN
     // The span Monitor shows, as its own *History, *Highs and *Extent.
     property var history: []

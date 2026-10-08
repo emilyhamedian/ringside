@@ -266,6 +266,14 @@ function restore(t, buckets, nowMs) {
     }
 }
 
+// An extent, [coolest, hottest] or [], taking in one more reading.
+function widen(extent, v) {
+    if (!Number.isFinite(v)) {
+        return extent;
+    }
+    return extent.length === 0 ? [v, v] : [Math.min(extent[0], v), Math.max(extent[1], v)];
+}
+
 // The coolest and hottest readings a series keeps across the three spans,
 // as [coolest, hottest], or [] with none: a temperature graph sets its
 // scale from these, so it holds still when the span changes.

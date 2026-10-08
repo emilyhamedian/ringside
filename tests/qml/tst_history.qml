@@ -419,6 +419,16 @@ TestCase {
         compare(History.extent(s), [38, 93]);
     }
 
+    // Between buckets closing, an extent only takes in each new reading.
+    function test_widen() {
+        compare(History.widen([], 50), [50, 50]);
+        compare(History.widen([40, 60], 50), [40, 60]);
+        compare(History.widen([40, 60], 70), [40, 70]);
+        compare(History.widen([40, 60], 30), [30, 60]);
+        compare(History.widen([40, 60], NaN), [40, 60], "a missing reading leaves it");
+        compare(History.widen([], NaN), []);
+    }
+
     // A reading alone between gaps becomes a level line its slot wide,
     // never under 3 px; one in a run, and anything without `half`, stays.
     function test_aLoneReadingIsSpread() {
@@ -444,5 +454,7 @@ TestCase {
             [{ x: 0, y: -4 }, { x: 1, y: -5 }, { x: 1, y: -2 }, { x: 0, y: -1 }],
             [{ x: 2.5, y: -6 }, { x: 3.5, y: -6 }, { x: 3.5, y: -3 }, { x: 2.5, y: -3 }]
         ]);
+        // A restored bucket can have an average without its highest.
+        compare(History.bands([1, 2, 3], [4, NaN, 6], low, high, 0.5).length, 2, "a missing highest breaks the band");
     }
 }

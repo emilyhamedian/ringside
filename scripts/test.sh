@@ -118,9 +118,11 @@ probe_out=$(QT_QUICK_BACKEND=software "$QMLTESTRUNNER" -platform offscreen -inpu
 if ! printf '%s\n' "$probe_out" | grep -q '^Config: Using QtTest library 6\.'; then
     fail "need the Qt 6 qmltestrunner, but $QMLTESTRUNNER ran a probe test with: ${probe_out:-no output}. Set QMLTESTRUNNER to it."
 else
+    # The graph history tests' database goes in the probe's folder rather
+    # than the user's data folder.
     for f in tests/qml/tst_*.qml; do
         echo "-- $f --"
-        QT_QUICK_BACKEND=software "$QMLTESTRUNNER" -platform offscreen -input "$f" || failed=1
+        XDG_DATA_HOME=$probe QT_QUICK_BACKEND=software "$QMLTESTRUNNER" -platform offscreen -input "$f" || failed=1
     done
     # Numbers follow the locale. A German run catches a slide back to
     # toFixed(), an Egyptian Arabic one ASCII digits among the locale's own,

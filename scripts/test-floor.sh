@@ -31,11 +31,15 @@ if [ -z "${QMLTESTRUNNER:-}" ]; then
 fi
 
 failed=0
+scratch=$(mktemp -d)
+trap 'rm -rf "$scratch"' EXIT
 
 echo "== QtTest suites ($QMLTESTRUNNER) =="
+# The graph history tests' database goes in scratch rather than the user's
+# data folder.
 for f in tests/qml/tst_*.qml; do
     echo "-- $f --"
-    "$QMLTESTRUNNER" -platform offscreen -input "$f" || failed=1
+    XDG_DATA_HOME=$scratch "$QMLTESTRUNNER" -platform offscreen -input "$f" || failed=1
 done
 # See scripts/test.sh.
 for lang in de_DE ar_EG; do
@@ -50,9 +54,7 @@ echo
 echo "== scripts/gallery.sh =="
 # Every popup in every state the gallery shows, which fails on a binding
 # or polish loop or a script error.
-shots=$(mktemp -d)
-trap 'rm -rf "$shots"' EXIT
-sh scripts/gallery.sh "$shots/gallery.png" || failed=1
+sh scripts/gallery.sh "$scratch/gallery.png" || failed=1
 
 echo
 echo "== tests/helper/test-info.sh =="

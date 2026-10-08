@@ -22,8 +22,9 @@ follows [Semantic Versioning](https://semver.org/).
   discrete GPU's hour and day are 0 while it sleeps and empty while it is
   awake but unread.
 - *Keep the last hour and day across restarts* on General, off by default,
-  saves each graph's steps with Qt's LocalStorage as each one ends and
-  brings them back when the widget starts. Turning it off deletes them.
+  saves each graph's steps with Qt's LocalStorage every 10 minutes and as
+  the widget stops, and brings them back when the widget starts. Turning it
+  off deletes them.
   Debian and Ubuntu package the module on its own
   (`qml6-module-qtquick-localstorage`); without it the box is greyed out
   and the history stays in memory. See SECURITY.md for what is kept and

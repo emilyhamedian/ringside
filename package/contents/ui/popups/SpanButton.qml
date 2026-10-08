@@ -7,6 +7,7 @@ import QtQuick.Shapes
 import QtQuick.Templates as T
 import org.kde.kirigami as Kirigami
 import org.kde.plasma.components as PlasmaComponents
+import "../code/format.js" as Format
 import "../code/style.js" as Style
 
 // The span on a graph's caption line, "1 min", which opens a menu of the
@@ -25,16 +26,17 @@ T.AbstractButton {
 
     readonly property var spans: ["minute", "hour", "day"]
     // Short on the caption line; whole words in the menu and for a screen
-    // reader.
+    // reader. The 1 goes in as a number, in the locale's digits.
+    readonly property string one: Format.whole(1)
     readonly property var labels: ({
-        minute: i18nc("@title:group a graph's span, after its caption as in USAGE · 1 min", "1 min"),
-        hour: i18nc("@title:group a graph's span, after its caption as in USAGE · 1 h", "1 h"),
-        day: i18nc("@title:group a graph's span, after its caption as in USAGE · 1 day", "1 day")
+        minute: i18nc("@title:group a graph's span, after its caption as in USAGE · 1 min; %1 is 1", "%1 min", one),
+        hour: i18nc("@title:group a graph's span, after its caption as in USAGE · 1 h; %1 is 1", "%1 h", one),
+        day: i18nc("@title:group a graph's span, after its caption as in USAGE · 1 day; %1 is 1", "%1 day", one)
     })
     readonly property var names: ({
-        minute: i18nc("@item:inmenu a graph's span", "1 minute"),
-        hour: i18nc("@item:inmenu a graph's span", "1 hour"),
-        day: i18nc("@item:inmenu a graph's span", "1 day")
+        minute: i18nc("@item:inmenu a graph's span; %1 is 1", "%1 minute", one),
+        hour: i18nc("@item:inmenu a graph's span; %1 is 1", "%1 hour", one),
+        day: i18nc("@item:inmenu a graph's span; %1 is 1", "%1 day", one)
     })
     readonly property string span: spans.includes(monitor.graphSpan) ? monitor.graphSpan : "minute"
     readonly property alias menu: menu

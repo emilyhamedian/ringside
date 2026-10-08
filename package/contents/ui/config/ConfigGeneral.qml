@@ -12,8 +12,8 @@ ConfigPage {
     id: page
 
     // The graphs' history is kept with Qt's LocalStorage module, which
-    // Debian and Ubuntu package on their own; without it the box is off and
-    // says why. The tests point this elsewhere.
+    // Debian and Ubuntu package on their own; without it the box is greyed
+    // out and says why. The tests point this elsewhere.
     property url storeUrl: Qt.resolvedUrl("../HistoryStore.qml")
     readonly property bool storeAvailable: Qt.createComponent(storeUrl).status === Component.Ready
     readonly property string historyLine: storeAvailable
@@ -157,8 +157,10 @@ ConfigPage {
             id: keepHistory
             Kirigami.FormData.label: i18nc("@label", "Graph history:")
             text: i18nc("@option:check", "Keep the last hour and day across restarts")
-            enabled: page.storeAvailable
-            checked: page.cfg_keepGraphHistory && page.storeAvailable
+            // A setting left on where the module has since gone stays
+            // ticked, so it can be switched off.
+            enabled: page.storeAvailable || page.cfg_keepGraphHistory
+            checked: page.cfg_keepGraphHistory
             Accessible.description: page.historyLine
             onToggled: page.cfg_keepGraphHistory = checked
         }

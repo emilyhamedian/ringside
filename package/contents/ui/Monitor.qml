@@ -56,8 +56,11 @@ Item {
     property var series: ({})
 
     // With "Keep graph history" on, the hour's and the day's buckets are
-    // saved as they close and restored when the widget starts (see
-    // HistoryStore.qml), keyed by widgetId, Plasma's id for this widget.
+    // saved and restored when the widget starts (see HistoryStore.qml),
+    // keyed by widgetId, Plasma's id for this widget. Each save is a
+    // synchronous commit on Plasma's main thread, so closed hour buckets
+    // wait in `unsaved` for the next day bucket, one save every 10 minutes,
+    // and for the widget stopping.
     readonly property bool keepHistory: config.keepGraphHistory === true
     property string widgetId: ""
     // Loaded only while the setting is on, and only by URL, so a missing
@@ -70,6 +73,7 @@ Item {
     // Whether anything has been sampled yet: a store loaded before then
     // restores what it kept, and one loaded after saves what is held.
     property bool sampled: false
+    property var unsaved: []
 
     // The readings the panel shows, as of the last update interval. A
     // reading that appears or goes away is taken at the next sample, so the
@@ -354,15 +358,18 @@ Item {
                 const bucket = History.add(s[name], entry.kept ?? entry.minute, now);
                 if (bucket) {
                     ended[name] = true;
-                    closed[name].push({ key: entry.key, bucket: bucket });
+                    closed[name].push(Object.assign({ key: entry.key }, bucket));
                 }
             }
-            // An hour or a day changes only as its bucket closes.
+            // An hour or a day changes only as its bucket closes. A
+            // temperature's extent takes the new reading, and is worked
+            // out afresh from every span only as a bucket closes, when
+            // readings may have left the spans.
             if (graphSpan === "minute" || ended[graphSpan]) {
-                show(entry);
+                show(entry, ended.hour || ended.day ? undefined : entry.minute);
             }
         }
-        save(["hour", "day"].map(name => rowOf(name, closed[name])).filter(row => row !== null));
+        save(rowsOf(closed), closed.day.length > 0);
         latch(false);
     }
 
@@ -373,8 +380,9 @@ Item {
         return series[key];
     }
 
-    // Puts a series' span on show where its graph reads it.
-    function show(entry) {
+    // Puts a series' span on show where its graph reads it. Given the
+    // reading just taken, a temperature's extent only widens to take it in.
+    function show(entry, latest) {
         const s = seriesOf(entry.key);
         const name = suffix => entry.prefix ? entry.prefix + suffix : suffix.toLowerCase();
         const minute = graphSpan === "minute";
@@ -383,8 +391,8 @@ Item {
             entry.into[name("Highs")] = minute ? [] : s[graphSpan].highs;
         }
         if (entry.gaps) {
-            const next = History.extent(s);
             const was = entry.into[name("Extent")];
+            const next = latest === undefined ? History.extent(s) : History.widen(was, latest);
             if (next.length !== was.length || next.some((v, i) => v !== was[i])) {
                 entry.into[name("Extent")] = next;
             }
@@ -397,11 +405,15 @@ Item {
         }
     }
 
-    // A temperature sensor's series goes with the sensor.
+    // A temperature sensor's series goes with the sensor. By default the
+    // disk's sensor comes from the helper's report, so until that arrives a
+    // restored disk series stays for the sensor it may turn out to be.
     function dropOtherSensors() {
         const kept = ["cpuTemperature:" + cpuTemperatureSensorId, "diskTemperature:" + diskTemperatureSensorId];
+        const known = Object.keys(hardware).length > 0 || config.diskTemperatureSensor || config.diskDevice
+            ? /^(cpu|disk)Temperature:/ : /^cpuTemperature:/;
         for (const key of Object.keys(series)) {
-            if (/^(cpu|disk)Temperature:/.test(key) && !kept.includes(key)) {
+            if (known.test(key) && !kept.includes(key)) {
                 delete series[key];
             }
         }
@@ -413,53 +425,63 @@ Item {
         }
     }
 
-    // A bucket as saved: each series' average and highest, to a tenth,
-    // leaving out the series with no reading in it. null with none.
-    function rowOf(tier, buckets) {
-        const data = {};
+    // Closed buckets, { hour, day } of [{ key, at, mean, high }], as saved:
+    // a row per bucket, [{ tier, at, data }], data each series' average and
+    // highest to a tenth, leaving out a series with no reading in it and a
+    // bucket with none. A series that went unsampled for a while, a GPU off
+    // the rings say, closes its old bucket late, so each goes by its own
+    // number.
+    function rowsOf(closed) {
+        const rows = [];
         const tenth = v => Math.round(v * 10) / 10;
-        for (const b of buckets) {
-            if (Number.isFinite(b.bucket.mean)) {
-                data[b.key] = [tenth(b.bucket.mean), tenth(b.bucket.high)];
+        for (const tier of ["hour", "day"]) {
+            const data = {};
+            for (const b of closed[tier]) {
+                if (Number.isFinite(b.mean)) {
+                    data[b.at] = data[b.at] || {};
+                    data[b.at][b.key] = [tenth(b.mean), tenth(b.high)];
+                }
+            }
+            for (const at of Object.keys(data)) {
+                rows.push({ tier: tier, at: Number(at), data: data[at] });
             }
         }
-        return buckets.length > 0 && Object.keys(data).length > 0 ? { tier: tier, at: buckets[0].bucket.at, data: data } : null;
+        return rows;
     }
 
-    function save(rows) {
+    function save(rows, writeNow) {
         if (store && rows.length > 0) {
-            store.save(rows);
+            unsaved = unsaved.concat(rows);
         }
+        if (writeNow) {
+            flush();
+        }
+    }
+
+    function flush() {
+        if (store && unsaved.length > 0) {
+            store.save(unsaved); // qmllint disable missing-property
+        }
+        unsaved = [];
     }
 
     // Every bucket held, for a store just switched on.
     function saveAll() {
-        const rows = [];
+        const held = { hour: [], day: [] };
         for (const tier of ["hour", "day"]) {
-            const at = {};
             for (const key of Object.keys(series)) {
                 const t = series[key][tier];
-                t.means.forEach((mean, i) => {
-                    const n = t.at - t.means.length + i;
-                    at[n] = at[n] || [];
-                    at[n].push({ key: key, bucket: { at: n, mean: mean, high: t.highs[i] } });
-                });
-            }
-            for (const n of Object.keys(at)) {
-                const row = rowOf(tier, at[n]);
-                if (row) {
-                    rows.push(row);
-                }
+                t.means.forEach((mean, i) => held[tier].push({ key: key, at: t.at - t.means.length + i, mean: mean, high: t.highs[i] }));
             }
         }
-        save(rows);
+        save(rowsOf(held), true);
     }
 
     function restore() {
         const now = Date.now();
         for (const tier of ["hour", "day"]) {
             const byKey = {};
-            for (const row of store.load(tier)) {
+            for (const row of store.load(tier)) { // qmllint disable missing-property
                 for (const key of Object.keys(row.data)) {
                     const v = row.data[key];
                     byKey[key] = byKey[key] || [];
@@ -497,7 +519,7 @@ Item {
     // Switched off: what was saved goes.
     function stopKeeping() {
         if (store) {
-            store.clear();
+            store.clear(); // qmllint disable missing-property
             store.destroy();
             store = null;
         }
@@ -507,6 +529,7 @@ Item {
     onKeepHistoryChanged: keepHistory ? startKeeping() : stopKeeping()
     onWidgetIdChanged: if (keepHistory) startKeeping()
     Component.onCompleted: if (keepHistory) startKeeping()
+    Component.onDestruction: flush()
     onGraphSpanChanged: showAll()
     // A ring's GPU, its history at once rather than at the next close.
     onGpuOuterChanged: Qt.callLater(monitor.showAll)
@@ -548,6 +571,8 @@ Item {
         dropOtherSensors();
         showAll();
     }
+    // Once the bindings on the report have settled.
+    onHardwareChanged: Qt.callLater(monitor.dropOtherSensors)
 
     Timer {
         objectName: "sample"
