@@ -78,7 +78,7 @@ QtObject {
             checker.open = true;
         });
         const frozen = { status: checker.status, service: checker.service, serviceName: checker.serviceName, record: checker.record,
-                         clock: () => states.at, answer: () => {} };
+                         clock: () => states.at };
         // Off before it goes: destroy() waits for the event loop, and a checker
         // still on would answer the next state's checks.
         c.publicAddress = false;
