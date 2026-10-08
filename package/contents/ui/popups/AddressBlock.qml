@@ -18,12 +18,15 @@ import "../code/style.js" as Style
 //   v4, v6    { address, via, tunnel } or null; via is set only when the
 //             request left through another interface than the local one
 //   note      { text, warn } under the addresses, or null
+// After a failure, "Try again" beside the message emits retryRequested.
 GridLayout {
     id: block
 
     required property string localAddress
     required property string localInterface
     required property var info
+
+    signal retryRequested()
 
     readonly property real valuePointSize: Kirigami.Theme.defaultFont.pointSize * 0.88
     readonly property color dimColor: Style.dim(Kirigami.Theme.textColor)
@@ -223,10 +226,35 @@ GridLayout {
             visible: block.info.state === "checking"
             text: i18nc("@info %1 is the service asked, such as ipify.org", "Asking %1…", block.info.service ?? "")
         }
-        Plain {
+        // The message, the link after it and room after that, in the block's
+        // direction. The link takes no more height than the line it joins, so
+        // the block keeps its size when the next check replaces it.
+        RowLayout {
             visible: block.info.state === "failed"
-            color: Kirigami.Theme.textColor
-            text: i18nc("@info %1 is the service asked, such as ipify.org", "Can't reach %1", block.info.service ?? "")
+            Layout.fillWidth: true
+            spacing: Kirigami.Units.largeSpacing
+
+            Plain {
+                // As wide as the text, so the link follows it, and no wider
+                // than the room left, so a long name wraps.
+                Layout.maximumWidth: Math.ceil(implicitWidth)
+                Layout.alignment: Qt.AlignBaseline
+                color: Kirigami.Theme.textColor
+                text: i18nc("@info %1 is the service asked, such as ipify.org", "Can't reach %1", block.info.service ?? "")
+            }
+            Kirigami.LinkButton {
+                Layout.alignment: Qt.AlignBaseline
+                Layout.minimumWidth: implicitWidth
+                text: i18nc("@action:button asks the address service again after it couldn't be reached", "Try again")
+                font.pointSize: block.valuePointSize
+                font.underline: false
+                Accessible.description: i18nc("@info accessible, %1 is the service asked, such as ipify.org",
+                                              "Ask %1 for the public address again", block.info.service ?? "")
+                onClicked: block.retryRequested()
+            }
+            Item {
+                Layout.fillWidth: true
+            }
         }
         Plain {
             visible: block.info.state === "offline"

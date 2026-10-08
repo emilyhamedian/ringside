@@ -48,7 +48,8 @@ follows [Semantic Versioning](https://semver.org/).
   minute, and again when the route changes while it is open; a Custom
   service on General takes the https addresses of another instead. A change
   of address since the last check, or the last address seen when the
-  service can't be reached, shows under the addresses.
+  service can't be reached, shows under the addresses, and after a failed
+  check *Try again* beside the message asks at once.
 - The Claude and Codex popup says where the week is heading in one
   sentence, at the rate it has been used so far, such as "On pace to use
   80% by the reset", "Fable is on pace to run out Tue 3:30 AM" or "Limit

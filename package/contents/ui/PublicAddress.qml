@@ -13,7 +13,8 @@ import "code/publicaddress.js" as Lookup
 // family it asks.
 // A check goes out when the popup opens, unless any Ringside widget made one
 // in the last minute, and when the route changes while it stays open, but
-// never sooner than a minute after the last. Nothing else polls.
+// never sooner than a minute after the last. Nothing else polls. After a
+// failed check the popup offers a retry, which asks at once.
 Item {
     id: checker
 
@@ -130,6 +131,16 @@ Item {
             return;
         }
         start(now);
+    }
+
+    // The popup's "Try again" after a failed check: asks at once, since the
+    // user asked, where the other checks keep to the minute. Only a failure
+    // can be tried again, so a check under way is never repeated.
+    function retry() {
+        const now = currentFacts();
+        if (now.eligible && status === "failed") {
+            start(now);
+        }
     }
 
     function start(now) {

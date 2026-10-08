@@ -147,6 +147,7 @@ PopupPage {
         localAddress: popup.monitor.networkAddress
         localInterface: popup.monitor.networkInterface
         info: popup.publicInfo
+        onRetryRequested: popup.lookup.retry()
     }
 
     Tile {

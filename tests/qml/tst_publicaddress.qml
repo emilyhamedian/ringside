@@ -920,6 +920,249 @@ Item {
             compare(block(page).implicitHeight, height, "the block keeps its height");
         }
 
+        // ---- Trying a failed check again ----
+
+        function tryAgain(page) {
+            const found = all(page, i => i.text === "Try again");
+            compare(found.length, 1, "one link");
+            return found[0];
+        }
+
+        function onScreen(item) {
+            for (let p = item; p; p = p.parent) {
+                if (!p.visible) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        // A popup whose last check failed, in the same minute as the check
+        // before it, which found 198.51.100.24 and 2001:db8::1c. Both
+        // families are asked of one host, as short a name as ipify.org's.
+        function failedPopup(tag, mirrored, urls) {
+            const config = Object.assign({ publicAddressUrl4: "https://" + tag + ".example/ip.txt",
+                                           publicAddressUrl6: "https://" + tag + ".example/ip-6.txt" }, urls ?? {});
+            const set = shownIn({}, config);
+            answer(set.made, "v4", 200, "198.51.100.24");
+            answer(set.made, "v6", 200, "2001:db8::1c");
+            const page = popup(set.monitor, mirrored);
+            root.now += 61000;
+            set.checker.open = false;
+            set.checker.open = true;
+            compare(set.made.length, 4, "asked again");
+            answer(set.made, "v4", 503, "");
+            answer(set.made, "v6", 503, "");
+            compare(set.checker.status, "failed");
+            waitForRendering(page);
+            return { set: set, page: page, config: config };
+        }
+
+        function test_tryAgainOnlyWhenFailed_data() {
+            return [
+                { tag: "failed", config: {}, fail: ["v4", "v6"], status: "failed" },
+                { tag: "checking", config: {}, status: "checking" },
+                { tag: "shown", config: {}, ok: ["v4", "v6"], status: "shown" },
+                { tag: "one family failed", config: {}, ok: ["v4"], fail: ["v6"], status: "shown" },
+                { tag: "offline", props: { egress: route("", "") }, config: {}, status: "offline" },
+                { tag: "invalid", config: { publicAddressUrl4: "http://typo.example/ip" }, status: "invalid" },
+                { tag: "unrouted", props: { egress: route("", "enp195s0f3u1") },
+                  config: { publicAddressUrl4: "https://a.example/", publicAddressUrl6: "" }, status: "unrouted" },
+                { tag: "off", config: { publicAddress: false }, status: "off" }
+            ];
+        }
+        function test_tryAgainOnlyWhenFailed(data) {
+            const set = shownIn(data.props ?? {}, Object.assign(own("only" + data.tag.replace(/ /g, "")), data.config));
+            for (const family of data.ok ?? []) {
+                answer(set.made, family, 200, family === "v4" ? "198.51.100.24" : "2001:db8::1c");
+            }
+            for (const family of data.fail ?? []) {
+                answer(set.made, family, 503, "");
+            }
+            const page = popup(set.monitor);
+            compare(set.checker.status, data.status);
+            compare(onScreen(tryAgain(page)), data.status === "failed");
+        }
+
+        // The link asks at once, within the minute, one request per family;
+        // the block says it is asking and keeps its size, and the answer
+        // replaces the failure.
+        function test_tryAgainAsksAtOnce() {
+            const { set, page, config } = failedPopup("tryclick");
+            const sent = set.made.length;
+            const key = Lookup.service(config.publicAddressUrl4, config.publicAddressUrl6).key;
+            const height = block(page).implicitHeight;
+            verify(onScreen(tryAgain(page)));
+            verify(visibleTexts(page).some(t => t.indexOf("Last seen 198.51.100.24 at ") === 0), visibleTexts(page));
+
+            mouseClick(tryAgain(page));
+            compare(set.made.length, sent + 2, "one request per family, within the minute");
+            const fresh = set.made.slice(sent);
+            compare(fresh.map(r => r.url).sort(), [config.publicAddressUrl4, config.publicAddressUrl6].sort());
+            compare(fresh.map(r => r.sent), [true, true]);
+            compare(set.checker.status, "checking");
+            compare(Lookup.peek(key).attemptAt, root.now, "counts as a check");
+            waitForRendering(page);
+            compare(onScreen(tryAgain(page)), false);
+            const asking = visibleTexts(page);
+            verify(asking.includes("Asking tryclick.example…"), asking);
+            verify(asking.some(t => t.indexOf("Last seen 198.51.100.24 at ") === 0), asking);
+            compare(block(page).implicitHeight, height, "the block keeps its height");
+
+            answer(set.made, "v4", 200, "203.0.113.7");
+            answer(set.made, "v6", 200, "2001:db8::1c");
+            compare(set.checker.status, "shown");
+            compare(Lookup.peek(key).result.v4, "203.0.113.7");
+            waitForRendering(page);
+            compare(addressLines(page).map(l => l.spoken).slice(1),
+                    ["Public address 203.0.113.7", "Public address 2001:db8::1c"]);
+            compare(onScreen(tryAgain(page)), false);
+            compare(set.made.length, sent + 2, "nothing else was sent");
+        }
+
+        // While a check is under way, another click sends nothing, from this
+        // checker or from another Ringside widget's.
+        function test_tryAgainWhileAsking() {
+            const { set, page, config } = failedPopup("tryasking");
+            const other = checker({}, config);
+            compare(other.made.length, 0);
+            const link = tryAgain(page);
+            const sent = set.made.length;
+            mouseClick(link);
+            compare(set.made.length, sent + 2);
+            compare(other.checker.status, "checking");
+
+            // A click that was already on its way, and the checkers' own call.
+            link.clicked({ button: Qt.LeftButton });
+            mouseClick(link);
+            set.checker.retry();
+            other.checker.retry();
+            compare(set.made.length, sent + 2, "asking, so nothing more");
+            compare(other.made.length, 0, "another widget's check is waited for");
+
+            answer(set.made, "v4", 200, "203.0.113.7");
+            compare(set.checker.status, "checking", "one family still to answer");
+            set.checker.retry();
+            compare(set.made.length, sent + 2);
+            answer(set.made, "v6", 503, "");
+            compare(set.checker.status, "shown");
+        }
+
+        // A check that fails again leaves the link to try once more.
+        function test_tryAgainFailsAgain() {
+            const { set, page } = failedPopup("tryagain");
+            const sent = set.made.length;
+            mouseClick(tryAgain(page));
+            answer(set.made, "v4", 0, "");
+            answer(set.made, "v6", 0, "");
+            compare(set.made.length, sent + 2);
+            compare(set.checker.status, "failed");
+            waitForRendering(page);
+            verify(onScreen(tryAgain(page)), "offered again");
+            mouseClick(tryAgain(page));
+            compare(set.made.length, sent + 4);
+            compare(set.checker.status, "checking");
+        }
+
+        // Space, Return and Enter on the focused link do the same as a click.
+        function test_tryAgainByKeyboard_data() {
+            return [
+                { tag: "Space", key: Qt.Key_Space },
+                { tag: "Return", key: Qt.Key_Return },
+                { tag: "Enter", key: Qt.Key_Enter }
+            ];
+        }
+        function test_tryAgainByKeyboard(data) {
+            const { set, page } = failedPopup("trykey" + data.tag);
+            const link = tryAgain(page);
+            verify(link.activeFocusOnTab, "reached with Tab");
+            link.forceActiveFocus(Qt.TabFocusReason);
+            verify(link.activeFocus);
+            const sent = set.made.length;
+            keyClick(data.key);
+            compare(set.made.length, sent + 2, "one request per family");
+            compare(set.checker.status, "checking");
+            keyClick(data.key);
+            compare(set.made.length, sent + 2, "and not again while asking");
+        }
+
+        // Nothing is asked for a popup that is closed, a setting that is
+        // off, no connection or a service that isn't valid.
+        function test_tryAgainAsksNothingElse_data() {
+            return [
+                { tag: "popup closed", change: s => { s.checker.open = false; } },
+                { tag: "switched off", change: s => { s.config.publicAddress = false; } },
+                { tag: "no connection", change: s => { s.checker.egress = route("", ""); } },
+                { tag: "invalid service", change: s => { s.config.publicAddressUrl4 = "http://typo.example/ip"; } }
+            ];
+        }
+        function test_tryAgainAsksNothingElse(data) {
+            const { set } = failedPopup("trynone" + data.tag.replace(/ /g, ""));
+            const sent = set.made.length;
+            data.change(set);
+            set.checker.retry();
+            compare(set.made.length, sent);
+            compare(set.checker.pending, []);
+        }
+
+        // The link follows the block's direction: after the message, which
+        // starts at the block's edge, with the note under both; named and
+        // described for assistive technology.
+        function test_tryAgainFollowsTheDirection_data() {
+            return [{ tag: "leftToRight", mirrored: false }, { tag: "rightToLeft", mirrored: true }];
+        }
+        function test_tryAgainFollowsTheDirection(data) {
+            const { page } = failedPopup("trydir" + data.mirrored, data.mirrored);
+            const link = tryAgain(page);
+            const row = link.parent;
+            const message = find(row, i => typeof i.text === "string" && i.text.indexOf("Can't reach") === 0);
+            verify(message);
+            const span = i => ({ start: i.mapToItem(row, Qt.point(0, 0)).x, end: i.mapToItem(row, Qt.point(i.width, 0)).x });
+            const m = span(message);
+            const l = span(link);
+            if (data.mirrored) {
+                fuzzyCompare(m.end, row.width, 1, "the message against the right edge");
+                verify(l.end <= m.start, "the link to its left: " + [m.start, l.end]);
+            } else {
+                fuzzyCompare(m.start, 0, 1, "the message against the left edge");
+                verify(l.start >= m.end, "the link to its right: " + [m.end, l.start]);
+            }
+            verify(!message.truncated && !link.truncated);
+            verify(Math.min(l.start, l.end) >= -1 && Math.max(l.start, l.end) <= row.width + 1, "inside the row");
+            fuzzyCompare(link.mapToItem(row, Qt.point(0, link.baselineOffset)).y,
+                         message.mapToItem(row, Qt.point(0, message.baselineOffset)).y, 1, "on the message's baseline");
+            const note = find(page, i => typeof i.text === "string" && i.text.indexOf("Last seen") === 0);
+            verify(note && onScreen(note));
+            verify(note.mapToItem(page, Qt.point(0, 0)).y >= link.mapToItem(page, Qt.point(0, link.height)).y, "the note stays under");
+
+            compare(link.Accessible.role, Accessible.Button);
+            compare(link.Accessible.name, "Try again");
+            compare(link.Accessible.description,
+                    "Ask trydir" + data.mirrored + ".example for the public address again");
+            compare(link.font.underline, false);
+        }
+
+        // Hosts too long for the line wrap the message, and the link stays
+        // whole inside the block, as wide as the popup is.
+        function test_tryAgainBesideALongName_data() {
+            return [{ tag: "leftToRight", mirrored: false }, { tag: "rightToLeft", mirrored: true }];
+        }
+        function test_tryAgainBesideALongName(data) {
+            const { page } = failedPopup("trylong" + data.mirrored, data.mirrored,
+                                         { publicAddressUrl4: "https://lookup.very-long-hostname.example.net/ip",
+                                           publicAddressUrl6: "https://lookup-6.another-long-hostname.example.org/ip" });
+            const link = tryAgain(page);
+            const row = link.parent;
+            const message = find(row, i => typeof i.text === "string" && i.text.indexOf("Can't reach") === 0);
+            verify(message.lineCount > 1, "wrapped over lines: " + message.lineCount);
+            const inside = i => i.mapToItem(row, Qt.point(0, 0)).x >= -1 && i.mapToItem(row, Qt.point(i.width, 0)).x <= row.width + 1;
+            verify(inside(message), "the message inside the row");
+            verify(inside(link), "the link inside the row");
+            verify(!link.truncated && link.width >= link.implicitWidth - 1, "the link in full");
+            verify(row.width <= block(page).width, "the row inside the block");
+            compare(block(page).width, page.width - 2 * Math.round(Kirigami.Units.largeSpacing * 2), "the popup keeps its width");
+        }
+
         function test_otherStatesInThePopup_data() {
             return [
                 { tag: "offline", props: { egress: route("", "") }, config: {}, text: "Waiting for a connection" },
