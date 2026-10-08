@@ -16,13 +16,16 @@ import org.kde.plasma.plasmoid
 // keeps no config item under that name, so nothing reaches the file.
 //
 // Three of the keys are reports the widget writes while the dialog may be
-// open: knownLimits, usageStatus and detectedHardware. Their cfg_ copies
-// keep the values the page opened with, since Plasma 6.0 to 6.4 enable
-// Apply on any cfg_ change signal; latest follows the live configuration
-// instead, one event-loop turn behind, because the dialog's own writes on
-// Apply arrive through the same signal, and before 6.5 those come first and
-// write the page's copies over the reports. saveConfig() then puts the
-// reports where the dialog's order of events keeps them.
+// open: knownLimits, usageStatus and detectedHardware. The dialogs differ in
+// what their cfg_ copies may do. Plasma 6.4 and later turn Apply on only
+// where a copy differs from the live value, so there the copies follow each
+// report as it is written, and Apply stays as the user's own changes leave
+// it. Plasma 6.0 to 6.3 turn Apply on at any cfg_ change signal, so there
+// the copies keep the values the page opened with, and latest follows the
+// live configuration instead, one event-loop turn behind, because the
+// dialog's own writes on Apply arrive through the same signal and, on those
+// versions, write the page's copies over the reports first. saveConfig()
+// then puts the reports where the dialog's order of events keeps them.
 KCM.SimpleKCM {
     id: base
 
@@ -105,9 +108,22 @@ KCM.SimpleKCM {
         latest = now;
     }
 
-    // Called by the dialog on Apply. From Plasma 6.5 it comes before the
+    // Whether the dialog turns Apply on by comparing the copies with the
+    // live values, as Plasma 6.4 and later do: their dialog's root, up the
+    // parent chain from the page, has isConfigurationChanged(). Before 6.4
+    // any cfg_ change signal turns it on.
+    function dialogComparesCopies() {
+        for (let item = parent; item; item = item.parent) {
+            if (typeof item.isConfigurationChanged === "function") { // qmllint disable missing-property
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // Called by the dialog on Apply. From Plasma 6.4 it comes before the
     // dialog writes the cfg_ copies back, so the live value is the newest
-    // and the copies take it. Before 6.5 it comes after, and the live value
+    // and the copies take it. Before 6.4 it comes after, and the live value
     // is the page's own stale copy: latest, still a turn behind, is what the
     // widget wrote last, so it goes back and is saved, as the dialog has
     // saved already.
@@ -126,10 +142,21 @@ KCM.SimpleKCM {
         }
     }
 
+    // A report written while the page is open. Where the dialog compares
+    // the copies, the copy takes it at once: the live value already equals
+    // it, so the cfg_ change signal this sends leaves Apply to the user's
+    // other changes, and nothing stale ever arrives here, so latest can
+    // follow at once too.
     Connections {
         target: base.live ?? null
         function onValueChanged(key, value) {
-            if (base.reports.includes(key)) {
+            if (!base.reports.includes(key)) {
+                return;
+            }
+            if (base.dialogComparesCopies()) {
+                base["cfg_" + key] = value;
+                base.refresh();
+            } else {
                 Qt.callLater(base.refresh);
             }
         }

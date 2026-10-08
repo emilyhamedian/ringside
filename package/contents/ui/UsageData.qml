@@ -192,7 +192,10 @@ Item {
     }
 
     // Forgets the ids no longer polled, and with none left the helper's
-    // failure too.
+    // failure too. The status is written a turn later: the change may be the
+    // settings dialog's Apply writing itemOrder and hiddenItems back, which
+    // goes on to write its own copy of usageStatus, and a status written
+    // meanwhile would be lost under it.
     function forgetUnpolled() {
         const only = map => {
             const kept = {};
@@ -219,7 +222,7 @@ Item {
             if (ids.length === 0) {
                 helperError = "";
             }
-            writeStatus();
+            Qt.callLater(writeStatus);
         }
     }
 
@@ -319,10 +322,12 @@ Item {
     }
 
     // Also sent while the widget starts; a choice made before any reading
-    // has nothing to add to what is stored.
+    // has nothing to add to what is stored. The limits are written a turn
+    // later, as forgetUnpolled() writes the status: the dialog's Apply writes
+    // the choices back before its copy of knownLimits.
     onInnerChoicesChanged: {
         if (Object.keys(entries).length > 0) {
-            rememberLimits();
+            Qt.callLater(rememberLimits);
         }
     }
 
