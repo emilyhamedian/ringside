@@ -176,27 +176,28 @@ keep it awake regardless.
 
 The network popup can show the address websites see under the local one, so
 a VPN that is down, or that IPv6 goes around, shows up. It is off until you
-turn it on with the checkbox on General, and the popup shows nothing of it
-before then. When it is on, Ringside asks [ipify.org](https://www.ipify.org)
-each time the network popup opens, at most once a minute, and again when the
-route changes while the popup is open. Nothing is asked while the popup is
-closed or there is no connection, and the answer is kept only in memory. Each
-request is an HTTPS GET whose User-Agent names Ringside and its version, and
-it sends no languages; the service sees your address, as any website does.
+tick *Show in the Network popup* on General, and the popup shows nothing of
+it before then. When it is on, Ringside asks
+[ipify.org](https://www.ipify.org) each time the network popup opens, at most
+once a minute, and again when the route changes while the popup is open.
+Nothing is asked while the popup is closed or there is no connection, and the
+answer is kept only in memory. Each request is an HTTPS GET whose User-Agent
+names Ringside and its version, and it sends no languages; the service sees
+your address, as any website does.
 
-To use another service, give its https addresses for IPv4 and IPv6 on
-General. With either set, only those are asked; leave one empty to skip that
-family. The service has to answer with the address alone, as plain text, and
-from its own host: an answer redirected to another host or to http is
-ignored.
+To use another service, choose *Custom* as the service and give its https
+addresses for IPv4 and IPv6. Only that service is asked; leave one empty to
+skip that family. The service has to answer with the address alone, as plain
+text, and from its own host: an answer redirected to another host or to http
+is ignored.
 
 ## Settings
 
 Right-click the widget and choose *Configure Ringside…*.
 
 - **General**: update interval, how far back the graphs reach, Celsius or
-  Fahrenheit, network rates in bits or bytes, temperature thresholds, and the
-  public address in the network popup.
+  Fahrenheit, network rates in bits or bytes, temperature thresholds, and
+  the public address in the network popup, with the service asked for it.
 - **Panel Items**: which items show and in what order, and rings with or
   without their text. Rings grow and shrink with the panel.
 - **Sensors**: the CPU temperature source, which GPU goes on which ring, the

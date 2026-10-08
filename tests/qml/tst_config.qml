@@ -649,6 +649,42 @@ Item {
             verify(!d.changed(), "Apply would stay enabled");
         }
 
+        // The public address's controls save its keys through Apply: the
+        // box, a Custom service's URLs, and ipify.org again as empty URLs.
+        function test_applySavesThePublicAddress_data() {
+            return orders([{ tag: "General" }]);
+        }
+        function test_applySavesThePublicAddress(data) {
+            const config = fakeConfiguration(settings());
+            const page = open("config/ConfigGeneral.qml", config, data.order);
+            const d = dialog(page, config, data.order);
+            waitForRendering(page);
+            const box = find(page, i => i.text === "Show in the Network popup" && i.checked !== undefined);
+            box.forceActiveFocus();
+            keyClick(Qt.Key_Space);
+            const service = combo(page, "Service");
+            verify(service.visible, "the service list shows once the box is ticked");
+            service.forceActiveFocus();
+            keyClick(Qt.Key_Down);
+            const url4 = combo(page, "IPv4 URL");
+            verify(url4.activeFocus, "Custom focuses the IPv4 URL");
+            for (const c of "https://ip.example.org/") {
+                keyClick(c);
+            }
+            verify(d.applyEnabled, "the changes left Apply off");
+            d.apply();
+            compare([config.publicAddress, config.publicAddressUrl4, config.publicAddressUrl6], [true, "https://ip.example.org/", ""]);
+            compare([config.file.publicAddress, config.file.publicAddressUrl4, config.file.publicAddressUrl6],
+                    [true, "https://ip.example.org/", ""]);
+            verify(!d.changed(), "Apply would stay enabled");
+
+            service.forceActiveFocus();
+            keyClick(Qt.Key_Up);
+            verify(d.applyEnabled, "ipify.org left Apply off");
+            d.apply();
+            compare([config.file.publicAddress, config.file.publicAddressUrl4, config.file.publicAddressUrl6], [true, "", ""]);
+        }
+
         // The hints read the reports as the widget writes them.
         function test_pagesFollowTheReports_data() {
             return orders([{ tag: "pages" }]);

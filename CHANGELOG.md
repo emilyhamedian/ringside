@@ -16,10 +16,10 @@ follows [Semantic Versioning](https://semver.org/).
   goes around a VPN that IPv4 uses, or the other way round. It is off until
   you turn it on under General, and the popup shows nothing of it before
   then. Ringside asks ipify.org when the popup opens, at most once a
-  minute, and again when the route changes while it is open; General takes
-  the https addresses of another service instead. A change of address
-  since the last check, or the last address seen when the service can't be
-  reached, shows under the addresses.
+  minute, and again when the route changes while it is open; a Custom
+  service on General takes the https addresses of another instead. A change
+  of address since the last check, or the last address seen when the
+  service can't be reached, shows under the addresses.
 - The Claude and Codex popup says where the week is heading in one
   sentence, at the rate it has been used so far, such as "On pace to use
   80% by the reset", "Fable is on pace to run out Tue 3:30 AM" or "Limit

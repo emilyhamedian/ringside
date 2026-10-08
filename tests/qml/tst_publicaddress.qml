@@ -67,8 +67,11 @@ Item {
     Component {
         id: generalComponent
         ConfigGeneral {
+            property bool rightToLeft
             width: root.width
             height: root.height
+            LayoutMirroring.enabled: rightToLeft
+            LayoutMirroring.childrenInherit: true
             cfg_updateInterval: 1000
             cfg_historySeconds: 60
             cfg_networkBits: true
@@ -1033,62 +1036,254 @@ Item {
             compare(set.made.length, 0);
         }
 
-        function general(props) {
-            const page = createTemporaryObject(generalComponent, root, props);
+        // The General page, right to left if asked, as an RTL language lays it out.
+        function general(props, mirrored) {
+            const page = createTemporaryObject(generalComponent, root, Object.assign({ rightToLeft: mirrored === true }, props));
             verify(page);
             waitForRendering(page);
             return page;
         }
 
-        function test_settingsCheckbox_data() {
-            return [{ tag: "on", stored: true, checked: true }, { tag: "off", stored: false, checked: false }];
-        }
-        function test_settingsCheckbox(data) {
-            const page = general({ cfg_publicAddress: data.stored });
-            const box = find(page, i => i instanceof QQC2.CheckBox && i.text === "Ask ipify.org for it");
-            verify(box, "the checkbox names ipify.org");
-            compare(box.checked, data.checked);
-            mouseClick(box);
-            compare(page.cfg_publicAddress, !data.checked);
-            mouseClick(box);
-            compare(page.cfg_publicAddress, data.checked);
-            const note = visibleTexts(page).find(t => t.indexOf("Shows the address websites see") === 0);
-            verify(note.indexOf("api.ipify.org and api6.ipify.org") >= 0, note);
-        }
-
-        function test_settingsFields() {
-            const page = general({ cfg_publicAddress: true });
+        // The page's public address controls, found as a user meets them.
+        function controls(page) {
             const field = name => find(page, i => i instanceof QQC2.TextField && i.Accessible.name === name);
-            const four = field("IPv4 address URL");
-            const six = field("IPv6 address URL");
-            compare([four.placeholderText, six.placeholderText], ["https://api.ipify.org", "https://api6.ipify.org"]);
-            const errors = () => visibleTexts(page).filter(t => t.indexOf("Use an https:// address") === 0).length;
-            compare(errors(), 0);
-
-            four.text = "https://a.example/ip";
-            four.textEdited();
-            compare(page.cfg_publicAddressUrl4, "https://a.example/ip");
-            verify(find(page, i => i instanceof QQC2.CheckBox && i.text === "Ask a.example for it"));
-            const note = visibleTexts(page).find(t => t.indexOf("Shows the address websites see") === 0);
-            verify(note.indexOf("Ringside asks only a.example, at the addresses below") >= 0, note);
-
-            six.text = "https://b.example/ip";
-            six.textEdited();
-            compare(page.cfg_publicAddressUrl6, "https://b.example/ip");
-            verify(find(page, i => i instanceof QQC2.CheckBox && i.text === "Ask a.example and b.example for it"));
-
-            for (const bad of ["http://a.example/ip", "https://me:pw@a.example/", "https://", "a.example"]) {
-                four.text = bad;
-                four.textEdited();
-                compare(errors(), 1, bad);
-                compare(four.Accessible.description.indexOf("Use an https:// address"), 0);
-                verify(find(page, i => i instanceof QQC2.CheckBox && i.text === "Ask the address service for it"),
-                       "an invalid service isn't named after its other URL");
-                verify(visibleTexts(page).some(t => t.indexOf("Ringside asks nothing until the addresses below are fixed.") > 0));
+            const c = {
+                box: find(page, i => i instanceof QQC2.CheckBox && i.text === "Show in the Network popup"),
+                line: find(page, i => i instanceof QQC2.Label && i.text.indexOf("Asks ") === 0),
+                service: find(page, i => i instanceof QQC2.ComboBox && i.Accessible.name === "Service"),
+                url4: field("IPv4 URL"),
+                url6: field("IPv6 URL")
+            };
+            for (const name in c) {
+                verify(c[name], name);
             }
-            four.text = "";
-            four.textEdited();
-            compare(errors(), 0, "an empty field is fine");
+            return c;
+        }
+
+        // The red reason under a URL field, or "" while there is none.
+        function reason(field) {
+            const shown = all(field.parent, i => i instanceof QQC2.Label && i.visible);
+            verify(shown.length <= 1);
+            return shown.length === 1 ? shown[0].text : "";
+        }
+
+        function typeIn(field, text) {
+            field.forceActiveFocus();
+            field.selectAll();
+            keyClick(Qt.Key_Delete);
+            for (const c of text) {
+                keyClick(c);
+            }
+            compare(field.text, text);
+        }
+
+        // Picks a service from the list with the keyboard, as activating it does.
+        function pick(c, custom) {
+            c.service.forceActiveFocus();
+            keyClick(custom ? Qt.Key_Down : Qt.Key_Up);
+            compare(c.service.currentIndex, custom ? 1 : 0);
+        }
+
+        // The line sits under the box's text, at the side it starts from.
+        function verifyUnderTheBox(page, c) {
+            verify(c.line.visible, "the line shows");
+            const text = c.box.contentItem;
+            const box = c.box.mapToItem(page, Qt.point(0, 0));
+            const line = c.line.mapToItem(page, Qt.point(0, 0));
+            const start = text.mapToItem(page, Qt.point(0, 0));
+            verify(line.y >= box.y + c.box.height - 0.5, "the line is under the box");
+            if (c.box.mirrored) {
+                fuzzyCompare(line.x + c.line.width - c.line.rightPadding, start.x + text.width - text.rightPadding, 1,
+                             "under the box's text, right to left");
+                compare(c.line.effectiveHorizontalAlignment, Text.AlignRight);
+            } else {
+                fuzzyCompare(line.x + c.line.leftPadding, start.x + text.leftPadding, 1, "under the box's text");
+                compare(c.line.effectiveHorizontalAlignment, Text.AlignLeft);
+            }
+        }
+
+        // One line under the box says whom Ringside asks and what they
+        // learn, the same with the box off or on.
+        function test_settingsLine_data() {
+            const sees = who => "Asks " + who + ", which sees your address, when the popup opens.";
+            return [
+                { tag: "ipify", line: sees("ipify.org") },
+                { tag: "one custom host", url4: "https://a.example/ip", line: sees("a.example") },
+                { tag: "one host for both", url4: "https://a.example/4", url6: "https://A.example/6", line: sees("a.example") },
+                { tag: "IPv6 only", url6: "https://b.example/ip", line: sees("b.example") },
+                { tag: "two hosts", url4: "https://a.example/ip", url6: "https://b.example/ip",
+                  line: "Asks a.example and b.example, which see your address, when the popup opens." },
+                { tag: "custom, both empty", custom: true, line: "Asks ipify.org, which sees your address, until you enter a URL." },
+                { tag: "invalid", url4: "http://a.example/ip", url6: "https://b.example/ip", line: "Asks nothing while a URL isn't valid." },
+                { tag: "mirrored", url4: "https://a.example/ip", mirrored: true, line: sees("a.example") }
+            ];
+        }
+        function test_settingsLine(data) {
+            const page = general({ cfg_publicAddress: false, cfg_publicAddressUrl4: data.url4 ?? "", cfg_publicAddressUrl6: data.url6 ?? "" },
+                                 data.mirrored);
+            const c = controls(page);
+            mouseClick(c.box);
+            compare(page.cfg_publicAddress, true);
+            if (data.custom) {
+                pick(c, true);
+            }
+            for (const on of [true, false, true]) {
+                if (page.cfg_publicAddress !== on) {
+                    mouseClick(c.box);
+                }
+                compare(c.box.checked, on);
+                waitForRendering(page);
+                compare(c.line.text, data.line, on ? "ticked" : "unticked");
+                verifyUnderTheBox(page, c);
+            }
+        }
+
+        // Off, only the box and its line show; on, the service list too, and
+        // the URL fields with a custom service.
+        function test_settingsServiceRows_data() {
+            return [{ tag: "ipify", url: "", custom: false }, { tag: "custom", url: "https://a.example/ip", custom: true }];
+        }
+        function test_settingsServiceRows(data) {
+            const page = general({ cfg_publicAddress: false, cfg_publicAddressUrl4: data.url });
+            const c = controls(page);
+            const shown = () => [c.service.visible, c.url4.visible, c.url6.visible];
+            compare(shown(), [false, false, false]);
+            mouseClick(c.box);
+            compare(page.cfg_publicAddress, true);
+            compare(shown(), [true, data.custom, data.custom]);
+            compare(c.service.model, ["ipify.org", "Custom"]);
+            compare(c.service.currentIndex, data.custom ? 1 : 0);
+            mouseClick(c.box);
+            compare(page.cfg_publicAddress, false);
+            compare(shown(), [false, false, false]);
+        }
+
+        // Custom opens on empty fields with the first focused; picking
+        // ipify.org empties the URLs, and Custom brings them back.
+        function test_settingsCustom() {
+            const page = general({ cfg_publicAddress: true });
+            const c = controls(page);
+            pick(c, true);
+            compare([c.url4.visible, c.url6.visible], [true, true]);
+            compare([c.url4.text, c.url6.text], ["", ""]);
+            compare([c.url4.placeholderText, c.url6.placeholderText], ["", ""]);
+            verify(c.url4.activeFocus, "the IPv4 field has the focus");
+            compare([page.cfg_publicAddressUrl4, page.cfg_publicAddressUrl6], ["", ""]);
+
+            typeIn(c.url4, "https://a.example/ip");
+            typeIn(c.url6, "https://b.example/ip");
+            compare([page.cfg_publicAddressUrl4, page.cfg_publicAddressUrl6], ["https://a.example/ip", "https://b.example/ip"]);
+            compare(c.line.text, "Asks a.example and b.example, which see your address, when the popup opens.");
+
+            pick(c, false);
+            compare([page.cfg_publicAddressUrl4, page.cfg_publicAddressUrl6], ["", ""]);
+            compare([c.url4.visible, c.url6.visible], [false, false]);
+            compare(c.line.text, "Asks ipify.org, which sees your address, when the popup opens.");
+
+            pick(c, true);
+            compare([page.cfg_publicAddressUrl4, page.cfg_publicAddressUrl6], ["https://a.example/ip", "https://b.example/ip"]);
+            compare([c.url4.text, c.url6.text], ["https://a.example/ip", "https://b.example/ip"]);
+
+            // Emptying both by hand keeps Custom open, asking ipify.org meanwhile.
+            typeIn(c.url4, "");
+            typeIn(c.url6, "");
+            compare(c.service.currentIndex, 1);
+            compare([c.url4.visible, c.url6.visible], [true, true]);
+            compare(c.line.text, "Asks ipify.org, which sees your address, until you enter a URL.");
+        }
+
+        // A stored URL emptied by hand keeps Custom open, asking ipify.org
+        // meanwhile, rather than taking the field away while it is typed in.
+        function test_settingsEmptiedByHand() {
+            const page = general({ cfg_publicAddress: true, cfg_publicAddressUrl4: "https://a.example/ip" });
+            const c = controls(page);
+            compare(c.service.currentIndex, 1);
+            typeIn(c.url4, "");
+            compare(page.cfg_publicAddressUrl4, "");
+            compare(c.service.currentIndex, 1);
+            compare([c.url4.visible, c.url6.visible], [true, true]);
+            verify(c.url4.activeFocus, "the field keeps the focus");
+            compare(c.line.text, "Asks ipify.org, which sees your address, until you enter a URL.");
+        }
+
+        // Defaults empties both URLs, which is ipify.org again, so Custom
+        // closes, from stored URLs or ones typed on the page.
+        function test_settingsDefaults_data() {
+            return [{ tag: "stored", stored: "https://a.example/ip" }, { tag: "typed", stored: "" }];
+        }
+        function test_settingsDefaults(data) {
+            const page = general({ cfg_publicAddress: true, cfg_publicAddressUrl4: data.stored });
+            const c = controls(page);
+            if (data.stored === "") {
+                pick(c, true);
+                typeIn(c.url4, "https://a.example/ip");
+            }
+            compare(c.service.currentIndex, 1);
+            compare(c.url4.visible, true);
+            // Clicking Defaults takes the focus from the field, as a button does.
+            c.box.forceActiveFocus();
+            for (const key of ["publicAddressUrl4", "publicAddressUrl6"]) {
+                page["cfg_" + key] = page["cfg_" + key + "Default"];
+            }
+            compare(c.service.currentIndex, 0);
+            compare([c.url4.visible, c.url6.visible], [false, false]);
+            compare(c.line.text, "Asks ipify.org, which sees your address, when the popup opens.");
+        }
+
+        // A URL that isn't valid says why under its field, and the line says
+        // nothing is asked; spaces around a URL are fine.
+        function test_settingsUrlReasons_data() {
+            const rows = [];
+            for (const name of ["IPv4 URL", "IPv6 URL"]) {
+                rows.push({ tag: name + " http", name: name, url: "http://a.example/ip", reason: "Only https:// addresses work." },
+                          { tag: name + " no scheme", name: name, url: "a.example", reason: "Only https:// addresses work." },
+                          { tag: name + " user", name: name, url: "https://me:pw@a.example/", reason: "Leave out the user name and password." },
+                          { tag: name + " no host", name: name, url: "https://", reason: "Check the host name." },
+                          { tag: name + " bad host", name: name, url: "https://a_b.example/", reason: "Check the host name." },
+                          { tag: name + " spaces", name: name, url: " https://a.example/ip ", reason: "" });
+            }
+            return rows;
+        }
+        function test_settingsUrlReasons(data) {
+            const page = general({ cfg_publicAddress: true });
+            const c = controls(page);
+            pick(c, true);
+            const field = data.name === "IPv4 URL" ? c.url4 : c.url6;
+            const other = field === c.url4 ? c.url6 : c.url4;
+            typeIn(field, data.url);
+            compare(reason(field), data.reason);
+            compare(field.Accessible.description, data.reason);
+            compare(reason(other), "");
+            compare(c.line.text, data.reason === "" ? "Asks a.example, which sees your address, when the popup opens."
+                                                    : "Asks nothing while a URL isn't valid.");
+            if (data.reason !== "") {
+                waitForRendering(page);
+                const note = all(field.parent, i => i instanceof QQC2.Label && i.visible)[0];
+                compare(note.color, Kirigami.Theme.negativeTextColor);
+                verify(note.mapToItem(page, Qt.point(0, 0)).y >= field.mapToItem(page, Qt.point(0, 0)).y + field.height - 0.5,
+                       "the reason is under its field");
+            }
+            typeIn(field, "");
+            compare(reason(field), "", "an empty field is fine");
+        }
+
+        // Right to left, the labels sit right of the fields, and a URL still
+        // reads left to right inside its field.
+        function test_settingsUrlLeftToRight() {
+            const page = general({ cfg_publicAddress: true, cfg_publicAddressUrl4: "https://a.example/ip" }, true);
+            const c = controls(page);
+            verify(c.box.mirrored, "the page is right to left");
+            compare(c.service.currentIndex, 1);
+            for (const field of [c.url4, c.url6]) {
+                verify(!field.mirrored, field.Accessible.name + " mirrored");
+                compare(field.effectiveHorizontalAlignment, TextInput.AlignLeft, field.Accessible.name);
+            }
+            typeIn(c.url6, "http://b.example/ip");
+            compare(reason(c.url6), "Only https:// addresses work.");
+            const label = find(page, i => i instanceof QQC2.Label && i.text === "IPv4 URL:");
+            verify(label);
+            verify(label.mapToItem(page, Qt.point(0, 0)).x >= c.url4.mapToItem(page, Qt.point(0, 0)).x + c.url4.width - 0.5,
+                   "the label sits right of its field");
         }
 
         // ---- Monitor ----
