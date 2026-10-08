@@ -214,13 +214,20 @@ TestCase {
         compare(History.temperatureFloor([84, 90], 5, 40), 70, "a big step goes straight there");
     }
 
-    // The top is the hot threshold, or the peak when it runs hotter or
-    // there is no threshold.
+    // The top is the hot threshold, or the peak rounded up to a five when
+    // it runs hotter or there is no threshold.
     function test_temperatureTop() {
         compare(History.temperatureTop([60, 61, 62], 90), 90);
-        compare(History.temperatureTop([52, 93.4, NaN], 90), 93.4);
-        compare(History.temperatureTop([60, 61.5, NaN], -Infinity), 61.5);
+        compare(History.temperatureTop([60, 90, 62], 90), 90, "at the threshold");
+        compare(History.temperatureTop([52, 90.2, NaN], 90), 95);
+        compare(History.temperatureTop([52, 93.4, NaN], 90), 95);
+        compare(History.temperatureTop([52, 95, NaN], 90), 95, "already a five");
+        compare(History.temperatureTop([88], 87), 90, "a threshold that isn't a five");
+        compare(History.temperatureTop([86], 87), 87);
+        compare(History.temperatureTop([199.4], 194), 200, "in °F");
+        compare(History.temperatureTop([60, 61.5, NaN], -Infinity), 65);
         compare(History.temperatureTop([NaN], 90), 90);
+        compare(History.temperatureTop([NaN], -Infinity), -Infinity);
     }
 
     function levelsOf(pieces) {

@@ -30,15 +30,16 @@ follows [Semantic Versioning](https://semver.org/).
   and the history stays in memory. See SECURITY.md for what is kept and
   where.
 - The CPU, GPU and disk popups graph their temperature over the span shown,
-  under the usage graph (after the write rate for a disk). The graph
-  has a line at your hot threshold, named at the end of the caption line as
-  "hot 90 °C", or reaches up to its peak, "peak 93 °C", when that is hotter
-  or the temperature colours are off. Its floor is a round ten at least 5 °C
-  below the coolest reading. Both come from the whole of the last day, so
-  they stay put when the span changes. The line turns amber and red where it passes
-  your thresholds, and leaves a gap while a GPU sleeps. A GPU or drive with
-  no temperature reading has no graph, nor has an integrated GPU beside a
-  discrete one.
+  under the usage graph (after the write rate for a disk). Its scale runs
+  from a round ten at least 5 °C below the coolest reading of the last day
+  to your hot threshold, or to the day's hottest rounded up to a five when
+  that is hotter, so it stays put when the span changes. While the span
+  shown stays at or under the hot threshold, a faint line marks it, named at
+  the end of the caption line as "hot 90 °C"; past it, or with the
+  temperature colours off, the caption names the span's peak, "peak 93 °C",
+  instead. The line turns amber and red where it passes your thresholds,
+  and leaves a gap while a GPU sleeps. A GPU or drive with no temperature
+  reading has no graph, nor has an integrated GPU beside a discrete one.
 - The network popup can show the public address websites see under the
   local one, with the interface each address family leaves through when
   that isn't the local one, a shield for a tunnel, and a warning when IPv6

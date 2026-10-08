@@ -685,20 +685,50 @@ TestCase {
     }
 
     // A GPU item shown again has new readers, which show the span's
-    // history at once rather than as the next bucket closes.
-    function test_aReshownGpuShowsItsHistoryAtOnce() {
+    // history at once rather than as the next bucket closes: with two GPUs,
+    // and with the discrete one alone, where the inner ring stays empty and
+    // only the outer ring's reader changes.
+    function test_aReshownGpuShowsItsHistoryAtOnce_data() {
+        return [{ tag: "twoGpus", inner: "" }, { tag: "discreteOnly", inner: "none" }];
+    }
+
+    function test_aReshownGpuShowsItsHistoryAtOnce(data) {
+        config.innerGpu = data.inner;
         sampling(monitor);
         config.graphSpan = "hour";
         const t = tenMinutes(1);
         monitor.sample(t);
         monitor.sample(t + 30000);
         compare(monitor.gpuOuter.history.length, 1);
+        compare(monitor.gpuInner.present, data.inner === "");
+        // Lets a show still queued by the inner ring's change run first, so
+        // that only the readers' return can show the history.
+        wait(0);
         config.hiddenItems = ["disk", "gpu"];
         verify(!monitor.gpuOuter.present);
         config.hiddenItems = ["disk"];
         tryVerify(() => monitor.gpuOuter.present, 5000);
         tryVerify(() => monitor.gpuOuter.history.length === 1, 1000, "shown at once");
         compare(monitor.gpuOuter.history, monitor.series["gpu:gpu97"].hour.means);
+    }
+
+    // A GPU put back on the inner ring shows the span chosen while it was
+    // off at once, though the outer ring's reader stays as it was.
+    function test_aGpuBackOnTheInnerRingShowsTheSpanAtOnce() {
+        sampling(monitor);
+        config.graphSpan = "hour";
+        const t = tenMinutes(1);
+        monitor.sample(t);
+        monitor.sample(t + 30000);
+        const [outer, inner] = [monitor.gpuOuter, monitor.gpuInner];
+        compare(inner.history.length, 1);
+        config.innerGpu = "none";
+        config.graphSpan = "day";
+        compare(inner.history.length, 1, "off the ring, it keeps the hour");
+        config.innerGpu = "";
+        verify(monitor.gpuOuter === outer && monitor.gpuInner === inner);
+        tryVerify(() => inner.history.length === 0, 1000, "shown at once");
+        compare(inner.history, monitor.series["gpu:gpu98"].day.means);
     }
 
     // A discrete GPU asleep is truly idle, so its hour and day take 0; one

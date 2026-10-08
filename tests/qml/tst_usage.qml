@@ -1554,10 +1554,10 @@ Item {
             compare(left + tile.width, popup.width - edge);
         }
 
-        // "100%" names each percentage graph's top, and "hot 90 °C" a
-        // temperature graph's, at the far end of its tile's caption line,
-        // over the end of the rule, and nothing is
-        // written in the graph above its floor, where a line could run
+        // "100%" names each percentage graph's top, and "hot 90 °C" the
+        // threshold whose rule tops a calm temperature graph, at the far end
+        // of its tile's caption line, over the end of the rule, and nothing
+        // is written in the graph above its floor, where a line could run
         // through it. Mirrored, the caption line reads from the right and
         // "100%" ends it at the left.
         function test_scaleOnTheCaptionLine_data() {

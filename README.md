@@ -21,11 +21,13 @@ The CPU, GPU and disk popups also graph their temperature.
 Percentage graphs have a line at 100%, named at the end of the caption line
 above the graph; rate graphs reach up to their peak, named in the same place
 when it fits, or to 1 Mb/s (1 MiB/s for a disk) when the peak is lower. A
-temperature graph has a line at your hot threshold, named in the same place,
-or reaches up to its peak when that is hotter or the temperature colours are
-off, and its line turns amber and red as the reading does. Its floor is a
-round ten at least 5 °C below the coolest reading. Both come from the whole
-of the last day, so they stay put when you change the span. An integrated
+temperature graph's scale runs from a round ten at least 5 °C below the
+coolest reading of the last day to your hot threshold, or to the day's
+hottest rounded up to a five when that is hotter, so it stays put when you
+change the span. While the span shown stays at or under the hot threshold,
+a faint line marks the threshold, named in the same place; past it, or with
+the temperature colours off, the span's peak is named there instead. The
+line turns amber and red as the reading does. An integrated
 GPU beside a discrete one has no temperature graph: it shares the CPU's
 chip, which the CPU popup graphs.
 The graphs take a reading every second, or at the update interval
@@ -243,8 +245,11 @@ step's average and highest reading is saved every 10 minutes and as the
 widget stops, through Qt's LocalStorage, in a database under
 `~/.local/share/plasmashell/QML/OfflineStorage/Databases/`. It holds about
 a day, and turning the setting off deletes what that widget saved. Turn it
-off before removing a widget, or its steps stay until another Ringside
-widget's save drops them, within a day.
+off before removing a widget, or its steps stay: another Ringside widget
+with the setting on drops them at its first save a day after the removal,
+and with none they stay. To remove them yourself, delete
+`a7cd204c17273ec1e4b4cb45252c93f3.sqlite` and the `.ini` beside it from that
+folder while Plasma isn't running; that clears every widget's steps.
 
 The Claude and Codex items run
 [`usage.py`](package/contents/code/usage.py). It sends your Claude Code login

@@ -42,11 +42,12 @@ Mainly the two helpers Ringside runs:
   it can your other Plasma data. Each save drops every widget's steps from
   before the last hour and day, so it holds about a day, about 100 KB a
   widget. Turning the setting off deletes that widget's steps, and leaves
-  the files. A widget removed with the setting on leaves its steps until
-  another Ringside widget's save drops them, within a day, and a widget added
-  meanwhile that Plasma gives the same id picks them up, so turn the
-  setting off before removing one. To clear every widget's, delete both
-  files while Plasma isn't running.
+  the files. A widget removed with the setting on leaves its steps: another
+  Ringside widget with the setting on drops them at its first save a day
+  after the removal, and with none they stay. A widget added meanwhile that
+  Plasma gives the same id picks them up, so turn the setting off before
+  removing one. To remove them by hand, delete both files while Plasma
+  isn't running, which clears every widget's steps.
 - The public address in the network popup, off until you turn it on
   under General, sends one HTTPS GET per address family to `api.ipify.org`
   and `api6.ipify.org`, or only to the URLs you set instead. A request goes

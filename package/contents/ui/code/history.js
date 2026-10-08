@@ -117,10 +117,12 @@ function temperatureFloor(samples, margin, previous) {
 }
 
 // A temperature graph's top: the hot threshold, so the line's height says
-// how near hot it runs, or the peak when the line runs hotter, as a rate
-// graph's top is its peak. With no threshold, -Infinity, it is the peak.
+// how near hot it runs, or, when a reading runs hotter, the hottest rounded
+// up to a five, so a new peak moves the top only once it passes the next
+// five. With no threshold, -Infinity, it is the hottest rounded up.
 function temperatureTop(samples, hot) {
-    return samples.reduce((a, v) => Number.isFinite(v) ? Math.max(a, v) : a, hot);
+    const hottest = samples.reduce((a, v) => Number.isFinite(v) ? Math.max(a, v) : a, -Infinity);
+    return hottest > hot ? Math.ceil(hottest / 5) * 5 : hot;
 }
 
 // A temperature line cut where it crosses the warm and hot thresholds, so
