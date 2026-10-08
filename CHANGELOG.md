@@ -46,7 +46,9 @@ follows [Semantic Versioning](https://semver.org/).
   you turn it on under General, and the popup shows nothing of it before
   then. Ringside asks ipify.org when the popup opens, at most once a
   minute, and again when the route changes while it is open; a Custom
-  service on General takes the https addresses of another instead. A change
+  service on General takes the https addresses of another instead, and
+  one that answers in JSON with a city, such as a self-hosted echoip, has
+  the popup say roughly where it places each address. A change
   of address since the last check, or the last address seen when the
   service can't be reached, shows under the addresses, and after a failed
   check *Try again* beside the message asks at once.

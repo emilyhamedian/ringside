@@ -82,6 +82,11 @@ Rectangle {
     }
 
     PublicFake {
+        id: publicCity
+        publicState: "city"
+    }
+
+    PublicFake {
         id: publicFailed
         publicState: "failed"
     }
@@ -740,6 +745,13 @@ Rectangle {
                 label: "Network · a long IPv6 going around the VPN"
                 AfterFirstFrame {
                     NetworkPopup { monitor: publicLeak }
+                }
+            }
+
+            PopupFrame {
+                label: "Network · a Custom service that names the city"
+                AfterFirstFrame {
+                    NetworkPopup { monitor: publicCity }
                 }
             }
 

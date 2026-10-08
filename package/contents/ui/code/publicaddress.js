@@ -14,6 +14,10 @@ const IPIFY = { name: "ipify.org", v4: "https://api.ipify.org", v6: "https://api
 
 const FAMILIES = ["v4", "v6"];
 
+// The longest reply read, in characters: room for a JSON reply with the
+// address and its place. Anything longer is no answer.
+const REPLY_LIMIT = 16384;
+
 function isIPv4(text) {
     // Four decimal parts, none with a leading zero, which some parsers read as octal.
     return /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/.test(text);
@@ -96,6 +100,41 @@ function address(body, family) {
     return family === "v6" ? canonical6(groups6(text)) : text;
 }
 
+// A city or country from a JSON reply, or "": a string, with control
+// characters and line breaks turned to spaces, invisible and direction
+// characters dropped, and white space run together. A name longer than any
+// place has is dropped rather than cut.
+function placeName(value) {
+    if (typeof value !== "string") {
+        return "";
+    }
+    const text = value.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, " ")
+        .replace(/[\u00ad\u061c\u180e\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff]/g, "")
+        .replace(/\s+/g, " ").trim();
+    return text.length <= 64 ? text : "";
+}
+
+// A service's reply for one family as { address, city, country }, with ""
+// for what it lacks. The reply is the address alone, or a JSON object whose
+// "ip" is the address and whose "city" and "country", where it has them,
+// say where the service places it; nothing else in it is read. A country
+// without a city says too little to show, so it goes too.
+function reply(body, family) {
+    const text = typeof body === "string" && body.length <= REPLY_LIMIT ? body.trim() : "";
+    if (text.charAt(0) !== "{") {
+        return { address: address(text, family), city: "", country: "" };
+    }
+    let data = {};
+    try {
+        data = JSON.parse(text);
+    } catch (e) {
+        // Not JSON after all, so no address.
+    }
+    const found = address(data.ip, family);
+    const city = found !== "" ? placeName(data.city) : "";
+    return { address: found, city: city, country: city !== "" ? placeName(data.country) : "" };
+}
+
 // Whether a reply came over https from the host that was asked. Qt follows
 // a redirect before the reply is seen, to another host or to plain http
 // alike, so the URL the request ended at is the one to check.
@@ -170,7 +209,8 @@ function egress(exitCode, stdout) {
 
 // The address lines for a check's result, with the interface each family
 // left through (from the route facts taken when it was asked) where that
-// isn't the local interface, and whether that interface is a tunnel.
+// isn't the local interface, whether that interface is a tunnel, and the
+// city and country the service placed the address in.
 // `leak` names the tunnel one family uses while the other goes around it.
 function lines(result, egress, localInterface) {
     const known = !!(egress && egress.known);
@@ -181,7 +221,9 @@ function lines(result, egress, localInterface) {
         }
         const route = known ? egress[f] : null;
         const via = route && route.device !== localInterface ? route.device : "";
-        return { address: address, via: via, tunnel: via !== "" && route.tunnel };
+        const place = result.places ? result.places[f] : null;
+        return { address: address, via: via, tunnel: via !== "" && route.tunnel,
+                 city: place ? place.city : "", country: place ? place.country : "" };
     };
     const v4 = line("v4");
     const v6 = line("v6");
@@ -203,8 +245,9 @@ function lines(result, egress, localInterface) {
 //   route      the route key the result was asked under; egress, the
 //              route facts then, which go with its addresses
 //   busy       a check is under way; asking, { route, egress } it began under
-//   result     { at, v4, v6 } of the last finished check, "" for a family
-//              that failed or wasn't asked; null before any
+//   result     { at, v4, v6, places } of the last finished check: "" for
+//              a family that failed or wasn't asked, and places, the
+//              { city, country } of each family's reply; null before any
 //   seen       per family, { address, at } of its last good answer
 //   changed    per family, { at, was } when the last check's address
 //              differed from the one before it
@@ -256,7 +299,11 @@ function finish(key, now, found) {
     r.route = r.asking.route;
     r.egress = r.asking.egress;
     r.asking = null;
-    r.result = { at: now, v4: found.v4 || "", v6: found.v6 || "" };
+    const answer = f => found[f] || { address: "", city: "", country: "" };
+    r.result = { at: now, v4: answer("v4").address, v6: answer("v6").address, places: {} };
+    for (const f of FAMILIES) {
+        r.result.places[f] = { city: answer(f).city, country: answer(f).country };
+    }
     for (const f of FAMILIES) {
         const before = r.seen[f];
         const answer = r.result[f];

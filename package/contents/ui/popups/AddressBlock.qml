@@ -15,9 +15,13 @@ import "../code/style.js" as Style
 //             "invalid"
 //   service   the service's name, such as "ipify.org"
 //   unrouted  in that state, the family ("v4" or "v6") without a route
-//   v4, v6    { address, via, tunnel } or null; via is set only when the
-//             request left through another interface than the local one
+//   v4, v6    { address, via, tunnel, city, country } or null; via is set
+//             only when the request left through another interface than
+//             the local one, and city when the service's reply named one
 //   note      { text, warn } under the addresses, or null
+// Where the service places the addresses goes under them, before the note:
+// one line when the families agree or only one says, else one each, so a
+// family going around a VPN shows where it is seen.
 // After a failure, "Try again" beside the message emits retryRequested.
 GridLayout {
     id: block
@@ -31,6 +35,23 @@ GridLayout {
     readonly property real valuePointSize: Kirigami.Theme.defaultFont.pointSize * 0.88
     readonly property color dimColor: Style.dim(Kirigami.Theme.textColor)
     readonly property var lines: info.state === "shown" ? [info.v4, info.v6].filter(l => l) : []
+    readonly property var places: {
+        const p4 = place(info.v4);
+        const p6 = place(info.v6);
+        if (p4 !== "" && p6 !== "" && p4 !== p6) {
+            return [i18nc("@info %1 is a place, such as Amsterdam, Netherlands", "IPv4 near %1", p4),
+                    i18nc("@info %1 is a place, such as Amsterdam, Netherlands", "IPv6 near %1", p6)];
+        }
+        const one = p4 || p6;
+        return one !== "" ? [i18nc("@info %1 is a place, such as Amsterdam, Netherlands", "Near %1", one)] : [];
+    }
+
+    // An address line's city, with its country where the reply gave one.
+    function place(line) {
+        return !line || line.city === "" ? ""
+            : line.country !== "" ? i18nc("@info %1 is a city, %2 its country", "%1, %2", line.city, line.country)
+            : line.city;
+    }
 
     columns: 2
     columnSpacing: Kirigami.Units.largeSpacing
@@ -214,11 +235,16 @@ GridLayout {
                 address: modelData.address
                 via: modelData.via
                 tunnel: modelData.tunnel
-                spoken: modelData.via === ""
+                readonly property string said: modelData.via === ""
                     ? i18nc("@info accessible, %1 is an address", "Public address %1", modelData.address)
                     : modelData.tunnel
                     ? i18nc("@info accessible, %1 is an address, %2 a VPN's network interface", "Public address %1 through VPN %2", modelData.address, modelData.via)
                     : i18nc("@info accessible, %1 is an address, %2 a network interface", "Public address %1 through %2", modelData.address, modelData.via)
+                readonly property string near: block.place(modelData)
+                // The place is heard with its address, so its line under them is skipped.
+                spoken: near === "" ? said
+                    : i18nc("@info accessible, %1 is the public address as said above, %2 a place, such as Amsterdam, Netherlands",
+                            "%1, near %2", said, near)
             }
         }
 
@@ -270,9 +296,29 @@ GridLayout {
             text: i18nc("@info", "Check the address service in the settings")
         }
 
+        // The places and the note, set apart from the addresses as one.
+        Item {
+            visible: block.places.length > 0 || block.info.note ? true : false
+            implicitHeight: Math.round(Kirigami.Units.smallSpacing / 2)
+        }
+
+        Repeater {
+            model: block.places
+            delegate: Text {
+                required property string modelData
+                Layout.fillWidth: true
+                text: modelData
+                color: block.dimColor
+                font.pointSize: Kirigami.Theme.smallFont.pointSize
+                elide: Text.ElideRight
+                textFormat: Text.PlainText
+                horizontalAlignment: Text.AlignLeft
+                Accessible.ignored: true
+            }
+        }
+
         RowLayout {
             visible: block.info.note ? true : false
-            Layout.topMargin: Math.round(Kirigami.Units.smallSpacing / 2)
             spacing: Kirigami.Units.smallSpacing
             Kirigami.Icon {
                 visible: block.info.note?.warn ?? false

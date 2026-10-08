@@ -99,6 +99,10 @@ QtObject {
             vpn: run([{ egress: homeV4, v4: ok4 }, { egress: vpn, v4: [200, "198.51.100.24"] }]),
             longvpn: run([{ egress: route("wg0-mullvad", "wg0-mullvad", true, true), v4: [200, "198.51.100.24"], v6: long6 }]),
             longleak: run([{ egress: leak, v4: [200, "198.51.100.24"], v6: long6 }]),
+            // A Custom service that answers in JSON with a city.
+            city: run([{ egress: vpn, v4: [200, JSON.stringify({ ip: "198.51.100.24", city: "Amsterdam", country: "Netherlands",
+                                                                 organization: "Example" })] }],
+                      { publicAddressUrl4: "https://ip4.example.net/json", publicAddressUrl6: "https://ip6.example.net/json" }),
             failed: run([{ egress: homeV4, v4: ok4 }, { egress: homeV4, v4: [503, ""] }], {}, 0)
         };
     }

@@ -335,5 +335,13 @@ ConfigPage {
             url: page.cfg_publicAddressUrl6
             onEdited: text => page.cfg_publicAddressUrl6 = text
         }
+
+        Note {
+            visible: page.cfg_publicAddress && page.custom
+            Layout.maximumWidth: url6.Layout.preferredWidth
+            horizontalAlignment: Text.AlignLeft
+            text: i18nc("@info under the custom service URLs; ip and city are JSON keys, not to be translated",
+                        "Each answers with the address, or JSON with ip and city.")
+        }
     }
 }

@@ -78,7 +78,8 @@ Item {
     // setting or the service changed) rather than for a route change.
     property bool fresh: false
     // This checker's requests under way, { family, request, done, answer },
-    // and the service they went to.
+    // with answer as Lookup.reply() gives it or null, and the service they
+    // went to.
     property var pending: []
     property string pendingKey: ""
     property var listener: null
@@ -149,7 +150,7 @@ Item {
         pendingKey = now.key;
         // Every request exists before the first is sent, so one that
         // answers at once can't finish the check early.
-        const sent = now.families.map(f => ({ family: f, request: makeRequest(), done: false, answer: "" }));
+        const sent = now.families.map(f => ({ family: f, request: makeRequest(), done: false, answer: null }));
         pending = sent;
         Lookup.begin(now.key, clock(), now.route, egress);
         timeout.restart();
@@ -157,14 +158,14 @@ Item {
             const request = s.request;
             const url = now.service[s.family];
             request.onreadystatechange = () => {
-                // A reply running far past an address's length is not one.
-                // abort() only stops Ringside listening: Qt keeps reading
-                // whatever the service goes on sending.
-                if (request.readyState === XMLHttpRequest.LOADING && String(request.responseText).length > 4096) {
+                // A reply running far past an address and its place is not
+                // one. abort() only stops Ringside listening: Qt keeps
+                // reading whatever the service goes on sending.
+                if (request.readyState === XMLHttpRequest.LOADING && String(request.responseText).length > Lookup.REPLY_LIMIT) {
                     request.abort();
                 } else if (request.readyState === XMLHttpRequest.DONE) {
                     const trusted = request.status === 200 && Lookup.cameFrom(String(request.responseURL), url);
-                    checker.settle(s, trusted ? Lookup.address(request.responseText, s.family) : "");
+                    checker.settle(s, trusted ? Lookup.reply(String(request.responseText), s.family) : null);
                 }
             };
             request.open("GET", url);
@@ -175,12 +176,12 @@ Item {
         }
     }
 
-    function settle(s, address) {
+    function settle(s, answer) {
         if (s.done) {
             return;
         }
         s.done = true;
-        s.answer = address;
+        s.answer = answer;
         if (pending.includes(s) && pending.every(p => p.done)) {
             const found = {};
             for (const p of pending) {
@@ -249,7 +250,7 @@ Item {
         onTriggered: {
             const late = checker.pending.filter(s => !s.done);
             for (const s of late) {
-                checker.settle(s, "");
+                checker.settle(s, null);
             }
             for (const s of late) {
                 s.request.abort();
