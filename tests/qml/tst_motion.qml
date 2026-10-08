@@ -396,12 +396,14 @@ Item {
             return xy(History.points(values, g.length, g.width, g.height, maximum ?? g.maximum, g.topY));
         }
 
-        // The line each of a graph's ShapePaths draws, as drawn.
+        // The points each of a graph's ShapePaths draws, as drawn: its
+        // band, its area, its line and the dashed second line, each of
+        // their stretches one after another.
         function strokes(g) {
             return g.children.filter(c => c.preferredRendererType !== undefined)
                 .reduce((paths, shape) => paths.concat(Array.from(shape.data)), [])
                 .filter(p => p.pathElements !== undefined)
-                .map(p => xy(Array.from(p.pathElements[0].path)));
+                .map(p => xy(Array.from(p.pathElements[0].paths).reduce((all, run) => all.concat(Array.from(run)), [])));
         }
 
         // A new sample is drawn in the frame it arrives in, each point a
@@ -413,7 +415,7 @@ Item {
         function test_aSampleDrawsInOneFrame(data) {
             const g = createTemporaryObject(graphComponent, root, { values: start });
             const before = strokes(g);
-            compare(before[1], rest(g, start));
+            compare(before[2], rest(g, start));
             let frames = [];
             createTemporaryObject(samplerComponent, graphs, { sample: () => frames.push(strokes(g)) });
             wait(50);
@@ -424,7 +426,7 @@ Item {
                 g.maximum = data.maximum;
             }
             const after = strokes(g);
-            compare(after[1], rest(g, next, data.maximum), "drawn as it arrives");
+            compare(after[2], rest(g, next, data.maximum), "drawn as it arrives");
             wait(Math.max(3 * Kirigami.Units.longDuration, 200));
             verify(frames.length > 2, "frames sampled: " + frames.length);
             frames.forEach((f, i) => compare(f, after, "frame " + i));

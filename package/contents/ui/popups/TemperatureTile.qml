@@ -14,9 +14,12 @@ import "../code/history.js" as History
 // under a faint rule as a percentage graph's 100% is, "hot 90 °C", or the
 // peak when the line runs hotter or the highlighting is off, "peak 93 °C",
 // as a rate graph's is. The floor goes unnamed (see
-// History.temperatureFloor()). The line turns amber and red where it passes
-// the warm and hot thresholds, as the header's reading does, and breaks off
-// where there was no reading.
+// History.temperatureFloor()). Both come from every reading the three spans
+// keep, so the scale and its name hold still when the span changes. The
+// line turns amber and red where it passes the warm and hot thresholds, as
+// the header's reading does, and breaks off where there was no reading. An
+// hour or a day draws each bucket's average under a fainter band up to its
+// highest reading, so a short hot spell still shows.
 Tile {
     id: tile
 
@@ -24,31 +27,41 @@ Tile {
     required property var monitor
     // °C, oldest first, NaN for a missing reading.
     property var history: []
+    // The highest reading behind each point at an hour or a day; empty at
+    // a minute, where each point is a reading.
+    property var highs: []
+    // [coolest, hottest] across the three spans (Monitor's *Extent), or
+    // empty, when the scale comes from the history alone.
+    property var extent: []
 
     readonly property bool fahrenheit: monitor.fahrenheit
     // Samples and thresholds in the unit shown, so the floor is a round
     // number in it.
     readonly property var shown: history.map(c => Format.degrees(c, fahrenheit))
+    readonly property var scaleSamples: (extent.length > 0 ? extent : history).map(c => Format.degrees(c, fahrenheit))
     readonly property real hot: Format.degrees(monitor.hotCelsius, fahrenheit)
+    readonly property bool bucketed: highs.length > 0
     // With the highlighting off the settings grey the thresholds out and
     // the line keeps one colour, so the hot threshold means nothing here.
-    readonly property real scaleTop: History.temperatureTop(shown, monitor.highlightTemperatures ? hot : -Infinity)
+    readonly property real scaleTop: History.temperatureTop(scaleSamples, monitor.highlightTemperatures ? hot : -Infinity)
     readonly property bool topIsHot: monitor.highlightTemperatures && scaleTop === hot
     // 5 °C in the unit shown.
     readonly property real margin: fahrenheit ? 9 : 5
     // Set as the samples come rather than bound, since where it stays
     // depends on where it was.
     property real floor: NaN
-    // A lone reading draws no line, so a sensor needs two in a row in the
-    // graph's span for a graph, as the header needs one for a reading.
-    readonly property bool hasReading: history.some((c, i) => i > 0 && Number.isFinite(c) && Number.isFinite(history[i - 1]))
+    // A lone reading draws no line at a minute, so a sensor needs two in a
+    // row there for a graph, as the header needs one for a reading; at an
+    // hour or a day one bucket is a mark of its own.
+    readonly property bool hasReading: bucketed ? history.some(c => Number.isFinite(c))
+        : history.some((c, i) => i > 0 && Number.isFinite(c) && Number.isFinite(history[i - 1]))
 
-    Component.onCompleted: floor = History.temperatureFloor(shown, margin, NaN)
-    onShownChanged: floor = History.temperatureFloor(shown, margin, floor)
+    Component.onCompleted: floor = History.temperatureFloor(scaleSamples, margin, NaN)
+    onScaleSamplesChanged: floor = History.temperatureFloor(scaleSamples, margin, floor)
 
     visible: hasReading
     caption: i18nc("@title:group", "Temperature")
-    graphSeconds: monitor.historySeconds
+    spans: monitor
     graphTop: {
         const t = Format.whole(scaleTop);
         if (topIsHot) {
@@ -71,14 +84,21 @@ Tile {
         // new samples with the old points, one short.
         readonly property var plot: {
             const values = tile.shown;
-            return { values: values, points: History.points(values, tile.monitor.historyLength, width, height,
-                                                            tile.scaleTop, topY, tile.floor) };
+            const length = tile.monitor.historyLength;
+            const tops = tile.bucketed && tile.highs.length === values.length
+                ? History.points(tile.highs.map(c => Format.degrees(c, tile.fahrenheit)), length, width, height,
+                                 tile.scaleTop, topY, tile.floor) : null;
+            return { values: values, points: History.points(values, length, width, height, tile.scaleTop, topY, tile.floor),
+                     tops: tops, half: tile.bucketed ? History.loneHalf(length, width) : 0 };
         }
-        readonly property var areas: History.runs(plot.values, plot.points).map(run =>
+        readonly property var areas: History.runs(plot.values, plot.points, plot.half).filter(run => run.length > 1).map(run =>
             [Qt.point(run[0].x, height)].concat(run.map(p => Qt.point(p.x, p.y)), [Qt.point(run[run.length - 1].x, height)]))
+        readonly property var bands: plot.tops
+            ? History.bands(plot.values, tile.highs, plot.points, plot.tops, plot.half).map(run => run.map(p => Qt.point(p.x, p.y)))
+            : []
         readonly property var pieces: tile.monitor.highlightTemperatures
-            ? History.pieces(plot.values, plot.points, Format.degrees(tile.monitor.warmCelsius, tile.fahrenheit), tile.hot)
-            : History.pieces(plot.values, plot.points, Infinity, Infinity)
+            ? History.pieces(plot.values, plot.points, Format.degrees(tile.monitor.warmCelsius, tile.fahrenheit), tile.hot, plot.half)
+            : History.pieces(plot.values, plot.points, Infinity, Infinity, plot.half)
 
         function lines(level) {
             return pieces.filter(p => p.level === level).map(p => p.points.map(q => Qt.point(q.x, q.y)));
@@ -97,6 +117,12 @@ Tile {
         Shape {
             anchors.fill: parent
             preferredRendererType: Shape.CurveRenderer
+
+            ShapePath {
+                strokeColor: "transparent"
+                fillColor: Qt.alpha(Kirigami.Theme.textColor, 0.6 * 0.15)
+                PathMultiline { paths: graph.bands }
+            }
 
             ShapePath {
                 strokeColor: "transparent"

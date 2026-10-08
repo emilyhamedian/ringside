@@ -41,7 +41,7 @@ TestCase {
         id: configComponent
         QtObject {
             property int updateInterval: 1000
-            property int historySeconds: 60
+            property string graphSpan: "minute"
             property bool fahrenheit: false
             property bool networkBits: true
             property bool highlightTemperatures: true
@@ -454,24 +454,26 @@ TestCase {
     }
 
     // The temperatures are sampled with the other histories, every
-    // sampleInterval and as many as historyLength, so a graph is full when
+    // sampleInterval and as many as a minute holds, so a graph is full when
     // its popup opens. With no reading, here from made-up sensor ids and
-    // GPUs, each sample is NaN, a gap, never 0; a new length starts afresh.
+    // GPUs, each sample is NaN, a gap, never 0; a new interval starts the
+    // minute afresh.
     function test_temperatureHistoriesSample() {
         stopTimers(monitor);
         config.cpuTemperatureSensor = "cpu/cpu97/temperature";
         config.diskTemperatureSensor = "disk/vdz/temperature";
-        config.historySeconds = 30;
-        compare(monitor.historyLength, 30);
-        for (let i = 0; i < 32; ++i) {
+        config.updateInterval = 500;
+        compare(monitor.minuteLength, 120);
+        compare(monitor.historyLength, 120);
+        for (let i = 0; i < 122; ++i) {
             monitor.sample();
         }
-        compare(monitor.cpuHistory.length, 30);
+        compare(monitor.cpuHistory.length, 120);
         for (const [name, history] of Object.entries(temperatureHistories(monitor))) {
-            compare(history.length, 30, name);
+            compare(history.length, 120, name);
             verify(history.every(t => Number.isNaN(t)), name + ": " + history.join());
         }
-        config.historySeconds = 60;
+        config.updateInterval = 1000;
         for (const [name, history] of Object.entries(temperatureHistories(monitor))) {
             compare(history.length, 0, name + " starts afresh");
         }
@@ -549,6 +551,147 @@ TestCase {
         compare(gpu.held.temperature, 55, "still held");
         verify(gpu.temperatureHistory.slice(-2).every(t => Number.isNaN(t)), gpu.temperatureHistory.join());
         verify(enabledSensors(gpu).every(e => !e), "nor is a sleeping one");
+    }
+
+    // The start of the wall clock's 10-minute bucket `back` buckets ago, so
+    // a test's readings land in buckets a widget would keep now.
+    function tenMinutes(back) {
+        return (Math.floor(Date.now() / 600000) - back) * 600000;
+    }
+
+    // A widget whose readings have come, its timers stopped so only the
+    // test samples.
+    function sampling(m) {
+        tryVerify(() => m.hardware.cpu !== undefined, 10000);
+        tryVerify(() => Number.isFinite(m.cpuUsage) && Number.isFinite(m.memoryPercent), 10000, "readings arrive");
+        stopTimers(m);
+        return m;
+    }
+
+    // Every graph records the minute, the hour and the day together,
+    // whichever is shown: the hour and the day in wall-clock buckets of the
+    // average and the highest reading, shown as each closes.
+    function test_everyGraphRecordsTheThreeSpans() {
+        sampling(monitor);
+        const t = tenMinutes(2);
+        const cpu = monitor.cpuUsage;
+        monitor.sample(t);
+        monitor.sample(t + 1000);
+        monitor.sample(t + 30000);
+        monitor.sample(t + 600000);
+        const keys = Object.keys(monitor.series).sort();
+        compare(keys, ["cpu", "cpuTemperature:cpu/all/maximumTemperature", "diskRead", "diskTemperature:", "diskWrite",
+                       "gpu:gpu97", "gpu:gpu98", "gpuTemperature:gpu97", "gpuTemperature:gpu98", "memory", "networkDown",
+                       "networkUp"]);
+        const s = monitor.series.cpu;
+        compare(s.minute.length, 4);
+        compare(s.hour.means.length, 20, "two buckets then gaps to the tenth minute");
+        compare(s.hour.means[0], cpu);
+        compare(s.hour.highs[0], cpu);
+        compare(s.day.means, [cpu]);
+
+        compare(monitor.graphSpan, "minute");
+        compare(monitor.cpuHistory, s.minute);
+        compare(monitor.cpuHighs, [], "each point at a minute is a reading");
+        config.graphSpan = "hour";
+        compare(monitor.historyLength, 120);
+        compare(monitor.cpuHistory, s.hour.means);
+        compare(monitor.cpuHighs, s.hour.highs);
+        compare(monitor.memoryHistory, monitor.series.memory.hour.means);
+        compare(monitor.gpuOuter.history, monitor.series["gpu:gpu97"].hour.means);
+        config.graphSpan = "day";
+        compare(monitor.historyLength, 144);
+        compare(monitor.cpuHistory, [cpu]);
+        compare(monitor.networkDownHighs, monitor.series.networkDown.day.highs);
+        config.graphSpan = "minute";
+        compare(monitor.historyLength, 60);
+        compare(monitor.cpuHistory.length, 4);
+    }
+
+    // At an hour or a day a graph changes only when its bucket closes, so
+    // an open popup redraws it every 30 seconds or 10 minutes, not every
+    // second.
+    function test_aLongSpanChangesAsItsBucketsClose() {
+        sampling(monitor);
+        config.graphSpan = "hour";
+        const t = tenMinutes(1);
+        let changes = 0;
+        const count = () => ++changes;
+        monitor.cpuHistoryChanged.connect(count);
+        try {
+            monitor.sample(t);
+            monitor.sample(t + 1000);
+            monitor.sample(t + 29000);
+            compare(changes, 0, "the bucket is open");
+            monitor.sample(t + 30000);
+            compare(changes, 1, "it closed");
+            config.graphSpan = "minute";
+            const was = changes;
+            monitor.sample(t + 31000);
+            monitor.sample(t + 32000);
+            compare(changes, was + 2, "a minute moves at every sample");
+        } finally {
+            monitor.cpuHistoryChanged.disconnect(count);
+        }
+    }
+
+    // A temperature's scale comes from all three spans, kept with it.
+    function test_temperatureExtentCoversEverySpan() {
+        sampling(monitor);
+        config.cpuTemperatureSensor = "cpu/all/coreCount";
+        tryVerify(() => Number.isFinite(monitor.cpuTemperature), 10000, "the stand-in reading arrives");
+        const t = tenMinutes(1);
+        monitor.sample(t);
+        monitor.sample(t + 30000);
+        compare(monitor.cpuTemperatureExtent, [monitor.cpuTemperature, monitor.cpuTemperature]);
+        const s = monitor.series["cpuTemperature:cpu/all/coreCount"];
+        s.day.highs = [99];
+        s.day.means = [1];
+        monitor.sample(t + 31000);
+        compare(monitor.cpuTemperatureExtent, [1, 99]);
+        config.graphSpan = "day";
+        compare(monitor.cpuTemperatureExtent, [1, 99], "the same at every span");
+    }
+
+    // Any graph's caption picks the span for all of them, through the
+    // setting; anything else is ignored, and a stored value Ringside
+    // doesn't know reads as the minute.
+    function test_chooseSpan() {
+        monitor.chooseSpan("day");
+        compare(config.graphSpan, "day");
+        compare(monitor.graphSpan, "day");
+        monitor.chooseSpan("week");
+        compare(config.graphSpan, "day");
+        config.graphSpan = "fortnight";
+        compare(monitor.graphSpan, "minute");
+        compare(monitor.historyLength, monitor.minuteLength);
+    }
+
+    // A discrete GPU asleep is truly idle, so its hour and day take 0; one
+    // awake but unread, resting say, is unknown, so a gap, though the
+    // minute shows the 0 and the held reading the panel does. Sampling it
+    // reads nothing.
+    function test_anUnreadGpuIsAGapInTheHourAndDay() {
+        const gpu = monitor.gpuOuter;
+        tryVerify(() => gpu.leading && gpu.wanted, 5000, "this widget's reader leads and wants the GPU");
+        settledPowerStates(monitor);
+        compare(gpu.phase, "asleep");
+        const t = tenMinutes(1);
+        monitor.sample(t);
+        gpu.held = { temperature: 55 };
+        gpu.gate = { phase: "resting", since: 0, quietSince: -1, holdMs: 5000 };
+        compare(gpu.phase, "resting");
+        monitor.sample(t + 30000);
+        monitor.sample(t + 60000);
+        verify(enabledSensors(gpu).every(e => !e), "nothing is read");
+        const usage = monitor.series["gpu:gpu97"];
+        const temperature = monitor.series["gpuTemperature:gpu97"];
+        compare(usage.hour.means[0], 0, "asleep, idle");
+        verify(Number.isNaN(usage.hour.means[1]), "resting, unknown: " + usage.hour.means[1]);
+        verify(Number.isNaN(temperature.hour.means[0]) && Number.isNaN(temperature.hour.means[1]),
+               "no temperature asleep, and the held one isn't recorded");
+        compare(usage.minute.slice(-2), [0, 0]);
+        compare(temperature.minute[temperature.minute.length - 1], 55, "the minute shows what the header does");
     }
 
     function test_memoryPartsArriveFromTheSensors() {

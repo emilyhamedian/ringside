@@ -98,6 +98,17 @@ Rectangle {
         gpuOuter.phase: "asleep"
     }
 
+    // The last hour and the last day, with a stretch where the machine slept.
+    FakeMonitor {
+        id: hour
+        graphSpan: "hour"
+    }
+
+    FakeMonitor {
+        id: day
+        graphSpan: "day"
+    }
+
     FakeMonitor {
         id: integrated
         gpuOuter.kind: "integrated"
@@ -553,6 +564,64 @@ Rectangle {
             PopupFrame {
                 label: "Disk"
                 DiskPopup { monitor: normal }
+            }
+        }
+
+        RowLayout {
+            spacing: 2 * Kirigami.Units.gridUnit
+
+            PopupFrame {
+                label: "CPU · 1 h"
+                CpuPopup { monitor: hour }
+            }
+
+            PopupFrame {
+                label: "GPU · 1 h"
+                GpuPopup { monitor: hour }
+            }
+
+            PopupFrame {
+                label: "Memory · 1 h"
+                MemoryPopup { monitor: hour }
+            }
+
+            PopupFrame {
+                label: "Network · 1 h"
+                NetworkPopup { monitor: hour }
+            }
+
+            PopupFrame {
+                label: "Disk · 1 h"
+                DiskPopup { monitor: hour }
+            }
+        }
+
+        RowLayout {
+            spacing: 2 * Kirigami.Units.gridUnit
+
+            PopupFrame {
+                label: "CPU · 1 day"
+                CpuPopup { monitor: day }
+            }
+
+            PopupFrame {
+                label: "GPU · 1 day"
+                GpuPopup { monitor: day }
+            }
+
+            PopupFrame {
+                label: "Memory · 1 day"
+                MemoryPopup { monitor: day }
+            }
+
+            PopupFrame {
+                label: "Network · 1 day"
+                NetworkPopup { monitor: day }
+            }
+
+            PopupFrame {
+                label: "Disk · 1 day"
+                DiskPopup { monitor: day }
             }
         }
 

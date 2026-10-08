@@ -73,12 +73,13 @@ PopupPage {
         Tile {
             Layout.columnSpan: 2
             caption: i18nc("@title:group", "Usage")
-            graphSeconds: popup.monitor.historySeconds
+            spans: popup.monitor
             graphTop: i18nc("@info a percentage", "%1%", Format.percent(100))
 
             Graph {
                 Layout.fillWidth: true
                 values: popup.monitor.cpuHistory
+                highs: popup.monitor.cpuHighs
                 length: popup.monitor.historyLength
             }
         }
@@ -89,6 +90,8 @@ PopupPage {
             Layout.columnSpan: 2
             monitor: popup.monitor
             history: popup.monitor.cpuTemperatureHistory
+            highs: popup.monitor.cpuTemperatureHighs
+            extent: popup.monitor.cpuTemperatureExtent
         }
 
         Tile {

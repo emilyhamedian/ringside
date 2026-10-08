@@ -153,25 +153,30 @@ PopupPage {
         id: throughput
 
         readonly property var history: popup.monitor.networkDownHistory.concat(popup.monitor.networkUpHistory)
+        // Up has no band of its own, but its highest readings count for the
+        // top, so neither line runs past what the caption names.
+        readonly property var tops: History.tops(history,
+                                                 popup.monitor.networkDownHighs.concat(popup.monitor.networkUpHighs))
 
         Layout.leftMargin: Math.round(Kirigami.Units.largeSpacing * 2)
         Layout.rightMargin: Layout.leftMargin
         Layout.topMargin: Math.round(Kirigami.Units.smallSpacing * 1.5)
         Layout.bottomMargin: Math.round(Kirigami.Units.largeSpacing * 1.5)
         caption: i18nc("@title:group", "Throughput")
-        graphSeconds: popup.monitor.historySeconds
-        graphTop: words.peakText(throughput.history, popup.monitor.networkBits)
+        spans: popup.monitor
+        graphTop: words.peakText(throughput.tops, popup.monitor.networkBits)
         foot: downNote
 
         Graph {
             Layout.fillWidth: true
             ceiling: false
             values: popup.monitor.networkDownHistory
+            highs: popup.monitor.networkDownHighs
             second: true
             secondValues: popup.monitor.networkUpHistory
             length: popup.monitor.historyLength
             // 1 Mb/s at least, so an idle link doesn't draw its noise at full height.
-            maximum: Math.max(History.peak(throughput.history)?.value ?? 0, 125000)
+            maximum: Math.max(History.peak(throughput.tops)?.value ?? 0, 125000)
         }
 
         RowLayout {

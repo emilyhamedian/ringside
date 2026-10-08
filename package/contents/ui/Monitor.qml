@@ -26,6 +26,12 @@ import "code/publicaddress.js" as Lookup
 // header agrees with the graph under it. The panel shows `panel` and the GPU
 // readers' panel readings, which move to the latest readings once per update
 // interval.
+//
+// Every graph records three spans whether a popup is open or not: the last
+// minute reading by reading, and the last hour and day in wall-clock
+// buckets of their average and highest reading (see code/history.js). Its
+// *History and *Highs properties hold the span shown; *Highs is empty at a
+// minute, where each point is a reading.
 Item {
     id: monitor
 
@@ -38,8 +44,16 @@ Item {
     // short of the sampling period lets one reading through per period even
     // when a frame comes a little early.
     readonly property int readInterval: sampleInterval - 250
-    readonly property int historySeconds: config.historySeconds
-    readonly property int historyLength: Math.max(2, Math.round(historySeconds * 1000 / sampleInterval))
+    // The span the popups' graphs show, one for all of them; any graph's
+    // caption changes it (see chooseSpan()).
+    readonly property string graphSpan: History.SPANS.includes(config.graphSpan) ? config.graphSpan : "minute"
+    // The minute's readings, a sampleInterval apart.
+    readonly property int minuteLength: Math.max(2, Math.round(60000 / sampleInterval))
+    // The points across a graph of the span shown.
+    readonly property int historyLength: graphSpan === "minute" ? minuteLength : History.TIERS[graphSpan].length
+    // Every graph's record by its key (see readings()): History.series().
+    // Changed in place, and shown through the properties below.
+    property var series: ({})
 
     // The readings the panel shows, as of the last update interval. A
     // reading that appears or goes away is taken at the next sample, so the
@@ -93,8 +107,12 @@ Item {
     readonly property var cpuIds: hardware.cpu && Array.isArray(hardware.cpu.ids) ? hardware.cpu.ids
                                 : Array.from({ length: cpuThreads }, (_, i) => i)
     property var cpuHistory: []
+    property var cpuHighs: []
     // °C, NaN while there is no reading.
     property var cpuTemperatureHistory: []
+    property var cpuTemperatureHighs: []
+    // [coolest, hottest] across the three spans, [] with no reading.
+    property var cpuTemperatureExtent: []
 
     // Memory. ksystemstats' "used" is the total minus MemAvailable, and its
     // "cache" (Cached plus Slab) also counts shared memory and unreclaimable
@@ -116,6 +134,7 @@ Item {
     // Plasma 6.2 and later; NaN before.
     readonly property real memoryPressure: value(pressureSensor)
     property var memoryHistory: []
+    property var memoryHighs: []
 
     // GPUs: one reader per GPU (see GpuReader.qml); the rings point at two.
     // A hidden GPU item has no readers, so hiding it leaves the GPU alone.
@@ -142,7 +161,9 @@ Item {
     readonly property string networkConnection: groupText(networkInfoReaders, 0)
     readonly property string networkAddress: groupText(networkInfoReaders, 1)
     property var networkDownHistory: []
+    property var networkDownHighs: []
     property var networkUpHistory: []
+    property var networkUpHighs: []
     // The address websites see; see PublicAddress.qml.
     readonly property alias publicAddress: publicChecker
     // The widget's version from its metadata, for that check's User-Agent.
@@ -174,9 +195,13 @@ Item {
         return Format.temperatureValid(t) ? t : NaN;
     }
     property var diskReadHistory: []
+    property var diskReadHighs: []
     property var diskWriteHistory: []
+    property var diskWriteHighs: []
     // °C, NaN while there is no reading.
     property var diskTemperatureHistory: []
+    property var diskTemperatureHighs: []
+    property var diskTemperatureExtent: []
 
     // Settings the views need.
     readonly property bool fahrenheit: config.fahrenheit
@@ -268,26 +293,107 @@ Item {
         powerStates.connectSource(command);
     }
 
-    function sample() {
-        const n = historyLength;
-        cpuHistory = History.push(cpuHistory, cpuUsage, n);
-        cpuTemperatureHistory = History.record(cpuTemperatureHistory, cpuTemperature, n);
-        memoryHistory = History.push(memoryHistory, memoryPercent, n);
-        // The temperature is a reader's own reading, or its leader's: taking
-        // it reads nothing more, and a sleeping GPU has none.
+    // What each graph records: its series' key, where it is shown (this
+    // monitor or a GPU reader, under `prefix` + History, Highs and, for a
+    // temperature, Extent), the reading for the minute and for the hour and
+    // the day, and whether a missing reading is a gap in the minute too.
+    // A temperature's key names its sensor, so a saved history never goes
+    // on under another sensor's name.
+    function readings() {
+        const list = [
+            { key: "cpu", into: monitor, prefix: "cpu", minute: cpuUsage },
+            { key: "cpuTemperature:" + cpuTemperatureSensorId, into: monitor, prefix: "cpuTemperature",
+              minute: cpuTemperature, gaps: true },
+            { key: "memory", into: monitor, prefix: "memory", minute: memoryPercent },
+            { key: "networkDown", into: monitor, prefix: "networkDown", minute: networkDown },
+            { key: "networkUp", into: monitor, prefix: "networkUp", minute: networkUp },
+            { key: "diskRead", into: monitor, prefix: "diskRead", minute: diskRead },
+            { key: "diskWrite", into: monitor, prefix: "diskWrite", minute: diskWrite },
+            { key: "diskTemperature:" + diskTemperatureSensorId, into: monitor, prefix: "diskTemperature",
+              minute: diskTemperature, gaps: true }
+        ];
+        // A GPU's readings are its reader's own, or its leader's: taking
+        // them reads nothing more. The hour and the day take what is known
+        // rather than what is shown (see GpuReader.recordedUsage).
         for (const r of [gpuOuter, gpuInner]) {
             if (r.present) {
-                r.history = History.push(r.history, r.usage, n);
-                r.temperatureHistory = History.record(r.temperatureHistory, r.temperature, n);
+                list.push({ key: "gpu:" + r.info.id, into: r, prefix: "", minute: r.usage, kept: r.recordedUsage },
+                          { key: "gpuTemperature:" + r.info.id, into: r, prefix: "temperature", minute: r.temperature,
+                            kept: r.recordedTemperature, gaps: true });
             }
         }
-        networkDownHistory = History.push(networkDownHistory, networkDown, n);
-        networkUpHistory = History.push(networkUpHistory, networkUp, n);
-        diskReadHistory = History.push(diskReadHistory, diskRead, n);
-        diskWriteHistory = History.push(diskWriteHistory, diskWrite, n);
-        diskTemperatureHistory = History.record(diskTemperatureHistory, diskTemperature, n);
+        return list;
+    }
+
+    function sample(nowMs) {
+        const now = nowMs ?? Date.now();
+        for (const entry of readings()) {
+            const s = seriesOf(entry.key);
+            s.minute = entry.gaps ? History.record(s.minute, entry.minute, minuteLength)
+                                  : History.push(s.minute, entry.minute, minuteLength);
+            const ended = {};
+            for (const name of ["hour", "day"]) {
+                ended[name] = History.add(s[name], entry.kept ?? entry.minute, now) !== null;
+            }
+            // An hour or a day changes only as its bucket closes.
+            if (graphSpan === "minute" || ended[graphSpan]) {
+                show(entry);
+            }
+        }
         latch(false);
     }
+
+    function seriesOf(key) {
+        if (!series[key]) {
+            series[key] = History.series();
+        }
+        return series[key];
+    }
+
+    // Puts a series' span on show where its graph reads it.
+    function show(entry) {
+        const s = seriesOf(entry.key);
+        const name = suffix => entry.prefix ? entry.prefix + suffix : suffix.toLowerCase();
+        const minute = graphSpan === "minute";
+        entry.into[name("History")] = minute ? s.minute : s[graphSpan].means;
+        if (!minute || entry.into[name("Highs")].length > 0) {
+            entry.into[name("Highs")] = minute ? [] : s[graphSpan].highs;
+        }
+        if (entry.gaps) {
+            const next = History.extent(s);
+            const was = entry.into[name("Extent")];
+            if (next.length !== was.length || next.some((v, i) => v !== was[i])) {
+                entry.into[name("Extent")] = next;
+            }
+        }
+    }
+
+    function showAll() {
+        for (const entry of readings()) {
+            show(entry);
+        }
+    }
+
+    // A temperature sensor's series goes with the sensor.
+    function dropOtherSensors() {
+        const kept = ["cpuTemperature:" + cpuTemperatureSensorId, "diskTemperature:" + diskTemperatureSensorId];
+        for (const key of Object.keys(series)) {
+            if (/^(cpu|disk)Temperature:/.test(key) && !kept.includes(key)) {
+                delete series[key];
+            }
+        }
+    }
+
+    function chooseSpan(span) {
+        if (History.SPANS.includes(span) && config.graphSpan !== span) {
+            config.graphSpan = span;
+        }
+    }
+
+    onGraphSpanChanged: showAll()
+    // A ring's GPU, its history at once rather than at the next close.
+    onGpuOuterChanged: Qt.callLater(monitor.showAll)
+    onGpuInnerChanged: Qt.callLater(monitor.showAll)
 
     // Moves the panel to the live readings: all of them, or only those that
     // have appeared or gone away.
@@ -307,25 +413,24 @@ Item {
         }
     }
 
-    // A new interval or span would mix samples of different ages.
-    onHistoryLengthChanged: {
-        cpuHistory = [];
-        cpuTemperatureHistory = [];
-        memoryHistory = [];
-        for (const r of readers()) {
-            r.history = [];
-            r.temperatureHistory = [];
+    // A new interval would mix minute readings of different ages; the hour
+    // and the day go by the clock.
+    onMinuteLengthChanged: {
+        for (const key of Object.keys(series)) {
+            series[key].minute = [];
         }
-        networkDownHistory = [];
-        networkUpHistory = [];
-        diskReadHistory = [];
-        diskWriteHistory = [];
-        diskTemperatureHistory = [];
+        showAll();
     }
 
-    // Another sensor's samples would go on under the new one's name.
-    onCpuTemperatureSensorIdChanged: cpuTemperatureHistory = []
-    onDiskTemperatureSensorIdChanged: diskTemperatureHistory = []
+    // Another sensor's readings would go on under the new one's name.
+    onCpuTemperatureSensorIdChanged: {
+        dropOtherSensors();
+        showAll();
+    }
+    onDiskTemperatureSensorIdChanged: {
+        dropOtherSensors();
+        showAll();
+    }
 
     Timer {
         objectName: "sample"

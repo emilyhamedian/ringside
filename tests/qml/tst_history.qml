@@ -272,4 +272,150 @@ TestCase {
         compare(pieces[1].points.length, 2);
         compare(levelsOf(History.pieces(samples, points, Infinity, Infinity)), [0, 0]);
     }
+
+    function test_peakSkipsGaps() {
+        compare(History.peak([NaN, 3, NaN, 2]), { index: 1, value: 3 });
+        compare(History.peak([NaN, NaN]), null);
+    }
+
+    function test_topsAreTheHighsWhereThereAreAny() {
+        compare(History.tops([1, 2], [5, 6]), [5, 6]);
+        compare(History.tops([1, 2], []), [1, 2]);
+    }
+
+    // 10:00:00 local time on a day, in ms, so bucket numbers are easy to
+    // read: a 30 s bucket's starts on :00 or :30, a 10 min one on the tenth
+    // minute.
+    readonly property real t0: Date.UTC(2026, 9, 8, 10, 0, 0)
+
+    // Readings go into wall-clock buckets: each closes when a reading falls
+    // in a later one, giving the average and the highest of its readings.
+    // The open bucket isn't kept yet.
+    function test_tierAveragesAndKeepsTheHighest() {
+        const t = History.tier("hour");
+        compare(t.period, 30);
+        compare(t.length, 120);
+        compare(History.add(t, 10, t0), null);
+        compare(History.add(t, 30, t0 + 10000), null);
+        compare(History.add(t, 20, t0 + 29999), null);
+        compare(t.means, [], "the open bucket isn't shown");
+        const closed = History.add(t, 50, t0 + 30000);
+        compare(closed, { at: t0 / 30000, mean: 20, high: 30 });
+        compare(t.means, [20]);
+        compare(t.highs, [30]);
+        compare(t.at, t0 / 30000 + 1);
+    }
+
+    // Buckets follow the wall clock, not the first reading: one taken at
+    // :25 closes at :30 with five seconds behind it.
+    function test_tierBucketsAreWallClockAligned() {
+        const t = History.tier("day");
+        History.add(t, 4, t0 + 9 * 60000 + 55000);
+        const closed = History.add(t, 8, t0 + 10 * 60000);
+        compare(closed.at * 600000, t0, "the bucket of 10:00 to 10:10");
+        compare(closed.mean, 4);
+        compare(History.add(t, 8, t0 + 19 * 60000 + 59999), null, "still 10:10 to 10:20");
+        verify(History.add(t, 8, t0 + 20 * 60000) !== null, "closed at 10:20");
+    }
+
+    // A bucket whose readings were all missing is a gap, not a 0.
+    function test_tierMissingReadingsAreGaps() {
+        const t = History.tier("hour");
+        History.add(t, NaN, t0);
+        History.add(t, undefined, t0 + 1000);
+        const closed = History.add(t, 7, t0 + 30000);
+        verify(Number.isNaN(closed.mean) && Number.isNaN(closed.high));
+        History.add(t, NaN, t0 + 31000);
+        History.add(t, 9, t0 + 60000);
+        compare(t.means.length, 2);
+        verify(Number.isNaN(t.means[0]));
+        compare(t.means[1], 7, "a missing reading doesn't pull the average down");
+    }
+
+    // Time the machine slept, or the widget wasn't sampling, is a run of
+    // gaps as long as the buckets it passed, at most the tier's length.
+    function test_tierGapsAcrossAWallClockJump() {
+        const t = History.tier("hour");
+        History.add(t, 10, t0);
+        History.add(t, 30, t0 + 8 * 60000 + 5000);
+        compare(t.means.length, 16);
+        compare(t.means[0], 10);
+        verify(t.means.slice(1).every(v => Number.isNaN(v)), t.means.join());
+        compare(t.highs.length, 16);
+        History.add(t, 40, t0 + 8 * 60000 + 30000);
+        compare(t.means[16], 30, "the reading after the jump has a bucket of its own");
+        // Three days later every bucket in the hour is a gap.
+        History.add(t, 50, t0 + 3 * 86400000);
+        compare(t.means.length, 120);
+        verify(t.means.every(v => Number.isNaN(v)), "nothing left from before");
+    }
+
+    // Never more than a span's worth of buckets.
+    function test_tierKeepsItsLength() {
+        const t = History.tier("hour");
+        for (let s = 0; s <= 200 * 30; s += 15) {
+            History.add(t, s, t0 + s * 1000);
+        }
+        compare(t.means.length, 120);
+        compare(t.highs.length, 120);
+        compare(t.means[119], (199 * 30 + 199 * 30 + 15) / 2, "the newest closed bucket last");
+    }
+
+    // A clock set back a second leaves the reading in the open bucket; set
+    // back further, the buckets now in its future go and the record goes on
+    // from the new time.
+    function test_tierClockSetBack() {
+        const t = History.tier("hour");
+        History.add(t, 10, t0);
+        History.add(t, 20, t0 + 30000);
+        History.add(t, 30, t0 + 60000);
+        compare(t.means, [10, 20]);
+        compare(History.add(t, 40, t0 + 59000), null, "a second back");
+        compare(t.at, t0 / 30000 + 2);
+        compare(History.add(t, 0, t0 + 90000).mean, 35, "both readings in one bucket");
+        History.add(t, 5, t0 + 30000);
+        compare(t.means, [10], "the buckets from 10:00:30 on are gone");
+        compare(t.at, t0 / 30000 + 1);
+        compare(History.add(t, 7, t0 + 60000), { at: t0 / 30000 + 1, mean: 5, high: 5 });
+    }
+
+    // A temperature's scale comes from all three spans.
+    function test_extentCoversEverySpan() {
+        const s = History.series();
+        compare(History.extent(s), []);
+        s.minute = [50, NaN, 52];
+        compare(History.extent(s), [50, 52]);
+        s.hour.means = [40, NaN];
+        s.hour.highs = [61, NaN];
+        s.day.means = [38];
+        s.day.highs = [93];
+        compare(History.extent(s), [38, 93]);
+    }
+
+    // A reading alone between gaps becomes a level line its slot wide,
+    // never under 3 px; one in a run, and anything without `half`, stays.
+    function test_aLoneReadingIsSpread() {
+        compare(History.loneHalf(144, 286), 1.5, "a day's 2 px slot draws 3 px");
+        compare(History.loneHalf(120, 595), 2.5);
+        const samples = [NaN, 5, NaN, 6, 7];
+        const points = samples.map((v, i) => ({ x: i * 10, y: v }));
+        compare(History.runs(samples, points, 1.5), [[{ x: 8.5, y: 5 }, { x: 11.5, y: 5 }], [{ x: 30, y: 6 }, { x: 40, y: 7 }]]);
+        compare(History.runs(samples, points).length, 2);
+        compare(History.runs(samples, points)[0].length, 1, "unspread without a width");
+        const pieces = History.pieces(samples, points, 75, 90, 1.5);
+        compare(pieces[0].points, [{ x: 8.5, y: 5 }, { x: 11.5, y: 5 }]);
+    }
+
+    // The band runs along the highs and back along the line, a stretch at
+    // a time; a lone bucket's is a box its slot wide.
+    function test_bands() {
+        const values = [1, 2, NaN, 3];
+        const highs = [4, 5, NaN, 6];
+        const low = values.map((v, i) => ({ x: i, y: -v }));
+        const high = highs.map((v, i) => ({ x: i, y: -v }));
+        compare(History.bands(values, highs, low, high, 0.5), [
+            [{ x: 0, y: -4 }, { x: 1, y: -5 }, { x: 1, y: -2 }, { x: 0, y: -1 }],
+            [{ x: 2.5, y: -6 }, { x: 3.5, y: -6 }, { x: 3.5, y: -3 }, { x: 2.5, y: -3 }]
+        ]);
+    }
 }

@@ -9,15 +9,20 @@ import "../../package/contents/ui/code/hardware.js" as Hardware
 // property and function the panel and the popups read. All of them are
 // writable, so a gallery entry overrides one to show a state.
 // The GPU slots are shaped like GpuReader.qml: live readings, the last ones
-// held while resting (usage 0), NaN while asleep.
+// held while resting (usage 0), NaN while asleep. At an hour or a day each
+// graph has its buckets' highest readings too, and a stretch where the
+// machine slept.
 QtObject {
     id: monitor
 
     property int interval: 1000
     property int sampleInterval: Math.min(interval, 1000)
     property int readInterval: sampleInterval - 250
-    property int historySeconds: 60
-    property int historyLength: Math.max(2, Math.round(historySeconds * 1000 / sampleInterval))
+    property string graphSpan: "minute"
+    property int minuteLength: Math.max(2, Math.round(60000 / sampleInterval))
+    property int historyLength: graphSpan === "hour" ? 120 : graphSpan === "day" ? 144 : minuteLength
+    readonly property bool bucketed: graphSpan !== "minute"
+    property string widgetId: ""
     property var hardware: ({
         memory: { type: "DDR5", speed: 5600, modules: [17179869184, 17179869184] },
         swap: ["zram"]
@@ -32,6 +37,10 @@ QtObject {
 
     signal systemMonitorRequested()
     signal configureRequested()
+
+    function chooseSpan(span) {
+        graphSpan = span;
+    }
 
     // What main.qml gives and takes from Monitor.
     property var config: null
@@ -50,8 +59,11 @@ QtObject {
     property int cpuCores: 8
     property int cpuThreads: 16
     property var cpuIds: Array.from({ length: cpuThreads }, (_, i) => i)
-    property var cpuHistory: wave(cpuUsage, 14, 1)
-    property var cpuTemperatureHistory: wave(cpuTemperature, 2.5, 9)
+    property var cpuHistory: slept(wave(cpuUsage, 14, 1))
+    property var cpuHighs: highsOf(cpuHistory, 40, 1, 100)
+    property var cpuTemperatureHistory: slept(wave(cpuTemperature, 2.5, 9))
+    property var cpuTemperatureHighs: highsOf(cpuTemperatureHistory, 8, 9, Infinity)
+    property var cpuTemperatureExtent: []
 
     property real memoryTotal: 31.9 * gib
     property real memoryUsed: 13.4 * gib
@@ -63,7 +75,8 @@ QtObject {
     property real swapTotal: 16 * gib
     property string swapLabel: Hardware.swapLabel(hardware.swap)
     property real memoryPressure: 0
-    property var memoryHistory: wave(memoryPercent, 2, 2)
+    property var memoryHistory: slept(wave(memoryPercent, 2, 2))
+    property var memoryHighs: highsOf(memoryHistory, 3, 2, 100)
 
     property FakeGpu gpuOuter: FakeGpu {
         kind: "discrete"
@@ -75,8 +88,10 @@ QtObject {
         knownVramTotal: 8 * monitor.gib
         clock: awake ? 800 : NaN
         power: awake ? 14 : NaN
-        history: monitor.wave(12, 10, 3)
-        temperatureHistory: monitor.wave(temperature, 2, 10)
+        history: monitor.slept(monitor.wave(12, 10, 3))
+        highs: monitor.highsOf(history, 30, 3, 100)
+        temperatureHistory: monitor.slept(monitor.wave(temperature, 2, 10))
+        temperatureHighs: monitor.highsOf(temperatureHistory, 6, 10, Infinity)
     }
     property FakeGpu gpuInner: FakeGpu {
         kind: "integrated"
@@ -87,8 +102,10 @@ QtObject {
         vramTotal: live ? 0.5 * monitor.gib : NaN
         knownVramTotal: 0.5 * monitor.gib
         clock: awake ? 400 : NaN
-        history: monitor.wave(3, 3, 4)
-        temperatureHistory: monitor.wave(temperature, 1.5, 11)
+        history: monitor.slept(monitor.wave(3, 3, 4))
+        highs: monitor.highsOf(history, 10, 4, 100)
+        temperatureHistory: monitor.slept(monitor.wave(temperature, 1.5, 11))
+        temperatureHighs: monitor.highsOf(temperatureHistory, 4, 11, Infinity)
     }
 
     property bool networkBits: true
@@ -99,8 +116,10 @@ QtObject {
     property real networkUp: 1.5e5
     property real networkTotalDown: 3.2 * gib
     property real networkTotalUp: 410 * 1048576
-    property var networkDownHistory: bursts(networkDown, 6e6, 5)
-    property var networkUpHistory: wave(networkUp, 1e5, 6)
+    property var networkDownHistory: slept(bursts(networkDown, 6e6, 5))
+    property var networkDownHighs: highsOf(networkDownHistory, 12e6, 5, Infinity)
+    property var networkUpHistory: slept(wave(networkUp, 1e5, 6))
+    property var networkUpHighs: highsOf(networkUpHistory, 4e5, 6, Infinity)
     // Monitor.publicAddress (PublicAddress.qml), or null, which the popup
     // reads as switched off; the tests and the gallery give it a real one.
     property var publicAddress: null
@@ -112,9 +131,13 @@ QtObject {
     property real diskTemperature: 39
     property real diskRead: 12 * 1048576
     property real diskWrite: 3.4 * 1048576
-    property var diskReadHistory: bursts(diskRead, 30 * 1048576, 7)
-    property var diskWriteHistory: bursts(diskWrite, 8 * 1048576, 8)
-    property var diskTemperatureHistory: wave(diskTemperature, 1, 12)
+    property var diskReadHistory: slept(bursts(diskRead, 30 * 1048576, 7))
+    property var diskReadHighs: highsOf(diskReadHistory, 120 * 1048576, 7, Infinity)
+    property var diskWriteHistory: slept(bursts(diskWrite, 8 * 1048576, 8))
+    property var diskWriteHighs: highsOf(diskWriteHistory, 60 * 1048576, 8, Infinity)
+    property var diskTemperatureHistory: slept(wave(diskTemperature, 1, 12))
+    property var diskTemperatureHighs: highsOf(diskTemperatureHistory, 2, 12, Infinity)
+    property var diskTemperatureExtent: []
 
     // The panel's readings follow the live ones here; Monitor holds them
     // for an update interval.
@@ -152,6 +175,27 @@ QtObject {
         return out;
     }
 
+    // At an hour or a day, the highest reading behind each of `values`: up
+    // to `lift` over it, no higher than `cap`. Empty at a minute, where each
+    // value is a reading.
+    function highsOf(values, lift, seed, cap) {
+        if (!bucketed) {
+            return [];
+        }
+        let state = seed * 104729;
+        return values.map(v => {
+            state = random(state);
+            return Number.isFinite(v) ? Math.min(cap, v + lift * (state / 2147483647) ** 2) : NaN;
+        });
+    }
+
+    // At an hour or a day, a stretch with no readings where the machine
+    // slept: eight minutes of the hour, the night of the day.
+    function slept(values) {
+        const [from, to] = graphSpan === "hour" ? [70, 86] : graphSpan === "day" ? [28, 76] : [0, 0];
+        return values.map((v, i) => i >= from && i < to ? NaN : v);
+    }
+
     // Mostly quiet with occasional peaks up to `peak`, ending on `level`.
     function bursts(level, peak, seed) {
         const out = [];
@@ -185,7 +229,10 @@ QtObject {
         property real clock: NaN
         property real power: NaN
         property var history: []
+        property var highs: []
         property var temperatureHistory: []
+        property var temperatureHighs: []
+        property var temperatureExtent: []
         property real panelUsage: usage
         property real panelTemperature: temperature
     }
