@@ -165,7 +165,7 @@ Item {
                     request.abort();
                 } else if (request.readyState === XMLHttpRequest.DONE) {
                     const trusted = request.status === 200 && Lookup.cameFrom(String(request.responseURL), url);
-                    checker.settle(s, trusted ? Lookup.reply(String(request.responseText), s.family) : null);
+                    checker.settle(s, trusted ? Lookup.reply(String(request.responseText), s.family, now.service.custom) : null);
                 }
             };
             request.open("GET", url);

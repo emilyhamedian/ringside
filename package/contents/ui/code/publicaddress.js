@@ -102,26 +102,30 @@ function address(body, family) {
 
 // A city or country from a JSON reply, or "": a string, with control
 // characters and line breaks turned to spaces, invisible and direction
-// characters dropped, and white space run together. A name longer than any
-// place has is dropped rather than cut.
+// characters dropped, and white space run together. The invisible ones
+// include the interlinear annotation marks and the tag characters
+// (U+E0000-E007F, matched as surrogate pairs: Qt's engine has no \p{Cf}),
+// which can carry text no one sees. A name longer than any place has is
+// dropped rather than cut.
 function placeName(value) {
     if (typeof value !== "string") {
         return "";
     }
     const text = value.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, " ")
-        .replace(/[\u00ad\u061c\u180e\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff]/g, "")
+        .replace(/[\u00ad\u061c\u180e\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff\ufff9-\ufffb]|\udb40[\udc00-\udc7f]/g, "")
         .replace(/\s+/g, " ").trim();
     return text.length <= 64 ? text : "";
 }
 
 // A service's reply for one family as { address, city, country }, with ""
-// for what it lacks. The reply is the address alone, or a JSON object whose
-// "ip" is the address and whose "city" and "country", where it has them,
-// say where the service places it; nothing else in it is read. A country
-// without a city says too little to show, so it goes too.
-function reply(body, family) {
+// for what it lacks. The reply is the address alone or, from a Custom
+// service only, a JSON object whose "ip" is the address and whose "city"
+// and "country", where it has them, say where the service places it;
+// nothing else in it is read. A country without a city says too little to
+// show, so it goes too.
+function reply(body, family, custom) {
     const text = typeof body === "string" && body.length <= REPLY_LIMIT ? body.trim() : "";
-    if (text.charAt(0) !== "{") {
+    if (custom !== true || text.charAt(0) !== "{") {
         return { address: address(text, family), city: "", country: "" };
     }
     let data = {};

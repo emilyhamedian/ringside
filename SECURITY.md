@@ -63,10 +63,10 @@ Mainly the two helpers Ringside runs:
   Qt follows a redirect, to another host or to plain http alike, with the
   same headers; Ringside then ignores any answer that didn't
   come over HTTPS from the host it asked. Of a reply it reads only the
-  address, or from a JSON reply only `ip`, `city` and `country`, and shows
-  nothing else of it. A reply over 16 KB is ignored too, but Qt has no way
-  to stop reading it, so a service that never stops sending keeps doing so
-  until Plasma restarts.
+  address, or from a Custom service's JSON reply only `ip`, `city` and
+  `country`, and shows nothing else of it. A reply over 16 KB is ignored
+  too, but Qt has no way to stop reading it, so a service that never stops
+  sending keeps doing so until Plasma restarts.
 - The Claude item sends your Claude Code login only to Anthropic
   (`api.anthropic.com`, and `platform.claude.com` to renew an expired
   token). Each check's result, even an error or a sign-out, is kept for
