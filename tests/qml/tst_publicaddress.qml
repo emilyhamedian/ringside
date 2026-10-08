@@ -894,6 +894,21 @@ Item {
             verify(shown.includes("Can't reach popupnotes.example"), shown);
             verify(shown.includes("Last seen 198.51.100.24 at " + seen), shown);
             verify(firstAt < root.now);
+
+            // Asked again after the failure, the last address stays in view
+            // and the block keeps its height.
+            waitForRendering(page);
+            const height = block(page).implicitHeight;
+            root.now += 61000;
+            set.checker.open = false;
+            set.checker.open = true;
+            compare(set.made.length, 4, "asked again");
+            compare(set.checker.status, "checking");
+            waitForRendering(page);
+            const asking = visibleTexts(page);
+            verify(asking.includes("Asking popupnotes.example…"), asking);
+            verify(asking.includes("Last seen 198.51.100.24 at " + seen), asking);
+            compare(block(page).implicitHeight, height, "the block keeps its height");
         }
 
         function test_otherStatesInThePopup_data() {

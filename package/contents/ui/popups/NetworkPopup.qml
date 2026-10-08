@@ -36,7 +36,10 @@ PopupPage {
             ? Lookup.lines(record.result, record.egress, popup.monitor.networkInterface) : { v4: null, v6: null, leak: null };
         const at = ms => words.timeOfDay(ms / 1000, lookup.clock());
         const changed = shown.v4 && record.changed.v4 ? record.changed.v4 : shown.v6 && record.changed.v6 ? record.changed.v6 : null;
-        const seen = publicState === "failed" ? record.seen.v4 ?? record.seen.v6 : null;
+        // Kept while the service is asked again after a failure, so the block
+        // keeps its height and the last address stays in view. There is no
+        // record before the first check.
+        const seen = record && (publicState === "failed" || publicState === "checking") ? record.seen.v4 ?? record.seen.v6 : null;
         let note = null;
         if (shown.leak) {
             note = { warn: true, text: shown.leak.family === "v6"
