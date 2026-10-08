@@ -151,8 +151,14 @@ inner ring shows it; choose which under *AI Providers*. Model limits are the
 ones Anthropic's usage reply lists, under the names it gives them, such as
 Fable.
 
-When the last check failed, a small amber dot sits at the ring's corner and
-the tooltip says when.
+When a check fails, the ring keeps its last reading in grey until that
+reading is two checks old. After that, or once the week has reset, the ring
+is struck through and its numbers turn to dashes until a check succeeds. The
+tooltip and the popup say when and why the check failed, when the last
+reading was taken and when the next check runs. The popup keeps the last
+reading in grey and offers *Try again* when asking again would help: not
+while Ringside is waiting out a failure or a request from Anthropic to wait,
+and not when the next check is a minute away.
 
 The popup lists every weekly limit and when each resets, and a graph of the
 week so far, which fills in as Ringside keeps checking. The graph has a line
