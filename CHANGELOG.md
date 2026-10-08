@@ -10,12 +10,31 @@ follows [Semantic Versioning](https://semver.org/).
 
 ### Added
 
-- The CPU, GPU and disk popups graph their temperature over the graph
-  span, under the usage graph (after the write rate for a disk). The graph
+- The popups' graphs show the last minute, hour or day. The span at the end
+  of each graph's caption, "USAGE · 1 min", opens a menu of the three, from
+  the pointer or the keyboard, and the choice applies to every graph in
+  every popup and is remembered. The hour is drawn in 30-second steps and
+  the day in 10-minute ones: each step's average as the line, with a faint
+  band up to its highest reading, which a rate graph's caption names as its
+  peak. Time the computer slept or Plasma wasn't running is left empty, and
+  a step alone between gaps is drawn as a short mark. The graphs record
+  whether a popup is open or not, and read nothing more to do it: a
+  discrete GPU's hour and day are 0 while it sleeps and empty while it is
+  awake but unread.
+- *Keep the last hour and day across restarts* on General, off by default,
+  saves each graph's steps with Qt's LocalStorage as each one ends and
+  brings them back when the widget starts. Turning it off deletes them.
+  Debian and Ubuntu package the module on its own
+  (`qml6-module-qtquick-localstorage`); without it the box is greyed out
+  and the history stays in memory. See SECURITY.md for what is kept and
+  where.
+- The CPU, GPU and disk popups graph their temperature over the span shown,
+  under the usage graph (after the write rate for a disk). The graph
   has a line at your hot threshold, named at the end of the caption line as
   "hot 90 °C", or reaches up to its peak, "peak 93 °C", when that is hotter
   or the temperature colours are off. Its floor is a round ten at least 5 °C
-  below the coolest reading. The line turns amber and red where it passes
+  below the coolest reading. Both come from the whole of the last day, so
+  they stay put when the span changes. The line turns amber and red where it passes
   your thresholds, and leaves a gap while a GPU sleeps. A GPU or drive with
   no temperature reading has no graph, nor has an integrated GPU beside a
   discrete one.
@@ -129,6 +148,9 @@ follows [Semantic Versioning](https://semver.org/).
 
 ### Removed
 
+- The Graph history setting on General, which set every graph to 30
+  seconds up to 10 minutes. The span on each graph's caption replaces it;
+  its minute is the old default of 60 seconds.
 - The Standalone layout, with its Layout and Fold settings and
   `scripts/add-panel.sh`. A panel set up for it now shows the strip; remove
   that panel and add Ringside to another one if you'd rather.
