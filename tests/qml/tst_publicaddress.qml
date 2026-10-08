@@ -33,6 +33,10 @@ Item {
 
     // The checkers' clock, moved on by the tests.
     property real now: 1.8e12
+    // The Service list's rows.
+    readonly property int ipifyRow: 0
+    readonly property int mullvadRow: 1
+    readonly property int customRow: 2
 
     Component {
         id: configComponent
@@ -218,7 +222,7 @@ Item {
         }
 
         function answer(made, family, status, body, from) {
-            const r = made.find(m => !m.aborted && m.readyState !== 4 && (family === "v6") === /-6\.|api6\./.test(m.url));
+            const r = made.find(m => !m.aborted && m.readyState !== 4 && (family === "v6") === /-6\.|api6\.|ipv6\./.test(m.url));
             verify(r, "a " + family + " request under way");
             r.answer(status, body, from);
         }
@@ -326,16 +330,22 @@ Item {
         }
 
         function test_service() {
-            const ipify = { custom: false, valid: true, v4: "https://api.ipify.org", v6: "https://api6.ipify.org",
-                            hosts: ["ipify.org"], key: "ipify" };
+            const ipify = { custom: false, preset: "ipify", json: false, valid: true, v4: "https://api.ipify.org",
+                            v6: "https://api6.ipify.org", hosts: ["ipify.org"], key: "ipify" };
             compare(Lookup.service("", ""), ipify);
             compare(Lookup.service(undefined, null), ipify);
             compare(Lookup.service("  ", "\t"), ipify, "white space alone is empty");
+
+            const mullvad = Lookup.service(" https://ipv4.am.i.mullvad.net/json ", "https://ipv6.am.i.mullvad.net/json");
+            compare([mullvad.custom, mullvad.preset, mullvad.json, mullvad.valid, mullvad.hosts, mullvad.key],
+                    [false, "mullvad", true, true, ["am.i.mullvad.net"], "mullvad"]);
+            compare(Lookup.service("https://ipv4.am.i.mullvad.net/json", "").preset, "", "half of Mullvad's pair is Custom");
 
             const one = Lookup.service(" https://a.example/ip ", "");
             compare(one.valid, true);
             compare([one.v4, one.v6], ["https://a.example/ip", ""], "an empty field leaves its family unchecked");
             compare(one.hosts, ["a.example"]);
+            compare([one.custom, one.preset, one.json], [true, "", true]);
 
             compare(Lookup.service("https://a.example/4", "https://a.example/6").hosts, ["a.example"]);
             compare(Lookup.service("https://a.example/4", "https://b.example/6").hosts, ["a.example", "b.example"]);
@@ -1053,16 +1063,17 @@ Item {
             return item.mapToItem(block(page), Qt.point(0, 0)).y;
         }
 
-        // One line when the families agree or only one names a place, one
-        // each when they differ, none without a city; each address line is
+        // One line when the families agree or only one address is shown, a
+        // family's own line when they differ or only one of two addresses
+        // has a place, none without a city; each address line is
         // read out with its own place, and the place lines aren't read again.
         function test_placesInThePopup_data() {
             const v6 = "2001:db8::1c";
             return [
-                { tag: "IPv4 places", v4: [200, osl4], v6: [200, v6], places: ["Near Oslo, Norway"],
+                { tag: "IPv4 places", v4: [200, osl4], v6: [200, v6], places: ["IPv4 near Oslo, Norway"],
                   spoken: ["Public address 198.51.100.24, near Oslo, Norway", "Public address 2001:db8::1c"] },
-                { tag: "IPv6 places", v4: [200, "198.51.100.24"], v6: [200, fra6], places: ["Near Frankfurt am Main, Germany"],
-                  spoken: ["Public address 198.51.100.24", "Public address 2001:db8::1c, near Frankfurt am Main, Germany"] },
+                { tag: "IPv6 places", v4: [200, "198.51.100.24"], v6: [200, JSON.stringify({ ip: v6, city: "Bergen", country: "Norway" })],
+                  places: ["IPv6 near Bergen, Norway"], spoken: ["Public address 198.51.100.24", "Public address 2001:db8::1c, near Bergen, Norway"] },
                 { tag: "two places", v4: [200, osl4], v6: [200, JSON.stringify({ ip: v6, city: "Bergen", country: "Norway" })],
                   places: ["IPv4 near Oslo, Norway", "IPv6 near Bergen, Norway"],
                   spoken: ["Public address 198.51.100.24, near Oslo, Norway", "Public address 2001:db8::1c, near Bergen, Norway"] },
@@ -1070,7 +1081,7 @@ Item {
                   spoken: ["Public address 198.51.100.24, near Frankfurt am Main, Germany",
                            "Public address 2001:db8::1c, near Frankfurt am Main, Germany"] },
                 { tag: "a city alone", v4: [200, JSON.stringify({ ip: "198.51.100.24", city: "Amsterdam" })], v6: [200, v6],
-                  places: ["Near Amsterdam"], spoken: ["Public address 198.51.100.24, near Amsterdam", "Public address 2001:db8::1c"] },
+                  places: ["IPv4 near Amsterdam"], spoken: ["Public address 198.51.100.24, near Amsterdam", "Public address 2001:db8::1c"] },
                 { tag: "a country alone", v4: [200, JSON.stringify({ ip: "198.51.100.24", country: "Netherlands" })], v6: [200, v6],
                   places: [], spoken: ["Public address 198.51.100.24", "Public address 2001:db8::1c"] },
                 { tag: "no city", v4: [200, JSON.stringify({ ip: "198.51.100.24" })], v6: [200, JSON.stringify({ ip: v6 })],
@@ -1169,6 +1180,19 @@ Item {
             }
         }
 
+        // Mullvad's JSON replies are read, so its place shows; still one
+        // request per family, to its own hosts.
+        function test_mullvadNamesThePlace() {
+            const set = shownIn({}, { publicAddressUrl4: "https://ipv4.am.i.mullvad.net/json",
+                                      publicAddressUrl6: "https://ipv6.am.i.mullvad.net/json" });
+            compare(set.made.map(r => r.url), ["https://ipv4.am.i.mullvad.net/json", "https://ipv6.am.i.mullvad.net/json"]);
+            answer(set.made, "v4", 200, JSON.stringify({ ip: "198.51.100.24", city: "Amsterdam", country: "Netherlands",
+                                                         mullvad_exit_ip: true, blacklisted: { blacklisted: false, results: [] } }));
+            answer(set.made, "v6", 503, "");
+            compare(set.checker.status, "shown");
+            compare(placeTexts(popup(set.monitor)).map(t => t.text), ["Near Amsterdam, Netherlands"]);
+        }
+
         // A place is shown as the service spelled it, never as markup.
         function test_placeIsPlainText() {
             const city = "<a href=\"o\">Oslo</a>";
@@ -1194,7 +1218,7 @@ Item {
         function test_placesAndNotesSetApart_data() {
             const leak = route("wg0-mullvad", "enp195s0f3u1", true, false);
             return [{ tag: "a place alone", egress: route("enp195s0f3u1", "enp195s0f3u1"), v4: osl4,
-                      first: "Near Oslo, Norway", note: false },
+                      first: "IPv4 near Oslo, Norway", note: false },
                     { tag: "a note alone", egress: leak, v4: "198.51.100.24", first: "IPv6 doesn't go through wg0-mullvad", note: true }];
         }
         function test_placesAndNotesSetApart(data) {
@@ -1673,14 +1697,17 @@ Item {
         }
 
         // Picks a service from the open list with the keyboard.
-        function pick(c, custom) {
+        function pick(c, row) {
             c.service.forceActiveFocus();
             keyClick(Qt.Key_Space);
             tryCompare(c.service.popup, "opened", true);
-            keyClick(custom ? Qt.Key_Down : Qt.Key_Up);
+            const steps = row - c.service.currentIndex;
+            for (let i = 0; i < Math.abs(steps); i++) {
+                keyClick(steps > 0 ? Qt.Key_Down : Qt.Key_Up);
+            }
             keyClick(Qt.Key_Return);
             tryCompare(c.service.popup, "visible", false);
-            compare(c.service.currentIndex, custom ? 1 : 0);
+            compare(c.service.currentIndex, row);
         }
 
         // The line sits under the box's text, at the side it starts from.
@@ -1727,7 +1754,7 @@ Item {
             mouseClick(c.box);
             compare(page.cfg_publicAddress, true);
             if (data.custom) {
-                pick(c, true);
+                pick(c, root.customRow);
             }
             for (const on of [true, false, true]) {
                 if (page.cfg_publicAddress !== on) {
@@ -1778,18 +1805,22 @@ Item {
         // Off, only the box and its line show; on, the service list too, and
         // the URL fields with a custom service.
         function test_settingsServiceRows_data() {
-            return [{ tag: "ipify", url: "", custom: false }, { tag: "custom", url: "https://a.example/ip", custom: true }];
+            return [{ tag: "ipify", url: "", custom: false, row: root.ipifyRow },
+                    { tag: "mullvad", url: "https://ipv4.am.i.mullvad.net/json", url6: "https://ipv6.am.i.mullvad.net/json",
+                      custom: false, row: root.mullvadRow },
+                    { tag: "custom", url: "https://a.example/ip", custom: true, row: root.customRow }];
         }
         function test_settingsServiceRows(data) {
-            const page = general({ cfg_publicAddress: false, cfg_publicAddressUrl4: data.url });
+            const page = general({ cfg_publicAddress: false, cfg_publicAddressUrl4: data.url,
+                                   cfg_publicAddressUrl6: data.url6 ?? "" });
             const c = controls(page);
             const shown = () => [c.service.visible, c.url4.visible, c.url6.visible, c.json.visible];
             compare(shown(), [false, false, false, false]);
             mouseClick(c.box);
             compare(page.cfg_publicAddress, true);
             compare(shown(), [true, data.custom, data.custom, data.custom]);
-            compare(c.service.model, ["ipify.org", "Custom"]);
-            compare(c.service.currentIndex, data.custom ? 1 : 0);
+            compare(c.service.model, ["ipify.org", "am.i.mullvad.net", "Custom"]);
+            compare(c.service.currentIndex, data.row);
             mouseClick(c.box);
             compare(page.cfg_publicAddress, false);
             compare(shown(), [false, false, false, false]);
@@ -1800,7 +1831,7 @@ Item {
         function test_settingsCustom() {
             const page = general({ cfg_publicAddress: true });
             const c = controls(page);
-            pick(c, true);
+            pick(c, root.customRow);
             compare([c.url4.visible, c.url6.visible], [true, true]);
             compare([c.url4.text, c.url6.text], ["", ""]);
             compare([c.url4.placeholderText, c.url6.placeholderText], ["", ""]);
@@ -1815,19 +1846,19 @@ Item {
             compare([page.cfg_publicAddressUrl4, page.cfg_publicAddressUrl6], ["https://a.example/ip", "https://b.example/ip"]);
             compare(c.line.text, "Asks a.example and b.example, which see your address, when the popup opens.");
 
-            pick(c, false);
+            pick(c, root.ipifyRow);
             compare([page.cfg_publicAddressUrl4, page.cfg_publicAddressUrl6], ["", ""]);
             compare([c.url4.visible, c.url6.visible], [false, false]);
             compare(c.line.text, "Asks ipify.org, which sees your address, when the popup opens.");
 
-            pick(c, true);
+            pick(c, root.customRow);
             compare([page.cfg_publicAddressUrl4, page.cfg_publicAddressUrl6], ["https://a.example/ip", "https://b.example/ip"]);
             compare([c.url4.text, c.url6.text], ["https://a.example/ip", "https://b.example/ip"]);
 
             // Emptying both by hand keeps Custom open, asking ipify.org meanwhile.
             typeIn(c.url4, "");
             typeIn(c.url6, "");
-            compare(c.service.currentIndex, 1);
+            compare(c.service.currentIndex, root.customRow);
             compare([c.url4.visible, c.url6.visible], [true, true]);
             compare(c.line.text, "Asks ipify.org, which sees your address, until you enter a URL.");
         }
@@ -1838,13 +1869,13 @@ Item {
             const page = general({ cfg_publicAddress: true, cfg_publicAddressUrl4: "https://a.example/ip",
                                    cfg_publicAddressUrl6: "https://b.example/ip" });
             const c = controls(page);
-            pick(c, false);
-            pick(c, false);
+            pick(c, root.ipifyRow);
+            pick(c, root.ipifyRow);
             compare([page.cfg_publicAddressUrl4, page.cfg_publicAddressUrl6], ["", ""]);
-            pick(c, true);
+            pick(c, root.customRow);
             compare([page.cfg_publicAddressUrl4, page.cfg_publicAddressUrl6], ["https://a.example/ip", "https://b.example/ip"]);
             typeIn(c.url4, "https://c.example/ip");
-            pick(c, true);
+            pick(c, root.customRow);
             compare([page.cfg_publicAddressUrl4, page.cfg_publicAddressUrl6], ["https://c.example/ip", "https://b.example/ip"]);
             compare(c.url4.text, "https://c.example/ip");
         }
@@ -1855,19 +1886,44 @@ Item {
             const page = general({ cfg_publicAddress: true });
             const c = controls(page);
             c.service.forceActiveFocus();
-            keyClick(Qt.Key_Down);
-            compare(c.service.currentIndex, 1);
-            compare(c.url4.visible, true);
-            verify(c.service.activeFocus, "the list keeps the focus");
-            keyClick(Qt.Key_Up);
-            compare(c.service.currentIndex, 0);
-            compare(c.url4.visible, false);
-            verify(c.service.activeFocus, "the list keeps the focus");
+            const steps = [[Qt.Key_Down, root.mullvadRow, false], [Qt.Key_Down, root.customRow, true],
+                           [Qt.Key_Up, root.mullvadRow, false], [Qt.Key_Up, root.ipifyRow, false]];
+            for (const [key, row, fields] of steps) {
+                keyClick(key);
+                compare(c.service.currentIndex, row);
+                compare(c.url4.visible, fields, "fields at row " + row);
+                verify(c.service.activeFocus, "the list keeps the focus");
+            }
+            compare([page.cfg_publicAddressUrl4, page.cfg_publicAddressUrl6], ["", ""]);
+        }
+
+        // Mullvad writes its own pair of URLs and names itself in the line;
+        // ipify.org from there empties them, and Custom brings back what
+        // Custom held, not Mullvad's.
+        function test_settingsMullvad() {
+            const mullvad = ["https://ipv4.am.i.mullvad.net/json", "https://ipv6.am.i.mullvad.net/json"];
+            const page = general({ cfg_publicAddress: true, cfg_publicAddressUrl4: "https://a.example/ip" });
+            const c = controls(page);
+            compare(c.service.currentIndex, root.customRow);
+            pick(c, root.mullvadRow);
+            compare([page.cfg_publicAddressUrl4, page.cfg_publicAddressUrl6], mullvad);
+            compare([c.url4.visible, c.url6.visible, c.json.visible], [false, false, false]);
+            compare(c.line.text, "Asks am.i.mullvad.net, which sees your address, when the popup opens.");
+            pick(c, root.customRow);
+            compare([page.cfg_publicAddressUrl4, page.cfg_publicAddressUrl6], ["https://a.example/ip", ""]);
+            pick(c, root.mullvadRow);
+            pick(c, root.ipifyRow);
+            compare([page.cfg_publicAddressUrl4, page.cfg_publicAddressUrl6], ["", ""]);
+            compare(c.line.text, "Asks ipify.org, which sees your address, when the popup opens.");
+            pick(c, root.mullvadRow);
+            pick(c, root.customRow);
+            compare([page.cfg_publicAddressUrl4, page.cfg_publicAddressUrl6], ["https://a.example/ip", ""],
+                    "Custom keeps its own URLs through Mullvad and ipify.org");
         }
 
         // The wheel over the list leaves the service, and the URLs, alone.
         function test_settingsWheel_data() {
-            return [{ tag: "ipify", url: "", index: 0 }, { tag: "custom", url: "https://a.example/ip", index: 1 }];
+            return [{ tag: "ipify", url: "", index: root.ipifyRow }, { tag: "custom", url: "https://a.example/ip", index: root.customRow }];
         }
         function test_settingsWheel(data) {
             const page = general({ cfg_publicAddress: true, cfg_publicAddressUrl4: data.url });
@@ -1885,9 +1941,9 @@ Item {
         function test_settingsStoredBlank() {
             const page = general({ cfg_publicAddress: true, cfg_publicAddressUrl4: " " });
             const c = controls(page);
-            compare(c.service.currentIndex, 0);
+            compare(c.service.currentIndex, root.ipifyRow);
             compare(c.url4.visible, false);
-            pick(c, true);
+            pick(c, root.customRow);
             compare([c.url4.visible, c.url6.visible], [true, true]);
             verify(c.url4.activeFocus, "the IPv4 field has the focus");
             compare(c.line.text, "Asks ipify.org, which sees your address, until you enter a URL.");
@@ -1898,11 +1954,11 @@ Item {
         function test_settingsEmptiedByHand() {
             const page = general({ cfg_publicAddress: true, cfg_publicAddressUrl4: "https://a.example/ip" });
             const c = controls(page);
-            compare(c.service.currentIndex, 1);
+            compare(c.service.currentIndex, root.customRow);
             compare(c.url4.cursorPosition, 0, "a stored URL opens at its start");
             typeIn(c.url4, "");
             compare(page.cfg_publicAddressUrl4, "");
-            compare(c.service.currentIndex, 1);
+            compare(c.service.currentIndex, root.customRow);
             compare([c.url4.visible, c.url6.visible], [true, true]);
             verify(c.url4.activeFocus, "the field keeps the focus");
             compare(c.line.text, "Asks ipify.org, which sees your address, until you enter a URL.");
@@ -1921,17 +1977,17 @@ Item {
                                    cfg_publicAddressUrl6: data.url6 ?? "" });
             const c = controls(page);
             if (data.typed) {
-                pick(c, true);
+                pick(c, root.customRow);
                 typeIn(c[data.typed], "https://a.example/ip");
             }
-            compare(c.service.currentIndex, 1);
+            compare(c.service.currentIndex, root.customRow);
             compare(c.url4.visible, true);
             // Clicking Defaults takes the focus from the field, as a button does.
             c.box.forceActiveFocus();
             for (const key of ["publicAddressUrl4", "publicAddressUrl6"]) {
                 page["cfg_" + key] = page["cfg_" + key + "Default"];
             }
-            compare(c.service.currentIndex, 0);
+            compare(c.service.currentIndex, root.ipifyRow);
             compare([c.url4.visible, c.url6.visible], [false, false]);
             compare(c.line.text, "Asks ipify.org, which sees your address, when the popup opens.");
         }
@@ -1956,7 +2012,7 @@ Item {
         function test_settingsUrlReasons(data) {
             const page = general({ cfg_publicAddress: true });
             const c = controls(page);
-            pick(c, true);
+            pick(c, root.customRow);
             const field = data.name === "IPv4 URL" ? c.url4 : c.url6;
             const other = field === c.url4 ? c.url6 : c.url4;
             typeIn(field, data.url);
@@ -1984,7 +2040,7 @@ Item {
                                    cfg_publicAddressUrl6: "مثال" }, true);
             const c = controls(page);
             verify(c.box.mirrored, "the page is right to left");
-            compare(c.service.currentIndex, 1);
+            compare(c.service.currentIndex, root.customRow);
             for (const field of [c.url4, c.url6]) {
                 verify(!field.mirrored, field.Accessible.name + " mirrored");
                 compare(field.effectiveHorizontalAlignment, TextInput.AlignLeft, field.Accessible.name);

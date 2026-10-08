@@ -23,10 +23,8 @@ ConfigPage {
     readonly property string unit: cfg_fahrenheit ? i18nc("@label temperature unit", "°F")
                                                    : i18nc("@label temperature unit", "°C")
     readonly property var service: Lookup.service(cfg_publicAddressUrl4, cfg_publicAddressUrl6)
-    // Custom is shown while either URL is set, or once picked or typed in,
-    // so the fields stay open while both are empty. Picking ipify.org
-    // empties them, which is what selects it; picking Custom again brings
-    // back what they held.
+    // Custom is shown while URLs other than Mullvad's are set, or once
+    // picked or typed in, so the fields stay open while both are empty.
     property bool customPicked: false
     readonly property bool custom: customPicked || service.custom
     property var keptUrls: ["", ""]
@@ -51,22 +49,30 @@ ConfigPage {
     readonly property real boxIndent: (publicAddress.mirrored ? publicAddress.rightPadding : publicAddress.leftPadding)
                                       + publicAddress.indicator.width + publicAddress.spacing
 
-    function pickCustom(yes) {
-        if (yes === custom) {
+    // The Service list's rows: ipify.org, Mullvad, Custom.
+    readonly property int picked: custom ? 2 : service.preset === "mullvad" ? 1 : 0
+
+    // Picking a service writes the URLs that select it: none for ipify.org,
+    // Mullvad's pair for Mullvad, and for Custom what Custom held before
+    // another service was picked.
+    function pick(row) {
+        if (row === picked) {
             return;
         }
         // Custom is flagged only after the URLs are back, so settle() can't
         // take it for Defaults when a stored blank URL turns empty.
-        if (yes) {
+        if (row === 2) {
             cfg_publicAddressUrl4 = keptUrls[0];
             cfg_publicAddressUrl6 = keptUrls[1];
             customPicked = true;
-        } else {
-            customPicked = false;
-            keptUrls = [cfg_publicAddressUrl4, cfg_publicAddressUrl6];
-            cfg_publicAddressUrl4 = "";
-            cfg_publicAddressUrl6 = "";
+            return;
         }
+        if (custom) {
+            keptUrls = [cfg_publicAddressUrl4, cfg_publicAddressUrl6];
+        }
+        customPicked = false;
+        cfg_publicAddressUrl4 = row === 1 ? Lookup.MULLVAD.v4 : "";
+        cfg_publicAddressUrl6 = row === 1 ? Lookup.MULLVAD.v6 : "";
     }
     // Both URLs emptied from outside the fields, as Defaults does, means
     // ipify.org again, so Custom closes with them.
@@ -302,17 +308,17 @@ ConfigPage {
             id: serviceChoice
             Kirigami.FormData.label: i18nc("@label:listbox", "Service:")
             visible: page.cfg_publicAddress
-            model: [Lookup.IPIFY.name, i18nc("@item:inlistbox a public address service", "Custom")]
-            currentIndex: page.custom ? 1 : 0
+            model: [Lookup.IPIFY.name, Lookup.MULLVAD.name, i18nc("@item:inlistbox a public address service", "Custom")]
+            currentIndex: page.picked
             Accessible.name: i18nc("@label:listbox", "Service")
             Accessible.description: page.line
             // Picking ipify.org empties the URLs, so a stray scroll mustn't.
             wheelEnabled: false
             onActivated: index => {
-                page.pickCustom(index === 1);
+                page.pick(index);
                 // From the open list only: arrow keys on the closed one
                 // leave the focus where it is, so they can step back.
-                if (index === 1 && popup.visible) {
+                if (index === 2 && popup.visible) {
                     url4.input.forceActiveFocus();
                 }
             }

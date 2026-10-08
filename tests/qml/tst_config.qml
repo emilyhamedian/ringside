@@ -709,10 +709,12 @@ Item {
             keyClick(Qt.Key_Space);
             const service = combo(page, "Service");
             verify(service.visible, "the service list shows once the box is ticked");
-            // Custom from the open list, which moves on to the first URL.
+            // Custom, the third choice after ipify.org and Mullvad, from the
+            // open list, which moves on to the first URL.
             service.forceActiveFocus();
             keyClick(Qt.Key_Space);
             tryCompare(service.popup, "opened", true);
+            keyClick(Qt.Key_Down);
             keyClick(Qt.Key_Down);
             keyClick(Qt.Key_Return);
             tryCompare(service.popup, "visible", false);
@@ -728,7 +730,13 @@ Item {
                     [true, "https://ip.example.org/", ""]);
             verify(!d.changed(), "Apply would stay enabled");
 
+            // Up the closed list: Mullvad saves its own pair, then ipify.org none.
             service.forceActiveFocus();
+            keyClick(Qt.Key_Up);
+            verify(d.applyEnabled, "Mullvad left Apply off");
+            d.apply();
+            compare([config.file.publicAddress, config.file.publicAddressUrl4, config.file.publicAddressUrl6],
+                    [true, "https://ipv4.am.i.mullvad.net/json", "https://ipv6.am.i.mullvad.net/json"]);
             keyClick(Qt.Key_Up);
             verify(d.applyEnabled, "ipify.org left Apply off");
             d.apply();
