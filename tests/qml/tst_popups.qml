@@ -193,6 +193,14 @@ Item {
         diskTemperatureHistory: climb
     }
 
+    // A CPU that ran over the hot threshold in one of the day's 10-minute
+    // steps, and stayed calm through the last minute and hour.
+    FakeMonitor {
+        id: hotDay
+        cpuTemperatureHighs: highsOf(cpuTemperatureHistory, 8, 9, Infinity).map((v, i) => graphSpan === "day" && i === 100 ? 93.4 : v)
+        cpuTemperatureExtent: [44, 93.4]
+    }
+
     // At a 500 ms update interval the minute has 120 readings.
     FakeMonitor {
         id: shortSpan
@@ -1941,8 +1949,8 @@ Item {
         // given a reading in the graph's span, none for a sensor that never
         // answers, an Intel GPU, which publishes none, a sleeping GPU, which
         // keeps to its one line, or an integrated GPU beside a discrete one.
-        // The caption gives the span, and its far end the top: the hot
-        // threshold, under a faint rule as 100% is, as these run cooler.
+        // The caption gives the span, and its far end the hot threshold,
+        // under a faint rule at the top as 100% is, as these run cooler.
         function test_temperatureGraphs_data() {
             return [
                 { tag: "cpu", popup: "CpuPopup", monitor: normal, count: 1 },
@@ -1973,7 +1981,8 @@ Item {
                 const g = temperatureGraph(t);
                 const rules = all(g, i => i.limitY !== undefined);
                 compare(rules.length, 1);
-                verify(rules[0].visible, "a rule at the top it names");
+                verify(rules[0].visible, "a rule at the threshold it names");
+                fuzzyCompare(rules[0].mapToItem(g, Qt.point(0, rules[0].limitY)).y, g.topY, 1e-6, "at the top");
                 compare(rules[0].width, g.width);
                 compare(g.areas.length, 1, "one unbroken line");
                 compare(g.plot.points.length, data.monitor.historyLength);
@@ -2006,20 +2015,26 @@ Item {
             });
         }
 
-        // Highlighting off, the thresholds mean nothing on screen, so the
-        // top is the peak, named as a rate graph's is, with no rule.
-        function test_temperatureTopIsThePeakWithoutHighlighting() {
-            normal.highlightTemperatures = false;
+        // Highlighting off, the thresholds mean nothing on screen, so there
+        // is no rule, the top is the hottest reading of any span rounded up
+        // to a five, and the caption names the peak of the span shown, as a
+        // rate graph's does: the calm minute's, then the day's.
+        function test_temperatureCaptionIsThePeakWithoutHighlighting() {
+            hotDay.highlightTemperatures = false;
             try {
-                const tile = temperatureTiles(load("CpuPopup", normal, false, Kirigami.Units.gridUnit * 30))[0];
-                const peak = Math.max(...normal.cpuTemperatureHistory);
-                compare(tile.scaleTop, peak);
-                compare(captionLine(tile)[1].text, localized("peak " + Math.round(peak) + " °C"));
+                const tile = temperatureTiles(load("CpuPopup", hotDay, false, Kirigami.Units.gridUnit * 30))[0];
                 const g = temperatureGraph(tile);
-                verify(!all(g, i => i.limitY !== undefined)[0].visible, "no rule");
-                fuzzyCompare(Math.min(...g.plot.points.map(p => p.y)), g.topY, 1e-6, "the peak at the top");
+                for (const span of ["minute", "day"]) {
+                    hotDay.chooseSpan(span);
+                    const peak = Math.max(...hotDay.cpuTemperatureHistory.concat(hotDay.cpuTemperatureHighs).filter(Number.isFinite));
+                    compare(tile.scaleTop, 95, span);
+                    compare(captionLine(tile)[1].text, localized("peak " + Math.round(peak) + " °C"), span);
+                    verify(!all(g, i => i.limitY !== undefined)[0].visible, span + ": no rule");
+                }
+                compare(captionLine(tile)[1].text, localized("peak 93 °C"));
             } finally {
-                normal.highlightTemperatures = true;
+                hotDay.chooseSpan("minute");
+                hotDay.highlightTemperatures = true;
             }
         }
 
@@ -2188,7 +2203,7 @@ Item {
 
         // The line turns amber from the warm threshold and red from the hot
         // one, as the header's reading does, in either unit, and stays plain
-        // with the highlighting off. The top is the peak, over hot.
+        // with the highlighting off. The caption names the peak, over hot.
         function test_temperatureLineTakesTheLevelColours_data() {
             return [{ tag: "cpu", popup: "CpuPopup", f: false, top: "peak 93 °C" },
                     { tag: "gpu", popup: "GpuPopup", f: false, top: "peak 93 °C" },
@@ -2399,35 +2414,44 @@ Item {
             }
         }
 
-        // A temperature graph's scale and its name come from every reading
-        // the three spans keep, so they hold still when the span changes:
-        // the hot threshold under its rule while every reading stays under
-        // it, the peak once any runs over, whichever span is shown.
+        // A temperature graph's scale comes from every reading the three
+        // spans keep, so it holds still when the span changes: up to the hot
+        // threshold while every reading stays under it, to the hottest
+        // rounded up to a five once one runs over. The caption and the rule
+        // speak for the span on screen: the hot threshold, under its rule
+        // wherever it falls in the scale, while the line shown stays under
+        // it, and the line's peak, with no rule, once it passes it.
         function test_temperatureScaleHoldsAcrossSpans_data() {
-            return [{ tag: "underHot", extent: [44, 80], top: "hot 90 °C", scaleTop: 90, floor: 30, rule: true },
-                    { tag: "overHot", extent: [44, 95.4], top: "peak 95 °C", scaleTop: 95.4, floor: 30, rule: false }];
+            return [{ tag: "underHot", monitor: normal, extent: [44, 80], scaleTop: 90,
+                      tops: { minute: "hot 90 °C", hour: "hot 90 °C", day: "hot 90 °C" } },
+                    { tag: "dayOverHot", monitor: hotDay, extent: [44, 93.4], scaleTop: 95,
+                      tops: { minute: "hot 90 °C", hour: "hot 90 °C", day: "peak 93 °C" } }];
         }
 
         function test_temperatureScaleHoldsAcrossSpans(data) {
-            const extent = normal.cpuTemperatureExtent;
-            normal.cpuTemperatureExtent = data.extent;
+            const extent = data.monitor.cpuTemperatureExtent;
+            data.monitor.cpuTemperatureExtent = data.extent;
             try {
-                const popup = load("CpuPopup", normal, false, Kirigami.Units.gridUnit * 30);
+                const popup = load("CpuPopup", data.monitor, false, Kirigami.Units.gridUnit * 30);
                 const tile = temperatureTiles(popup)[0];
                 const g = temperatureGraph(tile);
+                const rule = all(g, i => i.limitY !== undefined)[0];
+                const hotY = g.topY + (1 - (90 - 30) / (data.scaleTop - 30)) * (g.height - g.topY - 0.75);
                 for (const span of ["minute", "hour", "day", "minute"]) {
-                    normal.chooseSpan(span);
+                    data.monitor.chooseSpan(span);
                     compare(tile.scaleTop, data.scaleTop, span);
-                    compare(tile.floor, data.floor, span);
-                    compare(captionLine(tile)[1].text, localized(data.top), span);
-                    compare(all(g, i => i.limitY !== undefined)[0].visible, data.rule, span + ": the rule");
+                    compare(tile.floor, 30, span);
+                    const top = data.tops[span];
+                    compare(captionLine(tile)[1].text, localized(top), span);
+                    compare(rule.visible, top.startsWith("hot"), span + ": the rule");
+                    fuzzyCompare(rule.mapToItem(g, Qt.point(0, rule.limitY)).y, hotY, 1e-6, span + ": the rule at 90 °C");
                     compare(g.bands.length > 0, span !== "minute", span + ": the band");
                     const ys = g.plot.points.filter(p => Number.isFinite(p.y)).map(p => p.y);
                     verify(Math.min(...ys) >= g.topY - 1e-6 && Math.max(...ys) <= g.height, span + ": inside the scale");
                 }
             } finally {
-                normal.chooseSpan("minute");
-                normal.cpuTemperatureExtent = extent;
+                data.monitor.chooseSpan("minute");
+                data.monitor.cpuTemperatureExtent = extent;
             }
         }
 

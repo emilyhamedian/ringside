@@ -9,17 +9,21 @@ import org.kde.kirigami as Kirigami
 import "../code/format.js" as Format
 import "../code/history.js" as History
 
-// A temperature's history, as quiet as the other graphs: no grid, and the
-// top named at the end of the caption line. The top is the hot threshold,
-// under a faint rule as a percentage graph's 100% is, "hot 90 °C", or the
-// peak when the line runs hotter or the highlighting is off, "peak 93 °C",
-// as a rate graph's is. The floor goes unnamed (see
-// History.temperatureFloor()). Both come from every reading the three spans
-// keep, so the scale and its name hold still when the span changes. The
-// line turns amber and red where it passes the warm and hot thresholds, as
-// the header's reading does, and breaks off where there was no reading. An
-// hour or a day draws each bucket's average under a fainter band up to its
-// highest reading, so a short hot spell still shows.
+// A temperature's history, as quiet as the other graphs: no grid. The
+// scale comes from every reading the three spans keep, so it holds still
+// when the span changes: its top is the hot threshold, or the hottest
+// reading rounded up to a five when that runs hotter, and its floor goes
+// unnamed (see History.temperatureFloor()). The end of the caption line
+// speaks for the span on screen. While its line stays at or under the hot
+// threshold, a faint rule marks the threshold wherever it falls in the
+// scale, as a percentage graph's marks 100%, and the caption names it,
+// "hot 90 °C". Once the line passes it, or with the highlighting off, the
+// caption names the span's peak instead, "peak 93 °C", as a rate graph's
+// does, and there is no rule. The line turns amber and red where it passes
+// the warm and hot thresholds, as the header's reading does, and breaks off
+// where there was no reading. An hour or a day draws each bucket's average
+// under a fainter band up to its highest reading, so a short hot spell
+// still shows.
 Tile {
     id: tile
 
@@ -44,7 +48,12 @@ Tile {
     // With the highlighting off the settings grey the thresholds out and
     // the line keeps one colour, so the hot threshold means nothing here.
     readonly property real scaleTop: History.temperatureTop(scaleSamples, monitor.highlightTemperatures ? hot : -Infinity)
-    readonly property bool topIsHot: monitor.highlightTemperatures && scaleTop === hot
+    // The hottest reading the span on screen shows, up to its band at an
+    // hour or a day; NaN with none.
+    readonly property real shownPeak: Format.degrees(History.peak(History.tops(history, highs))?.value ?? NaN, fahrenheit)
+    // The line shown stays at or under the hot threshold, which the rule
+    // and the caption then stand for.
+    readonly property bool underHot: monitor.highlightTemperatures && !(shownPeak > hot)
     // 5 °C in the unit shown.
     readonly property real margin: fahrenheit ? 9 : 5
     // Set as the samples come rather than bound, since where it stays
@@ -66,12 +75,16 @@ Tile {
     caption: i18nc("@title:group", "Temperature")
     spans: monitor
     graphTop: {
-        const t = Format.whole(scaleTop);
-        if (topIsHot) {
+        if (underHot) {
+            const h = Format.whole(hot);
             return fahrenheit
-                ? i18nc("@title:group at the end of a temperature graph's caption line: the hot threshold set for red, which the graph's top and its rule stand for, as in hot 194 °F", "hot %1 °F", t)
-                : i18nc("@title:group at the end of a temperature graph's caption line: the hot threshold set for red, which the graph's top and its rule stand for, as in hot 90 °C", "hot %1 °C", t);
+                ? i18nc("@title:group at the end of a temperature graph's caption line: the hot threshold set for red, which a faint rule across the graph marks, as in hot 194 °F", "hot %1 °F", h)
+                : i18nc("@title:group at the end of a temperature graph's caption line: the hot threshold set for red, which a faint rule across the graph marks, as in hot 90 °C", "hot %1 °C", h);
         }
+        if (!Number.isFinite(shownPeak)) {
+            return "";
+        }
+        const t = Format.whole(shownPeak);
         return fahrenheit
             ? i18nc("@title:group at the end of a temperature graph's caption line: its highest reading, as in peak 199 °F", "peak %1 °F", t)
             : i18nc("@title:group at the end of a temperature graph's caption line: its highest reading, as in peak 93 °C", "peak %1 °C", t);
@@ -82,6 +95,9 @@ Tile {
 
         // The top sits where the other graphs put theirs.
         readonly property real topY: rule.limitY
+        // Where the hot threshold falls in the scale: the top, unless a
+        // reading in any span ran hotter.
+        readonly property real hotY: History.points([tile.hot], 2, width, height, tile.scaleTop, topY, tile.floor)[0].y
         // The samples, in the unit shown, and their points, kept together:
         // as a history grows, a binding reading them apart could see the
         // new samples with the old points, one short.
@@ -111,10 +127,13 @@ Tile {
         implicitHeight: Kirigami.Units.gridUnit * 2.7
         clip: true
 
+        // Moved down from the top so that its line runs through hotY.
         LimitRule {
             id: rule
-            anchors.fill: parent
-            visible: tile.topIsHot
+            y: graph.hotY - rule.limitY
+            width: parent.width
+            height: parent.height
+            visible: tile.underHot
         }
 
         Shape {
