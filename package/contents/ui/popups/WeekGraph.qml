@@ -17,7 +17,8 @@ import "../code/style.js" as Style
 // one, the model limit on the inner ring, is dashed, as in Graph. The line
 // ends at the last poll, so the empty stretch to its right is the time
 // left; only when the last poll is hours old does a marker say where now
-// is. The limit the pace sentence under the bars names, when it is on
+// is. While checks fail, the marker shows once the gap is wide enough to
+// see, and the gap is hatched. The limit the pace sentence under the bars names, when it is on
 // course to run out before the reset, gets a dashed line from the rule to
 // the floor at the moment it runs out, with the sentence's time under the
 // floor, in the colour of that limit's level as its bar has it.
@@ -42,6 +43,11 @@ Item {
     property real nowMs: Date.now()
     // When the readings were last fetched, in epoch seconds.
     property real pollAt: NaN
+    // The last check failed: the stretch from the last reading to now is
+    // hatched, as unknown, and the marker for now shows whatever its age.
+    property bool failed: false
+    // The readings may be out of date: the run-out carries no alert colour.
+    property bool grey: false
     property color color: Kirigami.Theme.textColor
     property real fillOpacity: 0.15
     // The series whose run-out is drawn, "main" or "second", or "" for none:
@@ -277,8 +283,10 @@ Item {
 
     // Two hours are about 4 px of a week: within that, the line's end
     // already shows now. Later than that, checks have been failing, which
-    // the line under the header says.
-    readonly property bool stale: placed && mainPoints.length > 0 && pollAt < nowMs / 1000 - 7200
+    // the line under the header says. A failed check marks now as soon as
+    // the gap to it is as wide.
+    readonly property bool stale: placed && mainPoints.length > 0
+        && (failed ? xAt(nowMs / 1000) - xAt(pollAt) >= 4 : pollAt < nowMs / 1000 - 7200)
     // The marker's place, inside the graph once the reset has passed.
     readonly property real markerX: Math.min(width - 1, Math.round(Math.max(0, xAt(nowMs / 1000))))
 
@@ -331,7 +339,10 @@ Item {
     }
 
     function levelColor(level) {
-        return level === 2 ? Kirigami.Theme.negativeTextColor : level === 1 ? Kirigami.Theme.neutralTextColor : graph.color;
+        // A run-out projected from a reading that couldn't be renewed
+        // carries no alert colour, as the bars above it don't.
+        return grey ? graph.color
+             : level === 2 ? Kirigami.Theme.negativeTextColor : level === 1 ? Kirigami.Theme.neutralTextColor : graph.color;
     }
 
     // The run-out's time, the text the tile ends on while it shows.
@@ -386,6 +397,36 @@ Item {
         width: 1
         height: graph.floorY - y
         color: Qt.alpha(graph.color, 0.45 * graph.color.a)
+    }
+
+    // From the last reading to now while checks fail: diagonal hatching,
+    // as the panel's ring is struck, in the rule's colour.
+    Item {
+        id: gap
+        readonly property real from: Math.round(Math.max(0, graph.xAt(graph.pollAt)))
+        x: from
+        y: rule.ruleY + 1
+        width: Math.max(0, graph.markerShownX - from)
+        height: graph.floorY - y
+        clip: true
+        visible: graph.failed && width >= 2
+        opacity: graph.markerShown ? 1 : 0
+
+        Shape {
+            width: gap.width
+            height: gap.height
+            preferredRendererType: Shape.CurveRenderer
+            ShapePath {
+                strokeColor: Qt.alpha(graph.color, 0.22 * graph.color.a)
+                strokeWidth: 1
+                fillColor: "transparent"
+                PathMultiline {
+                    // 45° lines, 4 px apart, bottom left to top right.
+                    paths: Array.from({ length: Math.ceil((gap.width + gap.height) / 4) + 1 },
+                                      (_, i) => [Qt.point(4 * i - gap.height, gap.height), Qt.point(4 * i, 0)])
+                }
+            }
+        }
     }
 
     // At a new week the marker goes with the last week's lines.

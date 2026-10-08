@@ -2057,22 +2057,31 @@ Item {
                   weekly: window(5, 7 * day - 3 * 3600, [[0.1, 2], [0, 5]]), scoped: [], expect: u => "" },
                 { tag: "resetPassed", row: -1,
                   weekly: window(40, -60, [[3, 10], [0, 40]]), scoped: [], expect: u => "" },
-                // Projected from a reading two days old, the run-out has
-                // already passed: it may have happened, not still to come.
-                { tag: "staleRunOutPast", row: 0, ago: 2 * day,
-                  weekly: window(60, 3 * day, [[4, 0], [2, 60]]), scoped: [],
+                // Projected from a reading an hour and a half old, while
+                // checks fail, the run-out has already passed: it may have
+                // happened, not still to come. The sentence greys with the
+                // reading.
+                { tag: "staleRunOutPast", row: 0, ago: 5400,
+                  weekly: window(99, 3 * day, [[4, 0], [0.0625, 99]]), scoped: [],
                   expect: u => "The weekly limit may already have run out "
-                      + wallClock(u, u.createdAt - 4 * day + 2 * day * 100 / 60, 600) },
-                { tag: "staleModelRunOutPast", row: 1, ago: 2 * day,
-                  weekly: window(20, 3 * day, [[4, 0], [2, 20]]),
-                  scoped: [{ id: "Fable", label: "Fable", w: window(60, 3 * day, [[4, 0], [2, 60]]) }],
+                      + wallClock(u, u.createdAt - 4 * day + (4 * day - 5400) * 100 / 99, 600) },
+                { tag: "staleModelRunOutPast", row: 1, ago: 5400,
+                  weekly: window(20, 3 * day, [[4, 0], [0.0625, 20]]),
+                  scoped: [{ id: "Fable", label: "Fable", w: window(99, 3 * day, [[4, 0], [0.0625, 99]]) }],
                   expect: u => "Fable may already have run out "
-                      + wallClock(u, u.createdAt - 4 * day + 2 * day * 100 / 60, 600) },
-                { tag: "staleAllRunOutPast", row: 0, ago: 2 * day,
-                  weekly: window(60, 3 * day, [[4, 0], [2, 60]]),
-                  scoped: [{ id: "Fable", label: "Fable", w: window(20, 3 * day, [[4, 0], [2, 20]]) }],
+                      + wallClock(u, u.createdAt - 4 * day + (4 * day - 5400) * 100 / 99, 600) },
+                { tag: "staleAllRunOutPast", row: 0, ago: 5400,
+                  weekly: window(99, 3 * day, [[4, 0], [0.0625, 99]]),
+                  scoped: [{ id: "Fable", label: "Fable", w: window(20, 3 * day, [[4, 0], [0.0625, 20]]) }],
                   expect: u => "All models may already have run out "
-                      + wallClock(u, u.createdAt - 4 * day + 2 * day * 100 / 60, 600) }
+                      + wallClock(u, u.createdAt - 4 * day + (4 * day - 5400) * 100 / 99, 600) },
+                // A reading over two hours old says nothing of the pace.
+                { tag: "staleOverTwoHours", row: -1, ago: 7260,
+                  weekly: window(99, 3 * day, [[4, 0], [7260 / day, 99]]), scoped: [], expect: u => "" },
+                { tag: "staleUnderTwoHours", row: 0, ago: 7140,
+                  weekly: window(60, 3 * day, [[4, 0], [7140 / day, 60]]), scoped: [],
+                  expect: u => "The weekly limit is on pace to run out "
+                      + wallClock(u, u.createdAt - 4 * day + (4 * day - 7140) * 100 / 60, 600) }
             ];
         }
 
@@ -2107,7 +2116,7 @@ Item {
             compare(said.length, 1);
             const text = sentence(all[data.row]);
             compare(text.text, expected);
-            compare(String(text.color), String(Kirigami.Theme.textColor));
+            compare(String(text.color), String(data.ago === undefined ? Kirigami.Theme.textColor : Style.dim(Kirigami.Theme.textColor)));
             compare(text.textFormat, Text.PlainText);
             if (all.length > 1) {
                 const bar = bars(all[data.row]);
@@ -2393,15 +2402,143 @@ Item {
             verify(root.texts(load("codex")).includes(monitor.usage.helperError));
         }
 
-        // An error is shown as written, never as markup.
-        function test_failedPoll() {
-            setClaude({ lastError: "<b>HTTP Error 500</b>", lastErrorAt: monitor.usage.createdAt });
+        // What merge() adds to Claude's entry when its check failed, with the
+        // reading taken `age` seconds before now.
+        function failClaude(age, changes) {
+            const now = Date.now() / 1000;
+            setClaude(Object.assign({ fetchedAt: now - age, lastError: "can't reach api.anthropic.com: timed out",
+                                      lastErrorAt: Math.floor(now), reason: "offline", host: "api.anthropic.com",
+                                      retryAt: Math.floor(now) + 300 }, changes ?? {}));
+        }
+
+        function checkStatus(popup) {
+            return root.find(popup, i => i.weekly !== undefined && i.texts !== undefined);
+        }
+
+        function tryAgain(popup) {
+            return root.find(checkStatus(popup), i => i.text === "Try again");
+        }
+
+        // Under the header: a small struck ring, when the check failed, and
+        // why, with the readings' time and the next check, all as written,
+        // never as markup. The readings stay, in grey: the header's ring,
+        // the bars and their numbers, with no lone dash for the countdown.
+        function test_failedCheckGreysTheReading() {
+            failClaude(1200, { lastError: "<b>HTTP Error 500</b>", reason: "other" });
             const popup = load("claude");
-            const note = root.find(popup, i => typeof i.text === "string" && i.text.startsWith("Last check failed at "));
-            verify(note !== null);
-            verify(note.text.endsWith(": <b>HTTP Error 500</b>"), note.text);
-            compare(note.textFormat, Text.PlainText);
-            verify(root.texts(popup).includes(root.localized("52%")), "the last reading stays");
+            const status = checkStatus(popup);
+            verify(status.visible);
+            const shown = root.texts(status);
+            verify(shown.some(t => /^Last check failed at .+$/.test(t)), JSON.stringify(shown));
+            const said = shown.find(t => t.startsWith("<b>"));
+            verify(/^<b>HTTP Error 500<\/b>\. The readings below are from .+\. Next check at .+\.$/.test(said), said);
+            verify(root.find(status, i => i.text === said).textFormat === Text.PlainText);
+            const sign = root.find(status, i => i.outerTone !== undefined);
+            verify(sign.cancelled && sign.struck === 1 && sign.Accessible.ignored, "the panel's sign, struck");
+
+            const r = ring(popup);
+            verify(r.stale && !r.cancelled, "the header's ring keeps the reading, in grey");
+            tryCompare(r, "greyed", 1, 3000);
+            compare(r.text, root.localized("52%"));
+            const all = rows(popup);
+            compare(all.length, 2);
+            const dim = String(Style.dim(Kirigami.Theme.textColor));
+            for (const row of all) {
+                compare(fill(row).color, Qt.alpha(Kirigami.Theme.textColor, 0.42), row.limit.label + "'s bar");
+                compare(String(rowText(row, root.localized(row.limit.id === "" ? "52%" : "78%")).color), dim);
+            }
+            verify(!root.texts(header(popup)).includes("–"), "no lone dash");
+            const g = graph(popup);
+            verify(g.failed && g.grey);
+        }
+
+        // The hatching runs from the last reading to now.
+        function test_failedGraphHatchesTheGap() {
+            failClaude(6 * 3600);
+            const popup = load("claude");
+            const g = graph(popup);
+            const gap = root.find(g, i => i.from !== undefined && i.clip === true);
+            verify(gap.visible && gap.width >= 2, "hatched: " + gap.width);
+            compare(gap.x, Math.round(g.xAt(popup.pollAt)));
+            compare(gap.x + gap.width, g.markerShownX);
+            verify(g.stale, "with the marker for now");
+            setClaude({ lastError: undefined });
+            verify(!gap.visible, "gone with the next good check");
+        }
+
+        // A reading from a week that has since reset says nothing of this
+        // one: the header's ring is struck, the bars go, the graph stays as
+        // last week's, and the status says the week reset.
+        function test_failedPastTheReset() {
+            const usage = monitor.usage;
+            failClaude(8 * 3600, { weekly: usage.window(52, -2 * 3600, [[4, 0], [0.4, 52]]) });
+            const popup = load("claude");
+            const r = ring(popup);
+            verify(r.cancelled && !r.stale);
+            compare(r.text, "");
+            compare(rows(popup).length, 0);
+            const shown = root.texts(popup);
+            verify(shown.some(t => /^LAST WEEK · reset .+$/.test(t)), JSON.stringify(shown));
+            verify(shown.some(t => /The week reset at .+, with no reading since\./.test(t)), JSON.stringify(shown));
+            compare(header(popup).subtitle, "Weekly limits", "as many as the reading had");
+            verify(!graph(popup).failed, "nothing to hatch in a week that is over");
+        }
+
+        // "Try again" only when a check would really ask, and it asks.
+        function test_tryAgain_data() {
+            return [
+                { tag: "hold over", minutes: 15, ran: 400, retryAt: -100, shown: true },
+                { tag: "held", minutes: 15, ran: 400, retryAt: 200, shown: false },
+                { tag: "rate limited", minutes: 15, ran: 400, retryAt: 3000, reason: "rate-limited", shown: false },
+                { tag: "tick within a minute", minutes: 15, ran: 870, retryAt: -100, shown: false },
+                { tag: "files", minutes: 15, ran: 400, retryAt: -100, reason: "files", shown: false },
+                { tag: "five minutes", minutes: 5, ran: 60, retryAt: 240, shown: false }
+            ];
+        }
+
+        function test_tryAgain(data) {
+            const usage = monitor.usage;
+            const now = Date.now() / 1000;
+            usage.refreshMinutes = data.minutes;
+            usage.lastRun = now - data.ran;
+            failClaude(600, { retryAt: now + data.retryAt, reason: data.reason ?? "offline" });
+            const popup = load("claude");
+            const button = tryAgain(popup);
+            compare(button.visible, data.shown);
+            if (!data.shown) {
+                return;
+            }
+            compare(button.Accessible.description, "Check Claude's limits now");
+            mouseClick(button);
+            compare(usage.checks, 1);
+            verify(!button.visible, "gone while the check runs");
+            verify(root.texts(checkStatus(popup)).some(t => t.endsWith(" Checking now.")), JSON.stringify(root.texts(popup)));
+        }
+
+        // The button comes as the hold ends, with the popup open.
+        function test_tryAgainWhenTheHoldEnds() {
+            const usage = monitor.usage;
+            const now = Date.now() / 1000;
+            usage.refreshMinutes = 15;
+            usage.lastRun = now - 400;
+            failClaude(600, { retryAt: now + 2 });
+            const button = tryAgain(load("claude"));
+            verify(!button.visible, "held");
+            tryVerify(() => button.visible, 4000, "the hold is over");
+        }
+
+        // The helper's own failure is said plainly; its message, which
+        // names the Python error, is for screen readers.
+        function test_helperFailureInWords() {
+            failClaude(600, { lastError: "The usage helper exited with code 1: KeyError: 'weekly'", reason: "helper" });
+            const popup = load("claude");
+            const said = root.find(checkStatus(popup), i => typeof i.text === "string" && i.text.startsWith("The usage helper stopped"));
+            verify(said !== null, JSON.stringify(root.texts(popup)));
+            compare(said.Accessible.description, "The usage helper exited with code 1: KeyError: 'weekly'");
+        }
+
+        function test_noStatusWhileTheChecksSucceed() {
+            verify(!checkStatus(load("claude")).visible);
         }
 
         // The pace is measured to the poll the reading came from, so a

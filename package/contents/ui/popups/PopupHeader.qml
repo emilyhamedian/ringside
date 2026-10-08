@@ -17,6 +17,9 @@ RowLayout {
 
     property bool ringShown: true
     property real ringValue: NaN
+    // See RingGauge: no reading to show, or the last one kept in grey.
+    property bool ringCancelled: false
+    property bool ringStale: false
     // How often a system reading updates, for the ring: see RingGauge.
     property int interval: 0
     property string title: ""
@@ -78,9 +81,11 @@ RowLayout {
         Layout.preferredHeight: header.ringSize
         strokeWidth: 4
         value: header.ringValue
+        cancelled: header.ringCancelled
+        stale: header.ringStale
         interval: header.interval
         // Counts with the arc, as the screen reader's value doesn't.
-        text: Number.isFinite(header.ringValue) ? i18nc("@info a percentage", "%1%", Format.percent(ring.drawnValue)) : "–"
+        text: header.ringCancelled ? "" : Number.isFinite(header.ringValue) ? i18nc("@info a percentage", "%1%", Format.percent(ring.drawnValue)) : "–"
         // "100%" needs a little more room than "62%".
         textScale: text.length > 3 ? 0.25 : 0.29
     }
