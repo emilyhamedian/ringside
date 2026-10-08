@@ -37,7 +37,7 @@ Item {
     Component {
         id: configComponent
         QtObject {
-            property string publicAddress: "on"
+            property bool publicAddress: true
             property string publicAddressUrl4: ""
             property string publicAddressUrl6: ""
         }
@@ -103,7 +103,7 @@ Item {
             property string codexInnerLimit: ""
             property string knownLimits: ""
             property string usageStatus: ""
-            property string publicAddress: "on"
+            property bool publicAddress: true
             property string publicAddressUrl4: "https://monitor.example/ip"
             property string publicAddressUrl6: "https://monitor6.example/ip"
         }
@@ -445,9 +445,7 @@ Item {
 
         function test_nothingSent_data() {
             return [
-                { tag: "unanswered", config: { publicAddress: "" }, status: "prompt" },
-                { tag: "off", config: { publicAddress: "off" }, status: "off" },
-                { tag: "not a known answer", config: { publicAddress: "yes" }, status: "off" },
+                { tag: "off", config: { publicAddress: false }, status: "off" },
                 { tag: "popup closed", props: { open: false }, status: "checking" },
                 { tag: "routes not read yet", props: { egress: null }, status: "checking" },
                 { tag: "no route", props: { egress: route("", "") }, status: "offline" },
@@ -470,8 +468,8 @@ Item {
         // The same checker sends once each condition is met, so the cases
         // above are held back by what they name.
         function test_sendsOnceAllowed() {
-            const set = checker({ open: false, egress: null }, Object.assign({ publicAddress: "" }, own("allowed")));
-            set.config.publicAddress = "on";
+            const set = checker({ open: false, egress: null }, Object.assign({ publicAddress: false }, own("allowed")));
+            set.config.publicAddress = true;
             set.checker.open = true;
             compare(set.made.length, 0, "routes not read");
             set.checker.egress = route("enp5s0", "enp5s0");
@@ -748,10 +746,10 @@ Item {
         // Switching off mid-check stops it: nothing more is sent or kept.
         function test_switchingOffAbandons() {
             const set = checker({}, own("abandon"));
-            set.config.publicAddress = "off";
+            set.config.publicAddress = false;
             compare(set.made.map(r => r.aborted), [true, true]);
             compare(set.checker.status, "off");
-            set.config.publicAddress = "on";
+            set.config.publicAddress = true;
             compare(set.made.length, 2, "within the minute, nothing new");
             compare(set.checker.status, "checking");
             verify(timer(set.checker, "wait").running, "waits out the minute instead");
@@ -769,65 +767,58 @@ Item {
 
         // ---- The popup ----
 
+        // With the setting off, which is how it ships, the popup is the one
+        // there would be without the feature, and nothing is asked.
         function test_offIsToday() {
-            for (const monitor of [plain, shownIn({}, { publicAddress: "off" }).monitor]) {
-                const page = popup(monitor);
-                compare(header(page).detail, [monitor.networkAddress, monitor.networkInterface].join(" · "));
-                const hidden = block(page);
-                compare(hidden.visible, false, "no address block");
-                const head = header(page);
-                const tile = find(page, i => i.graphSeconds !== undefined);
-                const gap = tile.mapToItem(page, Qt.point(0, 0)).y - head.mapToItem(page, Qt.point(0, head.height)).y;
-                verify(gap < hidden.implicitHeight, "the throughput tile takes the block's place: " + gap);
-            }
+            const snapshot = page => ({
+                detail: header(page).detail,
+                texts: visibleTexts(page),
+                height: page.implicitHeight,
+                block: block(page).visible
+            });
+            const set = shownIn({}, { publicAddress: false });
+            const off = snapshot(popup(set.monitor));
+            popupMonitor.publicAddress = null;
+            const without = snapshot(popup(popupMonitor));
+            compare(off, without);
+            compare(off.detail, "192.168.99.123 · enp195s0f3u1");
+            compare(off.block, false, "no address block");
+            wait(50);
+            compare(set.made.length, 0, "nothing asked");
         }
 
-        function test_promptAnswers_data() {
-            return [{ tag: "show it", button: "Show it", setting: "on" }, { tag: "no thanks", button: "No thanks", setting: "off" }];
-        }
-        function test_promptAnswers(data) {
-            const set = shownIn({}, { publicAddress: "" });
+        // The checker's status, and so the popup's block, follow the setting.
+        function test_switchedOnInTheSettings() {
+            const set = shownIn({}, Object.assign({ publicAddress: false }, own("switchedon", false)));
             const page = popup(set.monitor);
+            compare(block(page).visible, false);
+            compare(set.made.length, 0);
+            set.config.publicAddress = true;
+            compare(set.made.length, 1, "asked as soon as it is on");
+            compare(block(page).visible, true);
             compare(header(page).detail, "");
-            const shown = visibleTexts(page).join("\n");
-            verify(shown.indexOf("Show the address websites see? Ringside would ask ipify.org when this popup opens or the connection changes, at most once a minute, so ipify.org sees your address.") >= 0, shown);
-            const buttons = all(block(page), i => i instanceof Kirigami.LinkButton && i.visible);
-            compare(buttons.map(b => b.Accessible.name), ["Show it", "No thanks"]);
-            for (const b of buttons) {
-                compare(b.activeFocusOnTab, true);
-                compare(b.Accessible.role, Accessible.Button);
-            }
-            mouseClick(buttons.find(b => b.text === data.button));
-            compare(set.config.publicAddress, data.setting);
-            compare(set.made.length, data.setting === "on" ? 2 : 0);
-            if (data.setting === "off") {
-                compare(block(page).visible, false);
-                compare(header(page).detail, "192.168.99.123 · enp195s0f3u1");
-            }
+            verify(visibleTexts(page).includes("Asking switchedon.example…"), visibleTexts(page).join("\n"));
         }
 
-        // The question names the service it would ask; an invalid one, which
-        // would ask nothing, goes unnamed.
-        function test_promptNamesTheService_data() {
+        // The block names the service it asks; one that is invalid, which
+        // asks nothing, goes unnamed.
+        function test_popupNamesTheService_data() {
             return [
-                { tag: "invalid", config: { publicAddressUrl4: "http://typo.example/ip" }, name: "the address service" },
+                { tag: "custom", config: { publicAddressUrl4: "https://ip.example/v4" }, text: "Asking ip.example…" },
+                { tag: "two hosts", config: { publicAddressUrl4: "https://a.example/", publicAddressUrl6: "https://b.example/" },
+                  text: "Asking a.example and b.example…" },
+                { tag: "invalid", config: { publicAddressUrl4: "http://typo.example/ip" },
+                  text: "Check the address service in the settings" },
                 { tag: "invalid beside a valid one",
                   config: { publicAddressUrl4: "http://typo.example/ip", publicAddressUrl6: "https://ok.example/ip" },
-                  name: "the address service" },
-                { tag: "custom", config: { publicAddressUrl4: "https://ip.example/v4" }, name: "ip.example" },
-                { tag: "two hosts", config: { publicAddressUrl4: "https://a.example/", publicAddressUrl6: "https://b.example/" },
-                  name: "a.example and b.example" }
+                  text: "Check the address service in the settings" }
             ];
         }
-        function test_promptNamesTheService(data) {
-            const set = shownIn({}, Object.assign({ publicAddress: "" }, data.config));
-            const page = popup(set.monitor);
-            const shown = visibleTexts(page).join("\n");
-            verify(shown.indexOf("Show the address websites see? Ringside would ask " + data.name
-                                 + " when this popup opens or the connection changes, at most once a minute, so "
-                                 + data.name + " sees your address.") >= 0, shown);
+        function test_popupNamesTheService(data) {
+            const set = shownIn({}, data.config);
+            const shown = visibleTexts(popup(set.monitor)).join("\n");
+            verify(shown.indexOf(data.text) >= 0, shown);
             verify(shown.indexOf("ipify") < 0, shown);
-            compare(set.made.length, 0);
         }
 
         function test_shownLinesAndLeak() {
@@ -979,25 +970,27 @@ Item {
 
         // ---- The settings ----
 
-        // A fresh install sends nothing: the switch starts unanswered and
-        // the service at ipify.org, as main.xml ships them, and a checker
-        // built from those asks the question and nothing else.
+        // A fresh install sends nothing: the switch ships off and the
+        // service at ipify.org, as main.xml has them, and a checker built
+        // from those, with the popup open on a connection, asks nothing.
         function test_shippedDefaults() {
             const request = new XMLHttpRequest();
             request.open("GET", Qt.resolvedUrl("../../package/contents/config/main.xml"), false);
             request.send();
             const xml = request.responseText;
             verify(xml !== "", "main.xml read; set QML_XHR_ALLOW_FILE_READ=1");
-            const defaults = {};
-            for (const key of ["publicAddress", "publicAddressUrl4", "publicAddressUrl6"]) {
-                const entry = new RegExp('<entry name="' + key + '" type="String">([\\s\\S]*?)</entry>').exec(xml);
+            const entryOf = key => {
+                const entry = new RegExp('<entry name="' + key + '" type="(\\w+)">([\\s\\S]*?)</entry>').exec(xml);
                 verify(entry, key + " in main.xml");
-                defaults[key] = (/<default>([^<]*)<\/default>/.exec(entry[1]) || ["", ""])[1];
-                compare(defaults[key], "", key + " ships empty");
-            }
-            const set = checker({}, defaults);
-            compare(set.checker.status, "prompt");
+                return { type: entry[1], value: (/<default>([^<]*)<\/default>/.exec(entry[2]) || ["", ""])[1] };
+            };
+            compare(entryOf("publicAddress"), { type: "Bool", value: "false" });
+            compare(entryOf("publicAddressUrl4"), { type: "String", value: "" });
+            compare(entryOf("publicAddressUrl6"), { type: "String", value: "" });
+            const set = checker({}, { publicAddress: entryOf("publicAddress").value === "true" });
+            compare(set.checker.status, "off");
             compare(set.checker.serviceName, "ipify.org");
+            wait(50);
             compare(set.made.length, 0);
         }
 
@@ -1009,8 +1002,7 @@ Item {
         }
 
         function test_settingsCheckbox_data() {
-            return [{ tag: "unanswered", stored: "", checked: false }, { tag: "on", stored: "on", checked: true },
-                    { tag: "off", stored: "off", checked: false }];
+            return [{ tag: "on", stored: true, checked: true }, { tag: "off", stored: false, checked: false }];
         }
         function test_settingsCheckbox(data) {
             const page = general({ cfg_publicAddress: data.stored });
@@ -1018,15 +1010,15 @@ Item {
             verify(box, "the checkbox names ipify.org");
             compare(box.checked, data.checked);
             mouseClick(box);
-            compare(page.cfg_publicAddress, data.checked ? "off" : "on");
+            compare(page.cfg_publicAddress, !data.checked);
             mouseClick(box);
-            compare(page.cfg_publicAddress, data.checked ? "on" : "off");
+            compare(page.cfg_publicAddress, data.checked);
             const note = visibleTexts(page).find(t => t.indexOf("Shows the address websites see") === 0);
             verify(note.indexOf("api.ipify.org and api6.ipify.org") >= 0, note);
         }
 
         function test_settingsFields() {
-            const page = general({ cfg_publicAddress: "on" });
+            const page = general({ cfg_publicAddress: true });
             const field = name => find(page, i => i instanceof QQC2.TextField && i.Accessible.name === name);
             const four = field("IPv4 address URL");
             const six = field("IPv6 address URL");
@@ -1068,12 +1060,14 @@ Item {
             return [{ tag: "versioned", version: "0.3.0", agent: "ringside/0.3.0" },
                     { tag: "no version", version: "", agent: "ringside" }];
         }
-        function test_monitor(data) {
+        // A real Monitor on a config of its own, with fake requests.
+        function realMonitor(urlHost, version, enabled) {
             const config = createTemporaryObject(realConfigComponent, root);
-            config.publicAddressUrl4 = "https://monitor-" + data.tag.replace(" ", "") + ".example/ip";
+            config.publicAddressUrl4 = "https://" + urlHost + ".example/ip";
+            config.publicAddress = enabled;
             // Not a temporary object: a monitor has to go before its config.
             const monitor = realMonitorComponent.createObject(root, {
-                config: config, version: data.version,
+                config: config, version: version,
                 helperPath: decodeURIComponent(Qt.resolvedUrl("data/fake-info.sh").toString().replace(/^file:\/\//, ""))
             });
             monitors.push(monitor);
@@ -1084,7 +1078,12 @@ Item {
             const polled = () => Array.from(monitor.data)
                 .filter(o => o && o.engine === "executable" && o.interval === 3000)
                 .reduce((list, o) => list.concat(Array.from(o.connectedSources)), []);
-            const egress = () => polled().filter(source => source.endsWith(" egress"));
+            return { config: config, monitor: monitor, fake: fake, polled: polled,
+                     egress: () => polled().filter(source => source.endsWith(" egress")) };
+        }
+
+        function test_monitor(data) {
+            const { config, monitor, fake, polled, egress } = realMonitor("monitor-" + data.tag.replace(" ", ""), data.version, true);
             for (const open of ["", "cpu", "disk"]) {
                 monitor.openPopup = open;
                 compare(egress().length, 0, "with " + (open || "nothing") + " open");
@@ -1105,9 +1104,26 @@ Item {
             compare(monitor.egress, null, "forgotten when the popup closes");
             monitor.openPopup = "network";
             compare(egress().length, 1);
-            config.publicAddress = "off";
+            config.publicAddress = false;
             compare(egress().length, 0, "not read while off");
             compare(monitor.publicAddress.status, "off");
+            monitor.openPopup = "";
+        }
+
+        // Off, as shipped, nothing is read or asked even with the popup open;
+        // switching it on in the settings starts both.
+        function test_monitorSwitchedOn() {
+            const { config, monitor, fake, egress } = realMonitor("monitor-switchon", "0.3.0", false);
+            monitor.openPopup = "network";
+            wait(100);
+            compare(egress().length, 0, "no route facts read");
+            compare(monitor.egress, null);
+            compare(fake.made.length, 0);
+            compare(monitor.publicAddress.status, "off");
+            config.publicAddress = true;
+            compare(egress().length, 1);
+            tryVerify(() => monitor.egress !== null, 10000, "the stub's routes arrive");
+            compare(fake.made.map(r => r.url), [config.publicAddressUrl4]);
             monitor.openPopup = "";
         }
     }

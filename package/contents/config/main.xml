@@ -39,9 +39,9 @@
     <entry name="hotCelsius" type="Double">
       <default>90</default>
     </entry>
-    <entry name="publicAddress" type="String">
-      <label>Show the public address in the network popup: empty until asked, "on" or "off"</label>
-      <default></default>
+    <entry name="publicAddress" type="Bool">
+      <label>Show the public address in the network popup</label>
+      <default>false</default>
     </entry>
     <entry name="publicAddressUrl4" type="String">
       <label>An https URL that answers with the IPv4 address alone; with this or the IPv6 one set, only these are asked</label>

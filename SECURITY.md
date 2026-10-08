@@ -30,8 +30,8 @@ Mainly the two helpers Ringside runs:
 
 - System items (CPU, GPU, memory, network, disk) read `/proc`, `/sys`,
   udev's database and ksystemstats, and send nothing.
-- The public address in the network popup, off until you turn it on there
-  or on General, sends one HTTPS GET per address family to `api.ipify.org`
+- The public address in the network popup, off until you turn it on
+  under General, sends one HTTPS GET per address family to `api.ipify.org`
   and `api6.ipify.org`, or only to the URLs you set instead. A request goes
   out when that popup opens, unless any Ringside widget asked in the last
   minute, and when the route changes while it stays open, never sooner than

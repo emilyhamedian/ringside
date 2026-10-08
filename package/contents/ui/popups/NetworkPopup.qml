@@ -144,8 +144,6 @@ PopupPage {
         localAddress: popup.monitor.networkAddress
         localInterface: popup.monitor.networkInterface
         info: popup.publicInfo
-        onAccepted: popup.lookup.answer(true)
-        onDeclined: popup.lookup.answer(false)
     }
 
     Tile {

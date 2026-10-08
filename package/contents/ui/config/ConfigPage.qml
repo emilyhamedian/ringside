@@ -43,8 +43,8 @@ KCM.SimpleKCM {
     property real cfg_warmCelsiusDefault
     property real cfg_hotCelsius
     property real cfg_hotCelsiusDefault
-    property string cfg_publicAddress
-    property string cfg_publicAddressDefault
+    property bool cfg_publicAddress
+    property bool cfg_publicAddressDefault
     property string cfg_publicAddressUrl4
     property string cfg_publicAddressUrl4Default
     property string cfg_publicAddressUrl6

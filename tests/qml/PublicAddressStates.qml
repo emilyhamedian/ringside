@@ -26,7 +26,7 @@ QtObject {
     }
     property Component configComponent: Component {
         QtObject {
-            property string publicAddress: "on"
+            property bool publicAddress: true
             property string publicAddressUrl4: ""
             property string publicAddressUrl6: ""
         }
@@ -81,7 +81,7 @@ QtObject {
                          clock: () => states.at, answer: () => {} };
         // Off before it goes: destroy() waits for the event loop, and a checker
         // still on would answer the next state's checks.
-        c.publicAddress = "off";
+        c.publicAddress = false;
         checker.destroy();
         c.destroy();
         return frozen;
@@ -95,7 +95,6 @@ QtObject {
         const ok4 = [200, "203.0.113.7\n"];
         const long6 = [200, "2001:db8:85a3:4d1c:9d2e:51f4:c8a3:7e61"];
         all = {
-            prompt: run([{ egress: home }], { publicAddress: "" }),
             both: run([{ egress: home, v4: ok4, v6: [200, "2001:db8:4f2a::1c"] }]),
             vpn: run([{ egress: homeV4, v4: ok4 }, { egress: vpn, v4: [200, "198.51.100.24"] }]),
             longvpn: run([{ egress: route("wg0-mullvad", "wg0-mullvad", true, true), v4: [200, "198.51.100.24"], v6: long6 }]),
