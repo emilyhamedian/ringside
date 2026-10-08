@@ -43,6 +43,28 @@ function groups6(text) {
     return head.concat(Array(halves.length === 2 ? missing : 0).fill("0"), tail).map(g => parseInt(g, 16));
 }
 
+// Eight groups as RFC 5952 spells them: lower-case hex without leading
+// zeros, and the longest run of zero groups, the first of equal runs,
+// compressed once when it is two groups or more. So one address spelled
+// two ways by a service reads as one address, not as a change.
+function canonical6(groups) {
+    let best = { at: -1, length: 1 };
+    for (let i = 0; i < groups.length; ++i) {
+        let j = i;
+        while (j < groups.length && groups[j] === 0) {
+            ++j;
+        }
+        if (j - i > best.length) {
+            best = { at: i, length: j - i };
+        }
+    }
+    const hex = part => part.map(g => g.toString(16)).join(":");
+    if (best.at < 0) {
+        return hex(groups);
+    }
+    return hex(groups.slice(0, best.at)) + "::" + hex(groups.slice(best.at + best.length));
+}
+
 // An IPv4-mapped address (::ffff:a.b.c.d, in any spelling) is an IPv4
 // reply in IPv6 clothing, so it doesn't count as an IPv6 address.
 function isIPv6(text) {
@@ -63,14 +85,15 @@ function isNowhere(text, family) {
 // The address in a service's reply for one family ("v4" or "v6"), or ""
 // when the reply is anything else: surrounding white space aside, it has
 // to be the address alone, so no other text a service sends is ever shown.
-// The patterns leave no room for anything longer than an address.
+// The patterns leave no room for anything longer than an address. An IPv6
+// address comes back in its canonical spelling, whatever the service's.
 function address(body, family) {
     const text = typeof body === "string" ? body.trim() : "";
     const valid = family === "v4" ? isIPv4(text) : family === "v6" && isIPv6(text);
     if (!valid || isNowhere(text, family)) {
         return "";
     }
-    return family === "v6" ? text.toLowerCase() : text;
+    return family === "v6" ? canonical6(groups6(text)) : text;
 }
 
 // Whether a reply came over https from the host that was asked. Qt follows

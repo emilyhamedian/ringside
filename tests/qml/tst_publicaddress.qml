@@ -366,6 +366,11 @@ Item {
                 { tag: "IPv6 asked for IPv4", body: "2001:db8::1", family: "v4", address: "" },
                 { tag: "IPv6", body: "2001:db8::1c\n", family: "v6", address: "2001:db8::1c" },
                 { tag: "IPv6 in capitals", body: "2001:DB8::1C", family: "v6", address: "2001:db8::1c" },
+                { tag: "IPv6 padded and uncompressed", body: "2001:0DB8:0000:0:0:0:0:001C", family: "v6", address: "2001:db8::1c" },
+                { tag: "IPv6 longest zero run, the first of equal ones", body: "1:0:0:1:0:0:1:1", family: "v6", address: "1::1:0:0:1:1" },
+                { tag: "IPv6 later zero run longer", body: "1:0:1:0:0:0:1:1", family: "v6", address: "1:0:1::1:1" },
+                { tag: "IPv6 lone zero group", body: "2001:db8:0:1:1:1:1:1", family: "v6", address: "2001:db8:0:1:1:1:1:1" },
+                { tag: "IPv6 zero run at the end", body: "2001:db8:1:0:0:0:0:0", family: "v6", address: "2001:db8:1::" },
                 { tag: "IPv6 in full", body: "2001:db8:85a3:4d1c:9d2e:51f4:c8a3:7e61", family: "v6",
                   address: "2001:db8:85a3:4d1c:9d2e:51f4:c8a3:7e61" },
                 { tag: "IPv6 unspecified", body: "::", family: "v6", address: "" },
@@ -753,6 +758,20 @@ Item {
             compare(set.made.length, 2, "within the minute, nothing new");
             compare(set.checker.status, "checking");
             verify(timer(set.checker, "wait").running, "waits out the minute instead");
+        }
+
+        // The same address spelled another way by the service is no change.
+        function test_respelledAddressIsNotAChange() {
+            const set = checker({}, { publicAddressUrl4: "", publicAddressUrl6: "https://respelled-6.example/ip" });
+            answer(set.made, "v6", 200, "2001:db8::1c");
+            compare(set.checker.record.seen.v6.address, "2001:db8::1c");
+            root.now += 61000;
+            set.checker.open = false;
+            set.checker.open = true;
+            answer(set.made, "v6", 200, "2001:0DB8:0000:0000:0000:0000:0000:001C");
+            compare(set.checker.record.changed.v6, null);
+            compare(set.checker.record.seen.v6, { address: "2001:db8::1c", at: root.now });
+            compare(set.checker.record.result.v6, "2001:db8::1c");
         }
 
         function test_destroyedCheckerAborts() {
