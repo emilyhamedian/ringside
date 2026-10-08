@@ -65,9 +65,18 @@ follows [Semantic Versioning](https://semver.org/).
   the moment, with the time under the floor. A single reading shows as a
   dot, and the marker for now appears only when the last reading is over
   two hours old.
-- A failed Claude or Codex check shows a small amber dot at the ring's
-  corner, and the tooltip says when it failed, even with the ring's text
-  shown. This replaces the fade, which looked like a sleeping GPU.
+- A failed Claude or Codex check keeps the last reading in grey, with no
+  amber, red or breathing, until it is two check intervals old. Then, or
+  once the week has reset, the arcs unwind, the ring is struck through in
+  the grey of its track, and the numbers read "––%" over "–d" until a check
+  succeeds. The tooltip, which screen readers also read, says when and why
+  the check failed, the last reading and its time, and when the next check
+  runs, even with the ring's text shown. The popup keeps the last reading
+  in grey under the same status, hatches the week graph from it to now,
+  drops the pace once the reading is two hours old, and shows a week that
+  reset with no reading since as last week's. *Try again* appears only when
+  a check would really ask. This replaces the fade, which looked like a
+  sleeping GPU.
 - A panel item with keyboard focus has a line around it in the theme's
   focus colour.
 - A switch in the Claude and Codex popups, off by default, starts the next
