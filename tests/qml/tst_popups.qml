@@ -193,10 +193,10 @@ Item {
         diskTemperatureHistory: climb
     }
 
-    // A graph span of 30 s.
+    // At a 500 ms update interval the minute has 120 readings.
     FakeMonitor {
         id: shortSpan
-        historySeconds: 30
+        interval: 500
     }
 
     // A CPU whose first reading has just come.
@@ -243,6 +243,16 @@ Item {
     Component {
         id: host
         Loader {}
+    }
+
+    // As main.qml hosts a popup's page: Escape there closes the popup.
+    Component {
+        id: escapeHost
+        Loader {
+            property int escapes: 0
+            focus: true
+            Keys.onEscapePressed: ++escapes
+        }
     }
 
     Component {
@@ -826,6 +836,53 @@ Item {
             return all(tile, i => i.label !== undefined && i.detail !== undefined)[1];
         }
 
+        // The span on a graph tile's caption line (SpanButton).
+        function spanOf(item) {
+            const tile = item.graphTop !== undefined ? item : ancestor(item, i => i.graphTop !== undefined);
+            return all(tile, i => i.objectName === "span")[0];
+        }
+
+        // A graph tile's caption as it reads, its span included:
+        // "USAGE · 1 min".
+        function heading(item) {
+            const tile = item.graphTop !== undefined ? item : ancestor(item, i => i.graphTop !== undefined);
+            const caption = all(tile, i => i.label !== undefined && i.detail !== undefined)[0];
+            const span = spanOf(tile);
+            return caption.text + (span && span.visible ? " · " + span.text : "");
+        }
+
+        // A caption line keeps its span whole, inside the tile and clear of
+        // the caption before it and the top after it, and its label whole
+        // wherever the label and the span fit the line together.
+        function checkSpanLine(tile, caption, top, mirrored) {
+            const span = spanOf(tile);
+            verify(span && span.visible, tile.caption + " has its span");
+            const box = t => {
+                const left = t.mapToItem(tile, Qt.point(0, 0)).x;
+                return [left, left + (t.elide !== undefined && t.elide !== Text.ElideNone ? t.width : Math.max(t.width, t.contentWidth ?? 0))];
+            };
+            const [left, right] = box(span);
+            verify(span.width >= span.implicitWidth - 0.5, "the span whole");
+            verify(left >= tile.horizontalPadding - 0.5 && right <= tile.width - tile.horizontalPadding + 0.5,
+                   span.text + " at " + left + " to " + right + " in a tile " + tile.width + " wide");
+            const order = mirrored ? [span, caption] : [caption, span];
+            verify(box(order[0])[1] <= box(order[1])[0] + 0.5, caption.text + " before " + span.text);
+            if (top.visible) {
+                const after = mirrored ? [box(top), box(span)] : [box(span), box(top)];
+                verify(after[0][1] <= after[1][0], span.text + " clear of " + top.text);
+            }
+            const label = caption.label.toLocaleUpperCase();
+            elideProbe.font = caption.font;
+            elideProbe.text = label;
+            const room = caption.parent.width - caption.parent.spanWidth;
+            if (elideProbe.advanceWidth <= room) {
+                elideProbe.text = caption.text;
+                elideProbe.elide = caption.elide;
+                elideProbe.elideWidth = caption.width;
+                verify(elideProbe.elidedText === caption.text, "the label whole: " + elideProbe.elidedText);
+            }
+        }
+
         // No grid: a percentage graph has its 100 % rule, and a rate graph,
         // which has no natural top, rises to its peak where that rule would
         // be. The caption line names the top at its end, "100%" or the peak,
@@ -882,23 +939,23 @@ Item {
                 const r = Format.rate(Math.max(...samples), bits);
                 return "peak " + r.value + " " + r.unit;
             };
-            const seconds = "THROUGHPUT · 60 s";
+            const seconds = "THROUGHPUT · 1 min";
             normal.networkBits = data.bits;
             fresh.networkBits = data.bits;
             try {
                 for (const [popupName, captions, expected] of [
                         ["NetworkPopup", [seconds], [peak(normal.networkDownHistory.concat(normal.networkUpHistory), data.bits)]],
-                        ["DiskPopup", ["READ · 60 s", "WRITE · 60 s"], [peak(normal.diskReadHistory, false), peak(normal.diskWriteHistory, false)]]]) {
+                        ["DiskPopup", ["READ · 1 min", "WRITE · 1 min"], [peak(normal.diskReadHistory, false), peak(normal.diskWriteHistory, false)]]]) {
                     // Wide enough for the peaks, as in test_graphsHaveARuleOrAPeak.
                     const popup = load(popupName, normal, false, Kirigami.Units.gridUnit * 30);
-                    compare(graphs(popup).map(tileCaption).map(c => c.text), captions, popupName);
+                    compare(graphs(popup).map(heading), captions, popupName);
                     const tops = graphs(popup).map(tileTop);
                     compare(tops.map(c => c.text), expected, popupName);
                     verify(tops.every(c => c.visible), popupName);
                     verify(!texts(popup).some(t => t.indexOf("Peak") >= 0), JSON.stringify(texts(popup)));
 
                     const empty = graphs(load(popupName, fresh));
-                    compare(empty.map(tileCaption).map(c => c.text), captions, popupName + " before a sample");
+                    compare(empty.map(heading), captions, popupName + " before a sample");
                     verify(empty.map(tileTop).every(c => !c.visible && c.text === ""), popupName + " before a sample");
                 }
             } finally {
@@ -982,24 +1039,8 @@ Item {
                         const [a, b] = data.mirrored ? [span(tops[i]), span(c)] : [span(c), span(tops[i])];
                         verify(a[1] <= b[0], c.text + " clear of " + tops[i].text + ": " + a + " " + b);
                     }
+                    checkSpanLine(tile, c, tops[i], data.mirrored);
                 });
-                for (const c of captions) {
-                    // Where even the label, and an ellipsis if it has more
-                    // to say, are wider than the caption, nothing can keep
-                    // the label whole; at the page's own width every label
-                    // fits.
-                    const label = c.label.toLocaleUpperCase();
-                    elideProbe.font = c.font;
-                    elideProbe.text = label + (c.detail !== "" ? "…" : "");
-                    if (elideProbe.advanceWidth > c.width) {
-                        verify(data.width < Kirigami.Units.gridUnit * 20, label + " is " + elideProbe.advanceWidth + " wide in " + c.width);
-                        continue;
-                    }
-                    elideProbe.text = c.text;
-                    elideProbe.elide = c.elide;
-                    elideProbe.elideWidth = c.width;
-                    verify(elideProbe.elidedText.startsWith(label), "the label whole in " + elideProbe.elidedText);
-                }
             } finally {
                 root.pseudo = false;
             }
@@ -1278,7 +1319,7 @@ Item {
             const net = load("NetworkPopup", normal);
             const netTexts = texts(net);
             compare(headerOf(net).title, "Network");
-            for (const t of ["Network", normal.networkConnection, "THROUGHPUT · 60 s"]) {
+            for (const t of ["Network", normal.networkConnection, "THROUGHPUT", "·", "1 min"]) {
                 verify(netTexts.includes(t), t + " in " + JSON.stringify(netTexts));
             }
             verify(netTexts.some(t => t.startsWith("Since boot")), JSON.stringify(netTexts));
@@ -1291,7 +1332,7 @@ Item {
             const disk = load("DiskPopup", normal);
             const diskTexts = texts(disk);
             compare(headerOf(disk).title, "Disk");
-            for (const t of ["Disk", normal.diskDevice, "READ · 60 s", "WRITE · 60 s"]) {
+            for (const t of ["Disk", normal.diskDevice, "READ", "WRITE", "·", "1 min"]) {
                 verify(diskTexts.includes(t), t + " in " + JSON.stringify(diskTexts));
             }
             for (const t of ["Network", "THROUGHPUT", "Since boot", normal.networkConnection, normal.networkAddress,
@@ -1304,19 +1345,22 @@ Item {
 
         // The disk popup opens on its graphs as the others open on theirs:
         // read and write each across the page, drawn as the throughput graph
-        // is, with its span and its peak on its caption line, the peak still
-        // whole a third longer in every string at the page's own width.
+        // is, with its span and its peak on its caption line at the page's
+        // own width. A third longer in every string, in the test's wider
+        // font, the span and the label stay whole and a peak with no room
+        // goes (test_rateCaptionsKeepTheirLabel).
         function test_diskGraphsMatchThroughput() {
             const look = g => JSON.stringify([g.width, g.height, String(g.color), g.fillOpacity]);
             const throughput = graphs(load("NetworkPopup", normal));
             const disk = graphs(load("DiskPopup", normal));
             compare(disk.length, 2);
             disk.forEach((g, n) => compare(look(g), look(throughput[0]), ["read", "write"][n]));
-            compare(disk.map(tileCaption).map(c => c.detail), ["· 60 s", "· 60 s"]);
+            compare(disk.map(heading), ["READ · 1 min", "WRITE · 1 min"]);
+            verify(disk.map(tileTop).every(t => t.visible && t.text !== ""), "the peaks shown");
             root.pseudo = true;
             try {
-                verify(graphs(load("DiskPopup", normal)).map(tileTop).every(t => t.visible && t.text !== ""),
-                       "the peaks shown");
+                graphs(load("DiskPopup", normal)).forEach(g => checkSpanLine(ancestor(g, i => i.graphTop !== undefined),
+                                                                             tileCaption(g), tileTop(g), false));
             } finally {
                 root.pseudo = false;
             }
@@ -1910,7 +1954,7 @@ Item {
             const above = all(popup, i => i.visible && i.fillOpacity !== undefined && i.ceiling !== undefined).pop();
             tiles.forEach(t => {
                 const [caption, top] = captionLine(t);
-                compare(caption.text, "TEMPERATURE · 60 s");
+                compare(heading(t), "TEMPERATURE · 1 min");
                 compare(top.text, localized("hot 90 °C"));
                 verify(top.visible);
                 const g = temperatureGraph(t);
@@ -1939,11 +1983,13 @@ Item {
                 compare(area[area.length - 1].y, g.height);
                 compare(area[0].x, area[1].x);
                 compare(area[area.length - 1].x, area[area.length - 2].x);
+                // The band under the area, empty at a minute.
                 const paths = all(g, i => i.preferredRendererType !== undefined)[0].data;
-                fuzzyCompare(paths[0].fillColor.a, above.fillOpacity, 0.005);
+                compare(paths[0].pathElements[0].paths.length, 0, "no band at a minute");
+                fuzzyCompare(paths[1].fillColor.a, above.fillOpacity, 0.005);
                 compare(g.implicitHeight, above.implicitHeight);
                 compare(g.height, above.height);
-                paths.slice(1).forEach(p => compare(p.capStyle, ShapePath.RoundCap, "pieces meet in round ends"));
+                paths.slice(2).forEach(p => compare(p.capStyle, ShapePath.RoundCap, "pieces meet in round ends"));
             });
         }
 
@@ -1964,9 +2010,10 @@ Item {
             }
         }
 
-        // A full history fills the graph from edge to edge whatever its span.
+        // A full history fills the graph from edge to edge whatever the
+        // pace of its readings.
         function test_temperatureGraphFillsItsSpan_data() {
-            return [{ tag: "60 s", monitor: normal }, { tag: "30 s", monitor: shortSpan }];
+            return [{ tag: "1000 ms", monitor: normal }, { tag: "500 ms", monitor: shortSpan }];
         }
 
         function test_temperatureGraphFillsItsSpan(data) {
@@ -1975,7 +2022,7 @@ Item {
             compare(g.plot.points.length, data.monitor.historyLength);
             fuzzyCompare(g.plot.points[0].x, 0, 1e-6, "the oldest at the left edge");
             fuzzyCompare(g.plot.points[g.plot.points.length - 1].x, g.width, 1e-6, "the newest at the right");
-            compare(captionLine(tile)[0].text, "TEMPERATURE · " + data.tag);
+            compare(heading(tile), "TEMPERATURE · 1 min");
         }
 
         // A lone reading draws no line, so there is no graph until a second
@@ -2160,11 +2207,7 @@ Item {
                         const [a, b] = data.mirrored ? [span(top), span(caption)] : [span(caption), span(top)];
                         verify(a[1] <= b[0], caption.text + " clear of " + top.text);
                     }
-                    elideProbe.font = caption.font;
-                    elideProbe.text = caption.text;
-                    elideProbe.elide = caption.elide;
-                    elideProbe.elideWidth = caption.width;
-                    verify(elideProbe.elidedText.startsWith(caption.label.toLocaleUpperCase()), elideProbe.elidedText);
+                    checkSpanLine(tile, caption, top, data.mirrored);
                     const g = temperatureGraph(tile);
                     const newest = g.plot.points[g.plot.points.length - 1];
                     fuzzyCompare(newest.x, g.width, 1e-6, "the newest sample at the right");
@@ -2174,6 +2217,261 @@ Item {
                 root.pseudo = false;
                 normal.fahrenheit = false;
             }
+        }
+
+        // Every graph tile in every popup with a moving graph, at every span:
+        // its caption names the span, which is its span control, and its
+        // graph spans the points of that span. A minute draws its readings;
+        // an hour and a day each bucket's average under a fainter band up to
+        // its highest reading, and break off where the machine slept.
+        function test_graphsAtEachSpan_data() {
+            const rows = [];
+            for (const [popup, count] of [["CpuPopup", 2], ["GpuPopup", 3], ["MemoryPopup", 1], ["NetworkPopup", 1], ["DiskPopup", 3]]) {
+                for (const span of ["minute", "hour", "day"]) {
+                    rows.push({ tag: popup + " " + span, popup: popup, count: count, span: span });
+                }
+            }
+            return rows;
+        }
+
+        function test_graphsAtEachSpan(data) {
+            const label = { minute: "1 min", hour: "1 h", day: "1 day" }[data.span];
+            const name = { minute: "1 minute", hour: "1 hour", day: "1 day" }[data.span];
+            const length = { minute: 60, hour: 120, day: 144 }[data.span];
+            normal.chooseSpan(data.span);
+            try {
+                const popup = load(data.popup, normal, false, Kirigami.Units.gridUnit * 30);
+                const tiles = all(popup, i => i.visible && i.graphTop !== undefined && i.spans !== undefined && i.spans !== null);
+                compare(tiles.length, data.count);
+                for (const tile of tiles) {
+                    const span = spanOf(tile);
+                    verify(span.visible);
+                    compare(heading(tile), tile.caption.toLocaleUpperCase() + " · " + label);
+                    compare(span.Accessible.role, Accessible.ButtonMenu);
+                    compare(span.Accessible.name, "Graph span: " + name);
+                    const g = graphs(tile)[0] ?? temperatureGraph(tile);
+                    const shape = g.drawn ?? g;
+                    const points = g.mainPoints ?? g.plot.points;
+                    const bands = g.drawn ? g.drawn.bands : g.bands;
+                    compare(points.length, length, tile.caption + " spans its points");
+                    fuzzyCompare(points[points.length - 1].x, g.width, 1e-6, "the newest at the right");
+                    if (data.span === "minute") {
+                        compare(bands.length, 0, tile.caption + ": no band at a minute");
+                    } else {
+                        verify(bands.length >= 2, tile.caption + ": a band either side of the gap, " + bands.length);
+                        const runs = g.drawn ? g.drawn.runs : g.areas;
+                        verify(runs.length >= 2, tile.caption + ": the line breaks off where the machine slept");
+                    }
+                }
+            } finally {
+                normal.chooseSpan("minute");
+            }
+        }
+
+        // At an hour or a day a rate graph's top is the highest one-second
+        // reading behind any bucket, which the band reaches and the caption
+        // names, so the peak holds as the span changes; the line is the
+        // buckets' averages, under it.
+        function test_ratePeaksAtLongSpansAreTheHighestSecond_data() {
+            return [{ tag: "hour", span: "hour" }, { tag: "day", span: "day" }];
+        }
+
+        function test_ratePeaksAtLongSpansAreTheHighestSecond(data) {
+            normal.chooseSpan(data.span);
+            try {
+                const popup = load("DiskPopup", normal, false, Kirigami.Units.gridUnit * 30);
+                const read = graphs(popup)[0];
+                const high = Math.max(...normal.diskReadHighs.filter(v => Number.isFinite(v)));
+                verify(high > Math.max(...normal.diskReadHistory.filter(v => Number.isFinite(v))), "the highs run over the averages");
+                compare(read.maximum, high);
+                const r = Format.rate(high, false);
+                compare(tileTop(read).text, "peak " + r.value + " " + r.unit);
+                const bandTop = read.drawn.bands.reduce((m, b) => Math.min(m, ...b.map(p => p.y)), Infinity);
+                fuzzyCompare(bandTop, read.topY, 1e-6, "the band reaches the top it names");
+                const lineTop = read.drawn.runs.reduce((m, run) => Math.min(m, ...run.map(p => p.y)), Infinity);
+                verify(lineTop > read.topY + 1, "the averages stay under it");
+
+                const throughput = graphs(load("NetworkPopup", normal, false, Kirigami.Units.gridUnit * 30))[0];
+                const both = Math.max(...normal.networkDownHighs.concat(normal.networkUpHighs).filter(v => Number.isFinite(v)));
+                compare(throughput.maximum, both, "the upload's highs count too");
+                compare(throughput.drawn.secondRuns.length > 0, true, "the upload drawn");
+            } finally {
+                normal.chooseSpan("minute");
+            }
+        }
+
+        // A bucket alone between gaps, a GPU awake for ten minutes say, is a
+        // level mark at least 3 px across rather than a speck, at an hour or
+        // a day; at a minute a lone reading still draws nothing.
+        function test_aLoneBucketIsAMark() {
+            const lone = Array.from({ length: 144 }, (_, i) => i === 100 ? 40 : NaN);
+            woken.chooseSpan("day");
+            const usage = woken.gpuOuter.history;
+            const highs = woken.gpuOuter.highs;
+            try {
+                woken.gpuOuter.history = lone;
+                woken.gpuOuter.highs = lone.map(v => v + 30);
+                const g = graphs(load("GpuPopup", woken))[0];
+                compare(g.drawn.runs.length, 1);
+                const run = g.drawn.runs[0];
+                verify(run[1].x - run[0].x >= 3 - 1e-6, "at least 3 px: " + (run[1].x - run[0].x));
+                compare(run[0].y, run[1].y, "level");
+                compare(g.drawn.bands.length, 1, "with its band");
+                woken.chooseSpan("minute");
+                woken.gpuOuter.history = Array.from({ length: 60 }, (_, i) => i === 40 ? 40 : NaN);
+                woken.gpuOuter.highs = [];
+                compare(graphs(load("GpuPopup", woken))[0].drawn.runs.length, 0);
+            } finally {
+                woken.chooseSpan("minute");
+                woken.gpuOuter.history = usage;
+                woken.gpuOuter.highs = highs;
+            }
+        }
+
+        // A temperature graph's scale and its name come from every reading
+        // the three spans keep, so they hold still when the span changes:
+        // the hot threshold under its rule while every reading stays under
+        // it, the peak once any runs over, whichever span is shown.
+        function test_temperatureScaleHoldsAcrossSpans_data() {
+            return [{ tag: "underHot", extent: [44, 80], top: "hot 90 °C", scaleTop: 90, floor: 30, rule: true },
+                    { tag: "overHot", extent: [44, 95.4], top: "peak 95 °C", scaleTop: 95.4, floor: 30, rule: false }];
+        }
+
+        function test_temperatureScaleHoldsAcrossSpans(data) {
+            const extent = normal.cpuTemperatureExtent;
+            normal.cpuTemperatureExtent = data.extent;
+            try {
+                const popup = load("CpuPopup", normal, false, Kirigami.Units.gridUnit * 30);
+                const tile = temperatureTiles(popup)[0];
+                const g = temperatureGraph(tile);
+                for (const span of ["minute", "hour", "day", "minute"]) {
+                    normal.chooseSpan(span);
+                    compare(tile.scaleTop, data.scaleTop, span);
+                    compare(tile.floor, data.floor, span);
+                    compare(captionLine(tile)[1].text, localized(data.top), span);
+                    compare(all(g, i => i.limitY !== undefined)[0].visible, data.rule, span + ": the rule");
+                    compare(g.bands.length > 0, span !== "minute", span + ": the band");
+                    const ys = g.plot.points.filter(p => Number.isFinite(p.y)).map(p => p.y);
+                    verify(Math.min(...ys) >= g.topY - 1e-6 && Math.max(...ys) <= g.height, span + ": inside the scale");
+                }
+            } finally {
+                normal.chooseSpan("minute");
+                normal.cpuTemperatureExtent = extent;
+            }
+        }
+
+        // An hour's or a day's temperature takes the band too, in the
+        // graph's own colour, fainter than the area under the line.
+        function test_temperatureBand() {
+            normal.chooseSpan("hour");
+            try {
+                const tile = temperatureTiles(load("CpuPopup", normal, false, Kirigami.Units.gridUnit * 30))[0];
+                const g = temperatureGraph(tile);
+                verify(g.bands.length > 0);
+                const paths = all(g, i => i.preferredRendererType !== undefined)[0].data;
+                compare(paths[0].pathElements[0].paths.length, g.bands.length);
+                compare(String(Qt.alpha(paths[0].fillColor, 1)), String(Qt.alpha(Kirigami.Theme.textColor, 1)));
+                verify(paths[0].fillColor.a < paths[1].fillColor.a, "fainter than the area");
+                // The band's top is each bucket's highest reading.
+                const run = g.bands[0];
+                const top = Math.min(...run.map(p => p.y));
+                verify(top < Math.min(...g.plot.points.filter(p => Number.isFinite(p.y)).map(p => p.y)) + 1e-6);
+            } finally {
+                normal.chooseSpan("minute");
+            }
+        }
+
+        function spanMenu(popup) {
+            return spanOf(graphs(popup)[0]).menu;
+        }
+
+        // The span opens its menu at a click: the three spans, the one shown
+        // checked. Picking one changes every graph in the popup, and in every
+        // other popup, which read the same setting.
+        function test_spanMenuByPointer_data() {
+            return ["CpuPopup", "GpuPopup", "MemoryPopup", "NetworkPopup", "DiskPopup"].map(p => ({ tag: p, popup: p }));
+        }
+
+        function test_spanMenuByPointer(data) {
+            try {
+                const popup = load(data.popup, normal, false, Kirigami.Units.gridUnit * 30);
+                const span = spanOf(graphs(popup)[0]);
+                const menu = span.menu;
+                verify(!menu.visible);
+                mouseClick(span);
+                tryVerify(() => menu.opened, 2000, "the menu opens");
+                compare(menu.count, 3);
+                compare([0, 1, 2].map(i => menu.itemAt(i).text), ["1 minute", "1 hour", "1 day"]);
+                compare([0, 1, 2].map(i => menu.itemAt(i).checked), [true, false, false]);
+                mouseClick(menu.itemAt(2));
+                tryVerify(() => !menu.visible, 2000, "it closes on a pick");
+                compare(normal.graphSpan, "day");
+                const tiles = all(popup, i => i.visible && i.spans !== undefined && i.spans !== null);
+                verify(tiles.length > 0);
+                tiles.forEach(t => compare(spanOf(t).text, "1 day", t.caption));
+                mouseClick(span);
+                tryVerify(() => menu.opened, 2000);
+                compare([0, 1, 2].map(i => menu.itemAt(i).checked), [false, false, true]);
+                mouseClick(span);
+                tryVerify(() => !menu.visible, 2000, "a second click closes it");
+                compare(normal.graphSpan, "day", "unchanged");
+            } finally {
+                normal.chooseSpan("minute");
+            }
+        }
+
+        // From the keyboard: Space, Return or Down opens the menu on the span
+        // shown, the arrows move, Return picks, Escape closes it unchanged,
+        // and the focus comes back to the span with its ring.
+        function test_spanMenuByKeyboard_data() {
+            return [{ tag: "space", key: Qt.Key_Space }, { tag: "return", key: Qt.Key_Return }, { tag: "down", key: Qt.Key_Down }];
+        }
+
+        function test_spanMenuByKeyboard(data) {
+            try {
+                const host = createTemporaryObject(escapeHost, root, { width: Kirigami.Units.gridUnit * 30 });
+                host.setSource(Qt.resolvedUrl("../../package/contents/ui/popups/CpuPopup.qml"), { monitor: normal });
+                const popup = host.item;
+                waitForRendering(popup);
+                const span = spanOf(graphs(popup)[0]);
+                const menu = span.menu;
+                span.forceActiveFocus(Qt.TabFocusReason);
+                verify(span.visualFocus);
+                keyClick(data.key);
+                tryVerify(() => menu.opened, 2000, "opened from the keyboard");
+                compare(menu.currentIndex, 0, "on the span shown");
+                keyClick(Qt.Key_Down);
+                compare(menu.currentIndex, 1);
+                keyClick(Qt.Key_Return);
+                tryVerify(() => !menu.visible, 2000);
+                compare(normal.graphSpan, "hour");
+                tryVerify(() => span.activeFocus && span.visualFocus, 2000, "the focus is back, with its ring");
+                compare(span.text, "1 h");
+                keyClick(data.key);
+                tryVerify(() => menu.opened, 2000);
+                compare(menu.currentIndex, 1);
+                keyClick(Qt.Key_Down);
+                keyClick(Qt.Key_Escape);
+                tryVerify(() => !menu.visible, 2000, "Escape closes it");
+                compare(host.escapes, 0, "and not the popup");
+                compare(normal.graphSpan, "hour", "unchanged");
+                tryVerify(() => span.activeFocus && span.visualFocus, 2000);
+                keyClick(Qt.Key_Escape);
+                compare(host.escapes, 1, "the next Escape is the popup's");
+            } finally {
+                normal.chooseSpan("minute");
+            }
+        }
+
+        // Every graph's span is a stop in the popup's Tab order.
+        function test_spansAreInTheTabOrder() {
+            const popup = load("CpuPopup", normal, false, Kirigami.Units.gridUnit * 30);
+            const spans = all(popup, i => i.objectName === "span" && i.visible);
+            compare(spans.length, 2);
+            spans.forEach(s => compare(s.focusPolicy, Qt.StrongFocus));
+            spans[0].forceActiveFocus(Qt.TabFocusReason);
+            keyClick(Qt.Key_Tab);
+            verify(spans[1].activeFocus, "Tab goes on to the temperature's");
         }
 
         function test_longTranslationsFit_data() {

@@ -407,15 +407,16 @@ QtObject {
 
     // What a rate graph's caption line says about its top, which is the
     // peak in view: "peak 24.8 Mb/s", or nothing before the first sample.
-    // Under the graph's floor the top is the floor, and this still names
-    // the peak.
+    // An hour or a day passes its buckets' highest readings, which its band
+    // reaches. Under the graph's floor the top is the floor, and this still
+    // names the peak.
     function peakText(samples, bits) {
         const top = History.peak(samples);
         if (top === null) {
             return "";
         }
         const r = Format.rate(top.value, bits);
-        return i18nc("@title:group at the end of a rate graph's caption line, after THROUGHPUT · 60 s or READ: its highest rate, as in peak 24.8 Mb/s",
+        return i18nc("@title:group at the end of a rate graph's caption line, after THROUGHPUT · 1 min or READ · 1 day: its highest rate, as in peak 24.8 Mb/s",
                      "peak %1 %2", r.value, r.unit);
     }
 

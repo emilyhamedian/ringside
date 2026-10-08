@@ -292,21 +292,6 @@ TestCase {
         compare(result.unit, data.unit);
     }
 
-    // 0 means the caption gives the span in seconds.
-    function test_spanMinutes_data() {
-        return [
-            { tag: "underAMinute", seconds: 30, expected: 0 },
-            { tag: "notAMultipleOfAMinute", seconds: 90, expected: 0 },
-            { tag: "oneMinuteStaysInSeconds", seconds: 60, expected: 0 },
-            { tag: "twoMinutes", seconds: 120, expected: 2 },
-            { tag: "notAWholeMinute", seconds: 150, expected: 0 },
-            { tag: "tenMinutes", seconds: 600, expected: 10 }
-        ];
-    }
-    function test_spanMinutes(data) {
-        compare(Format.spanMinutes(data.seconds), data.expected);
-    }
-
     function test_load_data() {
         return [
             { tag: "light", value: 1.4213, expected: "1.42" },

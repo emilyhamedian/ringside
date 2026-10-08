@@ -94,9 +94,18 @@ QtObject {
     readonly property real power: !leading ? (leader ? leader.power : NaN)
         : subscribed ? livePower : showsHeld ? held.power ?? NaN : NaN
     // qmllint enable missing-property
+    // What the hour's and the day's buckets take: asleep the GPU's usage is
+    // truly 0, but awake and unread, resting say, nothing is known, so a
+    // gap rather than the 0 and the held readings shown meanwhile.
+    readonly property real recordedUsage: phase === "asleep" ? 0 : live ? usage : NaN
+    readonly property real recordedTemperature: live ? temperature : NaN
+    // The span Monitor shows, as its own *History, *Highs and *Extent.
     property var history: []
+    property var highs: []
     // °C as `temperature` had it at each sample, so NaN while asleep.
     property var temperatureHistory: []
+    property var temperatureHighs: []
+    property var temperatureExtent: []
     // What the panel shows: usage and temperature as of Monitor's last
     // update interval (see Monitor.latch()).
     property real panelUsage: NaN

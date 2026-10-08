@@ -195,12 +195,6 @@ function fixed(v, digits) {
     return usable(v) ? decimal(v, digits) : DASH;
 }
 
-// A graph's span in whole minutes where that reads better ("2 min" rather
-// than "120 s"), otherwise 0 and the caption gives it in seconds.
-function spanMinutes(seconds) {
-    return seconds >= 120 && seconds % 60 === 0 ? seconds / 60 : 0;
-}
-
 // Time left until `resetsAt` (epoch seconds), to the nearest minute, as
 // { days, hours, minutes }; null once it has passed or without a time.
 function timeLeft(resetsAt, nowMs) {

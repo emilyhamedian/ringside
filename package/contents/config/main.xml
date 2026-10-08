@@ -17,11 +17,9 @@
       <min>500</min>
       <max>10000</max>
     </entry>
-    <entry name="historySeconds" type="Int">
-      <label>How far back the popup graphs reach, in seconds</label>
-      <default>60</default>
-      <min>30</min>
-      <max>600</max>
+    <entry name="graphSpan" type="String">
+      <label>How far back the popup graphs reach: minute, hour or day, chosen on a graph's caption</label>
+      <default>minute</default>
     </entry>
     <entry name="fahrenheit" type="Bool">
       <default>false</default>

@@ -11,7 +11,6 @@ import "../code/publicaddress.js" as Lookup
 ConfigPage {
     id: page
 
-    readonly property var historyChoices: [30, 60, 120, 300, 600]
     readonly property string unit: cfg_fahrenheit ? i18nc("@label temperature unit", "°F")
                                                    : i18nc("@label temperature unit", "°C")
     readonly property var service: Lookup.service(cfg_publicAddressUrl4, cfg_publicAddressUrl6)
@@ -143,20 +142,6 @@ ConfigPage {
                                                     Number(value / 1000).toLocaleString(locale, "f", 1))
             Accessible.name: i18nc("@label:spinbox", "Update interval")
             onValueModified: page.cfg_updateInterval = value
-        }
-
-        QQC2.ComboBox {
-            Kirigami.FormData.label: i18nc("@label:listbox", "Graph history:")
-            model: page.historyChoices.map(s => s < 60
-                ? i18ncp("@item:inlistbox how far back the graphs reach", "%1 second", "%1 seconds", s)
-                : i18ncp("@item:inlistbox how far back the graphs reach", "%1 minute", "%1 minutes", s / 60))
-            // The nearest choice, should the stored value be one the list doesn't offer.
-            currentIndex: {
-                const d = page.historyChoices.map(s => Math.abs(s - page.cfg_historySeconds));
-                return d.indexOf(Math.min(...d));
-            }
-            Accessible.name: i18nc("@label:listbox", "Graph history")
-            onActivated: index => page.cfg_historySeconds = page.historyChoices[index]
         }
 
         Item {

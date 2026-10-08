@@ -43,7 +43,7 @@ Item {
             width: root.width
             height: root.height
             cfg_updateInterval: 1000
-            cfg_historySeconds: 60
+            cfg_graphSpan: "minute"
             cfg_networkBits: true
             cfg_highlightTemperatures: true
             cfg_warmCelsius: 75
@@ -439,7 +439,7 @@ Item {
         // declares all of them, and their Defaults, through ConfigPage: typed
         // as main.xml types them, nothing main.xml lacks, and no declaration
         // of a page's own. Each setting is then edited by one page, and the
-        // reports by none.
+        // reports and the graphs' span by none.
         function test_everyPageDeclaresEverySetting() {
             const types = { Int: "int", Bool: "bool", Double: "real", String: "string", StringList: "var" };
             const expected = {};
@@ -472,10 +472,11 @@ Item {
                     verify(page.hasOwnProperty("cfg_" + key), source + " doesn't own cfg_" + key);
                 }
             }
-            const written = reports();
+            // The graphs' span is chosen on a graph's caption, not here.
+            const unedited = reports().concat(["graphSpan"]);
             for (const entry of entries()) {
                 const owners = pages().filter(source => new RegExp("\\bcfg_" + entry.name + "\\b").test(texts[source]));
-                compare(owners.length, written.includes(entry.name) ? 0 : 1, entry.name + " is edited by " + JSON.stringify(owners));
+                compare(owners.length, unedited.includes(entry.name) ? 0 : 1, entry.name + " is edited by " + JSON.stringify(owners));
             }
         }
 

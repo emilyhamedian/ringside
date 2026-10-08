@@ -73,7 +73,7 @@ Item {
             LayoutMirroring.enabled: rightToLeft
             LayoutMirroring.childrenInherit: true
             cfg_updateInterval: 1000
-            cfg_historySeconds: 60
+            cfg_graphSpan: "minute"
             cfg_networkBits: true
             cfg_highlightTemperatures: true
             cfg_warmCelsius: 75
@@ -85,7 +85,7 @@ Item {
         id: realConfigComponent
         QtObject {
             property int updateInterval: 1000
-            property int historySeconds: 60
+            property string graphSpan: "minute"
             property bool fahrenheit: false
             property bool networkBits: true
             property bool highlightTemperatures: true

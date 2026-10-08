@@ -58,7 +58,8 @@ PopupPage {
             // missing keeping the one before.
             property var last: null
             readonly property var readings: [live.phase, live.usage, live.temperature, live.vramUsed, live.knownVramTotal,
-                                             live.clock, live.power, live.history, live.temperatureHistory]
+                                             live.clock, live.power, live.history, live.temperatureHistory, live.highs,
+                                             live.temperatureHighs, live.temperatureExtent]
 
             function keep() {
                 if (live.phase === "asleep") {
@@ -72,7 +73,10 @@ PopupPage {
                     knownVramTotal: held("knownVramTotal"), usage: held("usage"), temperature: held("temperature"),
                     vramUsed: held("vramUsed"), clock: held("clock"), power: held("power"),
                     history: live.history.length > 0 ? live.history : was.history ?? [],
-                    temperatureHistory: live.temperatureHistory.length > 0 ? live.temperatureHistory : was.temperatureHistory ?? []
+                    highs: live.history.length > 0 ? live.highs : was.highs ?? [],
+                    temperatureHistory: live.temperatureHistory.length > 0 ? live.temperatureHistory : was.temperatureHistory ?? [],
+                    temperatureHighs: live.temperatureHistory.length > 0 ? live.temperatureHighs : was.temperatureHighs ?? [],
+                    temperatureExtent: live.temperatureExtent.length > 0 ? live.temperatureExtent : was.temperatureExtent ?? []
                 };
             }
 
@@ -207,12 +211,13 @@ PopupPage {
             Tile {
                 Layout.columnSpan: parent.columns
                 caption: i18nc("@title:group", "Usage")
-                graphSeconds: section.monitor.historySeconds
+                spans: section.monitor
                 graphTop: i18nc("@info a percentage", "%1%", Format.percent(100))
 
                 Graph {
                     Layout.fillWidth: true
                     values: section.slot.history
+                    highs: section.slot.highs
                     length: section.monitor.historyLength
                 }
             }
@@ -224,6 +229,8 @@ PopupPage {
                 Layout.columnSpan: parent.columns
                 monitor: section.monitor
                 history: section.slot.temperatureHistory
+                highs: section.slot.temperatureHighs
+                extent: section.slot.temperatureExtent
             }
 
             Tile {

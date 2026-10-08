@@ -26,7 +26,9 @@ PopupPage {
 
         property real rate: NaN
         property var history: []
+        property var highs: []
         property int length: 60
+        readonly property var tops: History.tops(history, highs)
 
         Reading {
             readonly property var r: Format.rate(tile.rate, false)
@@ -38,9 +40,10 @@ PopupPage {
         Graph {
             Layout.fillWidth: true
             values: tile.history
+            highs: tile.highs
             length: tile.length
             // Anything under 1 MiB/s stays near the floor rather than filling the graph.
-            maximum: Math.max(History.peak(tile.history)?.value ?? 0, 1048576)
+            maximum: Math.max(History.peak(tile.tops)?.value ?? 0, 1048576)
             ceiling: false
         }
     }
@@ -83,27 +86,33 @@ PopupPage {
         spacing: Kirigami.Units.largeSpacing
 
         DiskRate {
+            id: read
             caption: i18nc("@title:group disk reads", "Read")
-            graphSeconds: popup.monitor.historySeconds
-            graphTop: words.peakText(popup.monitor.diskReadHistory, false)
+            spans: popup.monitor
+            graphTop: words.peakText(read.tops, false)
+            length: popup.monitor.historyLength
             rate: popup.monitor.diskRead
             history: popup.monitor.diskReadHistory
-            length: popup.monitor.historyLength
+            highs: popup.monitor.diskReadHighs
         }
 
         DiskRate {
+            id: write
             caption: i18nc("@title:group disk writes", "Write")
-            graphSeconds: popup.monitor.historySeconds
-            graphTop: words.peakText(popup.monitor.diskWriteHistory, false)
+            spans: popup.monitor
+            graphTop: words.peakText(write.tops, false)
+            length: popup.monitor.historyLength
             rate: popup.monitor.diskWrite
             history: popup.monitor.diskWriteHistory
-            length: popup.monitor.historyLength
+            highs: popup.monitor.diskWriteHighs
         }
 
         // Last, after the rates the popup is for.
         TemperatureTile {
             monitor: popup.monitor
             history: popup.monitor.diskTemperatureHistory
+            highs: popup.monitor.diskTemperatureHighs
+            extent: popup.monitor.diskTemperatureExtent
         }
     }
 }
