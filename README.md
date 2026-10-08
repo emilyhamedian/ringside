@@ -1,8 +1,15 @@
-# Ringside
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/logo-dark.svg">
+    <img src="docs/logo.svg" alt="Ringside" width="300">
+  </picture>
+</p>
 
-[![Tests](https://github.com/emilyhamedian/ringside/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/emilyhamedian/ringside/actions/workflows/test.yml)
-[![Release](https://img.shields.io/github/v/release/emilyhamedian/ringside)](https://github.com/emilyhamedian/ringside/releases/latest)
-[![License: GPL-3.0-or-later](https://img.shields.io/github/license/emilyhamedian/ringside)](LICENSE)
+<p align="center">
+  <a href="https://github.com/emilyhamedian/ringside/actions/workflows/test.yml"><img src="https://github.com/emilyhamedian/ringside/actions/workflows/test.yml/badge.svg?branch=main" alt="Tests"></a>
+  <a href="https://github.com/emilyhamedian/ringside/releases/latest"><img src="https://img.shields.io/github/v/release/emilyhamedian/ringside" alt="Release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/emilyhamedian/ringside" alt="License: GPL-3.0-or-later"></a>
+</p>
 
 CPU, GPU, memory, network and disk in a KDE Plasma 6 panel, and your Claude
 and Codex usage limits if you want them.
@@ -278,6 +285,7 @@ sh scripts/test.sh        # qmllint, the QML tests, the helpers' tests, shellche
 sh scripts/test-floor.sh  # the tests and the gallery on Plasma 6.0
 sh scripts/gallery.sh     # renders every view to /tmp/ringside-gallery.png
 sh scripts/pictures.sh    # renders the pictures in docs/ from sample readings
+python3 scripts/logo.py   # draws the logo files in docs/ and the widget's icon
 sh scripts/package.sh     # builds ringside.plasmoid from the last commit
 ```
 

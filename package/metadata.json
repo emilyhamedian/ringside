@@ -10,7 +10,7 @@
         "Category": "System Information",
         "Description": "CPU, GPU, memory, network and disk in the panel, with optional Claude and Codex usage limits",
         "EnabledByDefault": true,
-        "Icon": "utilities-system-monitor",
+        "Icon": "/icons/ringside.svg",
         "Id": "dev.emily.ringside",
         "License": "GPL-3.0-or-later",
         "Name": "Ringside",

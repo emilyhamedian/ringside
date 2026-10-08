@@ -25,7 +25,7 @@ GPL-3.0-or-later.
   - `helper/`: the sh helper's fixtures.
   - `python/`: the Python helper's tests.
   - `floor/`: a stand-in Plasma module for the Plasma 6.0 floor run.
-- `scripts/`: install, test, test-floor, gallery, pictures, package.
+- `scripts/`: install, test, test-floor, gallery, pictures, logo, package.
 
 ## Direction
 
