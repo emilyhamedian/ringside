@@ -401,6 +401,89 @@ Item {
             compare(Lookup.address(data.body, data.family), data.address);
         }
 
+        // A reply is the bare address, or JSON of which only "ip", "city"
+        // and "country" are read; a place goes only with a valid address.
+        function test_reply_data() {
+            const json = (fields, family) => ({ body: JSON.stringify(fields), family: family ?? "v4" });
+            const ams = { ip: "198.51.100.24", city: "Amsterdam", country: "Netherlands" };
+            const row = (tag, input, address, city, country) =>
+                Object.assign({ tag: tag, address: address, city: city ?? "", country: country ?? "" }, input);
+            const c64 = "C".repeat(64);
+            return [
+                row("bare IPv4", { body: "203.0.113.7\n", family: "v4" }, "203.0.113.7"),
+                row("bare IPv6, respelled", { body: "2001:DB8:0::1C", family: "v6" }, "2001:db8::1c"),
+                row("JSON", json(ams), "198.51.100.24", "Amsterdam", "Netherlands"),
+                row("JSON in white space", { body: "\n " + JSON.stringify(ams) + "\r\n", family: "v4" },
+                    "198.51.100.24", "Amsterdam", "Netherlands"),
+                row("JSON IPv6, respelled", json({ ip: "2001:0DB8::001C", city: "Frankfurt am Main", country: "Germany" }, "v6"),
+                    "2001:db8::1c", "Frankfurt am Main", "Germany"),
+                row("extra fields ignored", json(Object.assign({ latitude: 52.37, organization: "Example <b>ISP</b>",
+                                                                 mullvad_exit_ip: true, region: "North Holland",
+                                                                 nested: { city: "Elsewhere" } }, ams)),
+                    "198.51.100.24", "Amsterdam", "Netherlands"),
+                row("__proto__ ignored", { body: "{\"__proto__\":{\"city\":\"Elsewhere\"},\"ip\":\"198.51.100.24\"}", family: "v4" },
+                    "198.51.100.24"),
+                row("only ip", json({ ip: "198.51.100.24" }), "198.51.100.24"),
+                row("city without country", json({ ip: "198.51.100.24", city: "Amsterdam" }), "198.51.100.24", "Amsterdam"),
+                row("country without city", json({ ip: "198.51.100.24", country: "Netherlands" }), "198.51.100.24"),
+                row("no ip", json({ city: "Amsterdam", country: "Netherlands" }), ""),
+                row("ip a number", json({ ip: 3325256824, city: "Amsterdam" }), ""),
+                row("ip null", json({ ip: null, city: "Amsterdam" }), ""),
+                row("ip a list", json({ ip: ["198.51.100.24"], city: "Amsterdam" }), ""),
+                row("ip of the other family", json(ams, "v6"), ""),
+                row("IPv6 ip for IPv4", json({ ip: "2001:db8::1c", city: "Amsterdam" }), ""),
+                row("ip loopback", json({ ip: "127.0.0.1", city: "Amsterdam" }), ""),
+                row("ip and more", json({ ip: "198.51.100.24 Amsterdam", city: "Amsterdam" }), ""),
+                row("ip IPv4-mapped", json({ ip: "::ffff:198.51.100.24", city: "Amsterdam" }, "v6"), ""),
+                row("malformed", { body: "{\"ip\":\"198.51.100.24\",\"city\":\"Amsterdam\"", family: "v4" }, ""),
+                row("JSON then text", { body: JSON.stringify(ams) + " ok", family: "v4" }, ""),
+                row("two objects", { body: JSON.stringify(ams) + JSON.stringify(ams), family: "v4" }, ""),
+                row("a list", { body: JSON.stringify([ams]), family: "v4" }, ""),
+                row("a JSON string", { body: "\"198.51.100.24\"", family: "v4" }, ""),
+                row("just a brace", { body: "{", family: "v4" }, ""),
+                row("not text", { body: null, family: "v4" }, ""),
+                row("city a number", json({ ip: "198.51.100.24", city: 1, country: "Netherlands" }), "198.51.100.24"),
+                row("city an object", json({ ip: "198.51.100.24", city: { name: "Amsterdam" }, country: "Netherlands" }),
+                    "198.51.100.24"),
+                row("city a list", json({ ip: "198.51.100.24", city: ["Amsterdam"] }), "198.51.100.24"),
+                row("city true", json({ ip: "198.51.100.24", city: true }), "198.51.100.24"),
+                row("city null", json({ ip: "198.51.100.24", city: null, country: "Netherlands" }), "198.51.100.24"),
+                row("country not text", json({ ip: "198.51.100.24", city: "Amsterdam", country: { iso: "NL" } }),
+                    "198.51.100.24", "Amsterdam"),
+                row("control characters", json({ ip: "198.51.100.24", city: "Ams\u0000ter\u0007dam\u001b[31m", country: "Nether\u0085lands" }),
+                    "198.51.100.24", "Ams ter dam [31m", "Nether lands"),
+                row("line breaks", json({ ip: "198.51.100.24", city: "Den\nHaag\r\n", country: "Nether\u2028lands\u2029" }),
+                    "198.51.100.24", "Den Haag", "Nether lands"),
+                row("direction characters", json({ ip: "198.51.100.24", city: "\u202eAmsterdam\u202c\u2066\u2069",
+                                                   country: "\u200fNether\u061clands\u200e\u202a" }),
+                    "198.51.100.24", "Amsterdam", "Netherlands"),
+                row("invisible characters", json({ ip: "198.51.100.24", city: "\ufeffAms\u200bter\u200ddam\u2060\u00ad",
+                                                   country: "Nether\u200clands" }),
+                    "198.51.100.24", "Amsterdam", "Netherlands"),
+                row("white space", json({ ip: "198.51.100.24", city: "  Frankfurt \t am\u00a0\u00a0Main ", country: "\tGermany\n" }),
+                    "198.51.100.24", "Frankfurt am Main", "Germany"),
+                row("blank city", json({ ip: "198.51.100.24", city: " \t\u200b ", country: "Netherlands" }), "198.51.100.24"),
+                row("blank country", json({ ip: "198.51.100.24", city: "Amsterdam", country: " \u202e " }),
+                    "198.51.100.24", "Amsterdam"),
+                row("64 characters", json({ ip: "198.51.100.24", city: c64, country: c64 }), "198.51.100.24", c64, c64),
+                row("64 once trimmed", json({ ip: "198.51.100.24", city: "  " + c64 + "\u202e ", country: c64 }),
+                    "198.51.100.24", c64, c64),
+                row("65 characters", json({ ip: "198.51.100.24", city: c64 + "D", country: "Netherlands" }), "198.51.100.24"),
+                row("country 65 characters", json({ ip: "198.51.100.24", city: "Amsterdam", country: c64 + "D" }),
+                    "198.51.100.24", "Amsterdam"),
+                row("up to the size limit", json(Object.assign({ pad: "x".repeat(Lookup.REPLY_LIMIT - 74) }, ams)),
+                    "198.51.100.24", "Amsterdam", "Netherlands"),
+                row("over the size limit", json(Object.assign({ pad: "x".repeat(Lookup.REPLY_LIMIT - 73) }, ams)), ""),
+                row("bare over the size limit", { body: "203.0.113.7" + " ".repeat(Lookup.REPLY_LIMIT), family: "v4" }, "")
+            ];
+        }
+        function test_reply(data) {
+            if (data.tag.indexOf("size limit") > 0 && data.tag.indexOf("bare") < 0) {
+                compare(data.body.length, Lookup.REPLY_LIMIT + (data.tag.indexOf("over") === 0 ? 1 : 0), "the row is at the edge");
+            }
+            compare(Lookup.reply(data.body, data.family), { address: data.address, city: data.city, country: data.country });
+        }
+
         function test_cameFrom_data() {
             const asked = "https://ip.example/v4";
             return [
@@ -434,8 +517,12 @@ Item {
         function test_lines() {
             const result = { v4: "198.51.100.24", v6: "2001:db8::1c" };
             const vpn = Lookup.lines(result, route("wg0", "enp5s0", true, false), "enp5s0");
-            compare(vpn.v4, { address: "198.51.100.24", via: "wg0", tunnel: true });
-            compare(vpn.v6, { address: "2001:db8::1c", via: "", tunnel: false }, "no via through the local interface");
+            compare(vpn.v4, { address: "198.51.100.24", via: "wg0", tunnel: true, city: "", country: "" });
+            compare(vpn.v6, { address: "2001:db8::1c", via: "", tunnel: false, city: "", country: "" },
+                    "no via through the local interface");
+            const placed = Lookup.lines(Object.assign({ places: { v4: { city: "Amsterdam", country: "Netherlands" },
+                                                                   v6: { city: "", country: "" } } }, result), { known: false }, "enp5s0");
+            compare([placed.v4.city, placed.v4.country, placed.v6.city], ["Amsterdam", "Netherlands", ""]);
             compare(vpn.leak, { family: "v6", through: "wg0" });
 
             const reverse = Lookup.lines(result, route("enp5s0", "wg0", false, true), "enp5s0");
@@ -685,7 +772,10 @@ Item {
                 { tag: "server error", status: 500, body: "" },
                 { tag: "HTML", status: 200, body: "<html><title>Blocked</title></html>" },
                 { tag: "wrong family", status: 200, body: "2001:db8::1" },
-                { tag: "network error", status: 0, body: "" }
+                { tag: "network error", status: 0, body: "" },
+                { tag: "malformed JSON", status: 200, body: "{\"ip\":\"203.0.113.7\",\"city\":\"Oslo\"" },
+                { tag: "JSON of the wrong family", status: 200, body: "{\"ip\":\"2001:db8::1\",\"city\":\"Oslo\"}" },
+                { tag: "JSON without ip", status: 200, body: "{\"address\":\"203.0.113.7\",\"city\":\"Oslo, Norway\"}" }
             ];
         }
         function test_badRepliesFail(data) {
@@ -698,6 +788,7 @@ Item {
             verify(shown.indexOf("Can't reach bad-") >= 0, shown);
             if (data.body !== "") {
                 verify(shown.indexOf(data.body) < 0, "the reply never shows: " + shown);
+                verify(shown.indexOf("Oslo") < 0, "nor its city: " + shown);
             }
         }
 
@@ -722,11 +813,24 @@ Item {
             const set = checker({}, own("endless", false));
             const r = set.made[0];
             r.status = 200;
-            r.responseText = "1".repeat(5000);
+            compare(Lookup.REPLY_LIMIT, 16384, "16 KB, as SECURITY.md says");
+            r.responseText = "1".repeat(Lookup.REPLY_LIMIT + 1);
             r.readyState = 3;
             r.onreadystatechange();
             compare(r.aborted, true);
             compare(set.checker.status, "failed");
+        }
+
+        // A JSON reply as long as one may be is read to its end.
+        function test_longJsonReplyRead() {
+            const set = checker({}, own("longjson", false));
+            const r = set.made[0];
+            const body = JSON.stringify({ ip: "203.0.113.7", city: "Amsterdam", note: "x".repeat(Lookup.REPLY_LIMIT - 60) });
+            verify(body.length <= Lookup.REPLY_LIMIT && body.length > 16000, body.length);
+            r.answer(200, body);
+            compare(r.aborted, false);
+            compare(set.checker.status, "shown");
+            compare(set.checker.record.result.places.v4, { city: "Amsterdam", country: "" });
         }
 
         function test_changedAndLastSeen() {
@@ -918,6 +1022,178 @@ Item {
             verify(asking.includes("Asking popupnotes.example…"), asking);
             verify(asking.includes("Last seen 198.51.100.24 at " + seen), asking);
             compare(block(page).implicitHeight, height, "the block keeps its height");
+        }
+
+        // ---- The place a service names ----
+
+        readonly property string osl4: JSON.stringify({ ip: "198.51.100.24", city: "Oslo", country: "Norway" })
+        readonly property string fra4: JSON.stringify({ ip: "198.51.100.24", city: "Frankfurt am Main", country: "Germany" })
+        readonly property string fra6: JSON.stringify({ ip: "2001:db8::1c", city: "Frankfurt am Main", country: "Germany" })
+
+        // The visible place lines under the addresses, top to bottom.
+        function placeTexts(page) {
+            const b = block(page);
+            return all(b, i => i instanceof Text && onScreen(i) && /^(Near|IPv4 near|IPv6 near) /.test(i.text))
+                .sort((a, z) => a.mapToItem(b, Qt.point(0, 0)).y - z.mapToItem(b, Qt.point(0, 0)).y);
+        }
+
+        function placeY(item, page) {
+            return item.mapToItem(block(page), Qt.point(0, 0)).y;
+        }
+
+        // One line when the families agree or only one names a place, one
+        // each when they differ, none without a city; each address line is
+        // read out with its own place, and the place lines aren't read again.
+        function test_placesInThePopup_data() {
+            const v6 = "2001:db8::1c";
+            return [
+                { tag: "IPv4 places", v4: [200, osl4], v6: [200, v6], places: ["Near Oslo, Norway"],
+                  spoken: ["Public address 198.51.100.24, near Oslo, Norway", "Public address 2001:db8::1c"] },
+                { tag: "IPv6 places", v4: [200, "198.51.100.24"], v6: [200, fra6], places: ["Near Frankfurt am Main, Germany"],
+                  spoken: ["Public address 198.51.100.24", "Public address 2001:db8::1c, near Frankfurt am Main, Germany"] },
+                { tag: "two places", v4: [200, osl4], v6: [200, JSON.stringify({ ip: v6, city: "Bergen", country: "Norway" })],
+                  places: ["IPv4 near Oslo, Norway", "IPv6 near Bergen, Norway"],
+                  spoken: ["Public address 198.51.100.24, near Oslo, Norway", "Public address 2001:db8::1c, near Bergen, Norway"] },
+                { tag: "the same place", v4: [200, fra4], v6: [200, fra6], places: ["Near Frankfurt am Main, Germany"],
+                  spoken: ["Public address 198.51.100.24, near Frankfurt am Main, Germany",
+                           "Public address 2001:db8::1c, near Frankfurt am Main, Germany"] },
+                { tag: "a city alone", v4: [200, JSON.stringify({ ip: "198.51.100.24", city: "Amsterdam" })], v6: [200, v6],
+                  places: ["Near Amsterdam"], spoken: ["Public address 198.51.100.24, near Amsterdam", "Public address 2001:db8::1c"] },
+                { tag: "a country alone", v4: [200, JSON.stringify({ ip: "198.51.100.24", country: "Netherlands" })], v6: [200, v6],
+                  places: [], spoken: ["Public address 198.51.100.24", "Public address 2001:db8::1c"] },
+                { tag: "no city", v4: [200, JSON.stringify({ ip: "198.51.100.24" })], v6: [200, JSON.stringify({ ip: v6 })],
+                  places: [], spoken: ["Public address 198.51.100.24", "Public address 2001:db8::1c"] },
+                { tag: "bare addresses", v4: [200, "198.51.100.24"], v6: [200, v6],
+                  places: [], spoken: ["Public address 198.51.100.24", "Public address 2001:db8::1c"] },
+                { tag: "IPv6 failed", v4: [200, osl4], v6: [503, fra6], places: ["Near Oslo, Norway"],
+                  spoken: ["Public address 198.51.100.24, near Oslo, Norway"] }
+            ];
+        }
+        function test_placesInThePopup(data) {
+            const set = shownIn({}, own("places-" + data.tag.replace(/ /g, "")));
+            const bare = popup(set.monitor);
+            const before = block(bare).width;
+            answer(set.made, "v4", data.v4[0], data.v4[1]);
+            answer(set.made, "v6", data.v6[0], data.v6[1]);
+            compare(set.made.length, 2, "one request per family");
+            const page = popup(set.monitor);
+            compare(placeTexts(page).map(t => t.text), data.places);
+            compare(addressLines(page).slice(1).map(l => l.Accessible.name), data.spoken);
+            const lastAddress = addressLines(page).pop();
+            for (const t of placeTexts(page)) {
+                verify(t.Accessible.ignored, "heard with its address: " + t.text);
+                verify(!t.truncated, t.text + " fits");
+                verify(placeY(t, page) >= placeY(lastAddress, page) + lastAddress.height - 1, "under the addresses: " + t.text);
+            }
+            compare(block(page).width, before, "the popup keeps its width");
+        }
+
+        // The places sit between the addresses and the note, as one group.
+        function test_placeAboveTheNotes() {
+            const set = shownIn({ egress: route("wg0-mullvad", "enp195s0f3u1", true, false) }, own("placenote"));
+            answer(set.made, "v4", 200, osl4);
+            answer(set.made, "v6", 200, fra6);
+            const page = popup(set.monitor);
+            const places = placeTexts(page);
+            compare(places.map(t => t.text), ["IPv4 near Oslo, Norway", "IPv6 near Frankfurt am Main, Germany"]);
+            const warning = all(page, i => i.text === "IPv6 doesn't go through wg0-mullvad")[0];
+            verify(onScreen(warning));
+            verify(placeY(places[0], page) < placeY(places[1], page));
+            verify(placeY(places[1], page) + places[1].height <= placeY(warning, page) + 1, "the warning under the places");
+            compare(visibleTexts(page).filter(t => /near/i.test(t)).length, 2, "said once each");
+        }
+
+        // A place goes with the address it came with: kept while the next
+        // check is under way, replaced by the next answer's, and never kept
+        // once the addresses go, as after a failure.
+        function test_placeGoesWithTheAddress() {
+            const set = shownIn({}, own("placefollows", false));
+            answer(set.made, "v4", 200, osl4);
+            const page = popup(set.monitor);
+            compare(placeTexts(page).map(t => t.text), ["Near Oslo, Norway"]);
+
+            root.now += 61000;
+            set.checker.open = false;
+            set.checker.open = true;
+            compare(set.made.length, 2, "asked again");
+            compare(placeTexts(page).map(t => t.text), ["Near Oslo, Norway"], "kept while asking");
+            answer(set.made, "v4", 200, "198.51.100.24");
+            compare(placeTexts(page).length, 0, "a bare answer names no place");
+            compare(set.checker.record.result.places.v4, { city: "", country: "" });
+
+            root.now += 61000;
+            set.checker.open = false;
+            set.checker.open = true;
+            answer(set.made, "v4", 200, osl4);
+            compare(placeTexts(page).map(t => t.text), ["Near Oslo, Norway"]);
+
+            root.now += 61000;
+            set.checker.open = false;
+            set.checker.open = true;
+            answer(set.made, "v4", 503, osl4);
+            compare(set.checker.status, "failed");
+            const shown = visibleTexts(page);
+            verify(shown.some(t => t.indexOf("Last seen 198.51.100.24 at ") === 0), shown);
+            compare(placeTexts(page).length, 0, "no place without its address");
+            verify(!shown.some(t => t.indexOf("Oslo") >= 0), shown);
+            compare(Object.keys(set.checker.record.seen.v4).sort(), ["address", "at"], "only the address is remembered");
+        }
+
+        // Every checker of the service sees the place one of them was told.
+        function test_sharedResultCarriesThePlace() {
+            const config = own("placeshared");
+            const a = checker({}, config);
+            answer(a.made, "v4", 200, osl4);
+            answer(a.made, "v6", 200, fra6);
+            const b = shownIn({}, config);
+            compare(b.made.length, 0, "within the minute, nothing more is asked");
+            compare(a.made.length, 2, "one request per family");
+            compare(b.checker.record.result.places, { v4: { city: "Oslo", country: "Norway" },
+                                                      v6: { city: "Frankfurt am Main", country: "Germany" } });
+            const page = popup(b.monitor);
+            compare(placeTexts(page).map(t => t.text), ["IPv4 near Oslo, Norway", "IPv6 near Frankfurt am Main, Germany"]);
+        }
+
+        // Right to left, a place line starts at the right, as the notes do.
+        function test_placeMirrored_data() {
+            return [{ tag: "leftToRight", mirrored: false }, { tag: "rightToLeft", mirrored: true }];
+        }
+        function test_placeMirrored(data) {
+            const set = shownIn({}, own("placemirror" + data.mirrored, false));
+            answer(set.made, "v4", 200, osl4);
+            const page = popup(set.monitor, data.mirrored);
+            const t = placeTexts(page)[0];
+            compare(t.effectiveHorizontalAlignment, data.mirrored ? Text.AlignRight : Text.AlignLeft);
+            const b = block(page);
+            const left = t.mapToItem(b, Qt.point(0, 0)).x;
+            const right = t.mapToItem(b, Qt.point(t.width, 0)).x;
+            verify(left >= -1 && right <= b.width + 1, "inside the block");
+            const address = addressLines(page)[1];
+            fuzzyCompare(left, address.mapToItem(b, Qt.point(0, 0)).x, 1, "in the addresses' column");
+            fuzzyCompare(right, address.mapToItem(b, Qt.point(address.width, 0)).x, 1, "as wide as it");
+        }
+
+        // A long name is cut short at the end of its one line; the popup
+        // keeps its width and the screen reader hears the whole name.
+        function test_longPlaceElides_data() {
+            return [{ tag: "leftToRight", mirrored: false }, { tag: "rightToLeft", mirrored: true }];
+        }
+        function test_longPlaceElides(data) {
+            const city = "Llanfairpwllgwyngyllgogerychwyrndrobwllllantysiliogogogoch";
+            const country = "United Kingdom of Great Britain and Northern Ireland";
+            const set = shownIn({}, own("placelong" + data.mirrored, false));
+            const page = popup(set.monitor, data.mirrored);
+            const width = block(page).width;
+            answer(set.made, "v4", 200, JSON.stringify({ ip: "198.51.100.24", city: city, country: country }));
+            waitForRendering(page);
+            const t = placeTexts(page)[0];
+            compare(t.text, "Near " + city + ", " + country);
+            verify(t.truncated, "cut short");
+            compare(t.lineCount, 1);
+            compare(block(page).width, width, "the popup keeps its width");
+            const b = block(page);
+            verify(t.mapToItem(b, Qt.point(0, 0)).x >= -1 && t.mapToItem(b, Qt.point(t.width, 0)).x <= b.width + 1, "inside the block");
+            compare(addressLines(page)[1].Accessible.name, "Public address 198.51.100.24, near " + city + ", " + country);
         }
 
         // ---- Trying a failed check again ----
@@ -1296,7 +1572,8 @@ Item {
                 line: find(page, i => i instanceof QQC2.Label && i.text.indexOf("Asks ") === 0),
                 service: find(page, i => i instanceof QQC2.ComboBox && i.Accessible.name === "Service"),
                 url4: field("IPv4 URL"),
-                url6: field("IPv6 URL")
+                url6: field("IPv6 URL"),
+                json: find(page, i => i instanceof QQC2.Label && i.text === "Each answers with the address, or JSON with ip and city.")
             };
             for (const name in c) {
                 verify(c[name], name);
@@ -1433,16 +1710,16 @@ Item {
         function test_settingsServiceRows(data) {
             const page = general({ cfg_publicAddress: false, cfg_publicAddressUrl4: data.url });
             const c = controls(page);
-            const shown = () => [c.service.visible, c.url4.visible, c.url6.visible];
-            compare(shown(), [false, false, false]);
+            const shown = () => [c.service.visible, c.url4.visible, c.url6.visible, c.json.visible];
+            compare(shown(), [false, false, false, false]);
             mouseClick(c.box);
             compare(page.cfg_publicAddress, true);
-            compare(shown(), [true, data.custom, data.custom]);
+            compare(shown(), [true, data.custom, data.custom, data.custom]);
             compare(c.service.model, ["ipify.org", "Custom"]);
             compare(c.service.currentIndex, data.custom ? 1 : 0);
             mouseClick(c.box);
             compare(page.cfg_publicAddress, false);
-            compare(shown(), [false, false, false]);
+            compare(shown(), [false, false, false, false]);
         }
 
         // Custom opens on empty fields with the first focused; picking

@@ -209,9 +209,14 @@ website does.
 
 To use another service, choose *Custom* as the service and give its https
 addresses for IPv4 and IPv6. Only that service is asked; leave one empty to
-skip that family. The service has to answer with the address alone, as plain
-text, and from its own host: an answer redirected to another host or to http
-is ignored.
+skip that family. The service has to answer from its own host, with the
+address alone as plain text or with JSON whose `ip` is the address: an answer
+redirected to another host or to http is ignored. A JSON answer may name a
+`city` and `country` too, as a self-hosted
+[echoip](https://github.com/mpolden/echoip) does at `/json`, and the popup
+then shows the place under the address. It is approximate, often the
+internet provider's nearest hub city rather than yours; through a VPN it
+tells you which exit you are on.
 
 ## Settings
 
