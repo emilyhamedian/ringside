@@ -24,9 +24,9 @@ ConfigPage {
     property var keptUrls: ["", ""]
 
     // Whom Ringside asks and what they learn, under the box whether it's
-    // ticked or not.
+    // ticked or not. "Until you enter a URL" only while the fields show.
     readonly property string line: {
-        if (custom && !service.custom) {
+        if (cfg_publicAddress && custom && !service.custom) {
             return i18nc("@info Custom picked, both URLs still empty; %1 is ipify.org",
                          "Asks %1, which sees your address, until you enter a URL.", Lookup.IPIFY.name);
         }
@@ -47,11 +47,14 @@ ConfigPage {
         if (yes === custom) {
             return;
         }
-        customPicked = yes;
+        // Custom is flagged only after the URLs are back, so settle() can't
+        // take it for Defaults when a stored blank URL turns empty.
         if (yes) {
             cfg_publicAddressUrl4 = keptUrls[0];
             cfg_publicAddressUrl6 = keptUrls[1];
+            customPicked = true;
         } else {
+            customPicked = false;
             keptUrls = [cfg_publicAddressUrl4, cfg_publicAddressUrl6];
             cfg_publicAddressUrl4 = "";
             cfg_publicAddressUrl6 = "";
@@ -264,6 +267,7 @@ ConfigPage {
             Kirigami.FormData.label: i18nc("@label", "Public address:")
             text: i18nc("@option:check", "Show in the Network popup")
             checked: page.cfg_publicAddress
+            Accessible.description: page.line
             onToggled: page.cfg_publicAddress = checked
         }
 
@@ -283,9 +287,14 @@ ConfigPage {
             model: [Lookup.IPIFY.name, i18nc("@item:inlistbox a public address service", "Custom")]
             currentIndex: page.custom ? 1 : 0
             Accessible.name: i18nc("@label:listbox", "Service")
+            Accessible.description: page.line
+            // Picking ipify.org empties the URLs, so a stray scroll mustn't.
+            wheelEnabled: false
             onActivated: index => {
                 page.pickCustom(index === 1);
-                if (index === 1) {
+                // From the open list only: arrow keys on the closed one
+                // leave the focus where it is, so they can step back.
+                if (index === 1 && popup.visible) {
                     url4.input.forceActiveFocus();
                 }
             }
