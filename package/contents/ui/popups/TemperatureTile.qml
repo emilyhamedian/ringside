@@ -14,12 +14,11 @@ import "../code/history.js" as History
 // when the span changes: its top is the hot threshold, or the hottest
 // reading rounded up to a five when that runs hotter, and its floor goes
 // unnamed (see History.temperatureFloor()). The end of the caption line
-// speaks for the span on screen. While its line stays at or under the hot
-// threshold, a faint rule marks the threshold wherever it falls in the
-// scale, as a percentage graph's marks 100%, and the caption names it,
-// "hot 90 °C". Once the line passes it, or with the highlighting off, the
-// caption names the span's peak instead, "peak 93 °C", as a rate graph's
-// does, and there is no rule. The line turns amber and red where it passes
+// names the peak of the span on screen, "peak 62 °C", as a rate graph's
+// does. With the temperature colours on, a faint rule marks the hot
+// threshold wherever it falls in the scale, unnamed: the threshold is the
+// user's own, and the line's red past it says what it is. The line turns
+// amber and red where it passes
 // the warm and hot thresholds, as the header's reading does, and breaks off
 // where there was no reading. An hour or a day draws each bucket's average
 // under a fainter band up to its highest reading, so a short hot spell
@@ -51,9 +50,6 @@ Tile {
     // The hottest reading the span on screen shows, up to its band at an
     // hour or a day; NaN with none.
     readonly property real shownPeak: Format.degrees(History.peak(History.tops(history, highs))?.value ?? NaN, fahrenheit)
-    // The line shown stays at or under the hot threshold, which the rule
-    // and the caption then stand for.
-    readonly property bool underHot: monitor.highlightTemperatures && !(shownPeak > hot)
     // 5 °C in the unit shown.
     readonly property real margin: fahrenheit ? 9 : 5
     // Set as the samples come rather than bound, since where it stays
@@ -75,12 +71,6 @@ Tile {
     caption: i18nc("@title:group", "Temperature")
     spans: monitor
     graphTop: {
-        if (underHot) {
-            const h = Format.whole(hot);
-            return fahrenheit
-                ? i18nc("@title:group at the end of a temperature graph's caption line: the hot threshold set for red, which a faint rule across the graph marks, as in hot 194 °F", "hot %1 °F", h)
-                : i18nc("@title:group at the end of a temperature graph's caption line: the hot threshold set for red, which a faint rule across the graph marks, as in hot 90 °C", "hot %1 °C", h);
-        }
         if (!Number.isFinite(shownPeak)) {
             return "";
         }
@@ -133,7 +123,7 @@ Tile {
             y: graph.hotY - rule.limitY
             width: parent.width
             height: parent.height
-            visible: tile.underHot
+            visible: tile.monitor.highlightTemperatures
         }
 
         Shape {

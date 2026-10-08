@@ -1976,12 +1976,13 @@ Item {
             tiles.forEach(t => {
                 const [caption, top] = captionLine(t);
                 compare(heading(t), "TEMPERATURE · 1 min");
-                compare(top.text, localized("hot 90 °C"));
+                const peak = Math.max(...t.history.filter(c => Number.isFinite(c)));
+                compare(top.text, localized("peak " + Math.round(peak) + " °C"));
                 verify(top.visible);
                 const g = temperatureGraph(t);
                 const rules = all(g, i => i.limitY !== undefined);
                 compare(rules.length, 1);
-                verify(rules[0].visible, "a rule at the threshold it names");
+                verify(rules[0].visible, "a faint rule at the hot threshold");
                 fuzzyCompare(rules[0].mapToItem(g, Qt.point(0, rules[0].limitY)).y, g.topY, 1e-6, "at the top");
                 compare(rules[0].width, g.width);
                 compare(g.areas.length, 1, "one unbroken line");
@@ -2187,7 +2188,7 @@ Item {
             }
         }
 
-        // In °F the samples, the scale and its name are in °F, the hot
+        // In °F the samples, the scale and the peak are in °F, the hot
         // threshold the top as it is in °C.
         function test_temperatureGraphsInFahrenheit() {
             normal.fahrenheit = true;
@@ -2195,7 +2196,8 @@ Item {
                 const tile = temperatureTiles(load("CpuPopup", normal, false, Kirigami.Units.gridUnit * 30))[0];
                 const g = temperatureGraph(tile);
                 fuzzyCompare(g.plot.values[g.plot.values.length - 1], 61 * 9 / 5 + 32, 1e-9);
-                compare(captionLine(tile)[1].text, localized("hot 194 °F"));
+                const peak = Math.max(...tile.history.filter(c => Number.isFinite(c))) * 9 / 5 + 32;
+                compare(captionLine(tile)[1].text, localized("peak " + Math.round(peak) + " °F"));
             } finally {
                 normal.fahrenheit = false;
             }
@@ -2417,15 +2419,12 @@ Item {
         // A temperature graph's scale comes from every reading the three
         // spans keep, so it holds still when the span changes: up to the hot
         // threshold while every reading stays under it, to the hottest
-        // rounded up to a five once one runs over. The caption and the rule
-        // speak for the span on screen: the hot threshold, under its rule
-        // wherever it falls in the scale, while the line shown stays under
-        // it, and the line's peak, with no rule, once it passes it.
+        // rounded up to a five once one runs over. The caption names the
+        // peak of the span on screen, its band's top included, and the rule
+        // marks the hot threshold at every span, wherever it falls.
         function test_temperatureScaleHoldsAcrossSpans_data() {
-            return [{ tag: "underHot", monitor: normal, extent: [44, 80], scaleTop: 90,
-                      tops: { minute: "hot 90 °C", hour: "hot 90 °C", day: "hot 90 °C" } },
-                    { tag: "dayOverHot", monitor: hotDay, extent: [44, 93.4], scaleTop: 95,
-                      tops: { minute: "hot 90 °C", hour: "hot 90 °C", day: "peak 93 °C" } }];
+            return [{ tag: "underHot", monitor: normal, extent: [44, 80], scaleTop: 90 },
+                    { tag: "dayOverHot", monitor: hotDay, extent: [44, 93.4], scaleTop: 95, dayPeak: 93 }];
         }
 
         function test_temperatureScaleHoldsAcrossSpans(data) {
@@ -2441,9 +2440,12 @@ Item {
                     data.monitor.chooseSpan(span);
                     compare(tile.scaleTop, data.scaleTop, span);
                     compare(tile.floor, 30, span);
-                    const top = data.tops[span];
-                    compare(captionLine(tile)[1].text, localized(top), span);
-                    compare(rule.visible, top.startsWith("hot"), span + ": the rule");
+                    const peak = Math.max(...tile.history.concat(tile.highs).filter(c => Number.isFinite(c)));
+                    compare(captionLine(tile)[1].text, localized("peak " + Math.round(peak) + " °C"), span);
+                    if (span === "day" && data.dayPeak !== undefined) {
+                        compare(Math.round(peak), data.dayPeak, "the day's peak, from its band");
+                    }
+                    verify(rule.visible, span + ": the rule");
                     fuzzyCompare(rule.mapToItem(g, Qt.point(0, rule.limitY)).y, hotY, 1e-6, span + ": the rule at 90 °C");
                     compare(g.bands.length > 0, span !== "minute", span + ": the band");
                     const ys = g.plot.points.filter(p => Number.isFinite(p.y)).map(p => p.y);

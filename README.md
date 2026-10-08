@@ -24,10 +24,9 @@ when it fits, or to 1 Mb/s (1 MiB/s for a disk) when the peak is lower. A
 temperature graph's scale runs from a round ten at least 5 °C below the
 coolest reading of the last day to your hot threshold, or to the day's
 hottest rounded up to a five when that is hotter, so it stays put when you
-change the span. While the span shown stays at or under the hot threshold,
-a faint line marks the threshold, named in the same place; past it, or with
-the temperature colours off, the span's peak is named there instead. The
-line turns amber and red as the reading does. An integrated
+change the span. The span's peak is named in the same place, and a faint
+line marks your hot threshold. The line turns amber and red as the reading
+does. An integrated
 GPU beside a discrete one has no temperature graph: it shares the CPU's
 chip, which the CPU popup graphs.
 The graphs take a reading every second, or at the update interval

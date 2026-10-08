@@ -33,11 +33,10 @@ follows [Semantic Versioning](https://semver.org/).
   under the usage graph (after the write rate for a disk). Its scale runs
   from a round ten at least 5 °C below the coolest reading of the last day
   to your hot threshold, or to the day's hottest rounded up to a five when
-  that is hotter, so it stays put when the span changes. While the span
-  shown stays at or under the hot threshold, a faint line marks it, named at
-  the end of the caption line as "hot 90 °C"; past it, or with the
-  temperature colours off, the caption names the span's peak, "peak 93 °C",
-  instead. The line turns amber and red where it passes your thresholds,
+  that is hotter, so it stays put when the span changes. The end of the
+  caption line names the span's peak, such as "peak 62 °C", and a faint line
+  marks your hot threshold. The line turns amber and red where it passes
+  your thresholds,
   and leaves a gap while a GPU sleeps. A GPU or drive with no temperature
   reading has no graph, nor has an integrated GPU beside a discrete one.
 - The network popup can show the public address websites see under the

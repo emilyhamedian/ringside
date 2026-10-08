@@ -1554,9 +1554,9 @@ Item {
             compare(left + tile.width, popup.width - edge);
         }
 
-        // "100%" names each percentage graph's top, and "hot 90 °C" the
-        // threshold whose rule tops a calm temperature graph, at the far end
-        // of its tile's caption line, over the end of the rule, and nothing
+        // "100%" names each percentage graph's top, and a temperature graph
+        // names its peak, at the far end of its tile's caption line, over the
+        // end of the rule, and nothing
         // is written in the graph above its floor, where a line could run
         // through it. Mirrored, the caption line reads from the right and
         // "100%" ends it at the left.
@@ -1618,7 +1618,11 @@ Item {
                 };
                 part(tile);
                 const [caption, scale] = lineParts;
-                compare(scale.text, root.localized(g.plot !== undefined ? "hot 90 °C" : "100%"));
+                if (g.plot !== undefined) {
+                    verify(scale.text.startsWith(root.localized("peak ")), scale.text);
+                } else {
+                    compare(scale.text, root.localized("100%"));
+                }
                 verify(scale.visible && !scale.truncated);
                 verify(top(scale) + scale.height <= top(g), "on the caption line, over the graph");
                 verify(caption.visible && caption.text !== "");
