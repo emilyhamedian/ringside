@@ -24,13 +24,22 @@ when it fits, or to 1 Mb/s (1 MiB/s for a disk) when the peak is lower. A
 temperature graph has a line at your hot threshold, named in the same place,
 or reaches up to its peak when that is hotter or the temperature colours are
 off, and its line turns amber and red as the reading does. Its floor is a
-round ten at least 5 °C below the coolest reading. An integrated GPU beside
-a discrete one has no temperature graph: it shares the CPU's chip, which
-the CPU popup graphs.
+round ten at least 5 °C below the coolest reading. Both come from the whole
+of the last day, so they stay put when you change the span. An integrated
+GPU beside a discrete one has no temperature graph: it shares the CPU's
+chip, which the CPU popup graphs.
 The graphs take a reading every second, or at the update interval
 when that is shorter; the panel changes at the update interval. A
 temperature that isn't the whole chip's names its sensor in plain words, such
 as hotspot.
+
+Each graph's caption ends with its span, such as "USAGE · 1 min". Click it,
+or press Space on it, to show the last minute, hour or day in every graph.
+The last hour is drawn in 30-second steps and the last day in 10-minute
+ones, each step's average as the line, with a faint band up to its highest
+reading. Time the computer was asleep, or Plasma wasn't running, is left
+empty. The graphs record whether a popup is open or not, from when the
+widget starts; to keep the hour and the day across restarts, see Settings.
 
 ![The CPU, GPU, memory, network and disk popups](docs/popups.png)
 
@@ -102,6 +111,9 @@ scripts/install.sh
   the i915 driver, or 6.8 or later with xe, and report no temperature or VRAM.
   Without those, the parts are left out.
 - Claude and Codex need Python 3.11 or later.
+- Keeping the graphs' history across restarts needs Qt's LocalStorage
+  module. Debian and Ubuntu package it as `qml6-module-qtquick-localstorage`;
+  without it the setting is greyed out.
 
 ## Claude and Codex
 
@@ -202,9 +214,10 @@ is ignored.
 
 Right-click the widget and choose *Configure Ringside…*.
 
-- **General**: update interval, how far back the graphs reach, Celsius or
-  Fahrenheit, network rates in bits or bytes, temperature thresholds, and
-  the public address in the network popup, with the service asked for it.
+- **General**: update interval, whether the graphs' last hour and day are
+  kept when Plasma restarts, Celsius or Fahrenheit, network rates in bits
+  or bytes, temperature thresholds, and the public address in the network
+  popup, with the service asked for it.
 - **Panel Items**: which items show and in what order, and rings with or
   without their text. Rings grow and shrink with the panel.
 - **Sensors**: the CPU temperature source, which GPU goes on which ring, the
@@ -222,6 +235,13 @@ whether the discrete GPU is asleep. It reads `/proc`, `/sys` and udev's
 database as your user, and, every 3 seconds while the network popup shows the
 public address, asks `ip route get` which interface reaches the internet,
 which sends nothing.
+
+The graphs' history stays in memory. With *Keep the last hour and day
+across restarts* on, which is off by default, each 30-second and 10-minute
+step's average and highest reading is saved as it ends, through Qt's
+LocalStorage, in a database under
+`~/.local/share/plasmashell/QML/OfflineStorage/Databases/`. It holds about
+a day, and turning the setting off deletes what that widget saved.
 
 The Claude and Codex items run
 [`usage.py`](package/contents/code/usage.py). It sends your Claude Code login

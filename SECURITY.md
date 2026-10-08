@@ -30,6 +30,18 @@ Mainly the two helpers Ringside runs:
 
 - System items (CPU, GPU, memory, network, disk) read `/proc`, `/sys`,
   udev's database and ksystemstats, and send nothing.
+- Their graphs' history stays in memory unless *Keep the last hour and day
+  across restarts* is on under General, which it isn't by default. Then
+  each widget saves the average and highest reading of every graph (CPU,
+  memory and GPU usage, the temperatures, network and disk rates) for each
+  30-second and 10-minute step as it ends, keyed by the widget's id, with
+  Qt's LocalStorage in one SQLite database for all Ringside widgets:
+  `~/.local/share/plasmashell/QML/OfflineStorage/Databases/a7cd204c17273ec1e4b4cb45252c93f3.sqlite`,
+  with an `.ini` beside it naming it `ringside`. Your user can read it, as
+  it can your other Plasma data. Each save drops every widget's steps from
+  before the last hour and day, so it holds about a day, about 100 KB a
+  widget. Turning the setting off deletes that widget's steps; to clear
+  every widget's, delete both files while Plasma isn't running.
 - The public address in the network popup, off until you turn it on
   under General, sends one HTTPS GET per address family to `api.ipify.org`
   and `api6.ipify.org`, or only to the URLs you set instead. A request goes
