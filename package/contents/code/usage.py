@@ -21,8 +21,11 @@ windows, each a window with an "id" that stays stable across polls and a
 display "label". An ok entry's "fetchedAt" is when it was polled, which a
 cached reading keeps. Status is one of "ok", "signed_out", "rate_limited"
 (with "retryAfter", the seconds until the provider is polled again) or
-"error", and the last two carry a "message" to show. Tokens never reach
-stdout or stderr.
+"error", and the last two carry a "message" to show, a "reason" the widget
+can put in its own words ("offline", "timeout", "server", "rate-limited" or
+"other"), the "host" that failed, or "" when none did, and "retryAt", when
+the provider may be polled again (epoch seconds). Tokens never reach stdout
+or stderr.
 
 When Plasma's digital clock shows a zone other than system time, every window
 also carries "clockZone": {"offset": <seconds east of UTC>, "abbreviation":
@@ -185,9 +188,20 @@ class Busy(RuntimeError):
 
 
 class RateLimited(Exception):
-    def __init__(self, retry_after):
+    def __init__(self, retry_after, host=""):
         super().__init__(f"rate limited, retrying in {retry_after} s")
         self.retry_after = retry_after
+        self.host = host
+
+
+class CheckFailed(RuntimeError):
+    """A failed check whose cause is known: reason is "offline", "timeout" or
+    "server", and host the server that failed, or "" for the Codex CLI."""
+
+    def __init__(self, message, reason, host=""):
+        super().__init__(message)
+        self.reason = reason
+        self.host = host
 
 
 # --- Codex -----------------------------------------------------------------
@@ -240,7 +254,7 @@ def codex_rate_limits(binary):
                     raise RuntimeError(str((reply["error"] or {}).get("message") or "app-server error"))
                 return reply["result"]
         if time.monotonic() >= deadline:
-            raise RuntimeError(f"no answer from codex app-server in {CODEX_TIMEOUT} s")
+            raise CheckFailed(f"no answer from codex app-server in {CODEX_TIMEOUT} s", "timeout")
         raise RuntimeError("app-server closed without answering")
     finally:
         stop_session(proc)
@@ -377,17 +391,19 @@ def http_json(url, headers, body=None):
         if err.code == 401:
             raise SignedOut() from err
         if err.code == 429:
-            raise RateLimited(retry_seconds(err.headers.get("retry-after"))) from err
-        raise RuntimeError(f"HTTP {err.code} from {host}") from err
+            raise RateLimited(retry_seconds(err.headers.get("retry-after")), host) from err
+        raise CheckFailed(f"HTTP {err.code} from {host}", "server", host) from err
     except urllib.error.URLError as err:
         # A socket error's str() leads with its errno, as in "[Errno -2] Name or
         # service not known"; strerror is the readable part.
         reason = getattr(err.reason, "strerror", None) or err.reason
-        raise RuntimeError(f"can't reach {host}: {reason}") from err
+        raise CheckFailed(f"can't reach {host}: {reason}",
+                          "timeout" if isinstance(err.reason, TimeoutError) else "offline", host) from err
     except OSError as err:
-        raise RuntimeError(f"can't reach {host}: {err.strerror or 'timed out'}") from err
+        raise CheckFailed(f"can't reach {host}: {err.strerror or 'timed out'}",
+                          "timeout" if isinstance(err, TimeoutError) else "offline", host) from err
     except ValueError as err:
-        raise RuntimeError(f"unreadable reply from {host}") from err
+        raise CheckFailed(f"unreadable reply from {host}", "server", host) from err
 
 
 def usable(token):
@@ -713,13 +729,15 @@ def poll(fetch):
     except SignedOut:
         return {"status": "signed_out"}
     except RateLimited as err:
-        return {"status": "rate_limited", "retryAfter": err.retry_after, "message": str(err)}
+        return {"status": "rate_limited", "retryAfter": err.retry_after, "message": str(err),
+                "reason": "rate-limited", "host": err.host}
     except RuntimeError as err:
-        return {"status": "error", "message": str(err) or "error"}
+        return {"status": "error", "message": str(err) or "error",
+                "reason": getattr(err, "reason", "other"), "host": getattr(err, "host", "")}
     except Exception as err:  # noqa: BLE001 - every failure becomes a status
         # Anything else could carry request details, a token among them, so
         # only its type is reported.
-        return {"status": "error", "message": f"unexpected {err.__class__.__name__}"}
+        return {"status": "error", "message": f"unexpected {err.__class__.__name__}", "reason": "other", "host": ""}
     report["status"] = "ok"
     return report
 
@@ -813,14 +831,22 @@ def hold(report, now):
     entry = {"status": report["status"], "heldUntil": now + length, "holdSeconds": length}
     if report["status"] == "error":
         entry["message"] = report["message"]
+    if report["status"] != "signed_out":
+        entry["reason"], entry["host"] = report["reason"], report["host"]
     return entry
 
 
-def replay(entry, wait):
-    """What a held entry reports with wait seconds of its hold left."""
+def replay(entry, wait, now):
+    """What a held entry reports at now with wait seconds of its hold left.
+    A hold cached before failures carried a reason has none to give."""
+    if entry["status"] == "signed_out":
+        return {"status": "signed_out"}
+    reason = entry.get("reason") if isinstance(entry.get("reason"), str) else "other"
+    host = entry.get("host") if isinstance(entry.get("host"), str) else ""
+    failure = {"reason": reason, "host": host, "retryAt": now + wait}
     if entry["status"] == "rate_limited":
-        return {"status": "rate_limited", "retryAfter": wait, "message": str(RateLimited(wait))}
-    return {key: entry[key] for key in ("status", "message") if key in entry}
+        return {"status": "rate_limited", "retryAfter": wait, "message": str(RateLimited(wait)), **failure}
+    return {"status": "error", "message": entry["message"], **failure}
 
 
 def collect(fetchers, now=None):
@@ -868,7 +894,7 @@ def collect_locked(fetchers, now):
             if entry["heldUntil"] - now > wait:
                 entry["heldUntil"] = now + wait
                 stepped = True
-            providers[name] = replay(entry, wait)
+            providers[name] = replay(entry, wait, now)
             continue
         report = poll(fetch)
         if report["status"] == "ok":
@@ -876,7 +902,7 @@ def collect_locked(fetchers, now):
             cache[name] = providers[name] = report
         else:
             cache[name] = hold(report, now)
-            providers[name] = replay(cache[name], cache[name]["holdSeconds"])
+            providers[name] = replay(cache[name], cache[name]["holdSeconds"], now)
         polled[name] = report
     history = read_history()
     if polled or stepped:
@@ -983,9 +1009,9 @@ def waiting(ids, message):
         if fresh(entry, now):
             providers[name] = entry
         elif wait:
-            providers[name] = replay(entry, wait)
+            providers[name] = replay(entry, wait, now)
         else:
-            providers[name] = {"status": "error", "message": message}
+            providers[name] = {"status": "error", "message": message, "reason": "other", "host": "", "retryAt": now}
     attach_history(providers, read_history(), now)
     return providers
 

@@ -57,6 +57,12 @@ QtObject {
 
     readonly property bool claudePresent: present("claude")
     readonly property bool codexPresent: present("codex")
+    property int refreshMinutes: 5
+    property bool checking: false
+    // The timer's last tick, a minute before creation.
+    property real lastRun: createdAt - 60
+    // Every checkNow() call.
+    property int checks: 0
 
     signal resetsDetected(var events)
 
@@ -92,6 +98,26 @@ QtObject {
     }
 
     function refresh() {
+    }
+
+    // As UsageData's.
+    function nextCheck(id) {
+        const e = entry(id);
+        const step = refreshMinutes * 60;
+        const hold = e && Number.isFinite(e.retryAt) ? e.retryAt : lastRun + step;
+        return lastRun + Math.max(1, Math.ceil((hold - lastRun - 10) / step)) * step;
+    }
+
+    function canRetry(id, nowMs) {
+        const e = entry(id);
+        const now = nowMs / 1000;
+        return e !== null && e.lastError !== undefined && e.reason !== "files" && !checking
+            && now >= e.retryAt && nextCheck(id) - now > 60;
+    }
+
+    function checkNow() {
+        ++checks;
+        checking = true;
     }
 
     function starter(id) {

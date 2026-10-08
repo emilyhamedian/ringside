@@ -489,12 +489,30 @@ class Http(Isolated):
             return usage.poll(lambda: usage.http_json("https://example.test/x", {}))
 
     def test_unreachable_host_is_named_without_errno(self):
-        for reason, words in ((socket.gaierror(-2, "Name or service not known"), "Name or service not known"),
-                              (ConnectionRefusedError(111, "Connection refused"), "Connection refused"),
-                              (TimeoutError("timed out"), "timed out")):
+        for reason, words, kind in ((socket.gaierror(-2, "Name or service not known"), "Name or service not known", "offline"),
+                                    (ConnectionRefusedError(111, "Connection refused"), "Connection refused", "offline"),
+                                    (TimeoutError("timed out"), "timed out", "timeout")):
             with self.subTest(words):
                 self.assertEqual(self.poll_raising(urllib.error.URLError(reason)),
-                                 {"status": "error", "message": f"can't reach example.test: {words}"})
+                                 {"status": "error", "message": f"can't reach example.test: {words}",
+                                  "reason": kind, "host": "example.test"})
+
+    # A reply that stalls part-way, or a connection dropped in the middle.
+    def test_a_failure_while_reading_names_its_host(self):
+        for error, words, kind in ((TimeoutError(), "timed out", "timeout"),
+                                   (ConnectionResetError(104, "Connection reset by peer"), "Connection reset by peer",
+                                    "offline")):
+            with self.subTest(kind):
+                self.assertEqual(self.poll_raising(error),
+                                 {"status": "error", "message": f"can't reach example.test: {words}",
+                                  "reason": kind, "host": "example.test"})
+
+    def test_an_unreadable_reply_is_the_servers(self):
+        with mock.patch.object(usage.urllib.request, "urlopen") as urlopen:
+            urlopen.return_value.__enter__.return_value.read.return_value = b"<html>"
+            self.assertEqual(usage.poll(lambda: usage.http_json("https://example.test/x", {})),
+                             {"status": "error", "message": "unreadable reply from example.test",
+                              "reason": "server", "host": "example.test"})
 
     def test_http_errors_are_not_mistaken_for_unreachable_hosts(self):
         busy, down = http_error(429, "120"), http_error(503)
@@ -502,8 +520,9 @@ class Http(Isolated):
         self.addCleanup(down.close)
         self.assertEqual(self.poll_raising(busy),
                          {"status": "rate_limited", "retryAfter": 120,
-                          "message": "rate limited, retrying in 120 s"})
-        self.assertEqual(self.poll_raising(down), {"status": "error", "message": "HTTP 503 from example.test"})
+                          "message": "rate limited, retrying in 120 s", "reason": "rate-limited", "host": "example.test"})
+        self.assertEqual(self.poll_raising(down), {"status": "error", "message": "HTTP 503 from example.test",
+                                                   "reason": "server", "host": "example.test"})
 
     def test_retry_after_may_be_an_http_date(self):
         busy = http_error(429, email.utils.formatdate(time.time() + 90, usegmt=True))
@@ -578,9 +597,10 @@ for line in sys.stdin:
         binary = self.server("#!/bin/sh\nsleep 30 &\nwait\n")
         start = time.monotonic()
         with mock.patch.object(usage, "CODEX_TIMEOUT", 0.5), \
-                self.assertRaisesRegex(RuntimeError, r"^no answer from codex app-server in 0\.5 s$"):
+                self.assertRaisesRegex(RuntimeError, r"^no answer from codex app-server in 0\.5 s$") as caught:
             usage.codex_rate_limits(binary)
         self.assertLess(time.monotonic() - start, 10)
+        self.assertEqual((caught.exception.reason, caught.exception.host), ("timeout", ""))
 
     # A process the server starts in a session of its own survives the kill
     # and keeps stdout open; the deadline still holds.
@@ -594,8 +614,9 @@ for line in sys.stdin:
 
     def test_early_close_is_not_a_timeout(self):
         binary = self.server("#!/bin/sh\nexec >&-\nsleep 30\n")
-        with self.assertRaisesRegex(RuntimeError, "^app-server closed without answering$"):
+        with self.assertRaisesRegex(RuntimeError, "^app-server closed without answering$") as caught:
             usage.codex_rate_limits(binary)
+        self.assertFalse(hasattr(caught.exception, "reason"))
 
 
 class Polling(Isolated):
@@ -603,7 +624,7 @@ class Polling(Isolated):
     # a request's details, a token among them.
     def test_unexpected_errors_report_only_their_type(self):
         self.assertEqual(usage.poll(mock.Mock(side_effect=ValueError("Invalid header value b'Bearer secret'"))),
-                         {"status": "error", "message": "unexpected ValueError"})
+                         {"status": "error", "message": "unexpected ValueError", "reason": "other", "host": ""})
 
     def test_statuses_come_from_exceptions(self):
         self.assertEqual(usage.poll(lambda: {"weekly": {}}), {"weekly": {}, "status": "ok"})
@@ -611,9 +632,11 @@ class Polling(Isolated):
                          {"status": "signed_out"})
         self.assertEqual(usage.poll(mock.Mock(side_effect=usage.RateLimited(90))),
                          {"status": "rate_limited", "retryAfter": 90,
-                          "message": "rate limited, retrying in 90 s"})
+                          "message": "rate limited, retrying in 90 s", "reason": "rate-limited", "host": ""})
         self.assertEqual(usage.poll(mock.Mock(side_effect=RuntimeError("boom"))),
-                         {"status": "error", "message": "boom"})
+                         {"status": "error", "message": "boom", "reason": "other", "host": ""})
+        self.assertEqual(usage.poll(mock.Mock(side_effect=usage.CheckFailed("HTTP 502 from a.test", "server", "a.test"))),
+                         {"status": "error", "message": "HTTP 502 from a.test", "reason": "server", "host": "a.test"})
 
     def test_codex_login_errors_read_as_signed_out(self):
         with mock.patch.object(usage, "CODEX_AUTH", Path(__file__)), \
@@ -650,10 +673,13 @@ class ReadingCache(Isolated):
 
     # A failure or a sign-out stands for five minutes like a reading, so a
     # second widget or a restart doesn't ask again before then.
+    # A replay gives the reason, the host and the end of the hold as the
+    # failure did.
     def test_errors_and_sign_outs_are_replayed_for_five_minutes(self):
         for name, failure, report in (
-                ("claude", RuntimeError("HTTP 500 from api.anthropic.com"),
-                 {"status": "error", "message": "HTTP 500 from api.anthropic.com"}),
+                ("claude", usage.CheckFailed("HTTP 500 from api.anthropic.com", "server", "api.anthropic.com"),
+                 {"status": "error", "message": "HTTP 500 from api.anthropic.com", "reason": "server",
+                  "host": "api.anthropic.com", "retryAt": 1300}),
                 ("codex", usage.SignedOut(), {"status": "signed_out"})):
             with self.subTest(report["status"]):
                 self.assertEqual(self.collect(1000, **{name: mock.Mock(side_effect=failure)})[name], report)
@@ -665,21 +691,24 @@ class ReadingCache(Isolated):
 
     # Two widgets, or a widget and a restart, a moment apart.
     def test_runs_in_quick_succession_after_a_failure_poll_once(self):
-        failed = {"status": "error", "message": "HTTP 500 from api.anthropic.com"}
+        failed = {"status": "error", "message": "HTTP 500 from api.anthropic.com", "reason": "other", "host": ""}
         with mock.patch.object(usage, "claude_usage", side_effect=RuntimeError(failed["message"])) as claude:
             reports = [self.run_main("--providers", "claude")["providers"] for _ in range(2)]
         claude.assert_called_once()
-        self.assertEqual(reports, [{"claude": dict(failed, starter=OFF)}] * 2)
+        retry = reports[0]["claude"]["retryAt"]
+        self.assertLessEqual(abs(retry - (time.time() + usage.CACHE_TTL)), 5)
+        self.assertEqual(reports, [{"claude": dict(failed, retryAt=retry, starter=OFF)}] * 2)
 
     # A refusal holds the provider back for every run until Retry-After has
     # passed, and only that provider.
     def test_a_rate_limit_holds_until_retry_after(self):
-        refused = mock.Mock(side_effect=usage.RateLimited(600))
+        refused = mock.Mock(side_effect=usage.RateLimited(600, "a.test"))
+        held = {"status": "rate_limited", "reason": "rate-limited", "host": "a.test", "retryAt": 1600}
         self.assertEqual(self.collect(1000, codex=refused)["codex"],
-                         {"status": "rate_limited", "retryAfter": 600, "message": "rate limited, retrying in 600 s"})
+                         dict(held, retryAfter=600, message="rate limited, retrying in 600 s"))
         again = mock.Mock(return_value=reading(3, 5))
         self.assertEqual(self.collect(1400, codex=again)["codex"],
-                         {"status": "rate_limited", "retryAfter": 200, "message": "rate limited, retrying in 200 s"})
+                         dict(held, retryAfter=200, message="rate limited, retrying in 200 s"))
         again.assert_not_called()
         other = mock.Mock(return_value=reading(7, 5))
         self.assertEqual(self.collect(1400, claude=other)["claude"]["status"], "ok")
@@ -688,9 +717,11 @@ class ReadingCache(Isolated):
 
     def test_a_short_rate_limit_still_holds_for_five_minutes(self):
         self.assertEqual(self.collect(1000, codex=mock.Mock(side_effect=usage.RateLimited(60)))["codex"],
-                         {"status": "rate_limited", "retryAfter": 300, "message": "rate limited, retrying in 300 s"})
+                         {"status": "rate_limited", "retryAfter": 300, "message": "rate limited, retrying in 300 s",
+                          "reason": "rate-limited", "host": "", "retryAt": 1300})
         again = mock.Mock(return_value=reading(3, 5))
         self.assertEqual(self.collect(1000 + 299, codex=again)["codex"]["retryAfter"], 1)
+        self.assertEqual(self.collect(1000 + 299, codex=again)["codex"]["retryAt"], 1300)
         again.assert_not_called()
         self.assertEqual(self.collect(1000 + 300, codex=again)["codex"]["status"], "ok")
 
@@ -700,8 +731,10 @@ class ReadingCache(Isolated):
         step = 1000 - 7200
         for failure, length, report in (
                 (usage.RateLimited(600), 600,
-                 {"status": "rate_limited", "retryAfter": 600, "message": "rate limited, retrying in 600 s"}),
-                (RuntimeError("down"), 300, {"status": "error", "message": "down"})):
+                 {"status": "rate_limited", "retryAfter": 600, "message": "rate limited, retrying in 600 s",
+                  "reason": "rate-limited", "host": "", "retryAt": step + 600}),
+                (RuntimeError("down"), 300,
+                 {"status": "error", "message": "down", "reason": "other", "host": "", "retryAt": step + 300})):
             with self.subTest(report["status"]):
                 usage.CACHE_FILE.unlink(missing_ok=True)
                 self.collect(1000, codex=mock.Mock(side_effect=failure))
@@ -756,7 +789,7 @@ class ReadingCache(Isolated):
         self.assertEqual(self.cached()["codex"]["weekly"]["percent"], 7)
         self.collect(2000, codex=mock.Mock(side_effect=RuntimeError("down")))
         self.assertEqual(self.cached(), {"claude": stale, "codex": {
-            "status": "error", "message": "down", "heldUntil": 2300, "holdSeconds": 300}})
+            "status": "error", "message": "down", "heldUntil": 2300, "holdSeconds": 300, "reason": "other", "host": ""}})
 
     def test_a_cached_entry_keeps_the_time_it_was_polled(self):
         polled_at = int(time.time()) - 100
@@ -777,7 +810,9 @@ class ReadingCache(Isolated):
         with mock.patch.object(usage, "LOCK_WAIT", 0.3), mock.patch.object(usage, "codex_usage", fetch):
             report = self.run_main("--providers", "codex")
         self.assertEqual(report["providers"], {"codex": {"status": "error", "starter": OFF,
-                                                         "message": "another usage check is still running"}})
+                                                         "message": "another usage check is still running",
+                                                         "reason": "other", "host": "",
+                                                         "retryAt": report["fetchedAt"]}})
         fetch.assert_not_called()
 
     # A run that can't get the lock still reports what the cache holds.
@@ -791,7 +826,8 @@ class ReadingCache(Isolated):
         self.assertEqual(report["providers"]["codex"]["weekly"]["percent"], 4)
         self.assertEqual(report["providers"]["codex"]["weekly"]["history"], [])
         self.assertEqual(report["providers"]["claude"],
-                         {"status": "error", "message": "another usage check is still running", "starter": OFF})
+                         {"status": "error", "message": "another usage check is still running", "starter": OFF,
+                          "reason": "other", "host": "", "retryAt": report["providers"]["claude"]["retryAt"]})
 
     # ...and a failure it still holds, as a run with the lock would.
     def test_a_busy_run_replays_a_held_failure(self):
@@ -803,7 +839,49 @@ class ReadingCache(Isolated):
             report = self.run_main("--providers", "claude,codex")
         self.assertEqual(report["providers"], {
             "claude": {"status": "signed_out", "starter": OFF},
-            "codex": {"status": "error", "message": "another usage check is still running", "starter": OFF}})
+            "codex": {"status": "error", "message": "another usage check is still running", "starter": OFF,
+                      "reason": "other", "host": "", "retryAt": report["providers"]["codex"]["retryAt"]}})
+
+    # A busy run replays a held failure as a run with the lock would, its
+    # hold's end included, and says of the rest that they may be asked
+    # again at once.
+    def test_a_busy_run_replays_the_end_of_a_hold(self):
+        now = int(time.time())
+        usage.collect({"claude": mock.Mock(side_effect=usage.RateLimited(900, "api.anthropic.com"))}, now)
+        fd = os.open(usage.LOCK_FILE, os.O_RDWR | os.O_CREAT, 0o600)
+        self.addCleanup(os.close, fd)
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        with mock.patch.object(usage, "LOCK_WAIT", 0.3):
+            report = self.run_main("--providers", "claude,codex")
+        claude, codex = report["providers"]["claude"], report["providers"]["codex"]
+        self.assertEqual((claude["reason"], claude["host"], claude["retryAt"]), ("rate-limited", "api.anthropic.com", now + 900))
+        self.assertGreaterEqual(codex["retryAt"], now)
+        self.assertLessEqual(codex["retryAt"], report["fetchedAt"])
+
+    # A hold cached by 0.2 has no reason or host; it is replayed as it was,
+    # with none to give, rather than polled again.
+    def test_a_hold_without_a_reason_replays_as_other(self):
+        for entry, report in (
+                ({"status": "error", "message": "down", "heldUntil": 1300, "holdSeconds": 300},
+                 {"status": "error", "message": "down", "reason": "other", "host": "", "retryAt": 1300}),
+                ({"status": "rate_limited", "heldUntil": 1600, "holdSeconds": 600, "reason": 5, "host": None},
+                 {"status": "rate_limited", "retryAfter": 400, "message": "rate limited, retrying in 400 s",
+                  "reason": "other", "host": "", "retryAt": 1600})):
+            with self.subTest(entry["status"]):
+                self.write_cache({"codex": entry})
+                fetch = mock.Mock()
+                self.assertEqual(self.collect(1200, codex=fetch)["codex"], report)
+                fetch.assert_not_called()
+
+    # The reason and host reach the cache with the hold, so every run that
+    # replays it says the same.
+    def test_the_reason_and_host_are_cached_with_the_hold(self):
+        self.collect(1000, claude=mock.Mock(side_effect=usage.CheckFailed("can't reach a.test: x", "offline", "a.test")))
+        self.assertEqual(self.cached()["claude"], {"status": "error", "message": "can't reach a.test: x",
+                                                   "heldUntil": 1300, "holdSeconds": 300,
+                                                   "reason": "offline", "host": "a.test"})
+        self.collect(1000, codex=mock.Mock(side_effect=usage.SignedOut()))
+        self.assertEqual(self.cached()["codex"], {"status": "signed_out", "heldUntil": 1300, "holdSeconds": 300})
 
     def test_malformed_cache_entries_read_as_missing(self):
         window = {"percent": 1, "resetsAt": 5, "windowSeconds": WEEK}
