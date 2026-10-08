@@ -37,7 +37,8 @@ Item {
     Component {
         id: configComponent
         QtObject {
-            property bool publicAddress: true
+            // var, so a test can hand over what a missing or mistyped setting would.
+            property var publicAddress: true
             property string publicAddressUrl4: ""
             property string publicAddressUrl6: ""
         }
@@ -103,7 +104,7 @@ Item {
             property string codexInnerLimit: ""
             property string knownLimits: ""
             property string usageStatus: ""
-            property bool publicAddress: true
+            property var publicAddress: true
             property string publicAddressUrl4: "https://monitor.example/ip"
             property string publicAddressUrl6: "https://monitor6.example/ip"
         }
@@ -451,6 +452,8 @@ Item {
         function test_nothingSent_data() {
             return [
                 { tag: "off", config: { publicAddress: false }, status: "off" },
+                { tag: "no setting", config: { publicAddress: undefined }, status: "off" },
+                { tag: "setting not a Bool", config: { publicAddress: "on" }, status: "off" },
                 { tag: "popup closed", props: { open: false }, status: "checking" },
                 { tag: "routes not read yet", props: { egress: null }, status: "checking" },
                 { tag: "no route", props: { egress: route("", "") }, status: "offline" },
@@ -751,9 +754,11 @@ Item {
         // Switching off mid-check stops it: nothing more is sent or kept.
         function test_switchingOffAbandons() {
             const set = checker({}, own("abandon"));
+            const key = Lookup.service(set.config.publicAddressUrl4, set.config.publicAddressUrl6).key;
             set.config.publicAddress = false;
             compare(set.made.map(r => r.aborted), [true, true]);
             compare(set.checker.status, "off");
+            compare(Lookup.peek(key).asking, null, "the check it began under is forgotten");
             set.config.publicAddress = true;
             compare(set.made.length, 2, "within the minute, nothing new");
             compare(set.checker.status, "checking");
@@ -1144,10 +1149,14 @@ Item {
             monitor.openPopup = "";
         }
 
-        // Off, as shipped, nothing is read or asked even with the popup open;
-        // switching it on in the settings starts both.
-        function test_monitorSwitchedOn() {
-            const { config, monitor, fake, egress } = realMonitor("monitor-switchon", "0.3.0", false);
+        // Off, as shipped, nothing is read or asked even with the popup open,
+        // nor with the setting missing or not a Bool; switching it on in the
+        // settings starts both.
+        function test_monitorSwitchedOn_data() {
+            return [{ tag: "off", off: false }, { tag: "no setting", off: undefined }, { tag: "not a Bool", off: "on" }];
+        }
+        function test_monitorSwitchedOn(data) {
+            const { config, monitor, fake, egress } = realMonitor("monitor-switchon-" + data.tag.replace(/ /g, ""), "0.3.0", data.off);
             monitor.openPopup = "network";
             wait(100);
             compare(egress().length, 0, "no route facts read");

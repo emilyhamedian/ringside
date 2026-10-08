@@ -615,6 +615,9 @@ Item {
         function test_applySavesTheChange_data() {
             return orders([
                 { tag: "General", source: "config/ConfigGeneral.qml", key: "updateInterval", value: 2000 },
+                { tag: "GeneralPublicAddress", source: "config/ConfigGeneral.qml", key: "publicAddress", value: true },
+                { tag: "GeneralPublicAddressUrl4", source: "config/ConfigGeneral.qml", key: "publicAddressUrl4",
+                  value: "https://ip.example.org/" },
                 { tag: "Items", source: "config/ConfigItems.qml", key: "ringsOnly", value: ["cpu"] },
                 { tag: "Sensors", source: "config/ConfigSensors.qml", key: "diskDevice", value: "sda" },
                 { tag: "Providers", source: "config/ConfigProviders.qml", key: "usageRefreshMinutes", value: 10 }
