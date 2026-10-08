@@ -583,7 +583,50 @@ Item {
             compare(set.made.length, 2, "no polling");
             set.checker.egress = route("wg0", "enp5s0", true, false);
             compare(set.made.length, 4);
+            compare(set.checker.record.route, "enp5s0 enp5s0", "the result's own route until the answer");
+            answer(set.made, "v4", 200, "198.51.100.24");
+            answer(set.made, "v6", 200, "2001:db8::1c");
             compare(set.checker.record.route, "wg0 enp5s0");
+        }
+
+        // A check a minute on keeps the addresses already found on screen,
+        // with the route they came through, until its answer replaces them.
+        function test_recheckKeepsTheAddresses() {
+            const set = shownIn({ egress: route("wg0-mullvad", "wg0-mullvad", true, true) }, own("recheck"));
+            answer(set.made, "v4", 200, "198.51.100.24");
+            answer(set.made, "v6", 200, "2001:db8::1c");
+            const page = popup(set.monitor);
+            const before = addressLines(page).map(l => l.spoken);
+            const height = block(page).implicitHeight;
+
+            root.now += 61000;
+            set.checker.open = false;
+            set.checker.egress = route("enp195s0f3u1", "enp195s0f3u1");
+            set.checker.open = true;
+            compare(set.made.length, 4, "asked again");
+            compare(set.checker.status, "shown");
+            waitForRendering(page);
+            compare(addressLines(page).map(l => l.spoken), before);
+            verify(before[1].indexOf("through VPN wg0-mullvad") >= 0, before);
+            compare(visibleTexts(page).filter(t => t.indexOf("Asking") === 0), []);
+            compare(block(page).implicitHeight, height, "the popup keeps its size");
+
+            answer(set.made, "v4", 200, "203.0.113.7");
+            answer(set.made, "v6", 200, "2001:db8::1c");
+            compare(addressLines(page).map(l => l.spoken).slice(1),
+                    ["Public address 203.0.113.7", "Public address 2001:db8::1c"]);
+        }
+
+        // A failure isn't left on screen while the service is asked again.
+        function test_recheckAfterFailureAsks() {
+            const set = checker({}, own("recheckfail", false));
+            answer(set.made, "v4", 503, "");
+            compare(set.checker.status, "failed");
+            root.now += 61000;
+            set.checker.open = false;
+            set.checker.open = true;
+            compare(set.made.length, 2);
+            compare(set.checker.status, "checking");
         }
 
         // A clock set back reads as a long time since, not as a check to come.
@@ -763,6 +806,30 @@ Item {
             }
         }
 
+        // The question names the service it would ask; an invalid one, which
+        // would ask nothing, goes unnamed.
+        function test_promptNamesTheService_data() {
+            return [
+                { tag: "invalid", config: { publicAddressUrl4: "http://typo.example/ip" }, name: "the address service" },
+                { tag: "invalid beside a valid one",
+                  config: { publicAddressUrl4: "http://typo.example/ip", publicAddressUrl6: "https://ok.example/ip" },
+                  name: "the address service" },
+                { tag: "custom", config: { publicAddressUrl4: "https://ip.example/v4" }, name: "ip.example" },
+                { tag: "two hosts", config: { publicAddressUrl4: "https://a.example/", publicAddressUrl6: "https://b.example/" },
+                  name: "a.example and b.example" }
+            ];
+        }
+        function test_promptNamesTheService(data) {
+            const set = shownIn({}, Object.assign({ publicAddress: "" }, data.config));
+            const page = popup(set.monitor);
+            const shown = visibleTexts(page).join("\n");
+            verify(shown.indexOf("Show the address websites see? Ringside would ask " + data.name
+                                 + " when this popup opens or the connection changes, at most once a minute, so "
+                                 + data.name + " sees your address.") >= 0, shown);
+            verify(shown.indexOf("ipify") < 0, shown);
+            compare(set.made.length, 0);
+        }
+
         function test_shownLinesAndLeak() {
             const set = shownIn({ egress: route("wg0-mullvad", "enp5s0", true, false) }, own("lines"));
             answer(set.made, "v4", 200, "198.51.100.24");
@@ -809,7 +876,8 @@ Item {
             root.now += 61000;
             set.checker.open = false;
             set.checker.open = true;
-            compare(visibleTexts(page).filter(t => t.indexOf("Asking") === 0), ["Asking popupnotes.example…"]);
+            compare(set.made.length, 3, "asked again");
+            compare(addressLines(page).map(l => l.spoken)[1], "Public address 198.51.100.24 through VPN wg0");
             answer(set.made, "v4", 503, "");
             const seen = words.timeOfDay((root.now - 61000) / 1000, root.now);
             const shown = visibleTexts(page);
@@ -910,6 +978,28 @@ Item {
         }
 
         // ---- The settings ----
+
+        // A fresh install sends nothing: the switch starts unanswered and
+        // the service at ipify.org, as main.xml ships them, and a checker
+        // built from those asks the question and nothing else.
+        function test_shippedDefaults() {
+            const request = new XMLHttpRequest();
+            request.open("GET", Qt.resolvedUrl("../../package/contents/config/main.xml"), false);
+            request.send();
+            const xml = request.responseText;
+            verify(xml !== "", "main.xml read; set QML_XHR_ALLOW_FILE_READ=1");
+            const defaults = {};
+            for (const key of ["publicAddress", "publicAddressUrl4", "publicAddressUrl6"]) {
+                const entry = new RegExp('<entry name="' + key + '" type="String">([\\s\\S]*?)</entry>').exec(xml);
+                verify(entry, key + " in main.xml");
+                defaults[key] = (/<default>([^<]*)<\/default>/.exec(entry[1]) || ["", ""])[1];
+                compare(defaults[key], "", key + " ships empty");
+            }
+            const set = checker({}, defaults);
+            compare(set.checker.status, "prompt");
+            compare(set.checker.serviceName, "ipify.org");
+            compare(set.made.length, 0);
+        }
 
         function general(props) {
             const page = createTemporaryObject(generalComponent, root, props);

@@ -41,10 +41,13 @@ Item {
     readonly property string setting: facts.setting
     readonly property var service: facts.service
     readonly property string serviceKey: facts.key
-    // The service as the popup names it: its host, or both hosts.
-    readonly property string serviceName: service.hosts.length === 2
+    // The service as the popup names it: its host, or both hosts. An invalid
+    // service asks nothing, so it goes unnamed, as on the General page.
+    readonly property string serviceName: !service.valid
+        ? i18nc("@info a public address service whose URL isn't valid", "the address service")
+        : service.hosts.length === 2
         ? i18nc("@info two services' host names", "%1 and %2", service.hosts[0], service.hosts[1])
-        : service.hosts[0] ?? ""
+        : service.hosts[0]
     readonly property bool connected: facts.connected
     readonly property string route: facts.route
     readonly property bool eligible: facts.eligible
@@ -57,16 +60,19 @@ Item {
     }
 
     // prompt, off, invalid, offline, unrouted (connected, but not for the
-    // one family the service asks), checking, shown or failed. A result
-    // from before a route change stays shown, with the route it was asked
-    // under, until the next check replaces it.
+    // one family the service asks), checking, shown or failed. The last
+    // addresses found stay shown, with the route they were asked under,
+    // while the next check is under way and until it replaces them; a
+    // failure gives way to "checking" while the service is asked again.
+    readonly property bool addressKnown: record !== null && record.result !== null
+        && (record.result.v4 !== "" || record.result.v6 !== "")
     readonly property string status: setting === "" ? "prompt"
         : setting !== "on" ? "off"
         : !service.valid ? "invalid"
         : egress !== null && !connected ? "offline"
         : egress !== null && facts.families.length === 0 ? "unrouted"
+        : addressKnown ? "shown"
         : record === null || record.busy || record.result === null ? "checking"
-        : record.result.v4 !== "" || record.result.v6 !== "" ? "shown"
         : "failed"
 
     // Set when a check is due on its own account (the popup opened, the
