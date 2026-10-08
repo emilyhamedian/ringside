@@ -410,13 +410,27 @@ ColumnLayout {
         }
 
         Frame {
-            label: "Claude · last check failed"
+            label: "Claude · checks failing for an hour, try again"
             UsagePopup { monitor: failed; item: "claude" }
         }
 
         Frame {
             label: "Codex · signed out"
             UsagePopup { monitor: signedOut; item: "codex" }
+        }
+    }
+
+    RowLayout {
+        spacing: 2 * Kirigami.Units.gridUnit
+
+        Frame {
+            label: "Claude · first failed check, rate limited, the reading in grey"
+            UsagePopup { monitor: justFailed; item: "claude" }
+        }
+
+        Frame {
+            label: "Claude · the helper failed through the week's reset"
+            UsagePopup { monitor: failedPastReset; item: "claude" }
         }
     }
 

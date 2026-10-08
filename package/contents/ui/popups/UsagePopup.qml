@@ -14,7 +14,8 @@ import ".."
 // the time left until it resets, a bar for it and for each model's own limit
 // with a sentence under one of them on where the current pace leads, and
 // the week so far as a graph. With one limit the header's ring is its bar.
-// A failed check or a signed-out CLI is said in a line under the header.
+// A failed check is said under the header, with the last reading kept in
+// grey while its week lasts; a signed-out CLI in a line there.
 // The footer holds the session starter's switch.
 PopupPage {
     id: popup
@@ -26,8 +27,16 @@ PopupPage {
     readonly property var weekly: entry && entry.weekly ? entry.weekly : null
     readonly property var innerLimit: usage.inner(item)
     readonly property bool claude: item === "claude"
+    // The last check failed. Its reading stays, greyed, while its week
+    // lasts; one from a week that has since reset has nothing left to say.
+    readonly property bool failed: entry !== null && entry.lastError !== undefined
+    readonly property bool weekOver: weekly !== null && weekly.resetsAt <= nowMs / 1000
+    readonly property bool greyShown: failed && weekly !== null && !weekOver
+    // A reading over two hours old says nothing certain about where the
+    // week is heading, so its run-out goes.
+    readonly property bool paceKept: !failed || nowMs / 1000 - entry.fetchedAt <= 7200
     // All models first, then every model's own limit, whichever the ring shows.
-    readonly property var limits: weekly
+    readonly property var limits: weekly && !(failed && weekOver)
         ? [Object.assign({}, weekly, { id: "", label: i18nc("@label the weekly limit shared by every model", "All models") })]
             .concat(Array.from(entry.scoped ?? []))
         : []
@@ -49,7 +58,7 @@ PopupPage {
         const out = events.filter(e => e.p.state === "out").reduce((a, b) => !a || b.p.runOut < a.p.runOut ? b : a, null);
         return out ?? events.find(e => e.p.state === "reached") ?? (events[0].p.state !== "none" ? events[0] : null);
     }
-    readonly property string paceText: paceEvent ? paceSentence(limits[paceEvent.index], paceEvent.p) : ""
+    readonly property string paceText: paceEvent && paceKept ? paceSentence(limits[paceEvent.index], paceEvent.p) : ""
     // Stepped by the timer below, for the countdowns and the paces.
     property real nowMs: Date.now()
 
@@ -106,7 +115,8 @@ PopupPage {
     }
 
     function tone(level) {
-        return level === 2 ? Kirigami.Theme.negativeTextColor
+        return greyShown ? Style.dim(Kirigami.Theme.textColor)
+             : level === 2 ? Kirigami.Theme.negativeTextColor
              : level === 1 ? Kirigami.Theme.neutralTextColor : Kirigami.Theme.textColor;
     }
 
@@ -132,12 +142,17 @@ PopupPage {
 
     PopupHeader {
         id: header
-        ringValue: popup.weekly ? popup.weekly.percent : NaN
+        ringValue: popup.weekly && !(popup.failed && popup.weekOver) ? popup.weekly.percent : NaN
+        ringCancelled: popup.failed && !popup.greyShown
+        ringStale: popup.greyShown
         title: popup.claude ? i18nc("@title", "Claude") : i18nc("@title", "Codex")
+        // As many as the reading had, whether or not they are shown.
         subtitle: i18ncp("@info under Claude or Codex: what the popup shows", "Weekly limit", "Weekly limits",
-                         popup.limits.length)
+                         Math.max(1, popup.limits.length, popup.entry && popup.entry.scoped ? popup.entry.scoped.length + 1 : 0))
         parts: popup.weekly ? words.countdownParts(popup.weekly.resetsAt, popup.nowMs) : []
-        value: popup.weekly && !header.partsShown ? "–" : ""
+        // With no reading in this week, a failed check says so under the
+        // header, and a lone dash here would only look unfinished.
+        value: popup.weekly && !header.partsShown && !popup.failed ? "–" : ""
         // The ring and bars carry the level; at the limit the countdown is
         // how long the lock-out lasts, and only then does it turn red. Once
         // the reset has passed there is none, and the dash stays plain.
@@ -149,7 +164,7 @@ PopupPage {
             : ""
     }
 
-    // The last check's failure, or why there is nothing to show.
+    // Why there is nothing to show.
     Text {
         Layout.fillWidth: true
         Layout.leftMargin: Math.round(Kirigami.Units.largeSpacing * 2)
@@ -158,10 +173,6 @@ PopupPage {
         visible: text !== ""
         text: {
             const e = popup.entry;
-            if (e && e.lastError !== undefined) {
-                return i18nc("@info %1 is a time, %2 the error as the helper reported it", "Last check failed at %1: %2",
-                             words.timeOfDay(e.lastErrorAt, popup.nowMs), e.lastError);
-            }
             if (!e || e.status === "signed_out") {
                 return popup.usage.helperError
                     || (popup.claude ? i18nc("@info", "Run claude in a terminal to sign in.")
@@ -173,6 +184,19 @@ PopupPage {
         wrapMode: Text.Wrap
         textFormat: Text.PlainText
         horizontalAlignment: Text.AlignLeft
+    }
+
+    CheckStatus {
+        visible: popup.failed
+        Layout.fillWidth: true
+        Layout.leftMargin: Math.round(Kirigami.Units.largeSpacing * 2)
+        Layout.rightMargin: Layout.leftMargin
+        Layout.bottomMargin: Math.round(Kirigami.Units.largeSpacing * 1.25)
+        item: popup.item
+        usage: popup.usage
+        entry: popup.entry
+        texts: words
+        nowMs: popup.nowMs
     }
 
     // A bar per limit when there are several, with the pace sentence under
@@ -269,7 +293,8 @@ PopupPage {
                             width: parent.width * bar.shown / 100
                             height: parent.height
                             radius: parent.radius
-                            color: popup.tone(row.level)
+                            // A kept reading greys as the header's ring does.
+                            color: popup.greyShown ? Qt.alpha(Kirigami.Theme.textColor, 0.42) : popup.tone(row.level)
                         }
                     }
                 }
@@ -282,7 +307,7 @@ PopupPage {
                     Layout.fillWidth: true
                     visible: text !== ""
                     text: popup.paceEvent !== null && popup.paceEvent.index === row.index ? popup.paceText : ""
-                    color: Kirigami.Theme.textColor
+                    color: popup.greyShown ? Style.dim(Kirigami.Theme.textColor) : Kirigami.Theme.textColor
                     font.pointSize: Kirigami.Theme.smallFont.pointSize
                     wrapMode: Text.Wrap
                     textFormat: Text.PlainText
@@ -292,6 +317,7 @@ PopupPage {
         }
     }
 
+    // A week that reset with no reading since stays, as last week's.
     GridLayout {
         visible: popup.weekly !== null
         Layout.fillWidth: true
@@ -304,14 +330,19 @@ PopupPage {
         columns: 1
 
         Tile {
-            caption: i18nc("@title:group the current weekly window", "This week")
+            caption: popup.weekOver && popup.failed
+                ? i18nc("@title:group the weekly window that has ended, with no reading since", "Last week")
+                : i18nc("@title:group the current weekly window", "This week")
             // The rule's, so only while the graph draws one.
             graphTop: week.placed ? i18nc("@info a percentage", "%1%", Format.percent(100)) : ""
             foot: popup.innerLimit !== null ? allModels : week.foot
             detail: {
                 const date = words.resetDate(popup.weekly);
-                return date ? i18nc("@title:group after THIS WEEK: when the week starts over, e.g. · resets Sun 7:00 AM EDT",
-                                    "· resets %1", date) : "";
+                return !date ? ""
+                     : popup.weekOver && popup.failed
+                     ? i18nc("@title:group after LAST WEEK: when that week ended, e.g. · reset Sun 7:00 AM EDT", "· reset %1", date)
+                     : i18nc("@title:group after THIS WEEK: when the week starts over, e.g. · resets Sun 7:00 AM EDT",
+                             "· resets %1", date);
             }
 
             WeekGraph {
@@ -321,15 +352,17 @@ PopupPage {
                 secondWindow: popup.innerLimit
                 nowMs: popup.nowMs
                 pollAt: popup.pollAt
+                failed: popup.failed && !popup.weekOver
+                grey: popup.greyShown
                 // The run-out the pace sentence names, if the graph draws that
                 // limit: the week, or the model on the inner ring.
                 projected: {
-                    const e = popup.paceEvent;
+                    const e = popup.paceKept ? popup.paceEvent : null;
                     return !e ? "" : e.index === 0 ? "main"
                          : popup.innerLimit !== null && popup.limits[e.index].id === popup.innerLimit.id ? "second" : "";
                 }
                 runOutText: {
-                    const e = popup.paceEvent;
+                    const e = popup.paceKept ? popup.paceEvent : null;
                     return e && e.p.state === "out" ? popup.runOutWhen(popup.limits[e.index], e.p) : "";
                 }
             }
