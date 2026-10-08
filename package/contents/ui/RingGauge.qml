@@ -3,6 +3,7 @@
 
 pragma ComponentBehavior: Bound
 import QtQuick
+import QtQuick.Shapes
 import org.kde.kirigami as Kirigami
 import "code/format.js" as Format
 
@@ -13,7 +14,8 @@ import "code/format.js" as Format
 // amber as it passes 75 % and red as it passes 90 % of its own reading. An
 // inner ring that comes fades its track in, then draws its arc in; one that
 // goes unwinds its arc, then fades its track out. Children sit in the
-// middle, over the rings.
+// middle, over the rings. A ring can also show a reading that may be out of
+// date, in grey, or none at all, struck through.
 // Assistive technology sees a progress bar from 0 to 100 with the outer
 // reading as its value; the caller gives it a name.
 Item {
@@ -37,6 +39,29 @@ Item {
     property real textScale: 0.33
     // Breathes, as a Claude or Codex ring does close to its limit.
     property bool pulsing: false
+    // No reading to show, as for a Claude or Codex ring whose checks have
+    // failed for a while: the arcs unwind to the bare track, the inner
+    // track goes, anything in the middle greys out, and as the arcs reach
+    // the end of their way down a stroke draws across the ring from its
+    // bottom left to its top right, as on a cancelled sign. Recovery runs
+    // it backwards.
+    property bool cancelled: false
+    // The stroke, 0 to 1 as drawn from the bottom left.
+    property real struck: 0
+    // The readings go as the stroke comes and return as it goes, so a
+    // readout beside the ring that follows `dashed` changes with it.
+    readonly property bool dashed: struck > 0.25
+    readonly property bool held: cancelled || dashed
+    readonly property real outerValue: held ? NaN : value
+    readonly property bool innerOn: inner && !held
+    // The reading kept, drawn in grey with no alert colours and the middle
+    // greyed, as one that may be out of date.
+    property bool stale: false
+    property real greyed: stale ? 1 : 0
+    Behavior on greyed {
+        enabled: gauge.settle > 0
+        NumberAnimation { duration: Kirigami.Units.longDuration; easing.type: Easing.InOutCubic }
+    }
     // How often the readings come, where that is often enough for the
     // rings to settle within half of it and be still before the next one;
     // 0 for readings minutes apart.
@@ -55,7 +80,7 @@ Item {
     // other one.
     property bool shifting: false
     readonly property real arcSettle: shifting ? Math.min(Kirigami.Units.longDuration, settle) : settle
-    readonly property bool hasValue: Number.isFinite(value)
+    readonly property bool hasValue: Number.isFinite(outerValue)
     readonly property bool still: !outerFollower.moving && !innerFollower.moving && innerShown === (innerHeld ? 1 : 0)
 
     // Checked once the bindings have caught up with the change: the track's
@@ -71,14 +96,14 @@ Item {
         Qt.callLater(endShift);
     }
 
-    onInnerChanged: shift()
+    onInnerOnChanged: shift()
     onHasValueChanged: shift()
     onStillChanged: {
         if (shifting) {
             Qt.callLater(endShift);
         }
     }
-    default property alias centre: face.data
+    default property alias centre: middle.data
 
     // The inner ring is held while it comes or until its arc has unwound out
     // of sight, and its track is shown, 0 to 1, fading in or out as it is
@@ -86,9 +111,44 @@ Item {
     // watched only when the arcs move: at Plasma's Instant speed it follows
     // the reading at once, and these would then depend on each other in a
     // circle.
-    readonly property bool innerHeld: inner || settle > 0 && innerArc.drawn
+    readonly property bool innerHeld: innerOn || settle > 0 && innerArc.drawn
     property real innerShown: innerHeld ? 1 : 0
-    readonly property bool innerDrawn: inner && innerShown === 1
+    readonly property bool innerDrawn: innerOn && innerShown === 1
+
+    // The stroke draws on as the arcs reach the end of their way down
+    // (half-way through their motion they have a sixth of it left), and
+    // comes off a little faster on recovery, the readings returning as it
+    // goes. Set here rather than bound, since the arcs wait on the stroke.
+    function restrike() {
+        const to = cancelled ? 1 : 0;
+        if (!(settle > 0)) {
+            strikeMotion.stop();
+            struck = to;
+            return;
+        }
+        if (strikeMotion.running ? strikeRun.to === to : struck === to) {
+            return;
+        }
+        strikePause.duration = cancelled && (outerFollower.moving || innerFollower.moving)
+            ? Kirigami.Units.longDuration / 2 : 0;
+        strikeRun.to = to;
+        strikeRun.duration = cancelled ? Kirigami.Units.longDuration : Kirigami.Units.longDuration * 3 / 4;
+        strikeRun.easing.type = cancelled ? Easing.OutCubic : Easing.InCubic;
+        strikeMotion.restart();
+    }
+
+    // After the followers have taken the change, so the arcs count as moving.
+    onCancelledChanged: Qt.callLater(restrike)
+    onSettleChanged: restrike()
+    // A ring that starts cancelled, as a popup opening on a failed check,
+    // starts struck.
+    Component.onCompleted: struck = cancelled ? 1 : 0
+
+    SequentialAnimation {
+        id: strikeMotion
+        PauseAnimation { id: strikePause; duration: 0 }
+        NumberAnimation { id: strikeRun; target: gauge; property: "struck"; duration: Kirigami.Units.longDuration }
+    }
 
     Behavior on innerShown {
         enabled: gauge.settle > 0
@@ -99,11 +159,12 @@ Item {
     readonly property real reach: outer.radius + strokeWidth / 2
     // The clear width in the middle, a pixel in from the innermost ring, for
     // a name or mark there: inside the inner ring while it is held, so a
-    // name makes room as it comes and takes it back as the track goes.
-    readonly property real centreWidth: Math.max(0, 2 * ((innerHeld ? innerRadius - innerStrokeWidth / 2
+    // name makes room as it comes and takes it back as the track goes. A
+    // struck ring keeps the room, so its mark stays the size it was.
+    readonly property real centreWidth: Math.max(0, 2 * ((inner || innerHeld ? innerRadius - innerStrokeWidth / 2
                                                                     : outer.radius - strokeWidth / 2) - 1))
     // The readings' colours, for the readings beside the ring.
-    readonly property color outerTone: tone(Math.max(Format.level(value), minimumLevel))
+    readonly property color outerTone: tone(Math.max(Format.level(outerValue), minimumLevel))
     readonly property color innerTone: tone(Format.level(innerValue))
     // The outer reading as drawn, for a number in the middle that counts
     // with the arc.
@@ -113,7 +174,7 @@ Item {
     // for the whole percent a reading prints, so its fraction is added back:
     // at rest this is the reading's own level, and a ring at 74.6 % stays
     // below amber as the reading beside it does.
-    readonly property int drawnLevel: Math.max(Format.level(drawn(outerFollower, value)), minimumLevel)
+    readonly property int drawnLevel: Math.max(Format.level(drawn(outerFollower, outerValue)), minimumLevel)
     readonly property int drawnInnerLevel: Format.level(drawn(innerFollower, innerValue))
 
     function drawn(follower, reading) {
@@ -122,9 +183,10 @@ Item {
     }
 
     function tone(level) {
-        return level === 2 ? Kirigami.Theme.negativeTextColor
-             : level === 1 ? Kirigami.Theme.neutralTextColor
-             : color;
+        const live = level === 2 ? Kirigami.Theme.negativeTextColor
+                   : level === 1 ? Kirigami.Theme.neutralTextColor
+                   : color;
+        return greyed > 0 ? outer.mix(live, Qt.alpha(color, 0.42 * color.a), greyed) : live;
     }
 
     function innerColor(level) {
@@ -147,7 +209,7 @@ Item {
             outer.playReset(clamped(outerReset.from), tone(Math.max(Format.level(outerReset.from), minimumLevel)),
                             outerReset.early);
         }
-        if (innerReset && inner) {
+        if (innerReset && innerOn) {
             innerArc.playReset(clamped(innerReset.from), innerColor(Format.level(innerReset.from)),
                                innerReset.early);
         }
@@ -160,7 +222,7 @@ Item {
     // its reading comes to rest there.
     Follower {
         id: outerFollower
-        target: Math.round(gauge.clamped(gauge.value))
+        target: Math.round(gauge.clamped(gauge.outerValue))
         settle: gauge.visible ? gauge.arcSettle : 0
         precision: gauge.along(0.25, outer.radius)
         enabled: !outer.animating
@@ -197,15 +259,15 @@ Item {
     implicitHeight: implicitWidth
 
     Accessible.role: Accessible.ProgressBar
-    Accessible.description: Number.isFinite(value) ? i18nc("@info:status a percentage", "%1%", Math.round(value))
-                                                   : i18nc("@info:status no reading", "unavailable")
+    Accessible.description: hasValue ? i18nc("@info:status a percentage", "%1%", Math.round(value))
+                                     : i18nc("@info:status no reading", "unavailable")
 
     Item {
         id: face
         anchors.fill: parent
 
         SequentialAnimation on opacity {
-            running: gauge.pulsing
+            running: gauge.pulsing && !gauge.cancelled && !gauge.stale
             loops: Animation.Infinite
             alwaysRunToEnd: true
             NumberAnimation { to: 0.5; duration: 1000; easing.type: Easing.InOutSine }
@@ -239,6 +301,43 @@ Item {
             shortest: gauge.innerDrawn && Number.isFinite(gauge.innerValue) ? 0 : gauge.along(gauge.innerStrokeWidth, radius)
             color: gauge.innerColor(gauge.drawnInnerLevel)
             trackColor: Qt.alpha(gauge.color, 0.22 * 0.55 * gauge.color.a)
+        }
+
+        // The name or mark, greyed out further while the ring is struck.
+        Item {
+            id: middle
+            anchors.fill: parent
+            opacity: 1 - 0.6 * Math.max(gauge.struck, gauge.greyed)
+        }
+
+        // The cancelling stroke, from the bottom left of the track to its
+        // top right, in the track's own colour. Its round caps end on the
+        // track's inner edge, so it meets the ring and stays inside it
+        // without the two translucent strokes overlapping.
+        Shape {
+            id: strike
+            anchors.fill: parent
+            visible: gauge.struck > 0
+            // Its round caps would start it as a dot, so it starts as a
+            // short stroke fading in.
+            opacity: Math.min(1, gauge.struck * 4)
+            preferredRendererType: Shape.CurveRenderer
+            readonly property real lineWidth: gauge.strokeWidth * 0.8
+            readonly property real half: (outer.radius - gauge.strokeWidth / 2 - lineWidth / 2) / Math.SQRT2
+            readonly property real drawn: 0.15 + 0.85 * gauge.struck
+
+            ShapePath {
+                fillColor: "transparent"
+                strokeColor: outer.trackColor
+                strokeWidth: strike.lineWidth
+                capStyle: ShapePath.RoundCap
+                startX: strike.width / 2 - strike.half
+                startY: strike.height / 2 + strike.half
+                PathLine {
+                    x: strike.width / 2 - strike.half + 2 * strike.half * strike.drawn
+                    y: strike.height / 2 + strike.half - 2 * strike.half * strike.drawn
+                }
+            }
         }
 
         // Set by its figures' height and its advance, not anchors.centerIn:

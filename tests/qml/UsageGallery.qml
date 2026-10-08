@@ -98,12 +98,16 @@ ColumnLayout {
         }
     }
 
-    // The last check, an hour after the one that worked, failed: the
-    // readings stay, marked with a dot. At this pace both last the week.
+    // Checks have failed for an hour since the one that worked: the panel
+    // strikes the ring, and the popup keeps the readings in grey. The
+    // checks run every 15 minutes and the helper's hold is over, so the
+    // popup offers to try again. At this pace both last the week.
     FakeMonitor {
         id: failed
         usage: FakeUsage {
             id: failedUsage
+            refreshMinutes: 15
+            lastRun: createdAt - 400
             entries: ({
                 claude: {
                     status: "ok",
@@ -111,8 +115,56 @@ ColumnLayout {
                     weekly: failedUsage.window(48, 2 * failedUsage.day + 22 * 3600, section.history(4, 48)),
                     scoped: [Object.assign({ id: "Fable", label: "Fable" },
                                            failedUsage.window(52, 2 * failedUsage.day + 22 * 3600, section.history(4, 52)))],
-                    lastError: "HTTP Error 500: Internal Server Error",
-                    lastErrorAt: failedUsage.createdAt
+                    lastError: "can't reach api.anthropic.com: Name or service not known",
+                    lastErrorAt: failedUsage.createdAt - 400,
+                    reason: "offline",
+                    host: "api.anthropic.com",
+                    retryAt: failedUsage.createdAt - 100
+                }
+            })
+        }
+    }
+
+    // The first failed check, four minutes after one that found Claude
+    // near its limit: grey, with no red and no breathing, until the reading
+    // is two checks old.
+    FakeMonitor {
+        id: justFailed
+        usage: FakeUsage {
+            id: justFailedUsage
+            entries: ({
+                claude: {
+                    status: "ok",
+                    fetchedAt: justFailedUsage.createdAt - 240,
+                    weekly: justFailedUsage.window(93, justFailedUsage.day + 6 * 3600, section.history(5.7, 93)),
+                    scoped: [Object.assign({ id: "Fable", label: "Fable" },
+                                           justFailedUsage.window(97, justFailedUsage.day + 6 * 3600, section.history(5.7, 97)))],
+                    lastError: "rate limited, retrying in 3120 s",
+                    lastErrorAt: justFailedUsage.createdAt - 60,
+                    reason: "rate-limited",
+                    host: "api.anthropic.com",
+                    retryAt: justFailedUsage.createdAt + 3060
+                }
+            })
+        }
+    }
+
+    // Checks failed through the week's reset: nothing is left of this week.
+    FakeMonitor {
+        id: failedPastReset
+        usage: FakeUsage {
+            id: failedPastResetUsage
+            entries: ({
+                claude: {
+                    status: "ok",
+                    fetchedAt: failedPastResetUsage.createdAt - 8 * 3600,
+                    weekly: failedPastResetUsage.window(71, -2 * 3600, section.history(6.6, 71).map(p => [p[0] + 8 * 3600 / failedPastResetUsage.day, p[1]])),
+                    scoped: [],
+                    lastError: "The usage helper exited with code 1: KeyError: 'weekly'",
+                    lastErrorAt: failedPastResetUsage.createdAt - 60,
+                    reason: "helper",
+                    host: "",
+                    retryAt: failedPastResetUsage.createdAt + 240
                 }
             })
         }
@@ -300,16 +352,23 @@ ColumnLayout {
     }
 
     Panel {
-        label: "Claude & Codex · panel · 46 px · Claude's last check failed (dot), Codex signed out (hidden)"
+        label: "Claude & Codex · panel · 46 px · Claude's checks failing for an hour (struck), Codex signed out (hidden)"
         thickness: 46
         monitor: failed
         items: ["cpu", "memory", "claude"]
     }
 
     Panel {
-        label: "Claude & Codex · panel · 30 px · Claude's last check failed (dot)"
+        label: "Claude & Codex · panel · 30 px · Claude's checks failing for an hour (struck)"
         thickness: 30
         monitor: failed
+        items: ["cpu", "memory", "claude"]
+    }
+
+    Panel {
+        label: "Claude · panel · 46 px · Claude's first failed check at 93 % (grey)"
+        thickness: 46
+        monitor: justFailed
         items: ["cpu", "memory", "claude"]
     }
 

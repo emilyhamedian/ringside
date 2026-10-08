@@ -16,7 +16,9 @@ import "../../package/contents/ui/code/history.js" as History
 // stretch draws on, its run-out fades in after it and eases when a poll
 // moves it, and its run-out, marker and old week fade; a second GPU's
 // ring fades its track in and then draws its arc in, and goes the other way
-// round, and its popup section fades in and out. A duration of 0, as
+// round, and its popup section fades in and out. A Claude or Codex ring
+// struck after failed checks unwinds before its stroke draws on, and takes
+// the stroke off before its arcs grow back. A duration of 0, as
 // Plasma's Instant animation speed gives, puts everything in place at once.
 // The test runner's Kirigami units are the defaults, at speed 1.
 Item {
@@ -104,6 +106,16 @@ Item {
         RingCellContent {
             item: "gpu"
             ring: 46
+            textShown: true
+            twoLines: true
+        }
+    }
+
+    Component {
+        id: usageCellComponent
+        UsageCellContent {
+            item: "claude"
+            ring: 34
             textShown: true
             twoLines: true
         }
@@ -1058,6 +1070,121 @@ Item {
             monitor.gpuOuter.phase = "asleep";
             verify(!outer.visible);
             verify(visibleTexts(popup).includes("AMD Radeon RX 7700S · off"));
+        }
+    }
+
+    TestCase {
+        id: strikes
+        name: "StrikeMotion"
+        when: windowShown
+
+        property var monitor: null
+        property var made: []
+
+        function init() {
+            failOnWarning(/TypeError|ReferenceError|SyntaxError|is not a function|Unable to assign|Cannot assign|Binding loop/);
+            monitor = monitorComponent.createObject(strikes);
+        }
+
+        function cleanup() {
+            made.forEach(o => o.destroy());
+            made = [];
+            wait(0);
+            monitor.destroy();
+        }
+
+        function cell() {
+            const c = usageCellComponent.createObject(root, { monitor: monitor });
+            made.push(c);
+            waitForRendering(c);
+            return c;
+        }
+
+        function outerArc(c) {
+            return root.all(c, i => i.playReset !== undefined).sort((a, b) => b.radius - a.radius)[0];
+        }
+
+        function line(c, which) {
+            return root.all(c, i => i.objectName === which)[0];
+        }
+
+        // Claude's entry with a check that failed, the reading ten minutes old.
+        function failed(ok) {
+            const now = Date.now() / 1000;
+            return Object.assign({}, ok, { fetchedAt: now - 600, lastError: "down", lastErrorAt: Math.floor(now),
+                                           reason: "other", host: "", retryAt: Math.floor(now) + 300 });
+        }
+
+        function setClaude(entry) {
+            monitor.usage.entries = Object.assign({}, monitor.usage.entries, { claude: entry });
+        }
+
+        // The stroke starts as the arcs near the end of their way down, and
+        // the dashes come with it; on recovery the stroke comes off, the
+        // readings return, and only then do the arcs grow back. Each way
+        // takes about Plasma's long duration and a half.
+        function test_strikeFollowsTheUnwind() {
+            const ok = monitor.usage.entries.claude;
+            const c = cell();
+            const g = c.children[0];
+            const arc = outerArc(c);
+            const seen = [];
+            createTemporaryObject(samplerComponent, c, {
+                sample: () => seen.push({ at: Date.now(), struck: g.struck, percent: arc.percent, first: line(c, "first").text })
+            });
+            const start = Date.now();
+            setClaude(failed(ok));
+            tryCompare(g, "struck", 1, 3000);
+            tryCompare(arc, "percent", 0, 3000);
+            const first = seen.find(f => f.struck > 0);
+            verify(first.percent <= 52 / 3, "the arc is mostly down when the stroke starts: " + first.percent);
+            verify(seen.some(f => f.struck > 0 && f.struck < 1), "the stroke draws on");
+            verify(seen.every(f => (f.first === "––%") === (f.struck > 0.25)), "the dashes come with the stroke: " + JSON.stringify(seen));
+            const struckAt = seen.find(f => f.struck === 1).at - start;
+            verify(struckAt <= 2.5 * Kirigami.Units.longDuration + 200, "struck in " + struckAt + " ms");
+
+            seen.length = 0;
+            setClaude(ok);
+            tryCompare(arc, "percent", 52, 3000);
+            compare(g.struck, 0);
+            const grown = seen.find(f => f.percent > 0);
+            verify(grown.struck <= 0.25, "the stroke is off before the arc grows: " + grown.struck);
+            verify(seen.some(f => f.struck > 0 && f.struck < 1), "the stroke comes off");
+            verify(seen.every(f => (f.first === "––%") === (f.struck > 0.25)), "the readings return with it");
+        }
+
+        // Grey comes and goes as a fade, with the arcs where they are.
+        function test_greyFades() {
+            const ok = monitor.usage.entries.claude;
+            const c = cell();
+            const g = c.children[0];
+            const seen = [];
+            createTemporaryObject(samplerComponent, c, { sample: () => seen.push(g.greyed) });
+            setClaude(Object.assign(failed(ok), { fetchedAt: Date.now() / 1000 - 60 }));
+            tryCompare(g, "greyed", 1, 3000);
+            verify(seen.some(v => v > 0 && v < 1), "it fades: " + JSON.stringify(seen));
+            compare(outerArc(c).percent, 52);
+            compare(g.struck, 0);
+        }
+
+        // At Plasma's Instant speed a failed check is struck in one frame,
+        // and a good one puts it back in one.
+        function test_instant() {
+            const ok = monitor.usage.entries.claude;
+            const c = cell();
+            const g = c.children[0];
+            g.settle = 0;
+            const seen = [];
+            createTemporaryObject(samplerComponent, c, { sample: () => seen.push([g.struck, outerArc(c).percent]) });
+            setClaude(failed(ok));
+            waitForRendering(c);
+            wait(50);
+            verify(seen.length > 0 && seen.every(([struck, percent]) => struck === 1 && percent === 0), JSON.stringify(seen));
+            seen.length = 0;
+            setClaude(ok);
+            waitForRendering(c);
+            wait(50);
+            verify(seen.length > 0 && seen.every(([struck, percent]) => struck === 0 && percent === 52), JSON.stringify(seen));
         }
     }
 }

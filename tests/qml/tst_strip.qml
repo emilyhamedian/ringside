@@ -495,8 +495,7 @@ Item {
         }
 
         // Rings and rates sit side by side, cell against cell: nothing is
-        // drawn between them, and the only rectangles are the cells' washes
-        // and Claude's failed-check dot, hidden while its checks succeed.
+        // drawn between them, and the only rectangles are the cells' washes.
         function test_noSeparator_data() {
             return [{ tag: "two lines", thickness: 38 }, { tag: "thin", thickness: 30 }];
         }
@@ -513,12 +512,8 @@ Item {
             }
             compare(strip.implicitWidth, sum);
             const rectangles = all(strip, isRectangle);
-            const dots = rectangles.filter(r => r.parent.accessibleDescription !== undefined);
-            compare(dots.length, 1);
-            compare(dots[0].parent, strip.cellAt(5).contentItem, "Claude's dot");
-            verify(!dots[0].visible);
-            compare(rectangles.length, items.length + 1);
-            for (const rectangle of rectangles.filter(r => !dots.includes(r))) {
+            compare(rectangles.length, items.length);
+            for (const rectangle of rectangles) {
                 verify(rectangle.parent.inset !== undefined && rectangle.parent.contentItem !== undefined,
                        "a wash, in a cell");
                 verify(rectangle.width > 1 && rectangle.height > 1, rectangle.width + "×" + rectangle.height);
@@ -852,8 +847,9 @@ Item {
             verify(!area.active, "no tooltip over an open popup");
         }
 
-        // A failed Claude or Codex check shows only as a dot, so its item
-        // keeps a tooltip, readings shown or not, to say when it failed.
+        // A failed Claude or Codex check greys or strikes its ring, so its
+        // item keeps a tooltip, readings shown or not, to say when and why
+        // it failed, what the last reading was and when the next check runs.
         function test_failedCheckHasATooltip() {
             const strip = makeStrip({ items: ["cpu", "claude", "codex", "network"] });
             const areas = [0, 1, 2, 3].map(i => strip.cellAt(i).parent);
@@ -862,11 +858,14 @@ Item {
 
             const entries = monitor.usage.entries;
             monitor.usage.entries = Object.assign({}, entries, {
-                claude: Object.assign({}, entries.claude, { lastError: "HTTP Error 500", lastErrorAt: monitor.usage.createdAt })
+                claude: Object.assign({}, entries.claude, { lastError: "HTTP 500 from api.anthropic.com", lastErrorAt: monitor.usage.createdAt,
+                                                            reason: "server", host: "api.anthropic.com",
+                                                            retryAt: monitor.usage.createdAt + 300 })
             });
             compare(areas.map(a => a.active), [false, true, false, false], "Claude's check failed");
             compare(areas[1].mainText, "Claude");
-            verify(/^52% used, Fable 78%, resets in 2 days 2\d hours\. Last check failed at .+\.$/.test(areas[1].subText), areas[1].subText);
+            verify(/^Last check failed at .+\. api\.anthropic\.com answered with an error\.\nLast reading at .+: 52% used, Fable 78%, resets in 2 days 2\d hours\.\nNext check at .+\.$/
+                   .test(areas[1].subText), areas[1].subText);
             compare(areas[1].subText, strip.cellAt(1).Accessible.description);
             verify(line(1, "first").visible, "the readings stay");
             strip.openItem = "claude";
