@@ -53,11 +53,12 @@ Mainly the two helpers Ringside runs:
   and `api6.ipify.org`, or only to the URLs you set instead. A request goes
   out when that popup opens, unless any Ringside widget asked in the last
   minute, and when the route changes while it stays open, never sooner than
-  a minute after the last; never while the popup is closed or there is no
-  connection, and never to ipify.org when a URL of your own is set or
-  invalid. It carries the User-Agent `ringside/<version>` and
-  `Accept-Language: *`, not your languages. The service sees your address,
-  as any website does. Answers stay in memory. Qt keeps any cookie the
+  a minute after the last; *Try again* after a failed check asks at once;
+  never while the popup is closed or there is no connection, and never to
+  ipify.org when a URL of your own is set or invalid. It carries the
+  User-Agent `ringside/<version>` and `Accept-Language: *`, not your
+  languages. The service sees your address, as any website does. Answers
+  stay in memory. Qt keeps any cookie the
   service sets until Plasma restarts and sends it back with later requests.
   Qt follows a redirect, to another host or to plain http alike, with the
   same headers; Ringside then ignores any answer that didn't

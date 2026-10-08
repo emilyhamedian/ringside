@@ -200,11 +200,12 @@ a VPN that is down, or that IPv6 goes around, shows up. It is off until you
 tick *Show in the Network popup* on General, and the popup shows nothing of
 it before then. When it is on, Ringside asks
 [ipify.org](https://www.ipify.org) each time the network popup opens, at most
-once a minute, and again when the route changes while the popup is open.
-Nothing is asked while the popup is closed or there is no connection, and the
-answer is kept only in memory. Each request is an HTTPS GET whose User-Agent
-names Ringside and its version, and it sends no languages; the service sees
-your address, as any website does.
+once a minute, and again when the route changes while the popup is open; after
+a failed check, *Try again* in the popup asks at once. Nothing is asked while
+the popup is closed or there is no connection, and the answer is kept only in
+memory. Each request is an HTTPS GET whose User-Agent names Ringside and its
+version, and it sends no languages; the service sees your address, as any
+website does.
 
 To use another service, choose *Custom* as the service and give its https
 addresses for IPv4 and IPv6. Only that service is asked; leave one empty to
