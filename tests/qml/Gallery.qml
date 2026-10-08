@@ -197,6 +197,46 @@ Rectangle {
         diskDevice: "all"
     }
 
+    // Temperatures climbing through the warm and hot thresholds as a load
+    // starts 15 s in, and the same with the highlighting off.
+    component Heating: FakeMonitor {
+        id: fake
+
+        function climb(from, to) {
+            return Array.from({ length: fake.historyLength }, (_, i) =>
+                from + (to - from) * (1 - Math.pow(1 - Math.max(0, (i - 15) / (fake.historyLength - 16)), 2.2)) + 0.4 * Math.sin(i * 1.7));
+        }
+
+        cpuUsage: 97
+        cpuHistory: fake.climb(6, 97)
+        cpuTemperature: 93
+        cpuTemperatureHistory: fake.climb(52, 93)
+        gpuOuter.usage: 99
+        gpuOuter.history: fake.climb(3, 99)
+        gpuOuter.temperature: 91
+        gpuOuter.temperatureHistory: fake.climb(44, 91)
+        diskTemperature: 92
+        diskTemperatureHistory: fake.climb(41, 92)
+    }
+
+    Heating {
+        id: heating
+    }
+
+    Heating {
+        id: plainHeat
+        highlightTemperatures: false
+    }
+
+    // The discrete GPU alone, awake for the last 35 s, in °F.
+    FakeMonitor {
+        id: woken
+        fahrenheit: true
+        gpuOuter.temperatureHistory: Array.from({ length: woken.historyLength }, (_, i) =>
+            i < 25 ? NaN : 48 - 6 * Math.exp(-(i - 25) / 6))
+        gpuInner.present: false
+    }
+
     // The only GPU, asleep.
     FakeMonitor {
         id: onlyAsleep
@@ -569,6 +609,35 @@ Rectangle {
             PopupFrame {
                 label: "Disk · all disks, 78 °C"
                 DiskPopup { monitor: diskHot }
+            }
+        }
+
+        RowLayout {
+            spacing: 2 * Kirigami.Units.gridUnit
+
+            PopupFrame {
+                label: "CPU · temperature climbing through 75 and 90 °C"
+                CpuPopup { monitor: heating }
+            }
+
+            PopupFrame {
+                label: "GPU · dGPU climbing through 75 and 90 °C"
+                GpuPopup { monitor: heating }
+            }
+
+            PopupFrame {
+                label: "GPU · dGPU awake for the last 35 s, °F"
+                GpuPopup { monitor: woken }
+            }
+
+            PopupFrame {
+                label: "Disk · climbing through 75 and 90 °C"
+                DiskPopup { monitor: heating }
+            }
+
+            PopupFrame {
+                label: "Disk · climbing, temperature colours off"
+                DiskPopup { monitor: plainHeat }
             }
         }
 

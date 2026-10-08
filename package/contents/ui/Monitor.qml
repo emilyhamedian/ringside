@@ -90,6 +90,8 @@ Item {
     readonly property var cpuIds: hardware.cpu && Array.isArray(hardware.cpu.ids) ? hardware.cpu.ids
                                 : Array.from({ length: cpuThreads }, (_, i) => i)
     property var cpuHistory: []
+    // °C, NaN while there is no reading.
+    property var cpuTemperatureHistory: []
 
     // Memory. ksystemstats' "used" is the total minus MemAvailable, and its
     // "cache" (Cached plus Slab) also counts shared memory and unreclaimable
@@ -170,6 +172,8 @@ Item {
     }
     property var diskReadHistory: []
     property var diskWriteHistory: []
+    // °C, NaN while there is no reading.
+    property var diskTemperatureHistory: []
 
     // Settings the views need.
     readonly property bool fahrenheit: config.fahrenheit
@@ -264,16 +268,21 @@ Item {
     function sample() {
         const n = historyLength;
         cpuHistory = History.push(cpuHistory, cpuUsage, n);
+        cpuTemperatureHistory = History.record(cpuTemperatureHistory, cpuTemperature, n);
         memoryHistory = History.push(memoryHistory, memoryPercent, n);
+        // The temperature is a reader's own reading, or its leader's: taking
+        // it reads nothing more, and a sleeping GPU has none.
         for (const r of [gpuOuter, gpuInner]) {
             if (r.present) {
                 r.history = History.push(r.history, r.usage, n);
+                r.temperatureHistory = History.record(r.temperatureHistory, r.temperature, n);
             }
         }
         networkDownHistory = History.push(networkDownHistory, networkDown, n);
         networkUpHistory = History.push(networkUpHistory, networkUp, n);
         diskReadHistory = History.push(diskReadHistory, diskRead, n);
         diskWriteHistory = History.push(diskWriteHistory, diskWrite, n);
+        diskTemperatureHistory = History.record(diskTemperatureHistory, diskTemperature, n);
         latch(false);
     }
 
@@ -298,14 +307,17 @@ Item {
     // A new interval or span would mix samples of different ages.
     onHistoryLengthChanged: {
         cpuHistory = [];
+        cpuTemperatureHistory = [];
         memoryHistory = [];
         for (const r of readers()) {
             r.history = [];
+            r.temperatureHistory = [];
         }
         networkDownHistory = [];
         networkUpHistory = [];
         diskReadHistory = [];
         diskWriteHistory = [];
+        diskTemperatureHistory = [];
     }
 
     Timer {

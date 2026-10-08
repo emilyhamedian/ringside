@@ -95,6 +95,8 @@ QtObject {
         : subscribed ? livePower : showsHeld ? held.power ?? NaN : NaN
     // qmllint enable missing-property
     property var history: []
+    // °C as `temperature` had it at each sample, so NaN while asleep.
+    property var temperatureHistory: []
     // What the panel shows: usage and temperature as of Monitor's last
     // update interval (see Monitor.latch()).
     property real panelUsage: NaN

@@ -83,6 +83,14 @@ PopupPage {
             }
         }
 
+        // Under the usage it follows, on the same span and width, so a
+        // burst of load lines up with the rise it causes.
+        TemperatureTile {
+            Layout.columnSpan: 2
+            monitor: popup.monitor
+            history: popup.monitor.cpuTemperatureHistory
+        }
+
         Tile {
             caption: i18nc("@title:group", "Frequency")
             foot: frequencyReading

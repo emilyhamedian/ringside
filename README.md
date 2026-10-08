@@ -17,9 +17,13 @@ memory in use, such as 9.60G.
 
 Click an item for its popup: history graphs, per-thread load, top
 processes, VRAM, clocks, power, swap, memory pressure and disk activity.
+The CPU, GPU and disk popups also graph their temperature.
 Percentage graphs have a line at 100%, named at the end of the caption line
 above the graph; rate graphs reach up to their peak, named in the same place
-when it fits, or to 1 Mb/s (1 MiB/s for a disk) when the peak is lower. The
+when it fits, or to 1 Mb/s (1 MiB/s for a disk) when the peak is lower. A
+temperature graph runs from a round ten below its coolest reading to your
+hot threshold, or past its peak when that is hotter, named in the same place,
+and its line turns amber and red as the reading does. The
 graphs take a reading every second, or at the update interval
 when that is shorter; the panel changes at the update interval. A
 temperature that isn't the whole chip's names its sensor in plain words, such

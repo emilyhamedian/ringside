@@ -58,7 +58,7 @@ PopupPage {
             // missing keeping the one before.
             property var last: null
             readonly property var readings: [live.phase, live.usage, live.temperature, live.vramUsed, live.knownVramTotal,
-                                             live.clock, live.power, live.history]
+                                             live.clock, live.power, live.history, live.temperatureHistory]
 
             function keep() {
                 if (live.phase === "asleep") {
@@ -71,7 +71,8 @@ PopupPage {
                     reportsTemperature: live.reportsTemperature, temperatureLabel: live.temperatureLabel,
                     knownVramTotal: held("knownVramTotal"), usage: held("usage"), temperature: held("temperature"),
                     vramUsed: held("vramUsed"), clock: held("clock"), power: held("power"),
-                    history: live.history.length > 0 ? live.history : was.history ?? []
+                    history: live.history.length > 0 ? live.history : was.history ?? [],
+                    temperatureHistory: live.temperatureHistory.length > 0 ? live.temperatureHistory : was.temperatureHistory ?? []
                 };
             }
 
@@ -209,6 +210,13 @@ PopupPage {
                     values: section.slot.history
                     length: section.monitor.historyLength
                 }
+            }
+
+            // As in the CPU popup: under the usage it follows.
+            TemperatureTile {
+                Layout.columnSpan: parent.columns
+                monitor: section.monitor
+                history: section.slot.temperatureHistory
             }
 
             Tile {
