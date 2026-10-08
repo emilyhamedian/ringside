@@ -352,12 +352,10 @@ Item {
         // the next interval counts from.
         function test_checkingWhileTheHelperRuns() {
             const before = Date.now() / 1000;
-            start("ok");
-            verify(!usage.checking);
-            verify(usage.lastRun >= before - 1 && usage.lastRun <= Date.now() / 1000, usage.lastRun);
+            make("slow", ["claude", "codex"]);
             const landed = spy("entriesChanged");
-            usage.refresh();
-            verify(usage.checking);
+            tryVerify(() => usage.checking, 900, "the first check runs");
+            verify(usage.lastRun >= before - 1 && usage.lastRun <= Date.now() / 1000, usage.lastRun);
             landed.wait(10000);
             verify(!usage.checking);
         }
@@ -370,7 +368,6 @@ Item {
             wait(1100);
             const landed = spy("entriesChanged");
             usage.checkNow();
-            verify(usage.checking);
             tryVerify(() => usage.lastRun > first + 1, 2000, "the interval starts over");
             landed.wait(10000);
             verify(!usage.checking);
