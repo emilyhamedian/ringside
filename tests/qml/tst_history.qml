@@ -379,6 +379,33 @@ TestCase {
         compare(History.add(t, 7, t0 + 60000), { at: t0 / 30000 + 1, mean: 5, high: 5 });
     }
 
+    // Saved buckets come back where they belong, as gaps where none was
+    // saved, and only the last span's worth before now.
+    function test_restoreKeepsTheSpanBeforeNow() {
+        const t = History.tier("hour");
+        const now = t0 + 60 * 60000;
+        const at = t0 / 30000;
+        History.restore(t, [{ at: at - 5, mean: 1, high: 2 }, { at: at, mean: 3, high: 4 }, { at: at + 2, mean: 5, high: null },
+                            { at: at + 120, mean: 9, high: 9 }, { at: at + 200, mean: 8, high: 8 }], now);
+        compare(t.at, at + 120);
+        compare(t.means.length, 120);
+        compare(t.means[0], 3, "the oldest that still fits");
+        verify(Number.isNaN(t.means[1]), "a gap where nothing was saved");
+        compare(t.means[2], 5);
+        verify(Number.isNaN(t.highs[2]), "a missing high is a gap");
+        verify(t.means.slice(3).every(v => Number.isNaN(v)));
+        compare(History.add(t, 6, now + 5000), null, "the open bucket is now's");
+        History.restore(t, [{ at: at + 119, mean: 1, high: 1 }], now);
+        compare(t.means[119], NaN, "a tier in use isn't restored over");
+    }
+
+    function test_restoreOfNothingStartsTheClock() {
+        const t = History.tier("day");
+        History.restore(t, [], t0);
+        compare(t.at, t0 / 600000);
+        compare(t.means, []);
+    }
+
     // A temperature's scale comes from all three spans.
     function test_extentCoversEverySpan() {
         const s = History.series();

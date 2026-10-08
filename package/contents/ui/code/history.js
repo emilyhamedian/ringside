@@ -244,6 +244,28 @@ function add(t, value, nowMs) {
     return closed;
 }
 
+// Fills an empty tier from saved buckets, [{ at, mean, high }], keeping
+// those of the last `length` buckets before `nowMs`'s and leaving gaps
+// where none was saved.
+function restore(t, buckets, nowMs) {
+    if (t.at >= 0) {
+        return;
+    }
+    const now = Math.floor(nowMs / 1000 / t.period);
+    const kept = buckets.filter(b => b.at >= now - t.length && b.at < now);
+    t.at = now;
+    if (kept.length === 0) {
+        return;
+    }
+    const first = kept.reduce((a, b) => Math.min(a, b.at), now);
+    t.means = Array(now - first).fill(NaN);
+    t.highs = Array(now - first).fill(NaN);
+    for (const b of kept) {
+        t.means[b.at - first] = typeof b.mean === "number" ? b.mean : NaN;
+        t.highs[b.at - first] = typeof b.high === "number" ? b.high : NaN;
+    }
+}
+
 // The coolest and hottest readings a series keeps across the three spans,
 // as [coolest, hottest], or [] with none: a temperature graph sets its
 // scale from these, so it holds still when the span changes.

@@ -30,6 +30,8 @@ KCM.SimpleKCM {
     property int cfg_updateIntervalDefault
     property string cfg_graphSpan
     property string cfg_graphSpanDefault
+    property bool cfg_keepGraphHistory
+    property bool cfg_keepGraphHistoryDefault
     property bool cfg_fahrenheit
     property bool cfg_fahrenheitDefault
     property bool cfg_networkBits

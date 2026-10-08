@@ -86,6 +86,7 @@ Item {
         QtObject {
             property int updateInterval: 1000
             property string graphSpan: "minute"
+            property bool keepGraphHistory: false
             property bool fahrenheit: false
             property bool networkBits: true
             property bool highlightTemperatures: true

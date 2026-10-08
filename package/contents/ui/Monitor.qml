@@ -55,6 +55,22 @@ Item {
     // Changed in place, and shown through the properties below.
     property var series: ({})
 
+    // With "Keep graph history" on, the hour's and the day's buckets are
+    // saved as they close and restored when the widget starts (see
+    // HistoryStore.qml), keyed by widgetId, Plasma's id for this widget.
+    readonly property bool keepHistory: config.keepGraphHistory === true
+    property string widgetId: ""
+    // Loaded only while the setting is on, and only by URL, so a missing
+    // LocalStorage module costs the setting rather than the widget. The
+    // tests point it elsewhere.
+    property url storeUrl: Qt.resolvedUrl("HistoryStore.qml")
+    property QtObject store: null
+    // The store couldn't load, so the history stays in memory.
+    property bool storeMissing: false
+    // Whether anything has been sampled yet: a store loaded before then
+    // restores what it kept, and one loaded after saves what is held.
+    property bool sampled: false
+
     // The readings the panel shows, as of the last update interval. A
     // reading that appears or goes away is taken at the next sample, so the
     // panel doesn't wait an interval to show one or keep one that has gone.
@@ -327,19 +343,26 @@ Item {
 
     function sample(nowMs) {
         const now = nowMs ?? Date.now();
+        sampled = true;
+        const closed = { hour: [], day: [] };
         for (const entry of readings()) {
             const s = seriesOf(entry.key);
             s.minute = entry.gaps ? History.record(s.minute, entry.minute, minuteLength)
                                   : History.push(s.minute, entry.minute, minuteLength);
             const ended = {};
             for (const name of ["hour", "day"]) {
-                ended[name] = History.add(s[name], entry.kept ?? entry.minute, now) !== null;
+                const bucket = History.add(s[name], entry.kept ?? entry.minute, now);
+                if (bucket) {
+                    ended[name] = true;
+                    closed[name].push({ key: entry.key, bucket: bucket });
+                }
             }
             // An hour or a day changes only as its bucket closes.
             if (graphSpan === "minute" || ended[graphSpan]) {
                 show(entry);
             }
         }
+        save(["hour", "day"].map(name => rowOf(name, closed[name])).filter(row => row !== null));
         latch(false);
     }
 
@@ -390,6 +413,100 @@ Item {
         }
     }
 
+    // A bucket as saved: each series' average and highest, to a tenth,
+    // leaving out the series with no reading in it. null with none.
+    function rowOf(tier, buckets) {
+        const data = {};
+        const tenth = v => Math.round(v * 10) / 10;
+        for (const b of buckets) {
+            if (Number.isFinite(b.bucket.mean)) {
+                data[b.key] = [tenth(b.bucket.mean), tenth(b.bucket.high)];
+            }
+        }
+        return buckets.length > 0 && Object.keys(data).length > 0 ? { tier: tier, at: buckets[0].bucket.at, data: data } : null;
+    }
+
+    function save(rows) {
+        if (store && rows.length > 0) {
+            store.save(rows);
+        }
+    }
+
+    // Every bucket held, for a store just switched on.
+    function saveAll() {
+        const rows = [];
+        for (const tier of ["hour", "day"]) {
+            const at = {};
+            for (const key of Object.keys(series)) {
+                const t = series[key][tier];
+                t.means.forEach((mean, i) => {
+                    const n = t.at - t.means.length + i;
+                    at[n] = at[n] || [];
+                    at[n].push({ key: key, bucket: { at: n, mean: mean, high: t.highs[i] } });
+                });
+            }
+            for (const n of Object.keys(at)) {
+                const row = rowOf(tier, at[n]);
+                if (row) {
+                    rows.push(row);
+                }
+            }
+        }
+        save(rows);
+    }
+
+    function restore() {
+        const now = Date.now();
+        for (const tier of ["hour", "day"]) {
+            const byKey = {};
+            for (const row of store.load(tier)) {
+                for (const key of Object.keys(row.data)) {
+                    const v = row.data[key];
+                    byKey[key] = byKey[key] || [];
+                    byKey[key].push({ at: row.at, mean: v[0], high: v[1] });
+                }
+            }
+            for (const key of Object.keys(byKey)) {
+                History.restore(seriesOf(key)[tier], byKey[key], now);
+            }
+        }
+        dropOtherSensors();
+        showAll();
+    }
+
+    // Loads the store and restores what it kept, as the widget starts, or
+    // saves what is held, when the setting is switched on later.
+    function startKeeping() {
+        if (store || storeMissing || widgetId === "") {
+            return;
+        }
+        const component = Qt.createComponent(storeUrl);
+        if (component.status !== Component.Ready) {
+            storeMissing = true;
+            console.warn("ringside: graph history stays in memory, as the store can't load:", component.errorString());
+            return;
+        }
+        store = component.createObject(monitor, { widget: widgetId });
+        if (!sampled) {
+            restore();
+        } else {
+            saveAll();
+        }
+    }
+
+    // Switched off: what was saved goes.
+    function stopKeeping() {
+        if (store) {
+            store.clear();
+            store.destroy();
+            store = null;
+        }
+    }
+
+    // The settings and the widget's id may arrive in any order as it starts.
+    onKeepHistoryChanged: keepHistory ? startKeeping() : stopKeeping()
+    onWidgetIdChanged: if (keepHistory) startKeeping()
+    Component.onCompleted: if (keepHistory) startKeeping()
     onGraphSpanChanged: showAll()
     // A ring's GPU, its history at once rather than at the next close.
     onGpuOuterChanged: Qt.callLater(monitor.showAll)
