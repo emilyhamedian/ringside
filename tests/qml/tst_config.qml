@@ -4,14 +4,18 @@
 pragma ComponentBehavior: Bound
 import QtQuick
 import QtTest
+import org.kde.kirigami as Kirigami
 import org.kde.ksysguard.sensors as Sensors
+import "../../package/contents/ui"
 import "../../package/contents/ui/config"
+import "../../package/contents/ui/code/items.js" as Items
 
 // The settings pages load with their cfg_ properties set and without a
 // script error, and each takes every setting in main.xml, and its Default,
 // the way Plasma's settings dialog hands them over, keeping the reports the
-// widget writes meanwhile through Apply. Reading main.xml, config.qml and
-// the pages needs QML_XHR_ALLOW_FILE_READ=1, which scripts/test.sh sets.
+// widget writes meanwhile through Apply, including what the widget writes
+// in answer to Apply itself. Reading main.xml, config.qml and the pages
+// needs QML_XHR_ALLOW_FILE_READ=1, which scripts/test.sh sets.
 // Outside Plasma there is no Plasmoid, so the pages see no hardware report
 // unless a test hands them a stand-in for the configuration. The
 // Sensors page builds its pickers from a fixed sensor list here rather than
@@ -107,6 +111,30 @@ Item {
     Component {
         id: stretchedProviders
         StretchedProviders {}
+    }
+
+    // Plasma 6.4's dialog, as far as a page can tell: a root with
+    // isConfigurationChanged() over a Kirigami page stack the page is pushed
+    // onto, as AppletConfiguration.qml does.
+    Component {
+        id: comparingDialog
+        Item {
+            property alias pageStack: app.pageStack
+            function isConfigurationChanged() { return false; }
+            Kirigami.ApplicationItem {
+                id: app
+                anchors.fill: parent
+            }
+        }
+    }
+
+    // The widget's Claude and Codex readings, polled from the stub report
+    // tst_usage uses, on the stand-in configuration a test hands over.
+    Component {
+        id: usageComponent
+        UsageData {
+            helperPath: decodeURIComponent(Qt.resolvedUrl("data/fake-usage-ok.py").toString().replace(/^file:\/\//, ""))
+        }
     }
 
     // This machine's sensor tree, walked directly rather than through the
@@ -287,15 +315,17 @@ Item {
         }
 
         // A stand-in for Plasmoid.configuration, as KConfigPropertyMap looks
-        // to the pages and the dialog: keys() lists each entry and its
-        // Default, a value that changes rings valueChanged, and writeConfig()
-        // saves the entries, never the Defaults, into file.
+        // to the pages and the dialog: keys() lists each entry's Default and
+        // then the entry, in main.xml's order, as loadConfig() inserts them;
+        // a value that changes rings valueChanged; and writeConfig() saves
+        // the entries, never the Defaults, into file.
         function fakeConfiguration(values) {
             const names = Object.keys(values);
+            const keys = names.map(n => [n + "Default", n]).reduce((all, pair) => all.concat(pair), []);
             let source = "import QtQuick\nQtObject {\n    id: fake\n"
                 + "    signal valueChanged(string key, var value)\n"
                 + "    property var file: ({})\n"
-                + "    function keys() { return " + JSON.stringify(names.concat(names.map(n => n + "Default"))) + "; }\n"
+                + "    function keys() { return " + JSON.stringify(keys) + "; }\n"
                 + "    function writeConfig() {\n        const saved = {};\n"
                 + "        for (const name of " + JSON.stringify(names) + ") {\n            saved[name] = fake[name];\n        }\n"
                 + "        file = saved;\n    }\n";
@@ -313,16 +343,29 @@ Item {
         }
 
         // Plasma's dialog on a page, as plasma-desktop's AppletConfiguration.qml
-        // has it. Every version connects the page's cfg_ change signals to
-        // enable Apply; from 6.5 only when changed() finds a difference. On
-        // Apply, 6.0 to 6.4 write the cfg_ copies back, save, then call the
-        // page's saveConfig(); 6.5 and later call it first.
-        function dialog(page, config) {
-            const d = { signals: 0 };
+        // has it, in its three shapes. Every version connects the page's cfg_
+        // change signals: 6.0 to 6.3 ("plasma60") turn Apply on at any of
+        // them, 6.4 and later only when changed() finds a copy that differs
+        // from the live value. On Apply, 6.0 to 6.3 write the cfg_ copies
+        // back, save, then call the page's saveConfig(), found with
+        // hasOwnProperty; 6.4.0 ("plasma64") calls it first, found the same
+        // way; 6.4.2 and later ("plasma67") find it as a truthy property.
+        function dialog(page, config, order) {
+            const d = { signals: 0, applyEnabled: false };
+            d.changed = () => config.keys().some(key => {
+                const cfgKey = "cfg_" + key;
+                if (!page.hasOwnProperty(cfgKey)) {
+                    return false;
+                }
+                return config[key] != page[cfgKey] && config[key].toString() != page[cfgKey].toString();
+            });
             config.keys().forEach(key => {
                 const changed = page["cfg_" + key + "Changed"];
                 if (changed) {
-                    changed.connect(() => ++d.signals);
+                    changed.connect(() => {
+                        ++d.signals;
+                        d.applyEnabled = order === "plasma60" ? true : d.changed();
+                    });
                 }
             });
             d.writeBack = () => {
@@ -334,40 +377,70 @@ Item {
                 });
                 config.writeConfig();
             };
-            d.apply = order => {
+            d.apply = () => {
                 if (order === "plasma60") {
                     d.writeBack();
                     if (page.hasOwnProperty("saveConfig")) {
                         page.saveConfig();
                     }
+                } else if (order === "plasma64") {
+                    if (page.hasOwnProperty("saveConfig")) {
+                        page.saveConfig();
+                    }
+                    d.writeBack();
                 } else {
                     if (page.saveConfig) {
                         page.saveConfig();
                     }
                     d.writeBack();
                 }
+                d.applyEnabled = false;
             };
-            d.changed = () => config.keys().some(key => {
-                const cfgKey = "cfg_" + key;
-                if (!page.hasOwnProperty(cfgKey)) {
-                    return false;
-                }
-                return config[key] != page[cfgKey] && config[key].toString() != page[cfgKey].toString();
-            });
             return d;
         }
 
-        // A page opened on the stand-in, with Plasma's full property set.
-        function open(source, values, config) {
-            const page = createTemporaryObject(pageComponent(source), root, Object.assign({ live: config }, handed(values)));
+        // A page opened on the stand-in with Plasma's full property set, as
+        // the dialog builds it: a cfg_ property per key, from the
+        // configuration as it stands. Under 6.4 and later the page sits on
+        // the dialog's page stack, where it can find the dialog's root. The
+        // page is made here and pushed as an item: pushed as a component,
+        // Kirigami would make it under a plain object and Qt would warn that
+        // it isn't in the scene, as it does under Plasma's dialog too.
+        function open(source, config, order) {
+            const props = { title: "Page", live: config };
+            config.keys().forEach(key => { props["cfg_" + key] = config[key]; });
+            let page;
+            if (order === "plasma60") {
+                page = createTemporaryObject(pageComponent(source), root, props);
+            } else {
+                const host = createTemporaryObject(comparingDialog, root, { width: root.width, height: root.height });
+                page = createTemporaryObject(pageComponent(source), host, props);
+                host.pageStack.push(page);
+            }
             verify(page, source);
+            compare(page.dialogComparesCopies(), order !== "plasma60", "the page's reading of the dialog");
             return page;
+        }
+
+        // The widget's Claude and Codex readings on the stand-in, polled from
+        // the items the stand-in switches on, as Monitor.qml polls them.
+        function usageOn(config) {
+            const usage = createTemporaryObject(usageComponent, root, { config: config });
+            verify(usage);
+            usage.providers = Qt.binding(() => Items.enabled(config.itemOrder, config.hiddenItems).filter(Items.isUsage));
+            return usage;
+        }
+
+        // The reports the widget writes, as ConfigPage names them.
+        function reports() {
+            return Array.from(createTemporaryObject(pageComponent(pages()[0]), root).reports);
         }
 
         // Plasma's dialog warns about every key a page lacks, so each page
         // declares all of them, and their Defaults, through ConfigPage: typed
         // as main.xml types them, nothing main.xml lacks, and no declaration
-        // of a page's own.
+        // of a page's own. Each setting is then edited by one page, and the
+        // reports by none.
         function test_everyPageDeclaresEverySetting() {
             const types = { Int: "int", Bool: "bool", Double: "real", String: "string", StringList: "var" };
             const expected = {};
@@ -388,8 +461,10 @@ Item {
             for (const key in declared) {
                 verify(key in expected, "ConfigPage.qml declares cfg_" + key + ", which main.xml lacks");
             }
+            const texts = {};
             for (const source of pages()) {
                 const text = read("../../package/contents/ui/" + source);
+                texts[source] = text;
                 verify(/^ConfigPage \{/m.test(text), source + " isn't rooted on ConfigPage");
                 verify(!/property \w+ cfg_/.test(text), source + " declares a cfg_ property of its own");
                 const page = createTemporaryObject(pageComponent(source), root);
@@ -397,6 +472,11 @@ Item {
                     verify(("cfg_" + key) in page, source + " lacks cfg_" + key);
                     verify(page.hasOwnProperty("cfg_" + key), source + " doesn't own cfg_" + key);
                 }
+            }
+            const written = reports();
+            for (const entry of entries()) {
+                const owners = pages().filter(source => new RegExp("\\bcfg_" + entry.name + "\\b").test(texts[source]));
+                compare(owners.length, written.includes(entry.name) ? 0 : 1, entry.name + " is edited by " + JSON.stringify(owners));
             }
         }
 
@@ -423,7 +503,7 @@ Item {
 
         function orders(rows) {
             const all = [];
-            for (const order of ["plasma60", "plasma67"]) {
+            for (const order of ["plasma60", "plasma64", "plasma67"]) {
                 for (const row of rows) {
                     all.push(Object.assign({}, row, { tag: order + "/" + row.tag, order: order }));
                 }
@@ -432,33 +512,106 @@ Item {
         }
 
         // A report the widget writes while a page is open doesn't enable
-        // Apply, which only the page's cfg_ change signals do, and holds its
-        // latest value after Apply, whichever order the dialog saves in.
+        // Apply, which only the page's own changes do, and holds its latest
+        // value after Apply, whichever order the dialog saves in. Under 6.0
+        // to 6.3 the page's copy keeps the opening value until Apply; under
+        // 6.4 and later it follows the report.
         function test_runtimeReportSurvivesApply_data() {
             const rows = [];
             for (const source of pages()) {
-                for (const key of ["knownLimits", "usageStatus", "detectedHardware"]) {
+                for (const key of reports()) {
                     rows.push({ tag: source.replace(/^config\/Config|\.qml$/g, "") + "/" + key, source: source, key: key });
                 }
             }
             return orders(rows);
         }
         function test_runtimeReportSurvivesApply(data) {
-            const values = settings();
-            const config = fakeConfiguration(values);
-            const page = open(data.source, values, config);
-            const d = dialog(page, config);
+            const config = fakeConfiguration(settings());
+            const page = open(data.source, config, data.order);
+            const d = dialog(page, config, data.order);
             const report = JSON.stringify({ written: "while the page was open" });
             config[data.key] = report;
             tryVerify(() => page.latest[data.key] === report, 5000, "the page didn't learn of the report");
-            compare(d.signals, 0, "the report rang a cfg_ change signal");
-            compare(page["cfg_" + data.key], "", "the report moved the page's copy");
-            d.apply(data.order);
+            verify(!d.applyEnabled, "the report enabled Apply");
+            compare(page["cfg_" + data.key], data.order === "plasma60" ? "" : report, "the page's copy after the report");
+            d.apply();
             compare(config[data.key], report, "the configuration after Apply");
             compare(config.file[data.key], report, "the file after Apply");
             compare(page["cfg_" + data.key], report, "the page's copy after Apply");
             tryVerify(() => page.latest[data.key] === report, 5000, "latest after Apply");
             verify(!d.changed(), "Apply would stay enabled");
+        }
+
+        // Under 6.4 and later, a setting changed and changed back after a
+        // report arrived leaves Apply off, as the report's copy is current.
+        // 6.0 to 6.3 turn Apply on at any cfg_ change signal, whatever the
+        // value, and this change keeps that as it was.
+        function test_restoredSettingLeavesApplyOff_data() {
+            return orders([{ tag: "General" }]);
+        }
+        function test_restoredSettingLeavesApplyOff(data) {
+            const config = fakeConfiguration(settings());
+            const page = open("config/ConfigGeneral.qml", config, data.order);
+            const d = dialog(page, config, data.order);
+            const status = JSON.stringify({ claude: { status: "ok" } });
+            config.usageStatus = status;
+            tryVerify(() => page.latest.usageStatus === status, 5000);
+            page.cfg_fahrenheit = true;
+            verify(d.applyEnabled, "the change left Apply off");
+            page.cfg_fahrenheit = false;
+            compare(d.applyEnabled, data.order === "plasma60", "Apply after the change was undone");
+        }
+
+        // Apply writes the settings back one by one, and the widget answers
+        // some of them with a report: the inner-ring choices with knownLimits,
+        // and the items switched on with usageStatus, each written back after
+        // its answer in main.xml's order. The answer lands after Apply, the
+        // open page shows it, Apply stays off, and the next Apply saves it.
+        function test_applyKeepsTheWidgetsAnswer_data() {
+            return orders([
+                { tag: "limitPickedBackToAutomatic", source: "config/ConfigProviders.qml",
+                  // Haiku was picked earlier and is no longer reported.
+                  before: { claudeInnerLimit: "Haiku" }, key: "claudeInnerLimit", value: "",
+                  report: "knownLimits",
+                  answer: JSON.stringify({ claude: [{ id: "Fable", label: "Fable", reported: true }], codex: [] }) },
+                { tag: "bothItemsSwitchedOff", source: "config/ConfigItems.qml",
+                  before: {}, key: "hiddenItems", value: ["disk", "claude", "codex"],
+                  report: "usageStatus", answer: JSON.stringify({ helperError: "" }) }
+            ]);
+        }
+        function test_applyKeepsTheWidgetsAnswer(data) {
+            const values = Object.assign(settings(), { itemOrder: Items.SYSTEM.concat(Items.USAGE), hiddenItems: ["disk"] },
+                                         data.before);
+            const config = fakeConfiguration(values);
+            const usage = usageOn(config);
+            compare(usage.providers, ["claude", "codex"]);
+            tryVerify(() => config.knownLimits !== "" && config.usageStatus !== "", 10000, "no report from the stub");
+            compare(JSON.parse(config.knownLimits).claude.map(l => l.id), data.before.claudeInnerLimit ? ["Fable", "Haiku"] : ["Fable"]);
+            compare(JSON.parse(config.usageStatus).codex.status, "ok");
+
+            const page = open(data.source, config, data.order);
+            const d = dialog(page, config, data.order);
+            if (data.report === "knownLimits") {
+                verify(page.limitChoices("claude").some(c => c.text === "Haiku (not reported)"), "the picker offers the old choice");
+            } else {
+                compare(page.hints.claude, "Signed in");
+            }
+            page["cfg_" + data.key] = data.value;
+            verify(d.applyEnabled, "the change left Apply off");
+            d.apply();
+            compare(JSON.stringify(config[data.key]), JSON.stringify(data.value), "the change after Apply");
+            tryCompare(config, data.report, data.answer, 5000, "the widget's answer in the configuration");
+            tryVerify(() => page.latest[data.report] === data.answer, 5000, "the page didn't learn of the answer");
+            if (data.report === "knownLimits") {
+                verify(!page.limitChoices("claude").some(c => /not reported/.test(c.text)), "the picker still offers the old choice");
+            } else {
+                compare(usage.providers, []);
+                compare(page.hints.claude, "Shows while Claude Code is signed in");
+            }
+            verify(!d.applyEnabled, "the widget's answer enabled Apply");
+            d.apply();
+            compare(config[data.report], data.answer, "the configuration after the next Apply");
+            compare(config.file[data.report], data.answer, "the file after the next Apply");
         }
 
         // A change made on a page is saved, alongside a report written
@@ -473,17 +626,17 @@ Item {
             ]);
         }
         function test_applySavesTheChange(data) {
-            const values = settings();
-            const config = fakeConfiguration(values);
-            const page = open(data.source, values, config);
-            const d = dialog(page, config);
+            const config = fakeConfiguration(settings());
+            const page = open(data.source, config, data.order);
+            const d = dialog(page, config, data.order);
             page["cfg_" + data.key] = data.value;
             verify(d.signals > 0, "the change rang no cfg_ change signal");
-            verify(d.changed(), "the change isn't seen");
+            verify(d.applyEnabled, "the change left Apply off");
             const status = JSON.stringify({ claude: { status: "ok" } });
             config.usageStatus = status;
             tryVerify(() => page.latest.usageStatus === status, 5000);
-            d.apply(data.order);
+            verify(d.applyEnabled, "the report turned Apply off");
+            d.apply();
             compare(JSON.stringify(config[data.key]), JSON.stringify(data.value), "the configuration after Apply");
             compare(JSON.stringify(config.file[data.key]), JSON.stringify(data.value), "the file after Apply");
             compare(config.usageStatus, status);
@@ -499,13 +652,18 @@ Item {
         }
 
         // The hints read the reports as the widget writes them.
-        function test_pagesFollowTheReports() {
-            const values = settings();
-            const config = fakeConfiguration(values);
-            const sensors = open("config/ConfigSensors.qml", values, config);
-            const providers = open("config/ConfigProviders.qml", values, config);
+        function test_pagesFollowTheReports_data() {
+            return orders([{ tag: "pages" }]);
+        }
+        function test_pagesFollowTheReports(data) {
+            const config = fakeConfiguration(settings());
+            const items = open("config/ConfigItems.qml", config, data.order);
+            const sensors = open("config/ConfigSensors.qml", config, data.order);
+            const providers = open("config/ConfigProviders.qml", config, data.order);
+            config.usageStatus = JSON.stringify({ claude: { status: "ok" } });
             config.detectedHardware = JSON.stringify({ root: { disk: "nvme0n1" } });
             config.knownLimits = JSON.stringify({ claude: [{ id: "opus", label: "Opus", reported: true }] });
+            tryVerify(() => items.hints.claude === "Signed in", 5000);
             tryCompare(sensors, "rootDisk", "nvme0n1");
             tryCompare(providers, "claudeHasLimits", true);
         }
@@ -702,8 +860,9 @@ Item {
             }
         }
 
-        // The inner-limit pickers read Plasmoid.configuration.knownLimits;
-        // tests substitute it directly, since there's no live Plasmoid to fake.
+        // The inner-limit pickers read knownLimits from the page; these rows
+        // set that property directly, and test_pagesFollowTheReports covers
+        // the live path.
         function test_innerLimitPickers_data() {
             return [
                 { tag: "hiddenWithoutKnownLimits",

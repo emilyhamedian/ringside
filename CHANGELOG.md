@@ -135,9 +135,10 @@ follows [Semantic Versioning](https://semver.org/).
   failed, no longer show seconds in the C locale on Qt 6.6.
 - A top process that runs several times shows its count in the locale's
   digits, and popup percentages follow the translation's percent format.
-- Opening the settings no longer logs a warning for every setting on every
-  page. Each page now takes all of them, as Plasma's dialog hands them over,
-  and Apply keeps the reports the widget writes while the settings are open.
+- Opening a settings page no longer logs a warning for every setting the
+  page doesn't show, 39 to 43 lines a page. Each page now takes every
+  setting, as Plasma's dialog hands them over, and keeps the reports the
+  widget writes while the settings are open, as before.
 
 ## [0.2.2] - 2026-10-04
 

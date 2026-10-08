@@ -207,8 +207,9 @@ Item {
             compare(page.cfg_hiddenItems, ["claude", "codex"], "moving never switches an opted-out AI item on");
         }
 
-        // The hint column reads Plasmoid.configuration.usageStatus; tests
-        // substitute it directly, since there's no live Plasmoid to fake.
+        // The hint column reads usageStatus from the page; these rows set that
+        // property directly, and tst_config's test_pagesFollowTheReports
+        // covers the live path.
         function test_hints_data() {
             return [
                 { tag: "helperError", status: { helperError: "python3 not found" },
