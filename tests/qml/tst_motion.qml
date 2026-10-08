@@ -914,18 +914,29 @@ Item {
             verify(!name.layer.enabled);
         }
 
-        // A change back mid-fade turns the track round where it is.
+        // A change back mid-fade turns the track round where it is. It is
+        // made from a frame, after the cell's first has been drawn: polling
+        // for the middle of the fade misses it on a busy machine.
         function test_reversesCleanly() {
             monitor.gpuInner.phase = "asleep";
             const c = cell();
             const g = gauge(c);
-            monitor.gpuInner.phase = "live";
-            tryVerify(() => g.innerShown > 0.3 && g.innerShown < 0.9, 2000, "fading in");
+            waitForRendering(c);
+            const turn = { at: NaN, after: NaN };
             const seen = [];
-            createTemporaryObject(samplerComponent, c, { sample: () => seen.push(g.innerShown) });
-            const shown = g.innerShown;
-            monitor.gpuInner.phase = "asleep";
-            compare(g.innerShown, shown, "no jump");
+            createTemporaryObject(samplerComponent, c, { sample: () => {
+                if (Number.isNaN(turn.at) && g.innerShown > 0 && g.innerShown < 1) {
+                    turn.at = g.innerShown;
+                    monitor.gpuInner.phase = "asleep";
+                    turn.after = g.innerShown;
+                }
+                if (!Number.isNaN(turn.at)) {
+                    seen.push(g.innerShown);
+                }
+            } });
+            monitor.gpuInner.phase = "live";
+            tryVerify(() => !Number.isNaN(turn.at), 2000, "fading in");
+            compare(turn.after, turn.at, "no jump");
             tryCompare(g, "innerShown", 0, 2000);
             verify(seen.every((v, i) => i === 0 || v <= seen[i - 1] + 1e-9), "straight back out: " + JSON.stringify(seen));
             compare(innerArc(g).percent, 0, "and the arc never started");
@@ -1003,6 +1014,8 @@ Item {
             verify(!visibleTexts(popup).some(t => t.endsWith(" · off")), "no line yet");
             tryVerify(() => outer.opacity < 1, 1000, "fading out");
             compare(outer.slot.temperature, 48);
+            const temperatureGraph = root.all(outer, i => i.hasReading !== undefined)[0];
+            verify(temperatureGraph.visible, "its temperature graph fades out with it");
             tryCompare(outer, "visible", false, 1000);
             verify(visibleTexts(popup).includes("AMD Radeon RX 7700S · off"));
             verify(inner.first, "the integrated GPU's section still opens the page");

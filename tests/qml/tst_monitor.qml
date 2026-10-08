@@ -503,6 +503,28 @@ TestCase {
         verify(monitor[data.gap].every(t => Number.isNaN(t)), monitor[data.gap].join());
     }
 
+    // Another sensor starts its graph afresh rather than going on from the
+    // samples of the one before, and leaves the other graph alone.
+    function test_anotherTemperatureSensorStartsAfresh_data() {
+        return [{ tag: "cpu", key: "cpuTemperatureSensor", ids: ["cpu/cpu97/temperature", "cpu/cpu98/temperature"],
+                  history: "cpuTemperatureHistory", other: "diskTemperatureHistory" },
+                { tag: "disk", key: "diskTemperatureSensor", ids: ["disk/vdy/temperature", "disk/vdz/temperature"],
+                  history: "diskTemperatureHistory", other: "cpuTemperatureHistory" }];
+    }
+    function test_anotherTemperatureSensorStartsAfresh(data) {
+        stopTimers(monitor);
+        config[data.key] = data.ids[0];
+        monitor.sample();
+        monitor.sample();
+        const kept = monitor[data.other].length;
+        verify(monitor[data.history].length >= 2);
+        config[data.key] = data.ids[1];
+        compare(monitor[data.history].length, 0);
+        compare(monitor[data.other].length, kept);
+        monitor.sample();
+        compare(monitor[data.history].length, 1);
+    }
+
     // A GPU's temperature comes from its reader, so sampling it reads
     // nothing: a resting GPU's held reading goes in, and a sleeping GPU's
     // history has a gap whatever it held, with its sensors left off.

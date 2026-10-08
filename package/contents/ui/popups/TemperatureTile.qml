@@ -10,8 +10,11 @@ import "../code/format.js" as Format
 import "../code/history.js" as History
 
 // A temperature's history, as quiet as the other graphs: no grid, and the
-// scale named at the end of the caption line, "40–90 °C" (see
-// History.temperatureScale()). The line turns amber and red where it passes
+// top named at the end of the caption line. The top is the hot threshold,
+// under a faint rule as a percentage graph's 100% is, "hot 90 °C", or the
+// peak when the line runs hotter or the highlighting is off, "peak 93 °C",
+// as a rate graph's is. The floor goes unnamed (see
+// History.temperatureFloor()). The line turns amber and red where it passes
 // the warm and hot thresholds, as the header's reading does, and breaks off
 // where there was no reading.
 Tile {
@@ -23,39 +26,59 @@ Tile {
     property var history: []
 
     readonly property bool fahrenheit: monitor.fahrenheit
-    // Samples and thresholds in the unit shown, so the scale's ends are
-    // round numbers in it.
+    // Samples and thresholds in the unit shown, so the floor is a round
+    // number in it.
     readonly property var shown: history.map(c => Format.degrees(c, fahrenheit))
-    readonly property var range: History.temperatureScale(shown, Format.degrees(monitor.hotCelsius, fahrenheit),
-                                                          Format.degrees(5, fahrenheit) - Format.degrees(0, fahrenheit))
-    // A sensor that has never answered in the graph's span has no graph,
-    // as its header has no reading.
-    readonly property bool hasReading: history.some(c => Number.isFinite(c))
+    readonly property real hot: Format.degrees(monitor.hotCelsius, fahrenheit)
+    // With the highlighting off the settings grey the thresholds out and
+    // the line keeps one colour, so the hot threshold means nothing here.
+    readonly property real scaleTop: History.temperatureTop(shown, monitor.highlightTemperatures ? hot : -Infinity)
+    readonly property bool topIsHot: monitor.highlightTemperatures && scaleTop === hot
+    // 5 °C in the unit shown.
+    readonly property real margin: fahrenheit ? 9 : 5
+    // Set as the samples come rather than bound, since where it stays
+    // depends on where it was.
+    property real floor: NaN
+    // A lone reading draws no line, so a sensor needs two in a row in the
+    // graph's span for a graph, as the header needs one for a reading.
+    readonly property bool hasReading: history.some((c, i) => i > 0 && Number.isFinite(c) && Number.isFinite(history[i - 1]))
+
+    Component.onCompleted: floor = History.temperatureFloor(shown, margin, NaN)
+    onShownChanged: floor = History.temperatureFloor(shown, margin, floor)
 
     visible: hasReading
     caption: i18nc("@title:group", "Temperature")
     graphSeconds: monitor.historySeconds
-    graphTop: fahrenheit
-        ? i18nc("@title:group at the end of a temperature graph's caption line: the range it spans, as in 100–194 °F",
-                "%1–%2 °F", Format.whole(range.low), Format.whole(range.high))
-        : i18nc("@title:group at the end of a temperature graph's caption line: the range it spans, as in 40–90 °C",
-                "%1–%2 °C", Format.whole(range.low), Format.whole(range.high))
+    graphTop: {
+        const t = Format.whole(scaleTop);
+        if (topIsHot) {
+            return fahrenheit
+                ? i18nc("@title:group at the end of a temperature graph's caption line: the hot threshold set for red, which the graph's top and its rule stand for, as in hot 194 °F", "hot %1 °F", t)
+                : i18nc("@title:group at the end of a temperature graph's caption line: the hot threshold set for red, which the graph's top and its rule stand for, as in hot 90 °C", "hot %1 °C", t);
+        }
+        return fahrenheit
+            ? i18nc("@title:group at the end of a temperature graph's caption line: its highest reading, as in peak 199 °F", "peak %1 °F", t)
+            : i18nc("@title:group at the end of a temperature graph's caption line: its highest reading, as in peak 93 °C", "peak %1 °C", t);
+    }
 
     Item {
         id: graph
 
-        // In the unit shown, as the scale is.
-        readonly property var values: tile.shown
         // The top sits where the other graphs put theirs.
         readonly property real topY: rule.limitY
-        readonly property var points: History.points(values, tile.monitor.historyLength, width, height,
-                                                     tile.range.high, topY, tile.range.low)
-        readonly property var areas: History.runs(values, points).map(run =>
+        // The samples, in the unit shown, and their points, kept together:
+        // as a history grows, a binding reading them apart could see the
+        // new samples with the old points, one short.
+        readonly property var plot: {
+            const values = tile.shown;
+            return { values: values, points: History.points(values, tile.monitor.historyLength, width, height,
+                                                            tile.scaleTop, topY, tile.floor) };
+        }
+        readonly property var areas: History.runs(plot.values, plot.points).map(run =>
             [Qt.point(run[0].x, height)].concat(run.map(p => Qt.point(p.x, p.y)), [Qt.point(run[run.length - 1].x, height)]))
         readonly property var pieces: tile.monitor.highlightTemperatures
-            ? History.pieces(values, points, Format.degrees(tile.monitor.warmCelsius, tile.fahrenheit),
-                             Format.degrees(tile.monitor.hotCelsius, tile.fahrenheit))
-            : History.pieces(values, points, Infinity, Infinity)
+            ? History.pieces(plot.values, plot.points, Format.degrees(tile.monitor.warmCelsius, tile.fahrenheit), tile.hot)
+            : History.pieces(plot.values, plot.points, Infinity, Infinity)
 
         function lines(level) {
             return pieces.filter(p => p.level === level).map(p => p.points.map(q => Qt.point(q.x, q.y)));
@@ -67,7 +90,8 @@ Tile {
 
         LimitRule {
             id: rule
-            visible: false
+            anchors.fill: parent
+            visible: tile.topIsHot
         }
 
         Shape {

@@ -3,6 +3,7 @@
 
 import QtQuick
 import QtQuick.Layouts
+import QtQuick.Shapes
 import QtTest
 import org.kde.kirigami as Kirigami
 import "../../package/contents/ui/code/format.js" as Format
@@ -190,6 +191,18 @@ Item {
         gpuOuter.temperatureHistory: climb
         diskTemperature: 93
         diskTemperatureHistory: climb
+    }
+
+    // A graph span of 30 s.
+    FakeMonitor {
+        id: shortSpan
+        historySeconds: 30
+    }
+
+    // A CPU whose first reading has just come.
+    FakeMonitor {
+        id: firstReading
+        cpuTemperatureHistory: [61]
     }
 
     // The discrete GPU alone, awake for the last 35 s of the graph's span.
@@ -1096,7 +1109,7 @@ Item {
                     verify(all(last, i => i === tile.foot).length === 1, tile.caption + ": the foot is the text it ends on");
                     foot = tile.height - tile.foot.mapToItem(tile, Qt.point(0, tile.foot.baselineOffset)).y;
                 } else {
-                    verify(last.values !== undefined || last.maxColumns !== undefined, tile.caption + " ends on a graph or names its foot");
+                    verify(last.values !== undefined || last.plot !== undefined || last.maxColumns !== undefined, tile.caption + " ends on a graph or names its foot");
                     foot = tile.height - (column.y + column.height);
                 }
                 fuzzyCompare(foot, capTop, 1, tile.caption + ": the foot's ink " + foot + " from the bottom, the capitals " + capTop + " from the top");
@@ -1148,7 +1161,7 @@ Item {
         function test_dividers(data) {
             const popup = load(data.popup, data.monitor);
             const found = all(popup, i => i.visible && i.height > 0 && i.height <= 1 && i.radius !== undefined && i.width > 0
-                                          && !ancestor(i, a => a.ceiling !== undefined));
+                                          && !ancestor(i, a => a.limitY !== undefined));
             compare(found.length, 1);
             const edge = Math.round(Kirigami.Units.largeSpacing * 2);
             const divider = found[0];
@@ -1549,7 +1562,7 @@ Item {
             // A rule before every section but the first, and before a
             // powered-down GPU under an awake one.
             const rules = all(popup, i => i.visible && i.height > 0 && i.height <= 1 && i.radius !== undefined && i.width > 0
-                                          && !ancestor(i, a => a.ceiling !== undefined));
+                                          && !ancestor(i, a => a.limitY !== undefined));
             compare(rules.length, Math.max(0, headers.length - 1) + (headers.length > 0 ? data.off.length : 0));
         }
 
@@ -1869,45 +1882,147 @@ Item {
 
         // A temperature graph wherever the header has a temperature that has
         // given a reading in the graph's span, none for a sensor that never
-        // answers, an Intel GPU, which publishes none, or a sleeping GPU,
-        // which keeps to its one line. The caption gives the span, and its
-        // far end the scale: from a round ten under the coolest reading to
-        // the hot threshold. Integrated GPUs come first.
+        // answers, an Intel GPU, which publishes none, a sleeping GPU, which
+        // keeps to its one line, or an integrated GPU beside a discrete one.
+        // The caption gives the span, and its far end the top: the hot
+        // threshold, under a faint rule as 100% is, as these run cooler.
         function test_temperatureGraphs_data() {
             return [
-                { tag: "cpu", popup: "CpuPopup", monitor: normal, ranges: ["50–90 °C"] },
-                { tag: "cpuWithoutReading", popup: "CpuPopup", monitor: cpuUnheated, ranges: [] },
-                { tag: "gpu", popup: "GpuPopup", monitor: normal, ranges: ["30–90 °C", "40–90 °C"] },
-                { tag: "gpuResting", popup: "GpuPopup", monitor: resting, ranges: ["30–90 °C", "40–90 °C"] },
-                { tag: "gpuAsleep", popup: "GpuPopup", monitor: asleep, ranges: ["30–90 °C"] },
-                { tag: "gpuOnlyAsleep", popup: "GpuPopup", monitor: onlyAsleep, ranges: [] },
-                { tag: "gpuIntel", popup: "GpuPopup", monitor: intel, ranges: ["40–90 °C"] },
-                { tag: "disk", popup: "DiskPopup", monitor: normal, ranges: ["30–90 °C"] },
-                { tag: "diskWithoutTemperature", popup: "DiskPopup", monitor: diskUnheated, ranges: [] }
+                { tag: "cpu", popup: "CpuPopup", monitor: normal, count: 1 },
+                { tag: "cpuWithoutReading", popup: "CpuPopup", monitor: cpuUnheated, count: 0 },
+                { tag: "gpu", popup: "GpuPopup", monitor: normal, count: 1 },
+                { tag: "gpuResting", popup: "GpuPopup", monitor: resting, count: 1 },
+                { tag: "gpuAsleep", popup: "GpuPopup", monitor: asleep, count: 0 },
+                { tag: "gpuInnerAsleep", popup: "GpuPopup", monitor: innerAsleep, count: 0 },
+                { tag: "gpuIntegratedOnly", popup: "GpuPopup", monitor: integrated, count: 1 },
+                { tag: "gpuOnlyAsleep", popup: "GpuPopup", monitor: onlyAsleep, count: 0 },
+                { tag: "gpuIntel", popup: "GpuPopup", monitor: intel, count: 1 },
+                { tag: "disk", popup: "DiskPopup", monitor: normal, count: 1 },
+                { tag: "diskWithoutTemperature", popup: "DiskPopup", monitor: diskUnheated, count: 0 }
             ];
         }
 
         function test_temperatureGraphs(data) {
-            const tiles = temperatureTiles(load(data.popup, data.monitor, false, Kirigami.Units.gridUnit * 30));
-            compare(tiles.map(t => captionLine(t)[1].text), data.ranges.map(localized));
+            const popup = load(data.popup, data.monitor, false, Kirigami.Units.gridUnit * 30);
+            const tiles = temperatureTiles(popup);
+            compare(tiles.length, data.count);
+            // The usage or write rate graph over it, whose shape it shares.
+            const above = all(popup, i => i.visible && i.fillOpacity !== undefined && i.ceiling !== undefined).pop();
             tiles.forEach(t => {
                 const [caption, top] = captionLine(t);
                 compare(caption.text, "TEMPERATURE · 60 s");
+                compare(top.text, localized("hot 90 °C"));
                 verify(top.visible);
                 const g = temperatureGraph(t);
+                const rules = all(g, i => i.limitY !== undefined);
+                compare(rules.length, 1);
+                verify(rules[0].visible, "a rule at the top it names");
+                compare(rules[0].width, g.width);
                 compare(g.areas.length, 1, "one unbroken line");
-                compare(g.points.length, data.monitor.historyLength);
-                const lines = all(g, i => i.visible && i.border !== undefined && i.radius !== undefined);
+                compare(g.plot.points.length, data.monitor.historyLength);
+                const lines = all(g, i => i.visible && i.border !== undefined && i.radius !== undefined
+                                          && !ancestor(i, a => a === rules[0]));
                 compare(lines.length, 0, "no grid");
                 compare(all(g, i => typeof i.text === "string").length, 0, "nothing written on the graph");
-                // The newest reading stands where the scale named puts it,
-                // and every reading stays inside the scale.
-                const newest = g.values[g.values.length - 1];
-                fuzzyCompare(g.points[g.points.length - 1].y,
-                             g.topY + (1 - (newest - t.range.low) / (t.range.high - t.range.low)) * (g.height - g.topY - 0.75), 1e-6);
-                const ys = g.points.map(p => p.y);
+                // The newest reading stands where the scale puts it, and
+                // every reading stays inside the scale.
+                const newest = g.plot.values[g.plot.values.length - 1];
+                compare(t.scaleTop, 90);
+                fuzzyCompare(g.plot.points[g.plot.points.length - 1].y,
+                             g.topY + (1 - (newest - t.floor) / (t.scaleTop - t.floor)) * (g.height - g.topY - 0.75), 1e-6);
+                const ys = g.plot.points.map(p => p.y);
                 verify(Math.min(...ys) >= g.topY && Math.max(...ys) < g.height - 1, ys.join());
+                // Filled down to the floor of the graph, in the usage graph's
+                // shade, and as tall as it.
+                const area = g.areas[0];
+                compare(area[0].y, g.height);
+                compare(area[area.length - 1].y, g.height);
+                compare(area[0].x, area[1].x);
+                compare(area[area.length - 1].x, area[area.length - 2].x);
+                const paths = all(g, i => i.preferredRendererType !== undefined)[0].data;
+                fuzzyCompare(paths[0].fillColor.a, above.fillOpacity, 0.005);
+                compare(g.implicitHeight, above.implicitHeight);
+                compare(g.height, above.height);
+                paths.slice(1).forEach(p => compare(p.capStyle, ShapePath.RoundCap, "pieces meet in round ends"));
             });
+        }
+
+        // Highlighting off, the thresholds mean nothing on screen, so the
+        // top is the peak, named as a rate graph's is, with no rule.
+        function test_temperatureTopIsThePeakWithoutHighlighting() {
+            normal.highlightTemperatures = false;
+            try {
+                const tile = temperatureTiles(load("CpuPopup", normal, false, Kirigami.Units.gridUnit * 30))[0];
+                const peak = Math.max(...normal.cpuTemperatureHistory);
+                compare(tile.scaleTop, peak);
+                compare(captionLine(tile)[1].text, localized("peak " + Math.round(peak) + " °C"));
+                const g = temperatureGraph(tile);
+                verify(!all(g, i => i.limitY !== undefined)[0].visible, "no rule");
+                fuzzyCompare(Math.min(...g.plot.points.map(p => p.y)), g.topY, 1e-6, "the peak at the top");
+            } finally {
+                normal.highlightTemperatures = true;
+            }
+        }
+
+        // A full history fills the graph from edge to edge whatever its span.
+        function test_temperatureGraphFillsItsSpan_data() {
+            return [{ tag: "60 s", monitor: normal }, { tag: "30 s", monitor: shortSpan }];
+        }
+
+        function test_temperatureGraphFillsItsSpan(data) {
+            const tile = temperatureTiles(load("CpuPopup", data.monitor))[0];
+            const g = temperatureGraph(tile);
+            compare(g.plot.points.length, data.monitor.historyLength);
+            fuzzyCompare(g.plot.points[0].x, 0, 1e-6, "the oldest at the left edge");
+            fuzzyCompare(g.plot.points[g.plot.points.length - 1].x, g.width, 1e-6, "the newest at the right");
+            compare(captionLine(tile)[0].text, "TEMPERATURE · " + data.tag);
+        }
+
+        // A lone reading draws no line, so there is no graph until a second
+        // one comes.
+        function test_aLoneReadingHasNoGraph() {
+            const sample = firstReading.cpuTemperatureHistory;
+            try {
+                compare(temperatureTiles(load("CpuPopup", firstReading)).length, 0);
+                firstReading.cpuTemperatureHistory = [NaN, 60, NaN, 61];
+                compare(temperatureTiles(load("CpuPopup", firstReading)).length, 0, "nor from readings apart");
+                firstReading.cpuTemperatureHistory = [60, 61];
+                compare(temperatureTiles(load("CpuPopup", firstReading)).length, 1);
+            } finally {
+                firstReading.cpuTemperatureHistory = sample;
+            }
+        }
+
+        // A reading dipping under a round number lowers the floor, which then
+        // stays down as the dip leaves the span, so the line moves once.
+        function test_temperatureFloorHoldsInTheTile() {
+            const sample = firstReading.cpuTemperatureHistory;
+            try {
+                firstReading.cpuTemperatureHistory = [46, 45, 46];
+                const tile = temperatureTiles(load("CpuPopup", firstReading))[0];
+                compare(tile.floor, 40);
+                firstReading.cpuTemperatureHistory = [45, 46, 44.9];
+                compare(tile.floor, 30);
+                firstReading.cpuTemperatureHistory = [46, 44.9, 46];
+                firstReading.cpuTemperatureHistory = [44.9, 46, 45];
+                firstReading.cpuTemperatureHistory = [46, 45, 46];
+                compare(tile.floor, 30, "kept as the dip leaves");
+                const g = temperatureGraph(tile);
+                fuzzyCompare(g.plot.points[2].y, g.topY + (1 - (46 - 30) / (90 - 30)) * (g.height - g.topY - 0.75), 1e-6);
+                firstReading.cpuTemperatureHistory = [52, 51, 53];
+                compare(tile.floor, 40, "raised once well clear");
+            } finally {
+                firstReading.cpuTemperatureHistory = sample;
+            }
+        }
+
+        // Two GPUs, the integrated one without a temperature graph, fit a
+        // 1920 × 1080 screen at 150%, 720 px, under a 44 px panel, with 10 px
+        // for the dialog's margins, at Plasma's usual grid unit of 18 px.
+        function test_twoGpusFitASmallScreen() {
+            const popup = load("GpuPopup", normal);
+            verify(popup.implicitHeight <= (720 - 44 - 10) * Kirigami.Units.gridUnit / 18, popup.implicitHeight + " px at a grid unit of "
+                   + Kirigami.Units.gridUnit);
         }
 
         // Each temperature graph comes straight under the usage graph it
@@ -1915,7 +2030,7 @@ Item {
         // causes; the disk's after its write rate.
         function test_temperatureGraphPlacement_data() {
             return [{ tag: "cpu", popup: "CpuPopup", above: "Usage", count: 1 },
-                    { tag: "gpu", popup: "GpuPopup", above: "Usage", count: 2 },
+                    { tag: "gpu", popup: "GpuPopup", above: "Usage", count: 1 },
                     { tag: "disk", popup: "DiskPopup", above: "Write", count: 1 },
                     { tag: "cpuMirrored", popup: "CpuPopup", above: "Usage", count: 1, mirrored: true }];
         }
@@ -1946,18 +2061,22 @@ Item {
             try {
                 const tile = temperatureTiles(load("CpuPopup", normal, false, Kirigami.Units.gridUnit * 30))[0];
                 const g = temperatureGraph(tile);
-                fuzzyCompare(g.values[g.values.length - 1], 61 * 9 / 5 + 32, 1e-9);
-                compare(captionLine(tile)[1].text, localized("120–194 °F"));
+                fuzzyCompare(g.plot.values[g.plot.values.length - 1], 61 * 9 / 5 + 32, 1e-9);
+                compare(captionLine(tile)[1].text, localized("hot 194 °F"));
             } finally {
                 normal.fahrenheit = false;
             }
         }
 
         // The line turns amber from the warm threshold and red from the hot
-        // one, as the header's reading does, and stays plain with the
-        // highlighting off. The scale tops out at a round five over 93 °C.
+        // one, as the header's reading does, in either unit, and stays plain
+        // with the highlighting off. The top is the peak, over hot.
         function test_temperatureLineTakesTheLevelColours_data() {
-            return [{ tag: "cpu", popup: "CpuPopup" }, { tag: "gpu", popup: "GpuPopup" }, { tag: "disk", popup: "DiskPopup" }];
+            return [{ tag: "cpu", popup: "CpuPopup", f: false, top: "peak 93 °C" },
+                    { tag: "gpu", popup: "GpuPopup", f: false, top: "peak 93 °C" },
+                    { tag: "disk", popup: "DiskPopup", f: false, top: "peak 93 °C" },
+                    { tag: "cpuF", popup: "CpuPopup", f: true, top: "peak 199 °F" },
+                    { tag: "diskF", popup: "DiskPopup", f: true, top: "peak 199 °F" }];
         }
 
         function test_temperatureLineTakesTheLevelColours(data) {
@@ -1965,7 +2084,7 @@ Item {
             const check = (highlighted, levels, counts) => {
                 heating.highlightTemperatures = highlighted;
                 const tile = temperatureTiles(load(data.popup, heating, false, Kirigami.Units.gridUnit * 30)).pop();
-                compare(captionLine(tile)[1].text, localized("50–95 °C"));
+                compare(captionLine(tile)[1].text, localized(data.top));
                 const g = temperatureGraph(tile);
                 compare(g.pieces.map(p => p.level), levels);
                 // The climb passes 75 °C 26.8 samples in and 90 °C 53.6 in.
@@ -1977,11 +2096,13 @@ Item {
                         [Kirigami.Theme.textColor, Kirigami.Theme.neutralTextColor, Kirigami.Theme.negativeTextColor].map(String));
                 compare(paths.map(p => p.pathElements[0].paths.length), counts);
             };
+            heating.fahrenheit = data.f;
             try {
                 check(true, [0, 1, 2], [1, 1, 1]);
                 check(false, [0], [1, 0, 0]);
             } finally {
                 heating.highlightTemperatures = true;
+                heating.fahrenheit = false;
             }
         }
 
@@ -2045,9 +2166,9 @@ Item {
                     elideProbe.elideWidth = caption.width;
                     verify(elideProbe.elidedText.startsWith(caption.label.toLocaleUpperCase()), elideProbe.elidedText);
                     const g = temperatureGraph(tile);
-                    const newest = g.points[g.points.length - 1];
+                    const newest = g.plot.points[g.plot.points.length - 1];
                     fuzzyCompare(newest.x, g.width, 1e-6, "the newest sample at the right");
-                    verify(g.points[0].x < newest.x);
+                    verify(g.plot.points[0].x < newest.x);
                 });
             } finally {
                 root.pseudo = false;

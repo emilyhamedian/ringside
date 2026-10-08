@@ -178,22 +178,49 @@ TestCase {
         compare(History.runs([NaN, NaN], [{ x: 0, y: NaN }, { x: 1, y: NaN }]), []);
     }
 
-    // The top is the hot threshold, or a round five over a hotter peak; the
-    // floor a round ten at least the margin under the coolest reading.
-    function test_temperatureScale_data() {
+    // The floor is a round ten at least the margin under the coolest
+    // reading; with no reading there is none.
+    function test_temperatureFloor_data() {
         return [
-            { tag: "steady", samples: [60, 61, 62], hot: 90, low: 50, high: 90 },
-            { tag: "marginOnARoundTen", samples: [45, 50], hot: 90, low: 40, high: 90 },
-            { tag: "justUnder", samples: [44.9, 50], hot: 90, low: 30, high: 90 },
-            { tag: "pastHot", samples: [52, 93.4], hot: 90, low: 40, high: 95 },
-            { tag: "peakOnAFive", samples: [70, 95], hot: 90, low: 60, high: 95 },
-            { tag: "gapsIgnored", samples: [NaN, 61, NaN], hot: 90, low: 50, high: 90 },
-            { tag: "nothing", samples: [NaN], hot: 90, low: 80, high: 90 },
-            { tag: "fahrenheit", samples: [141.8, 143.6], hot: 194, margin: 9, low: 130, high: 194 }
+            { tag: "steady", samples: [60, 61, 62], low: 50 },
+            { tag: "marginOnARoundTen", samples: [45, 50], low: 40 },
+            { tag: "justUnder", samples: [44.9, 50], low: 30 },
+            { tag: "gapsIgnored", samples: [NaN, 61, NaN], low: 50 },
+            { tag: "fahrenheit", samples: [141.8, 143.6], margin: 9, low: 130 }
         ];
     }
-    function test_temperatureScale(data) {
-        compare(History.temperatureScale(data.samples, data.hot, data.margin ?? 5), { low: data.low, high: data.high });
+    function test_temperatureFloor(data) {
+        compare(History.temperatureFloor(data.samples, data.margin ?? 5, NaN), data.low);
+    }
+
+    function test_noReadingNoFloor() {
+        verify(Number.isNaN(History.temperatureFloor([NaN, NaN], 5, 40)));
+        verify(Number.isNaN(History.temperatureFloor([], 5, NaN)));
+    }
+
+    // A reading dipping across a round number lowers the floor at once, but
+    // it stays down as the dip comes and goes from the span, until every
+    // reading is ten and two margins over it.
+    function test_temperatureFloorHolds() {
+        var low = History.temperatureFloor([45, 46], 5, NaN);
+        compare(low, 40);
+        for (var i = 0; i < 4; ++i) {
+            low = History.temperatureFloor(i % 2 ? [45, 46] : [44.9, 46], 5, low);
+            compare(low, 30, "round " + i);
+        }
+        compare(History.temperatureFloor([49.9, 52], 5, 30), 30, "still under 30 + 20");
+        compare(History.temperatureFloor([50, 52], 5, 30), 40, "raised once well clear");
+        compare(History.temperatureFloor([46, 52], 5, 40), 40);
+        compare(History.temperatureFloor([84, 90], 5, 40), 70, "a big step goes straight there");
+    }
+
+    // The top is the hot threshold, or the peak when it runs hotter or
+    // there is no threshold.
+    function test_temperatureTop() {
+        compare(History.temperatureTop([60, 61, 62], 90), 90);
+        compare(History.temperatureTop([52, 93.4, NaN], 90), 93.4);
+        compare(History.temperatureTop([60, 61.5, NaN], -Infinity), 61.5);
+        compare(History.temperatureTop([NaN], 90), 90);
     }
 
     function levelsOf(pieces) {
@@ -224,6 +251,16 @@ TestCase {
         compare(pieces[1].points, [{ x: 15, y: 25 }, { x: 30, y: 10 }]);
         compare(pieces[2].points[0], { x: 30, y: 10 });
         compare(pieces[2].points[pieces[2].points.length - 1], { x: 60, y: 10 });
+    }
+
+    // A reading on the warm threshold is amber, as the header's is.
+    function test_piecesTakeTheWarmColourOnTheThreshold() {
+        var samples = [70, 75, 75];
+        var points = samples.map((v, i) => ({ x: i * 10, y: 100 - v }));
+        var pieces = History.pieces(samples, points, 75, 90);
+        compare(levelsOf(pieces), [0, 1]);
+        compare(pieces[1].points[0], { x: 10, y: 25 });
+        compare(pieces[1].points[pieces[1].points.length - 1], { x: 20, y: 25 });
     }
 
     function test_piecesBreakAtGapsAndKeepOneColourWithoutThresholds() {

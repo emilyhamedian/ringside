@@ -84,6 +84,10 @@ PopupPage {
             visible: opened
             slot: !awake && opened && last ? last : live
             temperatureName: words.sensorName(live.temperatureLabel)
+            // Not an integrated GPU's beside a discrete one: it shares the
+            // CPU's die, whose temperature the CPU popup graphs, and a second
+            // graph would make the popup too tall for a small screen.
+            temperatureGraphed: live.kind !== "integrated" || !popup.slots.some(slot => slot.kind === "discrete")
             first: popup.open.indexOf(live) === 0
             animated: popup.animated
         }
@@ -135,6 +139,7 @@ PopupPage {
         required property var slot
         // The slot's temperature label in plain words.
         required property string temperatureName
+        property bool temperatureGraphed: true
         // Any section after the first is set off from it by a rule.
         property bool first: true
         // Faded in while the GPU is awake and out while it sleeps.
@@ -214,6 +219,8 @@ PopupPage {
 
             // As in the CPU popup: under the usage it follows.
             TemperatureTile {
+                id: temperature
+                visible: temperature.hasReading && section.temperatureGraphed
                 Layout.columnSpan: parent.columns
                 monitor: section.monitor
                 history: section.slot.temperatureHistory

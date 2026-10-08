@@ -56,7 +56,9 @@ Item {
                                                    .replace(/^file:\/\//, ""))
 
     // The items switched on, and whether any of them reads ksystemstats: a
-    // widget showing only Claude and Codex subscribes nothing.
+    // widget showing only Claude and Codex subscribes nothing. While any
+    // system item is shown every system sensor is read, a hidden item's
+    // too, except a GPU's (see gpuShown).
     readonly property var enabledItems: Items.enabled(config.itemOrder, config.hiddenItems)
     readonly property bool systemShown: enabledItems.some(k => Items.SYSTEM.includes(k))
 
@@ -71,6 +73,7 @@ Item {
 
     // CPU
     readonly property real cpuUsage: value(cpuUsageSensor)
+    readonly property string cpuTemperatureSensorId: config.cpuTemperatureSensor || "cpu/all/maximumTemperature"
     readonly property real cpuTemperature: {
         const t = value(member(cpuTemperatureReaders, 0));
         return Format.temperatureValid(t) ? t : NaN;
@@ -320,6 +323,10 @@ Item {
         diskTemperatureHistory = [];
     }
 
+    // Another sensor's samples would go on under the new one's name.
+    onCpuTemperatureSensorIdChanged: cpuTemperatureHistory = []
+    onDiskTemperatureSensorIdChanged: diskTemperatureHistory = []
+
     Timer {
         objectName: "sample"
         interval: monitor.sampleInterval
@@ -381,7 +388,7 @@ Item {
 
     ReaderSet {
         id: cpuTemperatureReaders
-        model: [monitor.config.cpuTemperatureSensor || "cpu/all/maximumTemperature"]
+        model: [monitor.cpuTemperatureSensorId]
     }
 
     ReaderSet {

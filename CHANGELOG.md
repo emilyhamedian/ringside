@@ -11,12 +11,14 @@ follows [Semantic Versioning](https://semver.org/).
 ### Added
 
 - The CPU, GPU and disk popups graph their temperature over the graph
-  span, under the usage graph (after the write rate for a disk). The scale
-  runs from a round ten below the coolest reading to your hot threshold, or
-  past the peak when that is hotter, and is named at the end of the caption
-  line, such as "40–90 °C". The line turns amber and red where it passes
+  span, under the usage graph (after the write rate for a disk). The graph
+  has a line at your hot threshold, named at the end of the caption line as
+  "hot 90 °C", or reaches up to its peak, "peak 93 °C", when that is hotter
+  or the temperature colours are off. Its floor is a round ten at least 5 °C
+  below the coolest reading. The line turns amber and red where it passes
   your thresholds, and leaves a gap while a GPU sleeps. A GPU or drive with
-  no temperature reading has no graph.
+  no temperature reading has no graph, nor has an integrated GPU beside a
+  discrete one.
 - The network popup can show the public address websites see under the
   local one, with the interface each address family leaves through when
   that isn't the local one, a shield for a tunnel, and a warning when IPv6
