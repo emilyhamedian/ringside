@@ -12,44 +12,115 @@ ConfigPage {
     id: page
 
     readonly property var historyChoices: [30, 60, 120, 300, 600]
-    readonly property var service: Lookup.service(cfg_publicAddressUrl4, cfg_publicAddressUrl6)
-    // An invalid service asks nothing, so it goes unnamed rather than named
-    // after the one URL that is fine.
-    readonly property string serviceName: !service.valid
-        ? i18nc("@info a public address service whose URL isn't valid", "the address service")
-        : service.hosts.length === 2
-        ? i18nc("@info two services' host names", "%1 and %2", service.hosts[0], service.hosts[1])
-        : service.hosts[0]
     readonly property string unit: cfg_fahrenheit ? i18nc("@label temperature unit", "°F")
                                                    : i18nc("@label temperature unit", "°C")
+    readonly property var service: Lookup.service(cfg_publicAddressUrl4, cfg_publicAddressUrl6)
+    // Custom is shown while either URL is set, or once picked or typed in,
+    // so the fields stay open while both are empty. Picking ipify.org
+    // empties them, which is what selects it; picking Custom again brings
+    // back what they held.
+    property bool customPicked: false
+    readonly property bool custom: customPicked || service.custom
+    property var keptUrls: ["", ""]
+
+    // Whom Ringside asks and what they learn, under the box whether it's
+    // ticked or not.
+    readonly property string line: {
+        if (custom && !service.custom) {
+            return i18nc("@info Custom picked, both URLs still empty; %1 is ipify.org",
+                         "Asks %1, which sees your address, until you enter a URL.", Lookup.IPIFY.name);
+        }
+        if (!service.valid) {
+            return i18nc("@info", "Asks nothing while a URL isn't valid.");
+        }
+        const n = service.hosts.length;
+        const who = n === 2 ? i18nc("@info two host names", "%1 and %2", service.hosts[0], service.hosts[1]) : service.hosts[0];
+        return i18ncp("@info %2 names the service", "Asks %2, which sees your address, when the popup opens.",
+                      "Asks %2, which see your address, when the popup opens.", n, who);
+    }
+    // How far the box's text sits from its edge. FormLayout ignores layout
+    // margins, so the line under the box takes this as padding.
+    readonly property real boxIndent: (publicAddress.mirrored ? publicAddress.rightPadding : publicAddress.leftPadding)
+                                      + publicAddress.indicator.width + publicAddress.spacing
+
+    function pickCustom(yes) {
+        if (yes === custom) {
+            return;
+        }
+        customPicked = yes;
+        if (yes) {
+            cfg_publicAddressUrl4 = keptUrls[0];
+            cfg_publicAddressUrl6 = keptUrls[1];
+        } else {
+            keptUrls = [cfg_publicAddressUrl4, cfg_publicAddressUrl6];
+            cfg_publicAddressUrl4 = "";
+            cfg_publicAddressUrl6 = "";
+        }
+    }
+    // Both URLs emptied from outside the fields, as Defaults does, means
+    // ipify.org again, so Custom closes with them.
+    function settle() {
+        if (customPicked && cfg_publicAddressUrl4 === "" && cfg_publicAddressUrl6 === ""
+                && !url4.input.activeFocus && !url6.input.activeFocus) {
+            customPicked = false;
+        }
+    }
+    onCfg_publicAddressUrl4Changed: settle()
+    onCfg_publicAddressUrl6Changed: settle()
+
+    // What's wrong with a service URL, in a few words, or "".
+    function urlProblem(url) {
+        const u = String(url).trim();
+        if (u === "" || Lookup.host(u) !== "") {
+            return "";
+        }
+        if (!/^https:\/\//i.test(u)) {
+            return i18nc("@info under a URL field", "Only https:// addresses work.");
+        }
+        if (/^https:\/\/[^\/?#]*@/i.test(u)) {
+            return i18nc("@info under a URL field", "Leave out the user name and password.");
+        }
+        return i18nc("@info under a URL field", "Check the host name.");
+    }
 
     // A public address service's URL, and what's wrong with it, if anything.
     component UrlField: ColumnLayout {
         id: field
 
         property string url
-        property string placeholder
         property string name
-        readonly property bool invalid: url.trim() !== "" && Lookup.host(url.trim()) === ""
+        readonly property alias input: input
+        readonly property string problem: page.urlProblem(url)
 
         signal edited(string text)
 
+        Kirigami.FormData.buddyFor: input
+        Layout.fillWidth: false
+        Layout.preferredWidth: Kirigami.Units.gridUnit * 16
         spacing: Kirigami.Units.smallSpacing
 
         QQC2.TextField {
-            Layout.preferredWidth: Kirigami.Units.gridUnit * 16
+            id: input
+            Layout.fillWidth: true
+            // A URL reads left to right in any language.
+            LayoutMirroring.enabled: false
+            horizontalAlignment: TextInput.AlignLeft
             text: field.url
-            placeholderText: field.placeholder
             inputMethodHints: Qt.ImhUrlCharactersOnly | Qt.ImhNoAutoUppercase | Qt.ImhNoPredictiveText
             Accessible.name: field.name
-            Accessible.description: field.invalid ? error.text : ""
-            onTextEdited: field.edited(text)
+            Accessible.description: field.problem
+            onTextEdited: {
+                page.customPicked = true;
+                field.edited(text);
+            }
+            // A stored URL opens at its start, not scrolled to its end.
+            onTextChanged: if (!activeFocus) cursorPosition = 0
         }
         Note {
-            id: error
-            visible: field.invalid
+            visible: field.problem !== ""
             color: Kirigami.Theme.negativeTextColor
-            text: i18nc("@info under a URL field", "Use an https:// address with a host name and no user name or password.")
+            horizontalAlignment: Text.AlignLeft
+            text: field.problem
         }
     }
 
@@ -184,40 +255,58 @@ ConfigPage {
             }
         }
 
+        Item {
+            Kirigami.FormData.isSection: true
+        }
+
         QQC2.CheckBox {
+            id: publicAddress
             Kirigami.FormData.label: i18nc("@label", "Public address:")
-            text: i18nc("@option:check %1 is the service asked, such as ipify.org", "Ask %1 for it", page.serviceName)
+            text: i18nc("@option:check", "Show in the Network popup")
             checked: page.cfg_publicAddress
             onToggled: page.cfg_publicAddress = checked
         }
 
         Note {
-            text: !page.service.valid
-                ? i18nc("@info", "Shows the address websites see under the local one in the Network popup. Ringside asks nothing until the addresses below are fixed.")
-                : page.service.custom
-                ? i18nc("@info %1 is the service asked, such as ip.example.org", "Shows the address websites see under the local one in the Network popup. Ringside asks only %1, at the addresses below, when that popup opens or the connection changes, at most once a minute. The service sees your address, as every website does.", page.serviceName)
-                : i18nc("@info %1 and %2 are the service's host names", "Shows the address websites see under the local one in the Network popup. Ringside asks %1 and %2 when that popup opens or the connection changes, at most once a minute. ipify.org sees your address, as every website does.",
-                        Lookup.host(Lookup.IPIFY.v4), Lookup.host(Lookup.IPIFY.v6))
+            Layout.maximumWidth: Kirigami.Units.gridUnit * 30
+            leftPadding: publicAddress.mirrored ? 0 : page.boxIndent
+            rightPadding: publicAddress.mirrored ? page.boxIndent : 0
+            // Mirrored with the page, whatever the text's own direction.
+            horizontalAlignment: Text.AlignLeft
+            text: page.line
+        }
+
+        QQC2.ComboBox {
+            id: serviceChoice
+            Kirigami.FormData.label: i18nc("@label:listbox", "Service:")
+            visible: page.cfg_publicAddress
+            model: [Lookup.IPIFY.name, i18nc("@item:inlistbox a public address service", "Custom")]
+            currentIndex: page.custom ? 1 : 0
+            Accessible.name: i18nc("@label:listbox", "Service")
+            onActivated: index => {
+                page.pickCustom(index === 1);
+                if (index === 1) {
+                    url4.input.forceActiveFocus();
+                }
+            }
         }
 
         UrlField {
-            Kirigami.FormData.label: i18nc("@label:textbox", "IPv4 address URL:")
-            name: i18nc("@label:textbox", "IPv4 address URL")
+            id: url4
+            Kirigami.FormData.label: i18nc("@label:textbox", "IPv4 URL:")
+            visible: page.cfg_publicAddress && page.custom
+            name: i18nc("@label:textbox", "IPv4 URL")
             url: page.cfg_publicAddressUrl4
-            placeholder: Lookup.IPIFY.v4
             onEdited: text => page.cfg_publicAddressUrl4 = text
         }
 
         UrlField {
-            Kirigami.FormData.label: i18nc("@label:textbox", "IPv6 address URL:")
-            name: i18nc("@label:textbox", "IPv6 address URL")
+            id: url6
+            Kirigami.FormData.label: i18nc("@label:textbox", "IPv6 URL:")
+            visible: page.cfg_publicAddress && page.custom
+            name: i18nc("@label:textbox", "IPv6 URL")
             url: page.cfg_publicAddressUrl6
-            placeholder: Lookup.IPIFY.v6
             onEdited: text => page.cfg_publicAddressUrl6 = text
-        }
-
-        Note {
-            text: i18nc("@info", "Leave both empty for ipify.org. With either set, only that service is asked, and a field left empty isn't checked. The service has to answer with the address alone, as plain text, without redirecting to another host or to http.")
         }
     }
 }
