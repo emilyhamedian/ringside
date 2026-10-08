@@ -2022,26 +2022,38 @@ Item {
             compare(monitor.usage.starterRequests, [["claude", true], ["claude", false]]);
         }
 
-        // The footer keeps two lines for the status in every state, so the
-        // popup doesn't change height under the pointer while it is open.
-        function test_starterKeepsTheHeight_data() {
+        // The status takes the lines it says, with no room kept for a line
+        // it doesn't have: in every state its last baseline sits as far from
+        // the popup's edge as the switch's label is from the footer's rule,
+        // and the switch stays where it is.
+        function test_starterFooterIsEven_data() {
             return [{ tag: "claude", item: "claude" }, { tag: "codex", item: "codex" }];
         }
 
-        function test_starterKeepsTheHeight(data) {
+        function test_starterFooterIsEven(data) {
             const popup = load(data.item);
-            const height = popup.implicitHeight;
             const status = starterStatus(popup);
-            const lines = new Set();
+            const toggle = starterSwitch(popup);
+            const switchY = toggle.mapToItem(popup, 0, 0).y;
+            const heights = {};
+            let lineHeight = NaN;
             // An unknown state says nothing, the shortest status there is.
             StarterStates.ROWS.concat([{ state: "later", enabled: true }]).forEach(row => {
                 setStarter(data.item, starterFor(row));
                 waitForRendering(popup);
-                compare(popup.implicitHeight, height, row.state + " " + (row.reason ?? ""));
+                const tag = row.state + " " + (row.reason ?? "");
                 verify(status.contentHeight <= status.height + 0.5, status.text);
-                lines.add(status.lineCount);
+                verify(status.height <= status.contentHeight + 0.5, "no empty line under the status: " + tag);
+                lineHeight = status.contentHeight / status.lineCount;
+                const lastBaseline = status.mapToItem(popup, 0, 0).y + status.baselineOffset + (status.lineCount - 1) * lineHeight;
+                verify(Math.abs(popup.implicitHeight - lastBaseline - Math.round(Kirigami.Units.largeSpacing * 2)) <= 1,
+                       tag + ": last baseline " + (popup.implicitHeight - lastBaseline) + " px from the edge");
+                compare(toggle.mapToItem(popup, 0, 0).y, switchY, tag);
+                heights[status.lineCount] = popup.implicitHeight;
             });
-            verify(lines.has(1) && lines.has(2), "statuses of one line and of two: " + Array.from(lines));
+            verify(heights[1] !== undefined && heights[2] !== undefined, "statuses of one line and of two: " + Object.keys(heights));
+            verify(Math.abs(heights[2] - heights[1] - lineHeight) <= 1,
+                   "a second line adds one line: " + (heights[2] - heights[1]));
         }
 
         // A status too long for its two lines, such as one with a long
