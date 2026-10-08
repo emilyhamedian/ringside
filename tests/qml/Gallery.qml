@@ -62,11 +62,6 @@ Rectangle {
     }
 
     PublicFake {
-        id: publicPrompt
-        publicState: "prompt"
-    }
-
-    PublicFake {
         id: publicBoth
         publicState: "both"
     }
@@ -579,13 +574,6 @@ Rectangle {
 
         RowLayout {
             spacing: 2 * Kirigami.Units.gridUnit
-
-            PopupFrame {
-                label: "Network · public address, the one-time question"
-                AfterFirstFrame {
-                    NetworkPopup { monitor: publicPrompt }
-                }
-            }
 
             PopupFrame {
                 label: "Network · public IPv4 and IPv6"

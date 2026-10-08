@@ -176,13 +176,13 @@ keep it awake regardless.
 
 The network popup can show the address websites see under the local one, so
 a VPN that is down, or that IPv6 goes around, shows up. It is off until you
-say so: the popup asks once, and the checkbox on General changes your answer.
-When it is on, Ringside asks [ipify.org](https://www.ipify.org) each time the
-network popup opens, at most once a minute, and again when the route changes
-while the popup is open. Nothing is asked while the popup is closed or there
-is no connection, and the answer is kept only in memory. Each request is an
-HTTPS GET whose User-Agent names Ringside and its version, and it sends no
-languages; the service sees your address, as any website does.
+turn it on with the checkbox on General, and the popup shows nothing of it
+before then. When it is on, Ringside asks [ipify.org](https://www.ipify.org)
+each time the network popup opens, at most once a minute, and again when the
+route changes while the popup is open. Nothing is asked while the popup is
+closed or there is no connection, and the answer is kept only in memory. Each
+request is an HTTPS GET whose User-Agent names Ringside and its version, and
+it sends no languages; the service sees your address, as any website does.
 
 To use another service, give its https addresses for IPv4 and IPv6 on
 General. With either set, only those are asked; leave one empty to skip that

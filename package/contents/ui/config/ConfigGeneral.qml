@@ -187,8 +187,8 @@ ConfigPage {
         QQC2.CheckBox {
             Kirigami.FormData.label: i18nc("@label", "Public address:")
             text: i18nc("@option:check %1 is the service asked, such as ipify.org", "Ask %1 for it", page.serviceName)
-            checked: page.cfg_publicAddress === "on"
-            onToggled: page.cfg_publicAddress = checked ? "on" : "off"
+            checked: page.cfg_publicAddress
+            onToggled: page.cfg_publicAddress = checked
         }
 
         Note {

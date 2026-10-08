@@ -14,10 +14,10 @@ follows [Semantic Versioning](https://semver.org/).
   local one, with the interface each address family leaves through when
   that isn't the local one, a shield for a tunnel, and a warning when IPv6
   goes around a VPN that IPv4 uses, or the other way round. It is off until
-  you say so: the popup asks once, and General has the checkbox. Ringside
-  asks ipify.org when the popup opens, at most once a minute, and again
-  when the route changes while it is open; General takes the https
-  addresses of another service instead. A change of address since the last
+  you turn it on under General, and the popup shows nothing of it before
+  then. Ringside asks ipify.org when the popup opens, at most once a
+  minute, and again when the route changes while it is open; General takes
+  the https addresses of another service instead. A change of address since the last
   check, or the last address seen when the service can't be reached, shows
   under the addresses.
 - The Claude and Codex popup says where the week is heading in one

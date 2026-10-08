@@ -11,8 +11,8 @@ import "../code/style.js" as Style
 // pair: a VPN that carries the traffic shows its interface by the public
 // address, and one that doesn't shows the same public address as without it.
 // `info` is the public lookup as the network popup puts it:
-//   state     "prompt", "checking", "shown", "failed", "offline", "unrouted"
-//             or "invalid"
+//   state     "checking", "shown", "failed", "offline", "unrouted" or
+//             "invalid"
 //   service   the service's name, such as "ipify.org"
 //   unrouted  in that state, the family ("v4" or "v6") without a route
 //   v4, v6    { address, via, tunnel } or null; via is set only when the
@@ -24,9 +24,6 @@ GridLayout {
     required property string localAddress
     required property string localInterface
     required property var info
-
-    signal accepted()
-    signal declined()
 
     readonly property real valuePointSize: Kirigami.Theme.defaultFont.pointSize * 0.88
     readonly property color dimColor: Style.dim(Kirigami.Theme.textColor)
@@ -243,30 +240,6 @@ GridLayout {
             visible: block.info.state === "invalid"
             color: Kirigami.Theme.textColor
             text: i18nc("@info", "Check the address service in the settings")
-        }
-
-        // The one-time question, until it's answered here or in the settings.
-        Plain {
-            visible: block.info.state === "prompt"
-            color: Kirigami.Theme.textColor
-            text: i18nc("@info %1 is the service asked, such as ipify.org",
-                        "Show the address websites see? Ringside would ask %1 when this popup opens or the connection changes, at most once a minute, so %1 sees your address.",
-                        block.info.service ?? "")
-        }
-        RowLayout {
-            visible: block.info.state === "prompt"
-            spacing: Kirigami.Units.largeSpacing * 2
-            Kirigami.LinkButton {
-                text: i18nc("@action:button", "Show it")
-                font.underline: false
-                onClicked: block.accepted()
-            }
-            Kirigami.LinkButton {
-                text: i18nc("@action:button", "No thanks")
-                font.underline: false
-                color: block.dimColor
-                onClicked: block.declined()
-            }
         }
 
         RowLayout {

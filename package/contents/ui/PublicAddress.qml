@@ -8,7 +8,7 @@ import "code/publicaddress.js" as Lookup
 // it has learnt outlives the popup; answers stay in memory and are shared
 // with the other Ringside widgets (see code/publicaddress.js).
 //
-// Nothing is sent unless the setting is "on", this widget's network popup
+// Nothing is sent unless the setting is on, this widget's network popup
 // is open, the service in the settings is valid and there is a route for a
 // family it asks.
 // A check goes out when the popup opens, unless any Ringside widget made one
@@ -37,8 +37,7 @@ Item {
     property int timeoutMs: 10000
 
     readonly property var facts: currentFacts()
-    // "" until answered, then "on" or "off"; anything else counts as off.
-    readonly property string setting: facts.setting
+    readonly property bool switchedOn: facts.switchedOn
     readonly property var service: facts.service
     readonly property string serviceKey: facts.key
     // The service as the popup names it: its host, or both hosts. An invalid
@@ -59,15 +58,14 @@ Item {
         return serviceKey !== "" ? Lookup.peek(serviceKey) : null;
     }
 
-    // prompt, off, invalid, offline, unrouted (connected, but not for the
+    // off, invalid, offline, unrouted (connected, but not for the
     // one family the service asks), checking, shown or failed. The last
     // addresses found stay shown, with the route they were asked under,
     // while the next check is under way and until it replaces them; a
     // failure gives way to "checking" while the service is asked again.
     readonly property bool addressKnown: record !== null && record.result !== null
         && (record.result.v4 !== "" || record.result.v6 !== "")
-    readonly property string status: setting === "" ? "prompt"
-        : setting !== "on" ? "off"
+    readonly property string status: !switchedOn ? "off"
         : !service.valid ? "invalid"
         : egress !== null && !connected ? "offline"
         : egress !== null && facts.families.length === 0 ? "unrouted"
@@ -87,15 +85,15 @@ Item {
     // Worked out from the inputs on every call: a change handler can run
     // before the bindings above have caught up with the change.
     function currentFacts() {
-        const setting = String(config.publicAddress ?? "");
+        const switchedOn = config.publicAddress === true;
         const service = Lookup.service(config.publicAddressUrl4, config.publicAddressUrl6);
-        const key = setting === "on" && service.valid ? service.key : "";
+        const key = switchedOn && service.valid ? service.key : "";
         const routed = egress !== null && egress.known === true;
         // The families to ask: those with a URL and, where the routes are known, a route.
         const families = ["v4", "v6"].filter(f => service[f] !== "" && (!routed || egress[f].device !== ""));
         const connected = routed ? egress.v4.device !== "" || egress.v6.device !== "" : localAddress !== "";
         return {
-            setting: setting,
+            switchedOn: switchedOn,
             service: service,
             key: key,
             families: families,
@@ -103,10 +101,6 @@ Item {
             route: routed ? egress.v4.device + " " + egress.v6.device : "",
             eligible: key !== "" && open && egress !== null && connected && families.length > 0
         };
-    }
-
-    function answer(show) {
-        config.publicAddress = show ? "on" : "off";
     }
 
     function consider() {

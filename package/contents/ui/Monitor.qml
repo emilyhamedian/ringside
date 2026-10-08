@@ -146,7 +146,7 @@ Item {
     // network popup shows the public address: null until the helper answers
     // after the popup opens, then { known, v4, v6 } (see code/publicaddress.js).
     property var egress: null
-    readonly property bool egressShown: config.publicAddress === "on" && openPopup === "network"
+    readonly property bool egressShown: config.publicAddress === true && openPopup === "network"
     onEgressShownChanged: if (!egressShown) egress = null
 
     // Disk: I/O of one device or of every whole disk, free space of one volume.
