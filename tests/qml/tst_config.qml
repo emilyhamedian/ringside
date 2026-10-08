@@ -664,8 +664,13 @@ Item {
             keyClick(Qt.Key_Space);
             const service = combo(page, "Service");
             verify(service.visible, "the service list shows once the box is ticked");
+            // Custom from the open list, which moves on to the first URL.
             service.forceActiveFocus();
+            keyClick(Qt.Key_Space);
+            tryCompare(service.popup, "opened", true);
             keyClick(Qt.Key_Down);
+            keyClick(Qt.Key_Return);
+            tryCompare(service.popup, "visible", false);
             const url4 = combo(page, "IPv4 URL");
             verify(url4.activeFocus, "Custom focuses the IPv4 URL");
             for (const c of "https://ip.example.org/") {

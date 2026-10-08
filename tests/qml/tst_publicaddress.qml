@@ -1064,6 +1064,7 @@ Item {
         function reason(field) {
             const shown = all(field.parent, i => i instanceof QQC2.Label && i.visible);
             verify(shown.length <= 1);
+            verify(shown.every(i => i.text !== ""), "no empty reason takes room");
             return shown.length === 1 ? shown[0].text : "";
         }
 
@@ -1077,10 +1078,14 @@ Item {
             compare(field.text, text);
         }
 
-        // Picks a service from the list with the keyboard, as activating it does.
+        // Picks a service from the open list with the keyboard.
         function pick(c, custom) {
             c.service.forceActiveFocus();
+            keyClick(Qt.Key_Space);
+            tryCompare(c.service.popup, "opened", true);
             keyClick(custom ? Qt.Key_Down : Qt.Key_Up);
+            keyClick(Qt.Key_Return);
+            tryCompare(c.service.popup, "visible", false);
             compare(c.service.currentIndex, custom ? 1 : 0);
         }
 
@@ -1103,7 +1108,9 @@ Item {
         }
 
         // One line under the box says whom Ringside asks and what they
-        // learn, the same with the box off or on.
+        // learn, the same with the box off or on, except that "until you
+        // enter a URL" waits for the fields to show. The box and the service
+        // list carry it for a screen reader.
         function test_settingsLine_data() {
             const sees = who => "Asks " + who + ", which sees your address, when the popup opens.";
             return [
@@ -1113,7 +1120,8 @@ Item {
                 { tag: "IPv6 only", url6: "https://b.example/ip", line: sees("b.example") },
                 { tag: "two hosts", url4: "https://a.example/ip", url6: "https://b.example/ip",
                   line: "Asks a.example and b.example, which see your address, when the popup opens." },
-                { tag: "custom, both empty", custom: true, line: "Asks ipify.org, which sees your address, until you enter a URL." },
+                { tag: "custom, both empty", custom: true, line: "Asks ipify.org, which sees your address, until you enter a URL.",
+                  off: sees("ipify.org") },
                 { tag: "invalid", url4: "http://a.example/ip", url6: "https://b.example/ip", line: "Asks nothing while a URL isn't valid." },
                 { tag: "mirrored", url4: "https://a.example/ip", mirrored: true, line: sees("a.example") }
             ];
@@ -1133,8 +1141,43 @@ Item {
                 }
                 compare(c.box.checked, on);
                 waitForRendering(page);
-                compare(c.line.text, data.line, on ? "ticked" : "unticked");
+                const line = on ? data.line : data.off ?? data.line;
+                compare(c.line.text, line, on ? "ticked" : "unticked");
+                compare(c.box.Accessible.description, line);
+                compare(c.service.Accessible.description, line);
                 verifyUnderTheBox(page, c);
+            }
+        }
+
+        // The line takes the box's padding from the side its text starts at.
+        function test_settingsLineFollowsThePadding_data() {
+            return [{ tag: "left to right", mirrored: false }, { tag: "right to left", mirrored: true }];
+        }
+        function test_settingsLineFollowsThePadding(data) {
+            const page = general({ cfg_publicAddress: false }, data.mirrored);
+            const c = controls(page);
+            c.box.leftPadding = 3;
+            c.box.rightPadding = 9;
+            waitForRendering(page);
+            verifyUnderTheBox(page, c);
+        }
+
+        // The box shows the stored setting and follows it, as when Defaults
+        // resets it after a click.
+        function test_settingsBoxFollowsTheSetting() {
+            const page = general({ cfg_publicAddress: true });
+            const c = controls(page);
+            compare(c.box.checked, true);
+            compare(c.service.visible, true);
+            for (const on of [false, true]) {
+                mouseClick(c.box);
+                compare(page.cfg_publicAddress, on);
+                compare(c.box.checked, on);
+            }
+            for (const on of [page.cfg_publicAddressDefault, true]) {
+                page.cfg_publicAddress = on;
+                compare(c.box.checked, on);
+                compare(c.service.visible, on);
             }
         }
 
@@ -1169,6 +1212,9 @@ Item {
             compare([c.url4.placeholderText, c.url6.placeholderText], ["", ""]);
             verify(c.url4.activeFocus, "the IPv4 field has the focus");
             compare([page.cfg_publicAddressUrl4, page.cfg_publicAddressUrl6], ["", ""]);
+            for (const field of [c.url4, c.url6]) {
+                compare(field.parent.Kirigami.FormData.buddyFor, field, field.Accessible.name + "'s label names it");
+            }
 
             typeIn(c.url4, "https://a.example/ip");
             typeIn(c.url6, "https://b.example/ip");
@@ -1192,12 +1238,74 @@ Item {
             compare(c.line.text, "Asks ipify.org, which sees your address, until you enter a URL.");
         }
 
+        // Picking the service already shown changes nothing: ipify.org twice
+        // still keeps the URLs for Custom, and Custom again keeps what was typed.
+        function test_settingsPickedAgain() {
+            const page = general({ cfg_publicAddress: true, cfg_publicAddressUrl4: "https://a.example/ip",
+                                   cfg_publicAddressUrl6: "https://b.example/ip" });
+            const c = controls(page);
+            pick(c, false);
+            pick(c, false);
+            compare([page.cfg_publicAddressUrl4, page.cfg_publicAddressUrl6], ["", ""]);
+            pick(c, true);
+            compare([page.cfg_publicAddressUrl4, page.cfg_publicAddressUrl6], ["https://a.example/ip", "https://b.example/ip"]);
+            typeIn(c.url4, "https://c.example/ip");
+            pick(c, true);
+            compare([page.cfg_publicAddressUrl4, page.cfg_publicAddressUrl6], ["https://c.example/ip", "https://b.example/ip"]);
+            compare(c.url4.text, "https://c.example/ip");
+        }
+
+        // Arrow keys on the closed list change the service but leave the
+        // focus on it, so the next arrow can step back.
+        function test_settingsArrowKeys() {
+            const page = general({ cfg_publicAddress: true });
+            const c = controls(page);
+            c.service.forceActiveFocus();
+            keyClick(Qt.Key_Down);
+            compare(c.service.currentIndex, 1);
+            compare(c.url4.visible, true);
+            verify(c.service.activeFocus, "the list keeps the focus");
+            keyClick(Qt.Key_Up);
+            compare(c.service.currentIndex, 0);
+            compare(c.url4.visible, false);
+            verify(c.service.activeFocus, "the list keeps the focus");
+        }
+
+        // The wheel over the list leaves the service, and the URLs, alone.
+        function test_settingsWheel_data() {
+            return [{ tag: "ipify", url: "", index: 0 }, { tag: "custom", url: "https://a.example/ip", index: 1 }];
+        }
+        function test_settingsWheel(data) {
+            const page = general({ cfg_publicAddress: true, cfg_publicAddressUrl4: data.url });
+            const c = controls(page);
+            verify(!c.service.wheelEnabled);
+            for (const delta of [120, -120]) {
+                mouseWheel(c.service, c.service.width / 2, c.service.height / 2, 0, delta);
+                compare(c.service.currentIndex, data.index);
+                compare([page.cfg_publicAddressUrl4, page.cfg_publicAddressUrl6], [data.url, ""]);
+            }
+        }
+
+        // A stored URL of spaces asks ipify.org, and one pick of Custom opens
+        // the fields.
+        function test_settingsStoredBlank() {
+            const page = general({ cfg_publicAddress: true, cfg_publicAddressUrl4: " " });
+            const c = controls(page);
+            compare(c.service.currentIndex, 0);
+            compare(c.url4.visible, false);
+            pick(c, true);
+            compare([c.url4.visible, c.url6.visible], [true, true]);
+            verify(c.url4.activeFocus, "the IPv4 field has the focus");
+            compare(c.line.text, "Asks ipify.org, which sees your address, until you enter a URL.");
+        }
+
         // A stored URL emptied by hand keeps Custom open, asking ipify.org
         // meanwhile, rather than taking the field away while it is typed in.
         function test_settingsEmptiedByHand() {
             const page = general({ cfg_publicAddress: true, cfg_publicAddressUrl4: "https://a.example/ip" });
             const c = controls(page);
             compare(c.service.currentIndex, 1);
+            compare(c.url4.cursorPosition, 0, "a stored URL opens at its start");
             typeIn(c.url4, "");
             compare(page.cfg_publicAddressUrl4, "");
             compare(c.service.currentIndex, 1);
@@ -1209,14 +1317,18 @@ Item {
         // Defaults empties both URLs, which is ipify.org again, so Custom
         // closes, from stored URLs or ones typed on the page.
         function test_settingsDefaults_data() {
-            return [{ tag: "stored", stored: "https://a.example/ip" }, { tag: "typed", stored: "" }];
+            return [{ tag: "stored", url4: "https://a.example/ip" },
+                    { tag: "both stored", url4: "https://a.example/ip", url6: "https://b.example/ip" },
+                    { tag: "typed", typed: "url4" },
+                    { tag: "typed IPv6 only", typed: "url6" }];
         }
         function test_settingsDefaults(data) {
-            const page = general({ cfg_publicAddress: true, cfg_publicAddressUrl4: data.stored });
+            const page = general({ cfg_publicAddress: true, cfg_publicAddressUrl4: data.url4 ?? "",
+                                   cfg_publicAddressUrl6: data.url6 ?? "" });
             const c = controls(page);
-            if (data.stored === "") {
+            if (data.typed) {
                 pick(c, true);
-                typeIn(c.url4, "https://a.example/ip");
+                typeIn(c[data.typed], "https://a.example/ip");
             }
             compare(c.service.currentIndex, 1);
             compare(c.url4.visible, true);
@@ -1240,6 +1352,9 @@ Item {
                           { tag: name + " user", name: name, url: "https://me:pw@a.example/", reason: "Leave out the user name and password." },
                           { tag: name + " no host", name: name, url: "https://", reason: "Check the host name." },
                           { tag: name + " bad host", name: name, url: "https://a_b.example/", reason: "Check the host name." },
+                          { tag: name + " capitals, bad host", name: name, url: "HTTPS://a_b.example/", reason: "Check the host name." },
+                          { tag: name + " capitals, user", name: name, url: "HTTPS://me:pw@a.example/",
+                            reason: "Leave out the user name and password." },
                           { tag: name + " spaces", name: name, url: " https://a.example/ip ", reason: "" });
             }
             return rows;
@@ -1268,9 +1383,11 @@ Item {
         }
 
         // Right to left, the labels sit right of the fields, and a URL still
-        // reads left to right inside its field.
+        // reads left to right inside its field, even one that starts with
+        // Arabic letters. The reason under it follows the page.
         function test_settingsUrlLeftToRight() {
-            const page = general({ cfg_publicAddress: true, cfg_publicAddressUrl4: "https://a.example/ip" }, true);
+            const page = general({ cfg_publicAddress: true, cfg_publicAddressUrl4: "https://a.example/ip",
+                                   cfg_publicAddressUrl6: "مثال" }, true);
             const c = controls(page);
             verify(c.box.mirrored, "the page is right to left");
             compare(c.service.currentIndex, 1);
@@ -1280,6 +1397,8 @@ Item {
             }
             typeIn(c.url6, "http://b.example/ip");
             compare(reason(c.url6), "Only https:// addresses work.");
+            const note = all(c.url6.parent, i => i instanceof QQC2.Label && i.visible)[0];
+            compare(note.effectiveHorizontalAlignment, Text.AlignRight);
             const label = find(page, i => i instanceof QQC2.Label && i.text === "IPv4 URL:");
             verify(label);
             verify(label.mapToItem(page, Qt.point(0, 0)).x >= c.url4.mapToItem(page, Qt.point(0, 0)).x + c.url4.width - 0.5,
