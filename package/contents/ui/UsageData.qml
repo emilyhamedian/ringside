@@ -13,10 +13,10 @@ import "code/reset.js" as Reset
 // Only the ids in `providers` are polled; with none, the helper never runs.
 //
 // A provider that answered or is signed out takes the new entry. One that
-// failed keeps its last reading with lastError and lastErrorAt set, which
-// marks its item with a dot; one that fails before its first reading gets
-// no entry, so it stays hidden and the settings page says why from
-// usageStatus.
+// failed keeps its last reading with lastError, lastErrorAt, reason, host
+// and retryAt set (see usage.py), which greys its item and then strikes it
+// through; one that fails before its first reading gets no entry, so it
+// stays hidden and the settings page says why from usageStatus.
 //
 // It also drives the opt-in session starter: the helper reports each
 // provider's starter in every report, and the widget runs the helper with
@@ -39,6 +39,12 @@ Item {
     // Bound to a bool, so they notify only when they flip, not on every poll.
     readonly property bool claudePresent: present("claude")
     readonly property bool codexPresent: present("codex")
+    // Minutes between checks.
+    readonly property int refreshMinutes: config.usageRefreshMinutes
+    // A check is running, and when the timer last started one, in epoch
+    // seconds.
+    property bool checking: false
+    property real lastRun: NaN
 
     // Known ids only, in a fixed order: the helper rejects an unknown one.
     readonly property var ids: Items.USAGE.filter(id => Array.from(usage.providers).includes(id))
@@ -187,8 +193,39 @@ Item {
 
     function refresh() {
         if (command !== "" && !runner.connectedSources.includes(command)) {
+            // Set first: a source the engine still holds answers at once.
+            checking = true;
             runner.connectSource(command);
         }
+    }
+
+    // When the timer next runs the helper for a provider whose check
+    // failed: the first tick once the helper's hold on it is over, since
+    // the ticks before that only replay the failure. A hold set by the
+    // check a tick ran ends a moment after the tick one hold later, and
+    // counts as over by then. In epoch seconds.
+    function nextCheck(id) {
+        const e = entry(id);
+        const step = refreshMinutes * 60;
+        const hold = e && Number.isFinite(e.retryAt) ? e.retryAt : lastRun + step;
+        return lastRun + Math.max(1, Math.ceil((hold - lastRun - 10) / step)) * step;
+    }
+
+    // Whether a failed check is worth trying again now: only once the
+    // helper's hold is over, so it would really ask; not while a check
+    // runs or with the next tick under a minute away; and never for a
+    // helper that can't read its files, which would only fail again.
+    function canRetry(id, nowMs) {
+        const e = entry(id);
+        const now = nowMs / 1000;
+        return e !== null && e.lastError !== undefined && e.reason !== "files" && !checking
+            && now >= e.retryAt && nextCheck(id) - now > 60;
+    }
+
+    // Checks now, and counts the next interval from here.
+    function checkNow() {
+        refresh();
+        poller.restart();
     }
 
     // Forgets the ids no longer polled, and with none left the helper's
@@ -247,7 +284,9 @@ Item {
             if (next.status === "ok" || next.status === "signed_out") {
                 merged[id] = next;
             } else if (was) {
-                merged[id] = Object.assign({}, was, { lastError: next.message ?? next.status, lastErrorAt: at });
+                merged[id] = Object.assign({}, was, { lastError: next.message ?? next.status, lastErrorAt: at,
+                                                      reason: next.reason ?? "other", host: next.host ?? "",
+                                                      retryAt: next.retryAt ?? at });
             }
         }
         const events = Reset.detect(entries, merged, at);
@@ -340,6 +379,8 @@ Item {
         connectedSources: []
         onNewData: (source, data) => {
             disconnectSource(source);
+            // The source may still be listed until this handler returns.
+            usage.checking = connectedSources.some(s => s !== source && / --providers [\w,]+$/.test(s));
             // A switch change is settled by this run's report, or by its
             // failure, which leaves the switch where it was reported and,
             // like a failed --start, says so only under the switch. So does
@@ -362,8 +403,10 @@ Item {
                     usage.switchRefused(settled, set[2] === "on", usage.failureText(Report.helperFailure(data)));
                 }
             } else if (!report?.providers) {
-                usage.helperError = usage.failureText(Report.helperFailure(data));
-                usage.entries = Report.markFailed(usage.entries, usage.helperError, Math.floor(Date.now() / 1000));
+                const failure = Report.helperFailure(data);
+                usage.helperError = usage.failureText(failure);
+                usage.entries = Report.markFailed(usage.entries, usage.helperError, Math.floor(Date.now() / 1000),
+                                                  Report.failureReason(failure));
                 usage.writeStatus();
             } else {
                 usage.helperError = "";
@@ -390,11 +433,15 @@ Item {
     }
 
     Timer {
-        interval: usage.config.usageRefreshMinutes * 60000
+        id: poller
+        interval: usage.refreshMinutes * 60000
         running: usage.command !== ""
         repeat: true
         triggeredOnStart: true
-        onTriggered: usage.refresh()
+        onTriggered: {
+            usage.lastRun = Date.now() / 1000;
+            usage.refresh();
+        }
     }
 
     // Due times are compared with the wall clock, so after a suspend the

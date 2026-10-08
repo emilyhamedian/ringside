@@ -148,19 +148,39 @@ Item {
             compare(Report.helperFailure(data.data), data.failure);
         }
 
+        // A provider's earlier failure gives way to the helper's own, host
+        // and all, and "Try again" waits five minutes.
         function test_markFailedMarksOnlyShownEntries() {
-            const before = { claude: { status: "ok", weekly: { percent: 40 } }, codex: { status: "signed_out" } };
-            const after = Report.markFailed(before, "boom", 1000);
+            const before = { claude: { status: "ok", weekly: { percent: 40 }, lastError: "x", reason: "offline", host: "a.test" },
+                             codex: { status: "signed_out" } };
+            const after = Report.markFailed(before, "boom", 1000, "files");
             compare(after.claude.weekly.percent, 40);
-            compare(after.claude.lastError, "boom");
-            compare(after.claude.lastErrorAt, 1000);
+            compare([after.claude.lastError, after.claude.lastErrorAt, after.claude.reason, after.claude.host, after.claude.retryAt],
+                    ["boom", 1000, "files", "", 1300]);
             compare(after.codex, before.codex);
-            verify(before.claude.lastError === undefined, "the input is not modified");
+            compare(before.claude.lastError, "x", "the input is not modified");
         }
 
         function test_markFailedAddsNoEntry() {
-            compare(Object.keys(Report.markFailed({}, "boom", 1000)).length, 0);
-            compare(Object.keys(Report.markFailed({ codex: { status: "ok" } }, "boom", 1000)), ["codex"]);
+            compare(Object.keys(Report.markFailed({}, "boom", 1000, "helper")).length, 0);
+            compare(Object.keys(Report.markFailed({ codex: { status: "ok" } }, "boom", 1000, "helper")), ["codex"]);
+        }
+
+        // An error on the helper's own files would only happen again.
+        function test_failureReason_data() {
+            return [
+                { tag: "permission", detail: "PermissionError: [Errno 13] Permission denied: '/x/usage.json'", reason: "files" },
+                { tag: "disk full", detail: "OSError: [Errno 28] No space left on device", reason: "files" },
+                { tag: "not a folder", detail: "NotADirectoryError: [Errno 20] Not a directory: '/x'", reason: "files" },
+                { tag: "missing", detail: "FileNotFoundError: [Errno 2] No such file or directory: '/x'", reason: "files" },
+                { tag: "key error", detail: "KeyError: 'weekly'", reason: "helper" },
+                { tag: "named in passing", detail: "RuntimeError: not an OSError", reason: "helper" },
+                { tag: "no detail", detail: "", reason: "helper" }
+            ];
+        }
+
+        function test_failureReason(data) {
+            compare(Report.failureReason({ reason: "exited", code: 1, detail: data.detail }), data.reason);
         }
     }
 
@@ -240,6 +260,12 @@ Item {
             compare(usage.entry("claude").lastError, "HTTP Error 500: Internal Server Error");
             verify(Math.abs(usage.entry("claude").lastErrorAt - Date.now() / 1000) < 60);
             compare(usage.entry("codex").lastError, "HTTP Error 429: Too Many Requests");
+            // The helper's reason, host and end of its hold come through.
+            const claude = usage.entry("claude");
+            compare([claude.reason, claude.host], ["server", "api.anthropic.com"]);
+            verify(Math.abs(claude.retryAt - (Date.now() / 1000 + 300)) < 60, claude.retryAt);
+            compare([usage.entry("codex").reason, usage.entry("codex").host], ["rate-limited", ""]);
+            verify(Math.abs(usage.entry("codex").retryAt - (Date.now() / 1000 + 3600)) < 60);
             verify(usage.degraded("claude") && usage.degraded("codex"));
             verify(usage.claudePresent && usage.codexPresent, "a failed poll keeps the items");
             // The helper holds a refused provider back itself; the widget
@@ -251,6 +277,15 @@ Item {
 
             poll("ok");
             verify(!usage.degraded("claude") && !usage.degraded("codex"));
+            compare(usage.entry("claude").reason, undefined, "recovery leaves nothing of the failure");
+        }
+
+        // A report from a helper that gives no reason holds nothing back.
+        function test_failureWithoutAReason() {
+            start("ok");
+            poll("old");
+            const claude = usage.entry("claude");
+            compare([claude.reason, claude.host, claude.retryAt], ["other", "", claude.lastErrorAt]);
         }
 
         // Signed out replaces the reading; a tool that never answered stays
@@ -271,8 +306,12 @@ Item {
 
         function test_helperFailure_data() {
             return [
-                { tag: "no python3", scenario: "no-python", message: "python3 was not found on the Plasma session's PATH." },
-                { tag: "traceback", scenario: "traceback", message: "The usage helper exited with code 1: KeyError: 'weekly'" }
+                { tag: "no python3", scenario: "no-python", message: "python3 was not found on the Plasma session's PATH.",
+                  reason: "helper" },
+                { tag: "traceback", scenario: "traceback", message: "The usage helper exited with code 1: KeyError: 'weekly'",
+                  reason: "helper" },
+                { tag: "files", scenario: "files", reason: "files",
+                  message: "The usage helper exited with code 1: PermissionError: [Errno 13] Permission denied: '/home/user/.cache/ringside/usage.json'" }
             ];
         }
 
@@ -281,6 +320,8 @@ Item {
             poll(data.scenario);
             compare(usage.helperError, data.message);
             compare(usage.entry("claude").lastError, data.message);
+            const claude = usage.entry("claude");
+            compare([claude.reason, claude.host, claude.retryAt], [data.reason, "", claude.lastErrorAt + 300]);
             compare(usage.entry("claude").weekly.percent, 52, "the last reading stays");
             verify(usage.degraded("codex"));
             compare(JSON.parse(config.usageStatus).helperError, data.message);
@@ -305,6 +346,88 @@ Item {
         function test_failureWords(data) {
             make("ok", []);
             compare(usage.failureText(data.failure), data.message);
+        }
+
+        // A check runs from the tick to its report, and the tick is when
+        // the next interval counts from.
+        function test_checkingWhileTheHelperRuns() {
+            const before = Date.now() / 1000;
+            start("ok");
+            verify(!usage.checking);
+            verify(usage.lastRun >= before - 1 && usage.lastRun <= Date.now() / 1000, usage.lastRun);
+            const landed = spy("entriesChanged");
+            usage.refresh();
+            verify(usage.checking);
+            landed.wait(10000);
+            verify(!usage.checking);
+        }
+
+        // "Try again" checks at once and counts the next interval from then,
+        // so the next tick doesn't follow straight after.
+        function test_checkNowRestartsTheInterval() {
+            start("ok");
+            const first = usage.lastRun;
+            wait(1100);
+            const landed = spy("entriesChanged");
+            usage.checkNow();
+            verify(usage.checking);
+            tryVerify(() => usage.lastRun > first + 1, 2000, "the interval starts over");
+            landed.wait(10000);
+            verify(!usage.checking);
+            compare(timers().filter(t => t.running).map(t => t.interval), [5 * 60000]);
+        }
+
+        // The first tick once the helper's hold is over; a hold set by the
+        // check a tick ran is over by the tick one interval on.
+        function test_nextCheck_data() {
+            return [
+                { tag: "no hold", minutes: 5, retryAt: undefined, next: 300 },
+                { tag: "the tick's own hold", minutes: 5, retryAt: 302, next: 300 },
+                { tag: "on a tick", minutes: 5, retryAt: 3000, next: 3000 },
+                { tag: "between ticks", minutes: 5, retryAt: 3100, next: 3300 },
+                { tag: "longer interval", minutes: 15, retryAt: 302, next: 900 },
+                { tag: "rate limit past a long tick", minutes: 15, retryAt: 1000, next: 1800 },
+                { tag: "hold long over", minutes: 15, retryAt: -5000, next: 900 }
+            ];
+        }
+
+        function test_nextCheck(data) {
+            make("ok", []);
+            config.usageRefreshMinutes = data.minutes;
+            usage.lastRun = 10000;
+            usage.entries = { claude: { status: "ok", lastError: "x", lastErrorAt: 10000,
+                                        retryAt: data.retryAt === undefined ? undefined : 10000 + data.retryAt } };
+            compare(usage.nextCheck("claude"), 10000 + data.next);
+        }
+
+        // Only when a check would really ask: the hold is over, none runs,
+        // the next tick is over a minute away, and the helper can read its
+        // files. At the default five minutes the hold ends with the tick.
+        function test_canRetry_data() {
+            return [
+                { tag: "hold over", ran: 400, retryAt: -100, can: true },
+                { tag: "held", ran: 400, retryAt: 100, can: false },
+                { tag: "rate limited", ran: 400, retryAt: 3000, reason: "rate-limited", can: false },
+                { tag: "files", ran: 400, retryAt: -100, reason: "files", can: false },
+                { tag: "helper", ran: 400, retryAt: -100, reason: "helper", can: true },
+                { tag: "checking", ran: 400, retryAt: -100, checking: true, can: false },
+                { tag: "tick within a minute", ran: 850, retryAt: -100, can: false },
+                { tag: "tick a minute and more away", ran: 830, retryAt: -100, can: true },
+                { tag: "not failed", ran: 400, retryAt: -100, ok: true, can: false },
+                { tag: "five minutes", minutes: 5, ran: 60, retryAt: 240, can: false }
+            ];
+        }
+
+        function test_canRetry(data) {
+            make("ok", []);
+            const now = Date.now() / 1000;
+            config.usageRefreshMinutes = data.minutes ?? 15;
+            usage.lastRun = now - data.ran;
+            usage.checking = data.checking ?? false;
+            const entry = { status: "ok", retryAt: now + data.retryAt, reason: data.reason ?? "offline" };
+            usage.entries = { claude: data.ok ? entry : Object.assign(entry, { lastError: "x", lastErrorAt: now - data.ran }) };
+            compare(usage.canRetry("claude", now * 1000), data.can);
+            compare(usage.canRetry("codex", now * 1000), false, "no entry, nothing to retry");
         }
 
         function test_presentNotifiesOnlyWhenItFlips() {
