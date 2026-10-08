@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import QtQuick
+import QtQuick.LocalStorage as Sql
 import QtTest
 import org.kde.plasma.plasma5support as P5Support
 import "../../package/contents/ui"
@@ -42,6 +43,7 @@ TestCase {
         QtObject {
             property int updateInterval: 1000
             property string graphSpan: "minute"
+            property bool keepGraphHistory: false
             property bool fahrenheit: false
             property bool networkBits: true
             property bool highlightTemperatures: true
@@ -692,6 +694,184 @@ TestCase {
                "no temperature asleep, and the held one isn't recorded");
         compare(usage.minute.slice(-2), [0, 0]);
         compare(temperature.minute[temperature.minute.length - 1], 55, "the minute shows what the header does");
+    }
+
+    // The store, in the tests' own database.
+    readonly property url testStore: Qt.resolvedUrl("data/TestStore.qml")
+
+    function database() {
+        const db = Sql.LocalStorage.openDatabaseSync("ringside-tests", "", "", 1000000);
+        db.transaction(tx => tx.executeSql("CREATE TABLE IF NOT EXISTS buckets (widget TEXT NOT NULL, tier TEXT NOT NULL, "
+                                           + "at INTEGER NOT NULL, data TEXT NOT NULL, PRIMARY KEY (widget, tier, at))"));
+        return db;
+    }
+
+    // What a widget saved: [{ tier, at, data }], by tier and time.
+    function saved(widget) {
+        const out = [];
+        database().readTransaction(tx => {
+            const r = tx.executeSql("SELECT tier, at, data FROM buckets WHERE widget = ? ORDER BY tier, at", [widget]);
+            for (let i = 0; i < r.rows.length; ++i) {
+                out.push({ tier: r.rows.item(i).tier, at: r.rows.item(i).at, data: JSON.parse(r.rows.item(i).data) });
+            }
+        });
+        return out;
+    }
+
+    function forget() {
+        database().transaction(tx => tx.executeSql("DELETE FROM buckets"));
+    }
+
+    function keeping(widget, keep, properties) {
+        return makeMonitor(Object.assign({ widgetId: widget, storeUrl: testStore,
+                                           config: createTemporaryObject(configComponent, testCase, { keepGraphHistory: keep }) },
+                                         properties ?? {}));
+    }
+
+    // Kept, a bucket is saved as it closes, not as readings come, each
+    // series to a tenth.
+    function test_bucketsAreSavedAsTheyClose() {
+        forget();
+        const m = sampling(keeping("w1", true));
+        verify(m.store !== null);
+        const t = tenMinutes(1);
+        const cpu = m.cpuUsage;
+        m.sample(t);
+        m.sample(t + 1000);
+        compare(saved("w1").length, 0, "nothing while the buckets are open");
+        m.sample(t + 30000);
+        let rows = saved("w1");
+        compare(rows.map(r => [r.tier, r.at]), [["hour", t / 30000]]);
+        compare(rows[0].data.cpu, [Math.round(cpu * 10) / 10, Math.round(cpu * 10) / 10]);
+        verify(rows[0].data.memory !== undefined);
+        compare(rows[0].data["gpu:gpu97"], [0, 0], "a sleeping GPU is idle");
+        verify(rows[0].data["diskTemperature:"] === undefined, "a series with no reading is left out");
+        m.sample(t + 600000);
+        rows = saved("w1");
+        compare(rows.map(r => [r.tier, r.at]), [["day", t / 600000], ["hour", t / 30000], ["hour", t / 30000 + 1]]);
+        forget();
+    }
+
+    // A widget that starts with the setting on picks up where it left
+    // off: the last hour's and day's buckets in place, older ones dropped.
+    function test_historyIsRestoredAfterARestart() {
+        forget();
+        const first = sampling(keeping("w1", true));
+        const t = tenMinutes(2);
+        const cpu = first.cpuUsage;
+        first.sample(t);
+        first.sample(t + 30000);
+        first.sample(t + 600000);
+        first.sample(t + 1200000);
+        // Buckets from before the span: three hours and two days ago.
+        first.store.save([{ tier: "hour", at: t / 30000 - 360, data: { cpu: [77, 77] } },
+                          { tier: "day", at: t / 600000 - 288, data: { cpu: [66, 66] } }]);
+        first.destroy();
+        wait(0);
+        const again = keeping("w1", true);
+        const s = again.series.cpu;
+        verify(s !== undefined, "restored");
+        const nowHour = Math.floor(Date.now() / 30000);
+        compare(s.hour.at, nowHour);
+        compare(s.hour.means[s.hour.means.length - (nowHour - t / 30000)], Math.round(cpu * 10) / 10);
+        verify(s.hour.means.length <= 120 && !s.hour.means.includes(77), "nothing older than the hour");
+        compare(s.day.means.filter(v => Number.isFinite(v)).length, 2);
+        verify(!s.day.means.includes(66), "nothing older than the day");
+        compare(again.cpuHistory, s.minute, "the minute isn't kept");
+        again.chooseSpan("day");
+        compare(again.cpuHistory, s.day.means);
+        forget();
+    }
+
+    // Each widget keeps its own.
+    function test_historyIsKeyedPerWidget() {
+        forget();
+        const first = sampling(keeping("w1", true));
+        const t = tenMinutes(1);
+        first.sample(t);
+        first.sample(t + 30000);
+        verify(saved("w1").length > 0);
+        const other = keeping("w2", true);
+        verify(other.series.cpu === undefined || other.series.cpu.hour.means.length === 0, "w2 restores nothing of w1's");
+        compare(saved("w2").length, 0);
+        forget();
+    }
+
+    // Switching the setting off deletes what this widget saved, and
+    // nothing of another's; the history it holds stays in memory.
+    function test_switchingOffDeletesIt() {
+        forget();
+        const m = sampling(keeping("w1", true));
+        const t = tenMinutes(1);
+        m.sample(t);
+        m.sample(t + 30000);
+        m.store.save([]);
+        database().transaction(tx => tx.executeSql("INSERT INTO buckets VALUES ('w2', 'hour', ?, '{}')", [t / 30000]));
+        verify(saved("w1").length > 0);
+        m.config.keepGraphHistory = false;
+        compare(m.store, null);
+        compare(saved("w1").length, 0, "deleted");
+        compare(saved("w2").length, 1, "another widget's kept");
+        compare(m.series.cpu.hour.means.length, 1, "still shown");
+        m.sample(t + 60000);
+        compare(saved("w1").length, 0, "and no more saved");
+        forget();
+    }
+
+    // Switched on, what the widget holds is saved at once, so a restart
+    // soon after keeps it.
+    function test_switchingOnSavesWhatIsHeld() {
+        forget();
+        const m = sampling(keeping("w1", false));
+        const t = tenMinutes(1);
+        m.sample(t);
+        m.sample(t + 30000);
+        m.sample(t + 60000);
+        compare(m.store, null, "not loaded while off");
+        compare(saved("w1").length, 0);
+        m.config.keepGraphHistory = true;
+        compare(saved("w1").map(r => [r.tier, r.at]), [["hour", t / 30000], ["hour", t / 30000 + 1]]);
+        forget();
+    }
+
+    // Every save drops what has fallen out of its span, whoever saved it,
+    // and anything ahead of the clock: about a day's buckets at most.
+    function test_theStoreIsBounded() {
+        forget();
+        const m = keeping("w1", true);
+        const hour = Math.floor(Date.now() / 30000);
+        const day = Math.floor(Date.now() / 600000);
+        const rows = [];
+        for (let i = -400; i <= 5; ++i) {
+            rows.push({ tier: "hour", at: hour + i, data: { cpu: [i, i] } });
+            rows.push({ tier: "day", at: day + i, data: { cpu: [i, i] } });
+        }
+        database().transaction(tx => tx.executeSql("INSERT INTO buckets VALUES ('gone', 'hour', ?, '{}')", [hour - 1000]));
+        m.store.save(rows);
+        const kept = saved("w1");
+        compare(kept.filter(r => r.tier === "hour").length, 121);
+        compare(kept.filter(r => r.tier === "day").length, 145);
+        verify(kept.every(r => r.at <= (r.tier === "hour" ? hour : day)), "nothing ahead of the clock");
+        compare(saved("gone").length, 0, "a removed widget's old buckets go too");
+        forget();
+    }
+
+    // Where the store can't load, Qt's LocalStorage module missing, the
+    // widget still runs, keeps its history in memory and says so once.
+    function test_aMissingStoreKeepsHistoryInMemory() {
+        ignoreWarning(/graph history stays in memory, as the store can't load/);
+        failOnWarning(/graph history/);
+        const m = sampling(keeping("w1", true, { storeUrl: Qt.resolvedUrl("data/MissingStore.qml") }));
+        verify(m.storeMissing);
+        compare(m.store, null);
+        const t = tenMinutes(1);
+        m.sample(t);
+        m.sample(t + 30000);
+        compare(m.series.cpu.hour.means.length, 1);
+        m.config.keepGraphHistory = false;
+        m.config.keepGraphHistory = true;
+        m.sample(t + 60000);
+        compare(m.store, null, "not tried again");
     }
 
     function test_memoryPartsArriveFromTheSensors() {

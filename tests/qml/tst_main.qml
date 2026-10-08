@@ -287,6 +287,11 @@ Item {
             tryCompare(popup(applet), "visible", false, 2000);
         }
 
+        // The monitor keys the graphs' saved history to this widget.
+        function test_widgetIdReachesTheMonitor() {
+            compare(strip(panel(false, 44)).monitor.widgetId, String(Plasmoid.id));
+        }
+
         // The monitor learns the widget's version for the public address
         // check's User-Agent, and does without when there is none to read.
         function test_versionReachesTheMonitor_data() {

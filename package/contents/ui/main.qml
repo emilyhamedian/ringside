@@ -92,6 +92,8 @@ PlasmoidItem {
     Monitor {
         id: monitor
         config: Plasmoid.configuration
+        // Keys the graphs' saved history to this widget.
+        widgetId: String(Plasmoid.id)
         // KPluginMetaData's version, there since Plasma 6.0; qmllint has no
         // type information for KPluginMetaData.
         version: Plasmoid.metaData?.version ?? "" // qmllint disable unresolved-type

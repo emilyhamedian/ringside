@@ -228,6 +228,35 @@ Item {
             make(general, { cfg_fahrenheit: data.fahrenheit });
         }
 
+        // Graph history: a box that keeps the hour and the day across
+        // restarts, off by default, with a line under it saying where they
+        // go. Where Qt's LocalStorage module is missing the box is greyed
+        // out and the line says what is needed; the setting goes untouched.
+        function test_keepGraphHistory_data() {
+            return [{ tag: "available", url: Qt.resolvedUrl("../../package/contents/ui/HistoryStore.qml"), available: true,
+                      line: "Saved on this computer only. Turning this off deletes it." },
+                    { tag: "missing", url: Qt.resolvedUrl("data/MissingStore.qml"), available: false,
+                      line: "Needs Qt's LocalStorage module (qml6-module-qtquick-localstorage)." }];
+        }
+        function test_keepGraphHistory(data) {
+            const page = make(general, { storeUrl: data.url, cfg_keepGraphHistory: false });
+            compare(page.storeAvailable, data.available);
+            const box = find(page, i => i.text === "Keep the last hour and day across restarts" && i.checked !== undefined);
+            verify(box && box.visible);
+            compare(box.enabled, data.available);
+            compare(box.checked, false);
+            compare(box.Accessible.description, data.line);
+            verify(find(page, i => i.text === data.line && i.visible), "the line under the box");
+            verify(!find(page, i => i.Accessible && i.Accessible.name === "Graph history"), "the old Graph history list is gone");
+            box.forceActiveFocus();
+            keyClick(Qt.Key_Space);
+            compare(page.cfg_keepGraphHistory, data.available, "ticked only where it can be kept");
+            if (data.available) {
+                keyClick(Qt.Key_Space);
+                compare(page.cfg_keepGraphHistory, false);
+            }
+        }
+
         function test_providers() {
             const page = make(providers);
             const every = combo(page, "Check every");
@@ -617,6 +646,7 @@ Item {
             return orders([
                 { tag: "General", source: "config/ConfigGeneral.qml", key: "updateInterval", value: 2000 },
                 { tag: "GeneralPublicAddress", source: "config/ConfigGeneral.qml", key: "publicAddress", value: true },
+                { tag: "GeneralKeepGraphHistory", source: "config/ConfigGeneral.qml", key: "keepGraphHistory", value: true },
                 { tag: "GeneralPublicAddressUrl4", source: "config/ConfigGeneral.qml", key: "publicAddressUrl4",
                   value: "https://ip.example.org/" },
                 { tag: "Items", source: "config/ConfigItems.qml", key: "ringsOnly", value: ["cpu"] },

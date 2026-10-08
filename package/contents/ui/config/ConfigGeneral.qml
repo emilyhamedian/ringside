@@ -11,6 +11,15 @@ import "../code/publicaddress.js" as Lookup
 ConfigPage {
     id: page
 
+    // The graphs' history is kept with Qt's LocalStorage module, which
+    // Debian and Ubuntu package on their own; without it the box is off and
+    // says why. The tests point this elsewhere.
+    property url storeUrl: Qt.resolvedUrl("../HistoryStore.qml")
+    readonly property bool storeAvailable: Qt.createComponent(storeUrl).status === Component.Ready
+    readonly property string historyLine: storeAvailable
+        ? i18nc("@info under Keep graph history", "Saved on this computer only. Turning this off deletes it.")
+        : i18nc("@info under Keep graph history, which is greyed out; the package name is Debian's and Ubuntu's",
+                "Needs Qt's LocalStorage module (qml6-module-qtquick-localstorage).")
     readonly property string unit: cfg_fahrenheit ? i18nc("@label temperature unit", "°F")
                                                    : i18nc("@label temperature unit", "°C")
     readonly property var service: Lookup.service(cfg_publicAddressUrl4, cfg_publicAddressUrl6)
@@ -142,6 +151,28 @@ ConfigPage {
                                                     Number(value / 1000).toLocaleString(locale, "f", 1))
             Accessible.name: i18nc("@label:spinbox", "Update interval")
             onValueModified: page.cfg_updateInterval = value
+        }
+
+        QQC2.CheckBox {
+            id: keepHistory
+            Kirigami.FormData.label: i18nc("@label", "Graph history:")
+            text: i18nc("@option:check", "Keep the last hour and day across restarts")
+            enabled: page.storeAvailable
+            checked: page.cfg_keepGraphHistory && page.storeAvailable
+            Accessible.description: page.historyLine
+            onToggled: page.cfg_keepGraphHistory = checked
+        }
+
+        Note {
+            Layout.maximumWidth: Kirigami.Units.gridUnit * 30
+            // Measured from its own box: one further down the form would
+            // feed the form's width back into this line's.
+            readonly property real indent: (keepHistory.mirrored ? keepHistory.rightPadding : keepHistory.leftPadding)
+                                           + keepHistory.indicator.width + keepHistory.spacing
+            leftPadding: keepHistory.mirrored ? 0 : indent
+            rightPadding: keepHistory.mirrored ? indent : 0
+            horizontalAlignment: Text.AlignLeft
+            text: page.historyLine
         }
 
         Item {

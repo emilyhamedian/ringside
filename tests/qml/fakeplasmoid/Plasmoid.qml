@@ -7,6 +7,7 @@ import org.kde.plasma.core as PlasmaCore
 
 // The applet main.qml reads through Plasmoid, with the panel set by the test.
 QtObject {
+    property int id: 1
     property int formFactor: PlasmaCore.Types.Horizontal
     property int location: PlasmaCore.Types.BottomEdge
     property var configuration: ({ ringsOnly: [] })
