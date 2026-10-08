@@ -99,5 +99,11 @@ PopupPage {
             history: popup.monitor.diskWriteHistory
             length: popup.monitor.historyLength
         }
+
+        // Last, after the rates the popup is for.
+        TemperatureTile {
+            monitor: popup.monitor
+            history: popup.monitor.diskTemperatureHistory
+        }
     }
 }

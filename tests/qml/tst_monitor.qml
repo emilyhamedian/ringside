@@ -448,6 +448,87 @@ TestCase {
         verify(enabledSensors(gpu).every(e => !e));
     }
 
+    function temperatureHistories(m) {
+        return { cpu: m.cpuTemperatureHistory, disk: m.diskTemperatureHistory,
+                 outer: m.gpuOuter.temperatureHistory, inner: m.gpuInner.temperatureHistory };
+    }
+
+    // The temperatures are sampled with the other histories, every
+    // sampleInterval and as many as historyLength, so a graph is full when
+    // its popup opens. With no reading, here from made-up sensor ids and
+    // GPUs, each sample is NaN, a gap, never 0; a new length starts afresh.
+    function test_temperatureHistoriesSample() {
+        stopTimers(monitor);
+        config.cpuTemperatureSensor = "cpu/cpu97/temperature";
+        config.diskTemperatureSensor = "disk/vdz/temperature";
+        config.historySeconds = 30;
+        compare(monitor.historyLength, 30);
+        for (let i = 0; i < 32; ++i) {
+            monitor.sample();
+        }
+        compare(monitor.cpuHistory.length, 30);
+        for (const [name, history] of Object.entries(temperatureHistories(monitor))) {
+            compare(history.length, 30, name);
+            verify(history.every(t => Number.isNaN(t)), name + ": " + history.join());
+        }
+        config.historySeconds = 60;
+        for (const [name, history] of Object.entries(temperatureHistories(monitor))) {
+            compare(history.length, 0, name + " starts afresh");
+        }
+        monitor.sample();
+        compare(monitor.historyLength, 60);
+        for (const [name, history] of Object.entries(temperatureHistories(monitor))) {
+            compare(history.length, 1, name);
+        }
+    }
+
+    // A reading goes in as it is, the CPU's and the disk's each into its
+    // own history. The CPU count stands in for a temperature sensor:
+    // ksystemstats always has it, and it is a number from 1 as a
+    // temperature is.
+    function test_temperatureReadingsAreRecorded_data() {
+        return [{ tag: "cpu", read: "cpuTemperatureSensor", missing: "diskTemperatureSensor",
+                  reading: "cpuTemperature", history: "cpuTemperatureHistory", gap: "diskTemperatureHistory" },
+                { tag: "disk", read: "diskTemperatureSensor", missing: "cpuTemperatureSensor",
+                  reading: "diskTemperature", history: "diskTemperatureHistory", gap: "cpuTemperatureHistory" }];
+    }
+    function test_temperatureReadingsAreRecorded(data) {
+        stopTimers(monitor);
+        config[data.missing] = data.tag === "cpu" ? "disk/vdz/temperature" : "cpu/cpu97/temperature";
+        config[data.read] = "cpu/all/coreCount";
+        tryVerify(() => Number.isFinite(monitor[data.reading]), 10000, "the stand-in reading arrives");
+        monitor.sample();
+        monitor.sample();
+        compare(monitor[data.history].slice(-2), [monitor[data.reading], monitor[data.reading]]);
+        verify(monitor[data.gap].every(t => Number.isNaN(t)), monitor[data.gap].join());
+    }
+
+    // A GPU's temperature comes from its reader, so sampling it reads
+    // nothing: a resting GPU's held reading goes in, and a sleeping GPU's
+    // history has a gap whatever it held, with its sensors left off.
+    function test_aSleepingGpuRecordsGaps() {
+        const gpu = monitor.gpuOuter;
+        tryVerify(() => gpu.leading && gpu.wanted, 5000, "this widget's reader leads and wants the GPU");
+        settledPowerStates(monitor);
+        compare(gpu.phase, "asleep");
+        monitor.sample();
+        verify(Number.isNaN(gpu.temperatureHistory[gpu.temperatureHistory.length - 1]));
+
+        gpu.held = { temperature: 55 };
+        gpu.gate = { phase: "resting", since: 0, quietSince: -1, holdMs: 5000 };
+        compare(gpu.phase, "resting");
+        monitor.sample();
+        compare(gpu.temperatureHistory[gpu.temperatureHistory.length - 1], 55);
+        verify(enabledSensors(gpu).every(e => !e), "a resting GPU is unread");
+
+        gpu.gate = { phase: "asleep", since: 0, quietSince: -1, holdMs: 5000 };
+        monitor.sample();
+        monitor.sample();
+        compare(gpu.held.temperature, 55, "still held");
+        verify(gpu.temperatureHistory.slice(-2).every(t => Number.isNaN(t)), gpu.temperatureHistory.join());
+        verify(enabledSensors(gpu).every(e => !e), "nor is a sleeping one");
+    }
+
     function test_memoryPartsArriveFromTheSensors() {
         tryVerify(() => monitor.memoryTotal > 0, 10000);
         tryVerify(() => Number.isFinite(monitor.memoryFree) && Number.isFinite(monitor.memoryCached), 10000);

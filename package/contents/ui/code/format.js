@@ -30,11 +30,16 @@ function percent(v) {
     return usable(v) ? whole(Math.max(0, Math.min(100, v))) : DASH;
 }
 
+// °C in the unit shown, as a number.
+function degrees(celsius, fahrenheit) {
+    return fahrenheit ? celsius * 9 / 5 + 32 : celsius;
+}
+
 function temperature(celsius, fahrenheit) {
     if (!temperatureValid(celsius)) {
         return DASH;
     }
-    return whole(fahrenheit ? celsius * 9 / 5 + 32 : celsius);
+    return whole(degrees(celsius, fahrenheit));
 }
 
 // A ring's alert level from its own percentage: 0 below 75, 1 (amber) from

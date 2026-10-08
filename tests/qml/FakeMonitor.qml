@@ -51,6 +51,7 @@ QtObject {
     property int cpuThreads: 16
     property var cpuIds: Array.from({ length: cpuThreads }, (_, i) => i)
     property var cpuHistory: wave(cpuUsage, 14, 1)
+    property var cpuTemperatureHistory: wave(cpuTemperature, 2.5, 9)
 
     property real memoryTotal: 31.9 * gib
     property real memoryUsed: 13.4 * gib
@@ -75,6 +76,7 @@ QtObject {
         clock: awake ? 800 : NaN
         power: awake ? 14 : NaN
         history: monitor.wave(12, 10, 3)
+        temperatureHistory: monitor.wave(temperature, 2, 10)
     }
     property FakeGpu gpuInner: FakeGpu {
         kind: "integrated"
@@ -86,6 +88,7 @@ QtObject {
         knownVramTotal: 0.5 * monitor.gib
         clock: awake ? 400 : NaN
         history: monitor.wave(3, 3, 4)
+        temperatureHistory: monitor.wave(temperature, 1.5, 11)
     }
 
     property bool networkBits: true
@@ -111,6 +114,7 @@ QtObject {
     property real diskWrite: 3.4 * 1048576
     property var diskReadHistory: bursts(diskRead, 30 * 1048576, 7)
     property var diskWriteHistory: bursts(diskWrite, 8 * 1048576, 8)
+    property var diskTemperatureHistory: wave(diskTemperature, 1, 12)
 
     // The panel's readings follow the live ones here; Monitor holds them
     // for an update interval.
@@ -134,7 +138,8 @@ QtObject {
         return state * 16807 % 2147483647;
     }
 
-    // A full history that drifts around `level` and ends on it.
+    // A full history that drifts around `level` and ends on it; NaN
+    // throughout for a missing reading.
     function wave(level, swing, seed) {
         const out = [];
         let state = seed * 7919;
@@ -180,6 +185,7 @@ QtObject {
         property real clock: NaN
         property real power: NaN
         property var history: []
+        property var temperatureHistory: []
         property real panelUsage: usage
         property real panelTemperature: temperature
     }

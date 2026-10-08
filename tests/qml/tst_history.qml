@@ -145,4 +145,94 @@ TestCase {
     function test_peakOfNothingIsNull() {
         compare(History.peak([]), null);
     }
+
+    // A temperature history keeps a missing reading as NaN, a gap, where
+    // push() would put a 0 that reads as a cold sensor.
+    function test_recordKeepsMissingReadingsAsGaps() {
+        var a = History.record([], 50, 3);
+        a = History.record(a, NaN, 3);
+        a = History.record(a, undefined, 3);
+        compare(a.length, 3);
+        compare(a[0], 50);
+        verify(isNaN(a[1]) && isNaN(a[2]));
+        var b = History.record(a, 52, 3);
+        compare(b.length, 3, "as long as asked");
+        verify(isNaN(b[0]) && isNaN(b[1]));
+        compare(b[2], 52);
+        compare(a.length, 3, "the input is left alone");
+    }
+
+    // A temperature graph's floor maps to the bottom as zero does.
+    function test_pointsTakeAFloor() {
+        var pts = History.points([40, 65, 90], 3, 100, 50, 90, 0.75, 40);
+        fuzzyCompare(pts[0].y, 49.25, 0.001);
+        fuzzyCompare(pts[1].y, 25, 0.001);
+        fuzzyCompare(pts[2].y, 0.75, 0.001);
+        verify(isNaN(History.points([NaN], 3, 100, 50, 90, 0.75, 40)[0].y), "a missing sample has no height");
+    }
+
+    function test_runsBreakAtMissingSamples() {
+        var samples = [NaN, 1, 2, NaN, NaN, 3, 4, 5];
+        var points = samples.map((v, i) => ({ x: i, y: v }));
+        compare(History.runs(samples, points).map(run => run.map(p => p.x)), [[1, 2], [5, 6, 7]]);
+        compare(History.runs([NaN, NaN], [{ x: 0, y: NaN }, { x: 1, y: NaN }]), []);
+    }
+
+    // The top is the hot threshold, or a round five over a hotter peak; the
+    // floor a round ten at least the margin under the coolest reading.
+    function test_temperatureScale_data() {
+        return [
+            { tag: "steady", samples: [60, 61, 62], hot: 90, low: 50, high: 90 },
+            { tag: "marginOnARoundTen", samples: [45, 50], hot: 90, low: 40, high: 90 },
+            { tag: "justUnder", samples: [44.9, 50], hot: 90, low: 30, high: 90 },
+            { tag: "pastHot", samples: [52, 93.4], hot: 90, low: 40, high: 95 },
+            { tag: "peakOnAFive", samples: [70, 95], hot: 90, low: 60, high: 95 },
+            { tag: "gapsIgnored", samples: [NaN, 61, NaN], hot: 90, low: 50, high: 90 },
+            { tag: "nothing", samples: [NaN], hot: 90, low: 80, high: 90 },
+            { tag: "fahrenheit", samples: [141.8, 143.6], hot: 194, margin: 9, low: 130, high: 194 }
+        ];
+    }
+    function test_temperatureScale(data) {
+        compare(History.temperatureScale(data.samples, data.hot, data.margin ?? 5), { low: data.low, high: data.high });
+    }
+
+    function levelsOf(pieces) {
+        return pieces.map(p => p.level);
+    }
+
+    // The line is cut where it crosses a threshold, each piece in one
+    // colour, the cut where the straight line between two samples meets it.
+    function test_piecesCutAtTheThresholds() {
+        var samples = [70, 80, 100, 80, 70];
+        var points = samples.map((v, i) => ({ x: i * 10, y: 100 - v }));
+        var pieces = History.pieces(samples, points, 75, 90);
+        compare(levelsOf(pieces), [0, 1, 2, 1, 0]);
+        // 75 is half way from 70 to 80, and 90 half way from 80 to 100.
+        compare(pieces[0].points, [{ x: 0, y: 30 }, { x: 5, y: 25 }]);
+        compare(pieces[1].points, [{ x: 5, y: 25 }, { x: 10, y: 20 }, { x: 15, y: 10 }]);
+        compare(pieces[2].points, [{ x: 15, y: 10 }, { x: 20, y: 0 }, { x: 25, y: 10 }]);
+        compare(pieces[4].points, [{ x: 35, y: 25 }, { x: 40, y: 30 }]);
+    }
+
+    // One step can cross both thresholds, and a reading on a threshold
+    // takes its colour, as the header's reading does.
+    function test_piecesCrossBothThresholdsInOneStep() {
+        var samples = [60, 90, 90];
+        var points = samples.map((v, i) => ({ x: i * 30, y: 100 - v }));
+        var pieces = History.pieces(samples, points, 75, 90);
+        compare(levelsOf(pieces), [0, 1, 2]);
+        compare(pieces[1].points, [{ x: 15, y: 25 }, { x: 30, y: 10 }]);
+        compare(pieces[2].points[0], { x: 30, y: 10 });
+        compare(pieces[2].points[pieces[2].points.length - 1], { x: 60, y: 10 });
+    }
+
+    function test_piecesBreakAtGapsAndKeepOneColourWithoutThresholds() {
+        var samples = [80, NaN, 95, 96];
+        var points = samples.map((v, i) => ({ x: i, y: 100 - v }));
+        var pieces = History.pieces(samples, points, 75, 90);
+        compare(levelsOf(pieces), [1, 2]);
+        compare(pieces[0].points.length, 1);
+        compare(pieces[1].points.length, 2);
+        compare(levelsOf(History.pieces(samples, points, Infinity, Infinity)), [0, 0]);
+    }
 }
