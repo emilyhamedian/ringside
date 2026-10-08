@@ -16,16 +16,13 @@ import org.kde.plasma.plasmoid
 // keeps no config item under that name, so nothing reaches the file.
 //
 // Three of the keys are reports the widget writes while the dialog may be
-// open: knownLimits, usageStatus and detectedHardware. The dialogs differ in
-// what their cfg_ copies may do. Plasma 6.4 and later turn Apply on only
-// where a copy differs from the live value, so there the copies follow each
-// report as it is written, and Apply stays as the user's own changes leave
-// it. Plasma 6.0 to 6.3 turn Apply on at any cfg_ change signal, so there
-// the copies keep the values the page opened with, and latest follows the
-// live configuration instead, one event-loop turn behind, because the
-// dialog's own writes on Apply arrive through the same signal and, on those
-// versions, write the page's copies over the reports first. saveConfig()
-// then puts the reports where the dialog's order of events keeps them.
+// open: knownLimits, usageStatus and detectedHardware. Once the dialog has
+// set the page's copies, each follows the live value, so Apply writes back
+// the newest report whichever order the dialog saves in, and Plasma 6.4 and
+// later, which turn Apply on only where a copy differs from the live value,
+// never see one differ. Plasma 6.0 to 6.3 turn Apply on at any cfg_ change
+// signal, so there a report written while a page is open turns it on; Apply
+// then saves what is stored already.
 KCM.SimpleKCM {
     id: base
 
@@ -86,84 +83,21 @@ KCM.SimpleKCM {
     // The live configuration: undefined outside Plasma, where tests hand
     // over a stand-in.
     property var live: Plasmoid.configuration
-    // The reports as last written, starting from what the page opened with.
-    property var latest: ({
-        knownLimits: cfg_knownLimits,
-        usageStatus: cfg_usageStatus,
-        detectedHardware: cfg_detectedHardware
-    })
 
     // One of the reports, parsed; {} while it is empty or unreadable.
     function report(key) {
         try {
-            const parsed = JSON.parse(latest[key] || "{}");
+            const parsed = JSON.parse(base["cfg_" + key] || "{}");
             return parsed && typeof parsed === "object" ? parsed : {};
         } catch (err) {
             return {};
         }
     }
 
-    function refresh() {
-        if (!live) {
-            return;
-        }
-        const now = {};
-        for (const key of reports) {
-            now[key] = live[key];
-        }
-        latest = now;
-    }
-
-    // Whether the dialog turns Apply on by comparing the copies with the
-    // live values, as Plasma 6.4 and later do: their dialog's root, up the
-    // parent chain from the page, has isConfigurationChanged(). Before 6.4
-    // any cfg_ change signal turns it on.
-    function dialogComparesCopies() {
-        for (let item = parent; item; item = item.parent) {
-            if (typeof item.isConfigurationChanged === "function") { // qmllint disable missing-property
-                return true;
-            }
-        }
-        return false;
-    }
-
-    // Called by the dialog on Apply. From Plasma 6.4 it comes before the
-    // dialog writes the cfg_ copies back, so the live value is the newest
-    // and the copies take it. Before 6.4 it comes after, and the live value
-    // is the page's own stale copy: latest, still a turn behind, is what the
-    // widget wrote last, so it goes back and is saved, as the dialog has
-    // saved already.
-    function saveConfig() {
-        let restored = false;
-        for (const key of reports) {
-            const value = live && live[key] !== base["cfg_" + key] ? live[key] : latest[key];
-            base["cfg_" + key] = value;
-            if (live && live[key] !== value) {
-                live[key] = value;
-                restored = true;
-            }
-        }
-        if (restored) {
-            live.writeConfig();
-        }
-    }
-
-    // A report written while the page is open. Where the dialog compares
-    // the copies, the copy takes it at once: the live value already equals
-    // it, so the cfg_ change signal this sends leaves Apply to the user's
-    // other changes, and nothing stale ever arrives here, so latest can
-    // follow at once too.
-    Connections {
-        target: base.live ?? null
-        function onValueChanged(key, value) {
-            if (!base.reports.includes(key)) {
-                return;
-            }
-            if (base.dialogComparesCopies()) {
-                base["cfg_" + key] = value;
-                base.refresh();
-            } else {
-                Qt.callLater(base.refresh);
+    Component.onCompleted: {
+        if (live) {
+            for (const key of reports) {
+                base["cfg_" + key] = Qt.binding(() => base.live[key]);
             }
         }
     }

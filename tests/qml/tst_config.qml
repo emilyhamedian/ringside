@@ -418,7 +418,6 @@ Item {
                 host.pageStack.push(page);
             }
             verify(page, source);
-            compare(page.dialogComparesCopies(), order !== "plasma60", "the page's reading of the dialog");
             return page;
         }
 
@@ -483,7 +482,7 @@ Item {
         // Each page, created as Plasma's dialog creates it, takes every key
         // and Default without a warning (init() fails the test on one) and
         // holds each as the type main.xml gives it. Outside Plasma, with no
-        // live configuration, saveConfig() has nothing to do.
+        // live configuration, a report's copy keeps what it was handed.
         function test_pagesTakePlasmasProperties_data() {
             return pages().map(source => ({ tag: source, source: source }));
         }
@@ -496,8 +495,6 @@ Item {
                     compare(typeof page["cfg_" + key], typeof entry.value, "cfg_" + key);
                 }
             }
-            verify(page.hasOwnProperty("saveConfig"), "the dialog finds saveConfig() with hasOwnProperty");
-            page.saveConfig();
             compare(page.cfg_knownLimits, "");
         }
 
@@ -511,11 +508,11 @@ Item {
             return all;
         }
 
-        // A report the widget writes while a page is open doesn't enable
-        // Apply, which only the page's own changes do, and holds its latest
-        // value after Apply, whichever order the dialog saves in. Under 6.0
-        // to 6.3 the page's copy keeps the opening value until Apply; under
-        // 6.4 and later it follows the report.
+        // A report the widget writes while a page is open reaches the page's
+        // copy at once and is what Apply saves, whichever order the dialog
+        // saves in. Under 6.4 and later the report leaves Apply to the page's
+        // own changes; 6.0 to 6.3 turn Apply on at the copy's change signal,
+        // and their Apply then saves what is stored already.
         function test_runtimeReportSurvivesApply_data() {
             const rows = [];
             for (const source of pages()) {
@@ -531,14 +528,12 @@ Item {
             const d = dialog(page, config, data.order);
             const report = JSON.stringify({ written: "while the page was open" });
             config[data.key] = report;
-            tryVerify(() => page.latest[data.key] === report, 5000, "the page didn't learn of the report");
-            verify(!d.applyEnabled, "the report enabled Apply");
-            compare(page["cfg_" + data.key], data.order === "plasma60" ? "" : report, "the page's copy after the report");
+            compare(page["cfg_" + data.key], report, "the page's copy after the report");
+            compare(d.applyEnabled, data.order === "plasma60", "Apply after the report");
             d.apply();
             compare(config[data.key], report, "the configuration after Apply");
             compare(config.file[data.key], report, "the file after Apply");
             compare(page["cfg_" + data.key], report, "the page's copy after Apply");
-            tryVerify(() => page.latest[data.key] === report, 5000, "latest after Apply");
             verify(!d.changed(), "Apply would stay enabled");
         }
 
@@ -555,7 +550,7 @@ Item {
             const d = dialog(page, config, data.order);
             const status = JSON.stringify({ claude: { status: "ok" } });
             config.usageStatus = status;
-            tryVerify(() => page.latest.usageStatus === status, 5000);
+            compare(page.cfg_usageStatus, status);
             page.cfg_fahrenheit = true;
             verify(d.applyEnabled, "the change left Apply off");
             page.cfg_fahrenheit = false;
@@ -565,8 +560,8 @@ Item {
         // Apply writes the settings back one by one, and the widget answers
         // some of them with a report: the inner-ring choices with knownLimits,
         // and the items switched on with usageStatus, each written back after
-        // its answer in main.xml's order. The answer lands after Apply, the
-        // open page shows it, Apply stays off, and the next Apply saves it.
+        // its answer in main.xml's order. The answer lands during Apply, the
+        // open page shows it, Apply ends off, and the next Apply saves it.
         function test_applyKeepsTheWidgetsAnswer_data() {
             return orders([
                 { tag: "limitPickedBackToAutomatic", source: "config/ConfigProviders.qml",
@@ -601,7 +596,7 @@ Item {
             d.apply();
             compare(JSON.stringify(config[data.key]), JSON.stringify(data.value), "the change after Apply");
             tryCompare(config, data.report, data.answer, 5000, "the widget's answer in the configuration");
-            tryVerify(() => page.latest[data.report] === data.answer, 5000, "the page didn't learn of the answer");
+            compare(page["cfg_" + data.report], data.answer, "the page's copy after the answer");
             if (data.report === "knownLimits") {
                 verify(!page.limitChoices("claude").some(c => /not reported/.test(c.text)), "the picker still offers the old choice");
             } else {
@@ -634,7 +629,7 @@ Item {
             verify(d.applyEnabled, "the change left Apply off");
             const status = JSON.stringify({ claude: { status: "ok" } });
             config.usageStatus = status;
-            tryVerify(() => page.latest.usageStatus === status, 5000);
+            compare(page.cfg_usageStatus, status);
             verify(d.applyEnabled, "the report turned Apply off");
             d.apply();
             compare(JSON.stringify(config[data.key]), JSON.stringify(data.value), "the configuration after Apply");

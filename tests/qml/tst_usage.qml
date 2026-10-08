@@ -331,17 +331,13 @@ Item {
             compare(config.knownLimitsWrites, 1);
             compare(config.usageStatusWrites, 1);
 
-            // A picked limit that isn't reported stays on offer, marked. A
-            // choice is answered a turn later, after the settings dialog's
-            // Apply, which writes the choices back and then knownLimits.
+            // A picked limit that isn't reported stays on offer, marked.
             config.claudeInnerLimit = "Haiku";
-            compare(config.knownLimitsWrites, 1, "answered before the dialog could write knownLimits back");
-            tryCompare(config, "knownLimitsWrites", 2);
+            compare(config.knownLimitsWrites, 2);
             compare(JSON.parse(config.knownLimits).claude[1], { id: "Haiku", label: "Haiku", reported: false });
             config.claudeInnerLimit = "";
-            tryCompare(config, "knownLimitsWrites", 3);
+            compare(config.knownLimitsWrites, 3);
             config.codexInnerLimit = "none";
-            wait(50);
             compare(config.knownLimitsWrites, 3, "no change to what is on offer");
 
             poll("failed");
@@ -384,16 +380,11 @@ Item {
             verify(!usage.claudePresent && usage.codexPresent);
         }
 
-        // The status follows a turn later, after the settings dialog's Apply,
-        // which writes the items back and then usageStatus.
         function test_droppedProvidersGoAtOnce() {
             start("ok");
             usage.providers = ["claude"];
             compare(Object.keys(usage.entries), ["claude"]);
             verify(!usage.codexPresent);
-            compare(Object.keys(JSON.parse(config.usageStatus)), ["claude", "codex", "helperError"],
-                    "written before the dialog could write usageStatus back");
-            tryVerify(() => JSON.parse(config.usageStatus).codex === undefined, 5000);
             compare(Object.keys(JSON.parse(config.usageStatus)), ["claude", "helperError"]);
             spy("entriesChanged").wait(10000);
             compare(Object.keys(usage.entries), ["claude"], "the next report adds nothing unasked");
