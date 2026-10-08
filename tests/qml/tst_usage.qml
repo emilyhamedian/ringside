@@ -374,6 +374,15 @@ Item {
             compare(timers().filter(t => t.running).map(t => t.interval), [5 * 60000]);
         }
 
+        // A new interval starts counting when it is set.
+        function test_newIntervalCountsFromNow() {
+            start("ok");
+            usage.lastRun = 1000;
+            config.usageRefreshMinutes = 15;
+            verify(Math.abs(usage.lastRun - Date.now() / 1000) < 2, usage.lastRun);
+            compare(timers().filter(t => t.running).map(t => t.interval), [15 * 60000]);
+        }
+
         // The first tick once the helper's hold is over; a hold set by the
         // check a tick ran is over by the tick one interval on.
         function test_nextCheck_data() {

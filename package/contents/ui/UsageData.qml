@@ -41,8 +41,9 @@ Item {
     readonly property bool codexPresent: present("codex")
     // Minutes between checks.
     readonly property int refreshMinutes: config.usageRefreshMinutes
-    // A check is running, and when the timer last started one, in epoch
-    // seconds.
+    // A check is running, and when the timer's current interval started:
+    // its last tick, or a change of interval, which starts it over. In
+    // epoch seconds.
     property bool checking: false
     property real lastRun: NaN
 
@@ -442,6 +443,7 @@ Item {
             usage.lastRun = Date.now() / 1000;
             usage.refresh();
         }
+        onIntervalChanged: usage.lastRun = Date.now() / 1000
     }
 
     // Due times are compared with the wall clock, so after a suspend the
