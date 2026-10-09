@@ -23,9 +23,10 @@ cached reading keeps. Status is one of "ok", "signed_out", "rate_limited"
 (with "retryAfter", the seconds until the provider is polled again) or
 "error", and the last two carry a "message" to show, a "reason" the widget
 can put in its own words ("offline", "timeout", "server", "rate-limited",
-"busy" when another run held the lock too long, or "other"), the "host" that
-failed, or "" when none did, and "retryAt", when the provider may be polled
-again (epoch seconds). Tokens never reach stdout or stderr.
+"not-installed" when the Codex CLI isn't, "busy" when another run held the
+lock too long, or "other"), the "host" that failed, or "" when none did, and
+"retryAt", when the provider may be polled again (epoch seconds). Tokens
+never reach stdout or stderr.
 
 When Plasma's digital clock shows a zone other than system time, every window
 also carries "clockZone": {"offset": <seconds east of UTC>, "abbreviation":
@@ -195,8 +196,9 @@ class RateLimited(Exception):
 
 
 class CheckFailed(RuntimeError):
-    """A failed check whose cause is known: reason is "offline", "timeout" or
-    "server", and host the server that failed, or "" for the Codex CLI."""
+    """A failed check whose cause is known: reason is "offline", "timeout",
+    "server" or "not-installed", and host the server that failed, or "" for
+    the Codex CLI."""
 
     def __init__(self, message, reason, host=""):
         super().__init__(message)
@@ -343,7 +345,7 @@ def codex_usage():
         raise SignedOut()
     binary = find_cli("codex")
     if not binary:
-        raise RuntimeError("codex CLI not found")
+        raise CheckFailed("codex CLI not found", "not-installed")
     try:
         result = codex_rate_limits(binary)
     except RuntimeError as err:

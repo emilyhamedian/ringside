@@ -43,7 +43,8 @@ function failureReason(failure) {
 // retry waits the five minutes the helper holds a failed provider back, or
 // to the end of a longer hold the provider's last report gave, such as a
 // rate limit, which the helper still keeps. Signed-out entries are left
-// alone, and a failure never adds an entry for a tool nobody signed in to.
+// alone, and no entry is added: UsageData adds one first for a provider
+// still loading.
 function markFailed(entries, message, at, reason) {
     const marked = Object.assign({}, entries);
     for (const id in marked) {

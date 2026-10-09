@@ -32,9 +32,9 @@ PlasmoidItem {
     property Item openCell: null
     onOpenCellChanged: if (!openCell && popup.visible) Qt.callLater(reattach)
 
-    // A cell goes when its item does, and also when another item comes or
-    // goes, since the strip rebuilds every cell then. The popup moves to the
-    // new cell for its item, or closes if there is none.
+    // A cell goes only when its item does; other items coming and going
+    // leave it be (see Strip). The popup closes with it, or moves to the
+    // item's new cell should the item be back by then.
     function reattach() {
         if (openCell || !popup.visible) {
             return;

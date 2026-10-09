@@ -59,8 +59,8 @@ Item {
     readonly property var innerChoices: ({ claude: config.claudeInnerLimit, codex: config.codexInnerLimit })
     // The last poll's status per id, as the settings page reads it.
     property var statuses: ({})
-    // The polled ids with a report, or a failure of the helper, since the
-    // widget started or they were turned on.
+    // The polled ids with a report, or a failure of a helper run that
+    // polled them, since the widget started or they were turned on.
     property var answered: []
     // The session starter per id, as the last report gave it.
     property var starters: ({})
@@ -233,14 +233,14 @@ Item {
     // Whether a failed check is worth trying again now: only once the
     // helper's hold is over, so it would really ask; not while a check
     // runs or with the next tick under a minute away; and never for a
-    // helper that can't read its files or can't be started, which would
-    // only fail again, or one that found another check holding its lock,
-    // which a click would only queue behind.
+    // helper that can't read its files or can't be started, or a Codex CLI
+    // that isn't installed, which would only fail again, or one that found
+    // another check holding its lock, which a click would only queue behind.
     function canRetry(id, nowMs) {
         const e = entry(id);
         const now = nowMs / 1000;
-        return e !== null && e.lastError !== undefined && !["files", "missing", "busy"].includes(e.reason) && !checking
-            && now >= e.retryAt && nextCheck(id) - now > 60;
+        return e !== null && e.lastError !== undefined && !["files", "missing", "not-installed", "busy"].includes(e.reason)
+            && !checking && now >= e.retryAt && nextCheck(id) - now > 60;
     }
 
     // Checks now, and counts the next interval from here: the timer's
@@ -434,12 +434,15 @@ Item {
             } else if (!report?.providers) {
                 const failure = Report.helperFailure(data);
                 usage.helperError = usage.failureText(failure);
-                // A provider still loading fails with the rest.
+                // A provider still loading that this run polled fails with
+                // the rest; one that only another run polls waits for it.
+                const polled = (/ --providers ([\w,]+)$/.exec(source)?.[1] ?? "").split(",");
+                const first = usage.ids.filter(id => polled.includes(id) && usage.loading(id));
                 const loaded = Object.assign({}, usage.entries);
-                usage.ids.filter(id => usage.loading(id)).forEach(id => { loaded[id] = { status: "error" }; });
+                first.forEach(id => { loaded[id] = { status: "error" }; });
                 usage.entries = Report.markFailed(loaded, usage.helperError, Math.floor(Date.now() / 1000),
                                                   Report.failureReason(failure));
-                usage.answered = usage.ids;
+                usage.answered = usage.answered.concat(first);
                 usage.writeStatus();
             } else {
                 usage.helperError = "";

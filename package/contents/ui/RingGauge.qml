@@ -374,10 +374,6 @@ Item {
             NumberAnimation { to: 1; duration: 1000; easing.type: Easing.InOutSine }
         }
 
-        // The arcs fill the gauge rather than centring in it: anchors.centerIn
-        // rounds an odd-sized item's centre to a whole pixel, which set a
-        // 33 px ring half a pixel up and left of a 34 px gauge's middle, and
-        // the two rings off each other.
         // The waiting ring's dots, a stroke across, ahead of the track as it
         // fills in: filled circles in one path, rather than a dashed stroke
         // whose zero-length dashes each renderer draws its own way.
@@ -447,6 +443,10 @@ Item {
             }
         }
 
+        // The arcs fill the gauge rather than centring in it: anchors.centerIn
+        // rounds an odd-sized item's centre to a whole pixel, which set a
+        // 33 px ring half a pixel up and left of a 34 px gauge's middle, and
+        // the two rings off each other.
         RingArc {
             id: outer
             anchors.fill: parent

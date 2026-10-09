@@ -59,9 +59,9 @@ GridLayout {
     component Entry: PlasmaCore.ToolTipArea {
         id: entry
 
-        required property string modelData
+        required property string item
         readonly property alias cell: cell
-        readonly property bool textShown: !strip.isRing(modelData) || !strip.vertical && !strip.ringsOnly.includes(modelData)
+        readonly property bool textShown: !strip.isRing(item) || !strip.vertical && !strip.ringsOnly.includes(item)
 
         Layout.fillWidth: strip.vertical
         Layout.fillHeight: !strip.vertical
@@ -69,8 +69,8 @@ GridLayout {
         implicitHeight: cell.implicitHeight
         // Where the readings are hidden, or a Claude or Codex check failed,
         // whose cause and times only the words give, or is still running.
-        active: (!entry.textShown || Items.isUsage(entry.modelData) && (strip.monitor.usage.degraded(entry.modelData)
-                                                                          || strip.monitor.usage.loading(entry.modelData)))
+        active: (!entry.textShown || Items.isUsage(entry.item) && (strip.monitor.usage.degraded(entry.item)
+                                                                    || strip.monitor.usage.loading(entry.item)))
             && !cell.open
         mainText: cell.title
         subText: cell.description
@@ -80,10 +80,10 @@ GridLayout {
         PanelCell {
             id: cell
             anchors.fill: parent
-            item: entry.modelData
-            open: strip.openItem === entry.modelData
+            item: entry.item
+            open: strip.openItem === entry.item
             vertical: strip.vertical
-            onActivated: strip.activated(entry.modelData, cell)
+            onActivated: strip.activated(entry.item, cell)
 
             // Along a horizontal panel the content keeps to the cell's start,
             // so the cell's rounding up to a whole pixel falls after it.
@@ -94,8 +94,8 @@ GridLayout {
                 x: strip.vertical ? Math.round((parent.width - width) / 2)
                  : LayoutMirroring.enabled ? Math.round(parent.width - cell.padding - width) : cell.padding
                 y: Math.round((parent.height - height) / 2)
-                sourceComponent: Items.isUsage(entry.modelData) ? usageContent
-                               : strip.isRing(entry.modelData) ? ringContent : rateContent
+                sourceComponent: Items.isUsage(entry.item) ? usageContent
+                               : strip.isRing(entry.item) ? ringContent : rateContent
                 onLoaded: cell.contentItem = item
             }
 
@@ -104,7 +104,7 @@ GridLayout {
                 RingCellContent {
                     id: rings
                     monitor: strip.monitor
-                    item: entry.modelData
+                    item: entry.item
                     ring: strip.ring
                     textShown: entry.textShown
                     twoLines: strip.twoLines
@@ -122,7 +122,7 @@ GridLayout {
                 UsageCellContent {
                     id: usage
                     monitor: strip.monitor
-                    item: entry.modelData
+                    item: entry.item
                     ring: strip.ring
                     textShown: entry.textShown
                     twoLines: strip.twoLines
@@ -140,7 +140,7 @@ GridLayout {
                 RateCellContent {
                     id: rates
                     monitor: strip.monitor
-                    item: entry.modelData
+                    item: entry.item
                     vertical: strip.vertical
                     singleRow: !strip.vertical && !strip.twoLines
                     availableWidth: strip.vertical ? cell.width - 2 * Kirigami.Units.smallSpacing : Infinity
@@ -155,9 +155,39 @@ GridLayout {
         }
     }
 
+    // The items as a model the strip keeps in step with `items`, so a cell
+    // stays while others come and go. Handed a new array, the Repeater
+    // would make every cell again, cutting short whatever its ring was
+    // doing, such as a first reading filling it in.
+    ListModel {
+        id: shown
+    }
+
+    function follow() {
+        for (let i = shown.count - 1; i >= 0; --i) {
+            if (!items.includes(shown.get(i).item)) {
+                shown.remove(i);
+            }
+        }
+        items.forEach((item, i) => {
+            let at = i;
+            while (at < shown.count && shown.get(at).item !== item) {
+                ++at;
+            }
+            if (at === shown.count) {
+                shown.insert(i, { item: item });
+            } else if (at !== i) {
+                shown.move(at, i, 1);
+            }
+        });
+    }
+
+    onItemsChanged: follow()
+    Component.onCompleted: follow()
+
     Repeater {
         id: cells
-        model: strip.items
+        model: shown
         delegate: Entry {}
     }
 }

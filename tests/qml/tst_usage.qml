@@ -313,7 +313,7 @@ Item {
             compare(usage.entry("claude").status, "signed_out");
             verify(!usage.claudePresent);
             const codex = usage.entry("codex");
-            compare([codex.status, codex.lastError, codex.reason, codex.weekly], ["error", "codex CLI not found", "other", undefined]);
+            compare([codex.status, codex.lastError, codex.reason, codex.weekly], ["error", "codex CLI not found", "not-installed", undefined]);
             verify(usage.codexPresent && usage.degraded("codex"));
             compare(JSON.parse(config.usageStatus).codex, { status: "error", message: "codex CLI not found" });
 
@@ -395,6 +395,24 @@ Item {
             poll("ok");
             compare(usage.helperError, "");
             verify(!usage.degraded("claude"));
+        }
+
+        // A helper run that fails ends the loading of the providers it
+        // polled only: Codex, turned on while Claude's run was going, waits
+        // for its own.
+        function test_helperFailureEndsOnlyItsOwnLoading() {
+            make("split", ["claude"]);
+            tryCompare(usage, "checking", true, 1000, "Claude's run has started");
+            usage.providers = ["claude", "codex"];
+            verify(usage.loading("codex"));
+            spy("entriesChanged").wait(10000);
+            verify(!usage.loading("claude") && usage.degraded("claude"));
+            compare(usage.entry("claude").lastError, "The usage helper exited with code 3: boom");
+            verify(usage.loading("codex") && usage.codexPresent, "still loading");
+            compare(usage.entry("codex"), null);
+            spy("entriesChanged").wait(10000);
+            verify(!usage.loading("codex") && !usage.degraded("codex"));
+            compare(usage.entry("codex").weekly.percent, 24);
         }
 
         function test_helperFailure_data() {
@@ -538,6 +556,7 @@ Item {
                 { tag: "files", ran: 400, retryAt: -100, reason: "files", can: false },
                 { tag: "no python3", ran: 400, retryAt: -100, reason: "missing", can: false },
                 { tag: "lock busy", ran: 400, retryAt: -100, reason: "busy", can: false },
+                { tag: "not installed", ran: 400, retryAt: -100, reason: "not-installed", can: false },
                 { tag: "hold ends now", ran: 400, retryAt: 0, can: true },
                 { tag: "tick exactly a minute away", ran: 840, retryAt: -100, can: false },
                 { tag: "helper", ran: 400, retryAt: -100, reason: "helper", can: true },
@@ -1579,7 +1598,10 @@ Item {
                   text: "Another usage check is still running." },
                 { tag: "files", entry: { reason: "files" }, text: "The usage helper couldn't read or write its files." },
                 { tag: "helper", entry: { reason: "helper" }, text: "The usage helper stopped with an error." },
-                { tag: "other", entry: { reason: "other", lastError: "codex CLI not found" }, text: "Codex CLI not found." },
+                { tag: "not installed", item: "codex", entry: { reason: "not-installed", lastError: "codex CLI not found" },
+                  text: "Codex isn't installed; install it or turn Codex off." },
+                { tag: "other", entry: { reason: "other", lastError: "app-server closed without answering" },
+                  text: "App-server closed without answering." },
                 { tag: "no reason", entry: { lastError: "Claude Code's credentials can't be read" },
                   text: "Claude Code's credentials can't be read." },
                 { tag: "a sentence", entry: { reason: "other", lastError: "Stopped!" }, text: "Stopped!" },

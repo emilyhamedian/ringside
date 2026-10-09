@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import QtQuick
+import QtQuick.Shapes
 import QtTest
 import org.kde.kirigami as Kirigami
 import "../../package/contents/ui"
@@ -1325,6 +1326,11 @@ Item {
             return root.all(c, i => i.playReset !== undefined).sort((a, b) => b.radius - a.radius)[0];
         }
 
+        // The outer ring's track, the first of its paths.
+        function track(c) {
+            return Array.from(outerArc(c).data).filter(o => o.capStyle !== undefined)[0];
+        }
+
         function readout(c) {
             return root.all(c, i => i.oneLine !== undefined)[0];
         }
@@ -1365,8 +1371,8 @@ Item {
                 sample: () => seen.push({ at: Date.now(), moving: g.moving, motion: g.motion, dots: g.dotsShown, sweep: g.sweep,
                                           covered: dots(c).covered, circles: dots(c).data[0].pathElements[0].path.split("M ").length - 1,
                                           struck: g.struck, percent: outerArc(c).percent,
-                                          track: outerArc(c).trackColor.a, text: readout(c).opacity, first: line(c, "first").text,
-                                          mark: middle(c).opacity })
+                                          track: outerArc(c).trackColor.a, trackSweep: outerArc(c).trackSweep, cap: track(c).capStyle,
+                                          text: readout(c).opacity, first: line(c, "first").text, mark: middle(c).opacity })
             });
             return seen;
         }
@@ -1453,6 +1459,33 @@ Item {
             tryCompare(g, "moving", true, 1000);
         }
 
+        // An invisible ring, as on a popup page not shown, stops the dot
+        // too, though its window shows.
+        function test_stopsWhileInvisible() {
+            const c = cell();
+            const g = c.children[0];
+            tryCompare(g, "motion", 1, 3000);
+            c.visible = false;
+            verify(!g.moving, "stopped while invisible");
+            tryCompare(g, "motion", 0, 1000);
+            c.visible = true;
+            tryCompare(g, "moving", true, 1000);
+        }
+
+        // A ring that waits again after its 30 s stop, as when the item is
+        // turned off and on, moves again after a second.
+        function test_waitingAgainAfterTheStop() {
+            const c = cell();
+            const g = c.children[0];
+            tryCompare(g, "moving", true, 3000);
+            g.resources.find(r => r.interval === 30000).triggered();
+            verify(g.capped && !g.moving);
+            monitor.usage.pending = [];
+            wait(50);
+            monitor.usage.pending = ["claude"];
+            tryCompare(g, "moving", true, 3000, "moving again");
+        }
+
         // At Instant nothing moves: the dots stay still, and the reading
         // replaces them in one frame, the numbers with it.
         function test_instant() {
@@ -1483,6 +1516,9 @@ Item {
             tryCompare(g, "dotsShown", 0, 3000);
             tryCompare(readout(c), "opacity", 1, 3000);
             tryCompare(outerArc(c), "percent", 52, 3000);
+            // The sampler may not have run since the frame that ended the fill.
+            tryVerify(() => seen.some(f => f.sweep === 1) && seen.some(f => f.motion === 0), 1000,
+                      "sampled to the end: " + JSON.stringify(seen.slice(-3)));
             const filling = seen.filter(f => f.sweep > 0 && f.sweep < 1);
             verify(filling.length >= 5, "the track fills in: " + JSON.stringify(seen.map(f => f.sweep)));
             verify(seen.filter(f => f.sweep >= 0.4).every(f => f.motion === 0), "the dot is gone first");
@@ -1494,6 +1530,9 @@ Item {
             verify(filling.some(f => f.covered > 0 && f.covered < dots(c).count));
             verify(filling.every(f => f.circles === dots(c).count - f.covered), "drawn ahead of the track only");
             verify(filling.every(f => f.track > 0), "the track is drawn as it fills");
+            verify(filling.every(f => Math.abs(f.trackSweep - f.sweep) < 1e-9), "only as far as it has filled");
+            verify(filling.every(f => f.cap === ShapePath.FlatCap), "a part track ends square, over no dot");
+            compare(track(c).capStyle, ShapePath.SquareCap, "a whole track as before");
             verify(seen.some(f => f.percent > 0 && f.sweep < 1), "the arc draws in with it");
             verify(seen.some(f => f.text > 0 && f.text < 1), "the numbers fade in");
             verify(seen.some(f => f.mark > 0.4 && f.mark < 1), "the mark brightens");

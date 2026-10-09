@@ -638,6 +638,11 @@ class Polling(Isolated):
         self.assertEqual(usage.poll(mock.Mock(side_effect=usage.CheckFailed("HTTP 502 from a.test", "server", "a.test"))),
                          {"status": "error", "message": "HTTP 502 from a.test", "reason": "server", "host": "a.test"})
 
+    def test_missing_codex_cli_says_so(self):
+        with mock.patch.object(usage, "CODEX_AUTH", Path(__file__)):
+            self.assertEqual(usage.poll(usage.codex_usage),
+                             {"status": "error", "message": "codex CLI not found", "reason": "not-installed", "host": ""})
+
     def test_codex_login_errors_read_as_signed_out(self):
         with mock.patch.object(usage, "CODEX_AUTH", Path(__file__)), \
              mock.patch.object(usage, "find_cli", return_value="codex"), \

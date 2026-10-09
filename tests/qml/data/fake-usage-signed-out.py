@@ -5,4 +5,4 @@
 from fake_usage import report
 
 report(claude={"status": "signed_out"},
-       codex={"status": "error", "message": "codex CLI not found"})
+       codex={"status": "error", "message": "codex CLI not found", "reason": "not-installed", "host": ""})
