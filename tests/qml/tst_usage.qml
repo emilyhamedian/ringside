@@ -305,13 +305,16 @@ Item {
             compare([claude.reason, claude.host, claude.retryAt], ["other", "", claude.lastErrorAt]);
         }
 
-        // Signed out replaces the reading; a tool that never answered stays
-        // hidden, and the settings page learns why.
+        // Signed out replaces the reading and hides the item. A tool whose
+        // first check fails keeps its item, struck, with the failure and no
+        // readings, and the settings page learns why.
         function test_signedOutAndMissing() {
             start("signed-out");
             compare(usage.entry("claude").status, "signed_out");
-            compare(usage.entry("codex"), null);
-            verify(!usage.claudePresent && !usage.codexPresent);
+            verify(!usage.claudePresent);
+            const codex = usage.entry("codex");
+            compare([codex.status, codex.lastError, codex.reason, codex.weekly], ["error", "codex CLI not found", "other", undefined]);
+            verify(usage.codexPresent && usage.degraded("codex"));
             compare(JSON.parse(config.usageStatus).codex, { status: "error", message: "codex CLI not found" });
 
             poll("ok");
@@ -319,6 +322,79 @@ Item {
             poll("signed-out");
             verify(!usage.claudePresent, "signing out hides Claude");
             verify(usage.codexPresent && usage.degraded("codex"), "an error keeps Codex's last reading");
+        }
+
+        // Polled with no report yet: shown and loading, with no entry, until
+        // the first report, which ends it whatever it says.
+        function test_loadingUntilTheFirstReport() {
+            make("slow", ["claude", "codex"]);
+            verify(usage.loading("claude") && usage.loading("codex"));
+            verify(usage.claudePresent && usage.codexPresent, "shown while loading");
+            compare(usage.entry("claude"), null);
+            verify(!usage.degraded("claude"));
+            spy("entriesChanged").wait(10000);
+            verify(!usage.loading("claude") && !usage.loading("codex"));
+            compare(usage.entry("claude").weekly.percent, 52);
+            poll("failed");
+            verify(!usage.loading("claude") && usage.degraded("claude"), "a later failure doesn't load again");
+        }
+
+        // A first check that fails keeps the item, with the failure and no
+        // readings, as any failed check that can't keep a reading. The
+        // next good check fills it in.
+        function test_firstCheckFails() {
+            start("failed");
+            const claude = usage.entry("claude");
+            compare([claude.status, claude.lastError, claude.reason, claude.host, claude.weekly],
+                    ["error", "HTTP Error 500: Internal Server Error", "server", "api.anthropic.com", undefined]);
+            verify(Math.abs(claude.retryAt - (Date.now() / 1000 + 300)) < 60, claude.retryAt);
+            compare([usage.entry("codex").status, usage.entry("codex").reason], ["rate_limited", "rate-limited"]);
+            for (const id of ["claude", "codex"]) {
+                verify(!usage.loading(id) && usage.present(id) && usage.degraded(id), id);
+            }
+            compare(JSON.parse(config.usageStatus).claude, { status: "error", message: "HTTP Error 500: Internal Server Error" });
+
+            poll("ok");
+            compare(usage.entry("claude").weekly.percent, 52);
+            compare(usage.entry("claude").lastError, undefined);
+            verify(!usage.degraded("claude") && !usage.degraded("codex"));
+        }
+
+        // A provider stored as signed out skips the loading look, and a
+        // failed check adds nothing for it, so it stays hidden. One that
+        // reports signed out goes.
+        function test_storedSignedOutSkipsLoading() {
+            config = createTemporaryObject(configComponent, data, {
+                usageStatus: JSON.stringify({ claude: { status: "signed_out", message: "" }, helperError: "" }) });
+            usage = createTemporaryObject(usageComponent, data,
+                                          { config: config, helperPath: root.stub("failed"), providers: ["claude", "codex"] });
+            verify(!usage.loading("claude") && !usage.claudePresent);
+            verify(usage.loading("codex") && usage.codexPresent);
+            spy("entriesChanged").wait(10000);
+            compare(usage.entry("claude"), null);
+            verify(!usage.claudePresent && !usage.loading("claude"));
+            verify(usage.codexPresent && usage.degraded("codex"));
+
+            usage.providers = ["codex"];
+            usage.providers = ["claude", "codex"];
+            verify(usage.loading("claude"), "turned off and on again, it loads");
+            spy("entriesChanged").wait(10000);
+            poll("signed-out");
+            verify(!usage.claudePresent && !usage.loading("claude"));
+        }
+
+        // The helper itself failing on the first check strikes every
+        // provider still loading, with its message.
+        function test_helperFailureEndsLoading() {
+            start("no-python");
+            for (const id of ["claude", "codex"]) {
+                const e = usage.entry(id);
+                verify(!usage.loading(id) && usage.present(id) && usage.degraded(id), id);
+                compare([e.lastError, e.reason, e.weekly], ["python3 was not found on the Plasma session's PATH.", "missing", undefined]);
+            }
+            poll("ok");
+            compare(usage.helperError, "");
+            verify(!usage.degraded("claude"));
         }
 
         function test_helperFailure_data() {
@@ -490,20 +566,22 @@ Item {
             compare(fake.canRetry("claude", now * 1000), data.can, "the tests' stand-in agrees");
         }
 
+        // Shown from the start, while loading, so the first report changes
+        // nothing.
         function test_presentNotifiesOnlyWhenItFlips() {
             make("ok", ["claude", "codex"]);
+            verify(usage.claudePresent && usage.codexPresent);
             const claude = spy("claudePresentChanged");
             const codex = spy("codexPresentChanged");
             spy("entriesChanged").wait(10000);
-            compare(claude.count, 1);
             poll("ok");
             poll("failed");
             poll("ok");
-            compare(claude.count, 1, "polls that keep Claude shown don't notify");
-            compare(codex.count, 1);
+            compare(claude.count, 0, "polls that keep Claude shown don't notify");
+            compare(codex.count, 0);
             poll("signed-out");
-            compare(claude.count, 2);
-            compare(codex.count, 1, "Codex keeps its reading");
+            compare(claude.count, 1);
+            compare(codex.count, 0, "Codex keeps its reading");
         }
 
         function test_configWrittenOnlyOnChange() {
@@ -558,7 +636,10 @@ Item {
 
             const landed = spy("entriesChanged");
             usage.providers = ["codex"];
+            verify(usage.loading("codex") && usage.codexPresent, "loading once turned on");
+            verify(!usage.loading("claude"), "not polled, not loading");
             landed.wait(10000);
+            verify(!usage.loading("codex"));
             compare(Object.keys(usage.entries), ["codex"]);
             verify(!usage.claudePresent && usage.codexPresent);
         }
@@ -1396,6 +1477,88 @@ Item {
             setEntry("claude", ok);
             wait(0);
             compare([gauge.struck, outerArc(c).percent, line(c, "first").text], [0, 95, root.localized("95%")]);
+        }
+
+        // The ring's dots and the lit dot that travels round them.
+        function dotsOf(cell) {
+            return root.find(cell.children[0], i => i.covered !== undefined);
+        }
+
+        function beadOf(cell) {
+            return root.find(cell.children[0], i => i.turning !== undefined);
+        }
+
+        // Claude polled with no report yet.
+        function loadingClaude() {
+            monitor.usage.entries = {};
+            monitor.usage.pending = ["claude"];
+        }
+
+        function test_loadingLook_data() {
+            return [{ tag: "34", ring: 34 }, { tag: "22", ring: 22 }, { tag: "16", ring: 16 }, { tag: "52", ring: 52 }];
+        }
+
+        // While its first check runs the ring is a still ring of dots a
+        // stroke across, in a multiple of four, with no track, the mark
+        // dimmed, and a dim dash over a dash beside it. The words say it is
+        // checking.
+        function test_loadingLook(data) {
+            loadingClaude();
+            const c = cell("claude", { ring: data.ring });
+            const gauge = c.children[0];
+            const arc = outerArc(c);
+            verify(gauge.loading);
+            compare([gauge.sweep, gauge.dotsShown, gauge.motion], [0, 1, 0]);
+            const dots = dotsOf(c);
+            verify(dots.visible);
+            verify(dots.count >= 8 && dots.count % 4 === 0, dots.count);
+            const path = dots.data[0];
+            compare(path.fillColor, Qt.alpha(Kirigami.Theme.textColor, 0.36 * Kirigami.Theme.textColor.a));
+            const svg = path.pathElements[0].path;
+            compare(svg.split("M ").length - 1, dots.count, "a circle per dot, in one path");
+            const r = /^M (\S+) (\S+) A (\S+) /.exec(svg);
+            fuzzyCompare(Number(r[3]), gauge.strokeWidth / 2, 1e-6, "a stroke across");
+            fuzzyCompare(Number(r[1]) + Number(r[3]), gauge.width / 2, 1e-6, "the first at twelve");
+            fuzzyCompare(Number(r[2]), gauge.height / 2 - arc.radius, 1e-6, "on the track's line");
+            compare(arc.trackColor.a, 0, "no track under the dots");
+            verify(!beadOf(c).visible, "nothing moves yet");
+            compare([line(c, "first").text, line(c, "second").text], ["–", "–"]);
+            const dim = String(Style.dim(Kirigami.Theme.textColor));
+            compare([String(line(c, "first").color), String(line(c, "second").color)], [dim, dim]);
+            fuzzyCompare(middle(c).opacity, 0.4, 1e-6);
+            const marked = mark(c).visible;
+            verify(!strike(c).visible);
+            compare(c.accessibleDescription, "Checking your usage…");
+            compare(gauge.Accessible.description, "checking");
+            claudeAt(52);
+            tryCompare(gauge, "dotsShown", 0, 3000);
+            compare(mark(c).visible, marked, "the mark shows as it does with a reading");
+        }
+
+        // A first check that fails fades the dots into the track and
+        // strikes the ring, with the failed dashes and the failure in words,
+        // as a failed check with no reading to keep.
+        function test_failedFirstCheckStrikes() {
+            loadingClaude();
+            const c = cell("claude");
+            const gauge = c.children[0];
+            const arc = outerArc(c);
+            const now = Date.now() / 1000;
+            const failed = { status: "error", lastError: "can't reach api.anthropic.com: Name or service not known",
+                             lastErrorAt: Math.floor(now), reason: "offline", host: "api.anthropic.com", retryAt: Math.floor(now) + 300 };
+            setEntry("claude", failed);
+            verify(!gauge.loading && gauge.cancelled);
+            tryCompare(gauge, "struck", 1, 3000);
+            compare([gauge.sweep, gauge.dotsShown], [1, 0]);
+            verify(!dotsOf(c).visible);
+            compare(arc.trackColor, Qt.alpha(Kirigami.Theme.textColor, 0.16 * Kirigami.Theme.textColor.a));
+            compare(strikePath(c).strokeColor, arc.trackColor, "struck in the track's grey");
+            compare(arc.percent, 0);
+            compare([line(c, "first").text, line(c, "second").text], ["––%", "–d"]);
+            fuzzyCompare(middle(c).opacity, 0.4, 1e-6);
+            compare(c.accessibleDescription.split("\n"), [
+                "Last check failed at " + wordsOf(c).timeOfDay(failed.lastErrorAt, c.nowMs) + ". Can't reach api.anthropic.com.",
+                nextCheckAt(c)]);
         }
 
         // The words of a failed check, from the reason the helper gives.
@@ -2501,6 +2664,36 @@ Item {
             verify(root.texts(load("codex")).includes(monitor.usage.helperError));
         }
 
+        // While the first check runs the header's ring waits, as the
+        // panel's does, with "Checking your usage…" for the subtitle, and
+        // nothing says to sign in. A first check that fails strikes it and
+        // says why under the header.
+        function test_loading() {
+            monitor.usage.entries = {};
+            monitor.usage.pending = ["claude"];
+            const popup = load("claude");
+            const r = ring(popup);
+            verify(r.loading);
+            compare([r.dotsShown, r.text], [1, ""]);
+            const shown = root.texts(popup);
+            verify(shown.includes("Checking your usage…"), JSON.stringify(shown));
+            verify(!shown.some(t => /sign in|Weekly limit|until reset|failed/.test(t)), JSON.stringify(shown));
+            verify(!checkStatus(popup).visible);
+
+            const now = Math.floor(Date.now() / 1000);
+            setClaude({ status: "error", lastError: "can't reach api.anthropic.com: timed out", lastErrorAt: now,
+                        reason: "offline", host: "api.anthropic.com", retryAt: now + 300 });
+            verify(!r.loading && r.cancelled);
+            tryCompare(r, "struck", 1, 3000);
+            const status = checkStatus(popup);
+            verify(status.visible);
+            const w = status.texts;
+            const after = root.texts(popup);
+            verify(after.includes("Last check failed at " + w.timeOfDay(now, popup.nowMs)), JSON.stringify(after));
+            verify(after.includes("Can't reach api.anthropic.com. " + w.nextCheckText("claude", popup.nowMs)), JSON.stringify(after));
+            verify(after.includes("Weekly limit") && !after.includes("Checking your usage…"), JSON.stringify(after));
+        }
+
         // What merge() adds to Claude's entry when its check failed, with the
         // reading taken `age` seconds before now.
         function failClaude(age, changes) {
@@ -3126,7 +3319,7 @@ Item {
                 { tag: "claude quiet first day", item: "claude", weekly: [5, 6 * 86400 + 21 * 3600], first: "5%", second: "6d" },
                 { tag: "runs out, reset passed", item: "claude", weekly: [70, -600], first: "70%", second: "–" },
                 { tag: "signed out", item: "claude", entries: { claude: { status: "signed_out" } }, first: "–", second: "–" },
-                { tag: "not checked yet", item: "codex", entries: {}, first: "–", second: "–" }
+                { tag: "not checked yet", item: "codex", entries: {}, first: "–", off: true, second: "–" }
             ];
         }
 

@@ -22,6 +22,9 @@ Shape {
     // would leave a dot.
     property real shortest: 0
     readonly property bool drawn: sweep.sweepAngle >= Math.max(1, 3.6 * shortest)
+    // How much of the track is drawn, 0 to 1 clockwise from twelve: less
+    // than all while it fills in over a waiting ring's dots (RingGauge).
+    property real trackSweep: 1
 
     // What is actually drawn. These normally track the properties above; a
     // reset animation drives them directly and rebinds them when it ends, so
@@ -97,8 +100,10 @@ Shape {
 
     ShapePath {
         fillColor: "transparent"
-        strokeColor: arc.mix(arc.trackColor, arc.turnTone, arc.lift)
+        strokeColor: arc.trackSweep > 0 ? arc.mix(arc.trackColor, arc.turnTone, arc.lift) : "transparent"
         strokeWidth: arc.strokeWidth
+        // A part track ends square where the dots take over.
+        capStyle: arc.trackSweep < 1 ? ShapePath.FlatCap : ShapePath.SquareCap
 
         PathAngleArc {
             centerX: arc.width / 2
@@ -106,7 +111,7 @@ Shape {
             radiusX: arc.radius
             radiusY: arc.radius
             startAngle: -90
-            sweepAngle: 360
+            sweepAngle: 360 * arc.trackSweep
         }
     }
 

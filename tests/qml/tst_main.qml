@@ -234,6 +234,23 @@ Item {
 
         // An open popup moves to its item's new cell when the strip rebuilds,
         // and closes when its item goes.
+        // Claude and Codex show from the start while their first check
+        // runs, and stay when it fails; signed out hides them.
+        function test_usageItemsWhileLoading() {
+            const applet = panel(false, 44);
+            const usage = strip(applet).monitor.usage;
+            strip(applet).monitor.enabledItems = ["cpu", "claude", "codex"];
+            usage.entries = {};
+            usage.pending = ["claude", "codex"];
+            compare(applet.items, ["cpu", "claude", "codex"]);
+            const now = Math.floor(Date.now() / 1000);
+            usage.entries = { claude: { status: "error", lastError: "down", lastErrorAt: now, reason: "other", host: "", retryAt: now + 300 },
+                              codex: { status: "signed_out" } };
+            compare(applet.items, ["cpu", "claude"]);
+            settle();
+            checkCells(applet, false, 44);
+        }
+
         function test_popupFollowsItsCell() {
             const applet = panel(false, 44);
             const s = strip(applet);

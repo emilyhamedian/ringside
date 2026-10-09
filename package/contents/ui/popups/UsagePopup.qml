@@ -15,7 +15,8 @@ import ".."
 // with a sentence under one of them on where the current pace leads, and
 // the week so far as a graph. With one limit the header's ring is its bar.
 // A failed check is said under the header, with the last reading kept in
-// grey while its week lasts; a signed-out CLI in a line there.
+// grey while its week lasts; a signed-out CLI in a line there. While the
+// first check runs the header's ring waits and says so.
 // The footer holds the session starter's switch.
 PopupPage {
     id: popup
@@ -30,6 +31,7 @@ PopupPage {
     // The last check failed. Its reading stays, greyed, while its week
     // lasts; one from a week that has since reset has nothing left to say.
     readonly property bool failed: entry !== null && entry.lastError !== undefined
+    readonly property bool loading: usage.loading(item)
     readonly property bool weekOver: weekly !== null && weekly.resetsAt <= nowMs / 1000
     readonly property bool greyShown: failed && weekly !== null && !weekOver
     // A reading over two hours old says nothing certain about where the
@@ -145,10 +147,14 @@ PopupPage {
         ringValue: popup.weekly && !(popup.failed && popup.weekOver) ? popup.weekly.percent : NaN
         ringCancelled: popup.failed && !popup.greyShown
         ringStale: popup.greyShown
+        ringLoading: popup.loading
         title: popup.claude ? i18nc("@title", "Claude") : i18nc("@title", "Codex")
-        // As many as the reading had, whether or not they are shown.
-        subtitle: i18ncp("@info under Claude or Codex: what the popup shows", "Weekly limit", "Weekly limits",
-                         Math.max(1, popup.limits.length, popup.entry && popup.entry.scoped ? popup.entry.scoped.length + 1 : 0))
+        // As many as the reading had, whether or not they are shown; how
+        // many there are isn't known until the first check is done.
+        subtitle: popup.loading
+            ? i18nc("@info under Claude or Codex: the first check of the limits since Ringside started is running", "Checking your usage…")
+            : i18ncp("@info under Claude or Codex: what the popup shows", "Weekly limit", "Weekly limits",
+                     Math.max(1, popup.limits.length, popup.entry && popup.entry.scoped ? popup.entry.scoped.length + 1 : 0))
         parts: popup.weekly ? words.countdownParts(popup.weekly.resetsAt, popup.nowMs) : []
         // With no reading in this week, a failed check says so under the
         // header, and a lone dash here would only look unfinished.
@@ -176,6 +182,9 @@ PopupPage {
         visible: text !== ""
         text: {
             const e = popup.entry;
+            if (popup.loading) {
+                return "";
+            }
             if (!e || e.status === "signed_out") {
                 return popup.usage.helperError
                     || (popup.claude ? i18nc("@info", "Run claude in a terminal to sign in.")

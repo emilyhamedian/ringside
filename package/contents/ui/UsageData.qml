@@ -15,8 +15,11 @@ import "code/reset.js" as Reset
 // A provider that answered or is signed out takes the new entry. One that
 // failed keeps its last reading with lastError, lastErrorAt, reason, host
 // and retryAt set (see usage.py), which greys its item and then strikes it
-// through; one that fails before its first reading gets no entry, so it
-// stays hidden and the settings page says why from usageStatus.
+// through. Until its first report a polled provider is loading, and shows
+// as waiting; if that first check fails it gets an entry with the failure
+// and no readings, so its item stays, struck. A provider stored as signed
+// out skips the loading look, and like one that is never answered stays
+// hidden, the settings page saying why from usageStatus.
 //
 // It also drives the opt-in session starter: the helper reports each
 // provider's starter in every report, and the widget runs the helper with
@@ -56,6 +59,9 @@ Item {
     readonly property var innerChoices: ({ claude: config.claudeInnerLimit, codex: config.codexInnerLimit })
     // The last poll's status per id, as the settings page reads it.
     property var statuses: ({})
+    // The polled ids with a report, or a failure of the helper, since the
+    // widget started or they were turned on.
+    property var answered: []
     // The session starter per id, as the last report gave it.
     property var starters: ({})
     // The switch positions asked for and not yet reported back, per id.
@@ -176,9 +182,21 @@ Item {
         switchFailures = Object.assign({}, switchFailures, { [id]: { on: on, error: error } });
     }
 
+    // Polled, with no report yet, and not signed out when last stored.
+    function loading(id) {
+        if (!ids.includes(id) || answered.includes(id)) {
+            return false;
+        }
+        try {
+            return JSON.parse(config.usageStatus || "{}")[id]?.status !== "signed_out";
+        } catch (err) {
+            return true;
+        }
+    }
+
     function present(id) {
         const e = entry(id);
-        return e !== null && e.status !== "signed_out";
+        return loading(id) || e !== null && e.status !== "signed_out";
     }
 
     function degraded(id) {
@@ -254,6 +272,9 @@ Item {
         if (Object.keys(switchFailures).some(id => !ids.includes(id))) {
             switchFailures = only(switchFailures);
         }
+        if (answered.some(id => !ids.includes(id))) {
+            answered = answered.filter(id => ids.includes(id));
+        }
         if (Object.keys(statuses).some(id => !ids.includes(id)) || ids.length === 0 && helperError !== "") {
             statuses = only(statuses);
             if (ids.length === 0) {
@@ -286,18 +307,23 @@ Item {
             latest[id] = { status: next.status, message: next.message ?? "" };
             if (next.status === "ok" || next.status === "signed_out") {
                 merged[id] = next;
-            } else if (was) {
-                merged[id] = Object.assign({}, was, { lastError: next.message ?? next.status, lastErrorAt: at,
-                                                      reason: next.reason ?? "other", host: next.host ?? "",
-                                                      retryAt: next.retryAt ?? at });
+            } else if (was || loading(id)) {
+                merged[id] = Object.assign({}, was ?? { status: next.status },
+                                           { lastError: next.message ?? next.status, lastErrorAt: at,
+                                             reason: next.reason ?? "other", host: next.host ?? "",
+                                             retryAt: next.retryAt ?? at });
             }
         }
+        const reported = ids.filter(id => report.providers[id] && !answered.includes(id));
         const events = Reset.detect(entries, merged, at);
         if (Object.keys(events).length > 0) {
             resetsDetected(events);
         }
         entries = merged;
         statuses = latest;
+        if (reported.length > 0) {
+            answered = answered.concat(reported);
+        }
         // A failed start ends once the starter is off, moves to another
         // state or comes due after the retry. A starter still due, even at
         // a later time, as when the helper can't save its state and reports
@@ -408,8 +434,12 @@ Item {
             } else if (!report?.providers) {
                 const failure = Report.helperFailure(data);
                 usage.helperError = usage.failureText(failure);
-                usage.entries = Report.markFailed(usage.entries, usage.helperError, Math.floor(Date.now() / 1000),
+                // A provider still loading fails with the rest.
+                const loaded = Object.assign({}, usage.entries);
+                usage.ids.filter(id => usage.loading(id)).forEach(id => { loaded[id] = { status: "error" }; });
+                usage.entries = Report.markFailed(loaded, usage.helperError, Math.floor(Date.now() / 1000),
                                                   Report.failureReason(failure));
+                usage.answered = usage.ids;
                 usage.writeStatus();
             } else {
                 usage.helperError = "";

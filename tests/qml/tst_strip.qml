@@ -875,5 +875,22 @@ Item {
             monitor.usage.entries = entries;
             verify(!areas[1].active, "gone with the next good check");
         }
+
+        // While a first check runs, the readings are dashes, so the item
+        // keeps a tooltip saying it is checking; the report ends it.
+        function test_loadingHasATooltip() {
+            const entries = monitor.usage.entries;
+            monitor.usage.entries = { codex: entries.codex };
+            monitor.usage.pending = ["claude"];
+            const strip = makeStrip({ items: ["cpu", "claude", "codex", "network"] });
+            const areas = [0, 1, 2, 3].map(i => strip.cellAt(i).parent);
+            compare(areas.map(a => a.active), [false, true, false, false]);
+            compare([areas[1].mainText, areas[1].subText], ["Claude", "Checking your usage…"]);
+            compare(strip.cellAt(1).Accessible.description, "Checking your usage…");
+            compare([line(1, "first").text, line(1, "second").text], ["–", "–"]);
+            monitor.usage.entries = entries;
+            verify(!areas[1].active, "gone with the first report");
+            verify(/^52% used/.test(strip.cellAt(1).Accessible.description), strip.cellAt(1).Accessible.description);
+        }
     }
 }

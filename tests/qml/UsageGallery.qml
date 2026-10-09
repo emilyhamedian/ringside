@@ -12,7 +12,8 @@ import "../../package/contents/ui/code/style.js" as Style
 import "starterstates.js" as StarterStates
 
 // A section of Gallery.qml: Claude and Codex in the panel beside two system
-// items, then their popups in each state, the session starter's footer in
+// items, loading, failed and signed out among them, then their popups in
+// each state, the session starter's footer in
 // each of its states, then panels and popups under Breeze Light. The
 // monitor's readings are FakeUsage's; the section's own come with made-up
 // weeks of use.
@@ -205,6 +206,31 @@ ColumnLayout {
         }
     }
 
+    // The first check since the widget started, still running.
+    FakeMonitor {
+        id: loading
+        usage: FakeUsage {
+            entries: ({})
+            pending: ["claude", "codex"]
+        }
+    }
+
+    // The first check since the widget started failed: offline for Claude,
+    // no codex CLI for Codex. There is no reading to keep.
+    FakeMonitor {
+        id: firstFailed
+        usage: FakeUsage {
+            id: firstFailedUsage
+            entries: ({
+                claude: { status: "error", lastError: "can't reach api.anthropic.com: Name or service not known",
+                          lastErrorAt: firstFailedUsage.createdAt - 30, reason: "offline", host: "api.anthropic.com",
+                          retryAt: firstFailedUsage.createdAt + 270 },
+                codex: { status: "error", lastError: "codex CLI not found", lastErrorAt: firstFailedUsage.createdAt - 30,
+                         reason: "other", host: "", retryAt: firstFailedUsage.createdAt + 270 }
+            })
+        }
+    }
+
     FakeMonitor {
         id: signedOut
         usage: FakeUsage {
@@ -372,6 +398,24 @@ ColumnLayout {
         items: ["cpu", "memory", "claude"]
     }
 
+    Panel {
+        label: "Claude & Codex · panel · 46 px · the first check running (still dots; a lit dot travels after 1 s)"
+        thickness: 46
+        monitor: loading
+    }
+
+    Panel {
+        label: "Claude & Codex · panel · 30 px · the first check running"
+        thickness: 30
+        monitor: loading
+    }
+
+    Panel {
+        label: "Claude & Codex · panel · 46 px · the first check failed (struck, no reading)"
+        thickness: 46
+        monitor: firstFailed
+    }
+
     RowLayout {
         spacing: 2 * Kirigami.Units.gridUnit
 
@@ -431,6 +475,16 @@ ColumnLayout {
         Frame {
             label: "Claude · the helper failed through the week's reset"
             UsagePopup { monitor: failedPastReset; item: "claude" }
+        }
+
+        Frame {
+            label: "Claude · the first check running"
+            UsagePopup { monitor: loading; item: "claude" }
+        }
+
+        Frame {
+            label: "Codex · the first check failed, no CLI"
+            UsagePopup { monitor: firstFailed; item: "codex" }
         }
     }
 
@@ -533,6 +587,18 @@ ColumnLayout {
                 thickness: 46
                 monitor: several
                 items: ["cpu", "memory", "claude"]
+            }
+
+            Panel {
+                label: "Breeze Light · Claude & Codex · panel · 46 px · the first check running"
+                thickness: 46
+                monitor: loading
+            }
+
+            Panel {
+                label: "Breeze Light · Claude & Codex · panel · 46 px · the first check failed (struck)"
+                thickness: 46
+                monitor: firstFailed
             }
 
             RowLayout {
