@@ -12,7 +12,8 @@ import org.kde.kirigami as Kirigami
 // 90 % until the limit is hit. A failed check keeps the last reading in
 // grey while it is under two check intervals old and its week runs; after
 // that the ring is struck through and the readings go to dashes, until a
-// check succeeds.
+// check succeeds. While the first check runs the ring waits (see RingGauge)
+// beside dim dashes, and the first readings fade in as its track fills in.
 Item {
     id: content
 
@@ -31,6 +32,12 @@ Item {
     property real nowMs: Date.now()
     onEntryChanged: nowMs = Date.now()
     readonly property bool failed: usage.degraded(item)
+    readonly property bool loading: usage.loading(item)
+    onLoadingChanged: {
+        if (!loading && !failed && gauge.settle > 0) {
+            arrival.restart();
+        }
+    }
     readonly property bool staleShown: failed && weekly !== null && weekly.resetsAt > nowMs / 1000
         && nowMs / 1000 - entry.fetchedAt < 2 * usage.refreshMinutes * 60
     // Dashes while the ring is struck, coming and going with its stroke.
@@ -80,6 +87,7 @@ Item {
         pulsing: value >= 90 && value < 100
         cancelled: content.failed && !content.staleShown
         stale: content.staleShown
+        loading: content.loading
         // The cell's description covers it, saying which it was, how old
         // and why.
         Accessible.ignored: true
@@ -102,5 +110,15 @@ Item {
         lines: content.lines
         oneLine: !content.twoLines
         widest: words.widest(content.item)
+    }
+
+    NumberAnimation {
+        id: arrival
+        target: readout
+        property: "opacity"
+        from: 0
+        to: 1
+        duration: Kirigami.Units.veryLongDuration
+        easing.type: Easing.InOutCubic
     }
 }

@@ -18,8 +18,11 @@ import "../../package/contents/ui/code/history.js" as History
 // ring fades its track in and then draws its arc in, and goes the other way
 // round, and its popup section fades in and out. A Claude or Codex ring
 // struck after failed checks unwinds before its stroke draws on, and takes
-// the stroke off before its arcs grow back. A duration of 0, as
-// Plasma's Instant animation speed gives, puts everything in place at once.
+// the stroke off before its arcs grow back. One waiting for its first
+// check holds its dots still for a second, then a lit dot travels round
+// them until a reading fills the track in or a failure strikes it. A
+// duration of 0, as Plasma's Instant animation speed gives, puts everything
+// in place at once.
 // The test runner's Kirigami units are the defaults, at speed 1.
 Item {
     id: root
@@ -118,6 +121,16 @@ Item {
             ring: 34
             textShown: true
             twoLines: true
+        }
+    }
+
+    // A window of its own for a cell, which a test can hide.
+    Component {
+        id: windowComponent
+        Window {
+            width: 120
+            height: 60
+            visible: true
         }
     }
 
@@ -1265,6 +1278,251 @@ Item {
             waitForRendering(c);
             wait(50);
             verify(seen.length > 0 && seen.every(([struck, percent]) => struck === 0 && percent === 52), JSON.stringify(seen));
+        }
+    }
+
+    TestCase {
+        id: loads
+        name: "LoadingMotion"
+        when: windowShown
+
+        property var monitor: null
+        property var made: []
+
+        function init() {
+            failOnWarning(/TypeError|ReferenceError|SyntaxError|is not a function|Unable to assign|Cannot assign|Binding loop/);
+            monitor = monitorComponent.createObject(loads);
+            monitor.usage.entries = {};
+            monitor.usage.pending = ["claude"];
+        }
+
+        function cleanup() {
+            made.forEach(o => o.destroy());
+            made = [];
+            wait(0);
+            monitor.destroy();
+        }
+
+        // Claude's cell, loading, with `settle` set first where given.
+        function cell(settle) {
+            const c = usageCellComponent.createObject(root, { monitor: monitor });
+            made.push(c);
+            if (settle !== undefined) {
+                c.children[0].settle = settle;
+            }
+            return c;
+        }
+
+        function bead(c) {
+            return root.all(c, i => i.turning !== undefined)[0];
+        }
+
+        function dots(c) {
+            return root.all(c, i => i.covered !== undefined)[0];
+        }
+
+        function outerArc(c) {
+            return root.all(c, i => i.playReset !== undefined).sort((a, b) => b.radius - a.radius)[0];
+        }
+
+        function readout(c) {
+            return root.all(c, i => i.oneLine !== undefined)[0];
+        }
+
+        function line(c, which) {
+            return root.all(c, i => i.objectName === which)[0];
+        }
+
+        // What holds the mark in the ring's middle, which dims it.
+        function middle(c) {
+            const face = outerArc(c).parent;
+            let item = root.all(c, i => i.markName !== undefined)[0];
+            while (item.parent !== face) {
+                item = item.parent;
+            }
+            return item;
+        }
+
+        function okClaude() {
+            const usage = monitor.usage;
+            return { status: "ok", fetchedAt: usage.createdAt, weekly: usage.window(52, 2 * usage.day, []), scoped: [] };
+        }
+
+        function failedClaude() {
+            const now = Math.floor(Date.now() / 1000);
+            return { status: "error", lastError: "down", lastErrorAt: now, reason: "other", host: "", retryAt: now + 300 };
+        }
+
+        function setClaude(entry) {
+            monitor.usage.entries = { claude: entry };
+        }
+
+        // Every frame's state of the ring's waiting look.
+        function record(c) {
+            const g = c.children[0];
+            const seen = [];
+            createTemporaryObject(samplerComponent, c, {
+                sample: () => seen.push({ at: Date.now(), moving: g.moving, motion: g.motion, dots: g.dotsShown, sweep: g.sweep,
+                                          covered: dots(c).covered, circles: dots(c).data[0].pathElements[0].path.split("M ").length - 1,
+                                          struck: g.struck, percent: outerArc(c).percent,
+                                          track: outerArc(c).trackColor.a, text: readout(c).opacity, first: line(c, "first").text,
+                                          mark: middle(c).opacity })
+            });
+            return seen;
+        }
+
+        // The ring as drawn.
+        function shot(c) {
+            return grabImage(c.children[0]);
+        }
+
+        // For the first second the dots stand still, so a reply within it
+        // only fills the ring in: nothing ever moves.
+        function test_stillForASecond() {
+            const c = cell();
+            const g = c.children[0];
+            const seen = record(c);
+            const start = Date.now();
+            wait(800);
+            verify(seen.length > 10 && seen.every(f => !f.moving && f.motion === 0 && f.dots === 1 && f.sweep === 0),
+                   JSON.stringify(seen.slice(-3)));
+            const still = shot(c);
+            wait(100);
+            verify(still.equals(shot(c)), "nothing moves");
+            verify(Date.now() - start < 1000);
+            setClaude(okClaude());
+            tryCompare(g, "dotsShown", 0, 3000);
+            compare(g.sweep, 1);
+            wait(1200);
+            verify(seen.every(f => !f.moving && f.motion === 0), "nothing ever moved");
+            verify(!g.waited);
+        }
+
+        // After a second a lit dot travels round the still dots, fading
+        // in, at its own pace, until a 30 s timer stops it, which leaves
+        // the dots still.
+        function test_beadTravels() {
+            const c = cell();
+            const g = c.children[0];
+            const start = Date.now();
+            tryCompare(g, "moving", true, 3000);
+            verify(Date.now() - start >= 950, "after a second: " + (Date.now() - start));
+            tryCompare(g, "motion", 1, 1000);
+            verify(bead(c).visible);
+            const a = shot(c);
+            wait(250);
+            verify(!a.equals(shot(c)), "the dot travels");
+            compare(g.dotsShown, 1, "the dots stay");
+
+            const cap = g.resources.find(r => r.interval === 30000);
+            verify(cap && cap.running, "a 30 s stop");
+            cap.triggered();
+            verify(!g.moving);
+            tryCompare(g, "motion", 0, 1000);
+            verify(!bead(c).visible);
+            compare(g.dotsShown, 1, "still dots");
+            const b = shot(c);
+            wait(250);
+            verify(b.equals(shot(c)), "nothing moves after the stop");
+        }
+
+        // Started where the clock says, two rings travel in step.
+        function test_inStep() {
+            const one = cell();
+            wait(700);
+            const two = cell();
+            const [g1, g2] = [one.children[0], two.children[0]];
+            tryCompare(g2, "moving", true, 3000);
+            wait(300);
+            g1.capped = true;
+            g2.capped = true;
+            const d = Math.abs(bead(one).rotation - bead(two).rotation) % 360;
+            verify(Math.min(d, 360 - d) < 15, bead(one).rotation + " and " + bead(two).rotation);
+        }
+
+        // Hidden, the window stops the dot; shown again, it goes on.
+        function test_stopsWhileHidden() {
+            const w = createTemporaryObject(windowComponent, root);
+            const c = usageCellComponent.createObject(w.contentItem, { monitor: monitor });
+            made.push(c);
+            const g = c.children[0];
+            tryCompare(g, "moving", true, 3000);
+            w.visible = false;
+            verify(!g.moving, "stopped while hidden");
+            w.visible = true;
+            tryCompare(g, "moving", true, 1000);
+        }
+
+        // At Instant nothing moves: the dots stay still, and the reading
+        // replaces them in one frame, the numbers with it.
+        function test_instant() {
+            const c = cell(0);
+            const g = c.children[0];
+            const seen = record(c);
+            wait(1300);
+            verify(g.waited && !g.moving);
+            verify(seen.every(f => f.motion === 0), "never moves");
+            setClaude(okClaude());
+            waitForRendering(c);
+            wait(50);
+            const after = seen.filter(f => f.first !== "–");
+            verify(after.length > 0 && after.every(f => f.dots === 0 && f.sweep === 1 && f.percent === 52 && f.text === 1),
+                   JSON.stringify(after.slice(0, 3)));
+        }
+
+        // A reading fades the dot out first, then fills the track in over
+        // the dots from twelve, covering them as it goes, while the arc
+        // draws in on top and the numbers and the mark fade in.
+        function test_arrival() {
+            const c = cell();
+            const g = c.children[0];
+            tryCompare(g, "motion", 1, 3000);
+            const seen = record(c);
+            const start = Date.now();
+            setClaude(okClaude());
+            tryCompare(g, "dotsShown", 0, 3000);
+            tryCompare(readout(c), "opacity", 1, 3000);
+            tryCompare(outerArc(c), "percent", 52, 3000);
+            const filling = seen.filter(f => f.sweep > 0 && f.sweep < 1);
+            verify(filling.length >= 5, "the track fills in: " + JSON.stringify(seen.map(f => f.sweep)));
+            verify(seen.filter(f => f.sweep >= 0.4).every(f => f.motion === 0), "the dot is gone first");
+            const gone = seen.find(f => f.motion === 0);
+            verify(gone.at - start <= Kirigami.Units.shortDuration + 80, "the dot fades in " + (gone.at - start) + " ms");
+            const filled = seen.find(f => f.sweep === 1);
+            verify(filled.at - start <= Kirigami.Units.veryLongDuration + 150, "filled in " + (filled.at - start) + " ms");
+            verify(filling.every((f, i) => i === 0 || f.covered >= filling[i - 1].covered), "the dots go as the track reaches them");
+            verify(filling.some(f => f.covered > 0 && f.covered < dots(c).count));
+            verify(filling.every(f => f.circles === dots(c).count - f.covered), "drawn ahead of the track only");
+            verify(filling.every(f => f.track > 0), "the track is drawn as it fills");
+            verify(seen.some(f => f.percent > 0 && f.sweep < 1), "the arc draws in with it");
+            verify(seen.some(f => f.text > 0 && f.text < 1), "the numbers fade in");
+            verify(seen.some(f => f.mark > 0.4 && f.mark < 1), "the mark brightens");
+            verify(seen.every(f => f.struck === 0));
+            compare(middle(c).opacity, 1);
+        }
+
+        // A first check that fails fades the dot and the dots into the
+        // track where they are, never filling from twelve, holds the mark
+        // dim, and only then draws the stroke, the failed dashes with it.
+        function test_failure() {
+            const c = cell();
+            const g = c.children[0];
+            tryCompare(g, "motion", 1, 3000);
+            const seen = record(c);
+            setClaude(failedClaude());
+            tryCompare(g, "struck", 1, 3000);
+            wait(50);
+            verify(seen.every(f => f.sweep === 0 || f.sweep === 1), "no fill from twelve");
+            verify(seen.some(f => f.dots > 0 && f.dots < 1 && f.track > 0), "the dots fade into the track");
+            verify(seen.every(f => f.covered === 0 || f.dots === 0), "no dot is covered");
+            const firstStroke = seen.find(f => f.struck > 0);
+            verify(firstStroke.dots === 0, "the stroke waits for the dots: " + JSON.stringify(firstStroke));
+            verify(seen.every(f => f.mark <= 0.4 + 1e-6), "the mark stays dim: " + JSON.stringify(seen.map(f => f.mark)));
+            verify(seen.every(f => (f.first === "––%") === (f.struck > 0.25)), "the dashes come with the stroke");
+            verify(seen.every(f => f.text === 1), "nothing fades in");
+            const end = seen[seen.length - 1];
+            compare([end.dots, end.sweep, end.motion], [0, 1, 0]);
+            fuzzyCompare(end.track, 0.16 * Kirigami.Theme.textColor.a, 0.002);
         }
     }
 }

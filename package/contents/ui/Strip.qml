@@ -68,8 +68,10 @@ GridLayout {
         implicitWidth: cell.implicitWidth
         implicitHeight: cell.implicitHeight
         // Where the readings are hidden, or a Claude or Codex check failed,
-        // whose cause and times only the words give.
-        active: (!entry.textShown || Items.isUsage(entry.modelData) && strip.monitor.usage.degraded(entry.modelData)) && !cell.open
+        // whose cause and times only the words give, or is still running.
+        active: (!entry.textShown || Items.isUsage(entry.modelData) && (strip.monitor.usage.degraded(entry.modelData)
+                                                                          || strip.monitor.usage.loading(entry.modelData)))
+            && !cell.open
         mainText: cell.title
         subText: cell.description
         textFormat: Text.PlainText

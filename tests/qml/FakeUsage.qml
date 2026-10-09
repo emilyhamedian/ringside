@@ -54,6 +54,9 @@ QtObject {
     property bool starterSticks: true
     // Every setStarter() call, as [id, on].
     property var starterRequests: []
+    // Ids with no report yet, which show as loading until they have an
+    // entry, as UsageData's do until their first report.
+    property var pending: []
 
     readonly property bool claudePresent: present("claude")
     readonly property bool codexPresent: present("codex")
@@ -82,9 +85,13 @@ QtObject {
         return entries[id] ?? null;
     }
 
+    function loading(id) {
+        return pending.includes(id) && entry(id) === null;
+    }
+
     function present(id) {
         const e = entry(id);
-        return e !== null && e.status !== "signed_out";
+        return loading(id) || e !== null && e.status !== "signed_out";
     }
 
     function degraded(id) {

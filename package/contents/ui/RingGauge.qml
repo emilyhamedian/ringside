@@ -16,7 +16,7 @@ import "code/style.js" as Style
 // inner ring that comes fades its track in, then draws its arc in; one that
 // goes unwinds its arc, then fades its track out. Children sit in the
 // middle, over the rings. A ring can also show a reading that may be out of
-// date, in grey, or none at all, struck through.
+// date, in grey, or none at all, struck through, or wait for its first.
 // Assistive technology sees a progress bar from 0 to 100 with the outer
 // reading as its value; the caller gives it a name.
 Item {
@@ -65,6 +65,88 @@ Item {
         enabled: gauge.settle > 0
         NumberAnimation { duration: Kirigami.Units.longDuration; easing.type: Easing.InOutCubic }
     }
+    // Waiting for a first reading, as a Claude or Codex ring while its first
+    // check runs: the track is a ring of still dots and the middle is dimmed.
+    // After a second a lit dot travels round them, at a pace of its own
+    // whatever the animation speed, as Plasma's busy indicator turns, so a
+    // quick reply only fills the ring in. It stops after 30 s, so a helper
+    // that hangs doesn't keep the panel redrawing, and while the window is
+    // hidden, and at Instant it never moves. A reading fills the track in
+    // over the dots from twelve as the arc draws in on top; a failure fades
+    // the dots into the track where they are, and then the stroke draws.
+    property bool loading: false
+    // How much of the track is drawn, clockwise from twelve, with the dots
+    // ahead of it, and how strong the dots are. With none of it drawn, the
+    // track fades in whole as the dots fade out.
+    property real sweep: 1
+    property real dotsShown: 0
+    // A second has passed while loading, or 30 s.
+    property bool waited: false
+    property bool capped: false
+    readonly property bool moving: loading && waited && !capped && settle > 0 && visible
+        && Window.visibility !== Window.Hidden
+    // The lit dot's strength: in over longDuration, out over shortDuration,
+    // so it is gone before the track has filled in.
+    property real motion: 0
+    onMovingChanged: {
+        motionFade.to = moving ? 1 : 0;
+        motionFade.duration = moving ? Kirigami.Units.longDuration : Kirigami.Units.shortDuration;
+        motionFade.restart();
+    }
+
+    NumberAnimation {
+        id: motionFade
+        target: gauge
+        property: "motion"
+        easing.type: Easing.InOutQuad
+    }
+    // The middle dims while the dots show and brightens as the track fills
+    // in; a failure keeps it dim for the stroke.
+    readonly property real waitDim: cancelled ? (dotsShown > 0 ? 1 : 0) : dotsShown * (1 - sweep)
+
+    function settleLoading() {
+        fillIn.stop();
+        fadeIn.stop();
+        if (loading) {
+            sweep = 0;
+            dotsShown = 1;
+            waited = false;
+            capped = false;
+        } else if (dotsShown > 0 && settle > 0) {
+            (cancelled ? fadeIn : fillIn).start();
+        } else {
+            sweep = 1;
+            dotsShown = 0;
+        }
+    }
+
+    // After the readings have caught up, so a failure is known as one.
+    onLoadingChanged: Qt.callLater(settleLoading)
+
+    SequentialAnimation {
+        id: fillIn
+        NumberAnimation { target: gauge; property: "sweep"; to: 1; duration: Kirigami.Units.veryLongDuration; easing.type: Easing.InOutCubic }
+        PropertyAction { target: gauge; property: "dotsShown"; value: 0 }
+    }
+
+    SequentialAnimation {
+        id: fadeIn
+        NumberAnimation { target: gauge; property: "dotsShown"; to: 0; duration: Kirigami.Units.longDuration; easing.type: Easing.InOutCubic }
+        PropertyAction { target: gauge; property: "sweep"; value: 1 }
+    }
+
+    Timer {
+        interval: 1000
+        running: gauge.loading && !gauge.waited
+        onTriggered: gauge.waited = true
+    }
+
+    Timer {
+        interval: 30000
+        running: gauge.loading && !gauge.capped
+        onTriggered: gauge.capped = true
+    }
+
     // How often the readings come, where that is often enough for the
     // rings to settle within half of it and be still before the next one;
     // 0 for readings minutes apart.
@@ -132,8 +214,10 @@ Item {
         if (strikeMotion.running ? strikeRun.to === to : struck === to) {
             return;
         }
-        strikePause.duration = cancelled && (outerFollower.moving || innerFollower.moving)
-            ? Kirigami.Units.longDuration / 2 : 0;
+        // It waits for the dots to fade, or for the arcs to near the end of
+        // their way down.
+        strikePause.duration = cancelled && dotsShown > 0 ? Kirigami.Units.longDuration
+            : cancelled && (outerFollower.moving || innerFollower.moving) ? Kirigami.Units.longDuration / 2 : 0;
         strikeRun.to = to;
         strikeRun.duration = cancelled ? Kirigami.Units.longDuration : Kirigami.Units.longDuration * 3 / 4;
         strikeRun.easing.type = cancelled ? Easing.OutCubic : Easing.InCubic;
@@ -145,10 +229,12 @@ Item {
     onSettleChanged: restrike()
     // A ring that starts cancelled, as a popup opening on a failed check,
     // starts struck, rather than drawing the stroke from a change of
-    // `settle` while it was being made.
+    // `settle` while it was being made; one that starts loading starts with
+    // its dots.
     Component.onCompleted: {
         strikeMotion.stop();
         struck = cancelled ? 1 : 0;
+        settleLoading();
     }
 
     SequentialAnimation {
@@ -198,6 +284,12 @@ Item {
 
     function innerColor(level) {
         return Qt.alpha(tone(level), 0.55 * color.a);
+    }
+
+    // A circle as SVG path data.
+    function circle(x, y, r) {
+        return "M " + (x - r) + " " + y + " A " + r + " " + r + " 0 1 0 " + (x + r) + " " + y
+             + " A " + r + " " + r + " 0 1 0 " + (x - r) + " " + y + " Z ";
     }
 
     function clamped(percent) {
@@ -267,7 +359,8 @@ Item {
 
     Accessible.role: Accessible.ProgressBar
     Accessible.description: hasValue ? i18nc("@info:status a percentage", "%1%", Math.round(value))
-                                     : i18nc("@info:status no reading", "unavailable")
+                          : loading ? i18nc("@info:status waiting for a first reading", "checking")
+                                    : i18nc("@info:status no reading", "unavailable")
 
     Item {
         id: face
@@ -285,6 +378,75 @@ Item {
         // rounds an odd-sized item's centre to a whole pixel, which set a
         // 33 px ring half a pixel up and left of a 34 px gauge's middle, and
         // the two rings off each other.
+        // The waiting ring's dots, a stroke across, ahead of the track as it
+        // fills in: filled circles in one path, rather than a dashed stroke
+        // whose zero-length dashes each renderer draws its own way.
+        Shape {
+            id: dots
+            anchors.fill: parent
+            visible: gauge.dotsShown > 0
+            preferredRendererType: Shape.CurveRenderer
+            // About two and a half strokes apart, a multiple of four of them
+            // so the ring keeps its quarters.
+            readonly property int count: Math.max(8, Math.round(2 * Math.PI * outer.radius / (2.5 * gauge.strokeWidth) / 4) * 4)
+            // The dots the filling track has reached, which go as it does.
+            readonly property int covered: gauge.sweep > 0
+                ? Math.min(count, Math.ceil(count * (gauge.sweep + gauge.strokeWidth / 2 / (2 * Math.PI * outer.radius)))) : 0
+
+            ShapePath {
+                fillColor: Qt.alpha(gauge.color, 0.36 * gauge.color.a * gauge.dotsShown)
+                strokeColor: "transparent"
+
+                PathSvg {
+                    path: {
+                        let d = "";
+                        for (let i = dots.covered; i < dots.count; ++i) {
+                            const angle = 2 * Math.PI * i / dots.count;
+                            d += gauge.circle(dots.width / 2 + outer.radius * Math.sin(angle),
+                                              dots.height / 2 - outer.radius * Math.cos(angle), gauge.strokeWidth / 2);
+                        }
+                        return d;
+                    }
+                }
+            }
+        }
+
+        // The lit dot, a little larger than the others, turned round the
+        // middle by the render thread as Plasma's busy indicator turns, and
+        // started where the clock says, so every ring is in step.
+        Shape {
+            id: bead
+            anchors.fill: parent
+            visible: gauge.motion > 0
+            opacity: gauge.motion
+            preferredRendererType: Shape.CurveRenderer
+            readonly property bool turning: gauge.moving
+            onTurningChanged: {
+                if (turning) {
+                    const start = Date.now() % beadTurn.duration / beadTurn.duration * 360;
+                    beadTurn.from = start;
+                    beadTurn.to = start + 360;
+                }
+                beadTurn.running = turning;
+            }
+
+            RotationAnimator on rotation {
+                id: beadTurn
+                duration: 3200
+                loops: Animation.Infinite
+                running: false
+            }
+
+            ShapePath {
+                fillColor: Qt.alpha(gauge.color, 0.62 * gauge.color.a)
+                strokeColor: "transparent"
+
+                PathSvg {
+                    path: gauge.circle(bead.width / 2, bead.height / 2 - outer.radius, gauge.strokeWidth * 1.3 / 2)
+                }
+            }
+        }
+
         RingArc {
             id: outer
             anchors.fill: parent
@@ -294,7 +456,8 @@ Item {
             shortest: gauge.hasValue ? 0 : gauge.along(gauge.strokeWidth, radius)
             color: gauge.tone(gauge.drawnLevel)
             // The track keeps the base colour whatever the level.
-            trackColor: Qt.alpha(gauge.color, 0.16 * gauge.color.a)
+            trackColor: Qt.alpha(gauge.color, 0.16 * gauge.color.a * (gauge.sweep > 0 ? 1 : 1 - gauge.dotsShown))
+            trackSweep: gauge.sweep > 0 ? gauge.sweep : 1
         }
 
         RingArc {
@@ -310,11 +473,12 @@ Item {
             trackColor: Qt.alpha(gauge.color, 0.22 * 0.55 * gauge.color.a)
         }
 
-        // The name or mark, greyed out further while the ring is struck.
+        // The name or mark, greyed out further while the ring is struck or
+        // waits.
         Item {
             id: middle
             anchors.fill: parent
-            opacity: 1 - 0.6 * Math.max(gauge.struck, gauge.greyed)
+            opacity: 1 - 0.6 * Math.max(gauge.struck, gauge.greyed, gauge.waitDim)
         }
 
         // The cancelling stroke, from the bottom left of the track to its

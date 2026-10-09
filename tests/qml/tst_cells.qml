@@ -710,6 +710,35 @@ Item {
             }
         }
 
+        function test_systemRingsDontWait_data() {
+            return [{ tag: "cpu", item: "cpu", set: { cpuUsage: NaN, cpuTemperature: NaN } },
+                    { tag: "memory", item: "memory", set: { memoryPercent: NaN, memoryUsed: NaN } },
+                    { tag: "gpu", item: "gpu", outer: { usage: NaN, temperature: NaN }, inner: { present: false } }];
+        }
+
+        // CPU, GPU and memory keep today's look before their first reading,
+        // the whole track and a plain dash, even while Claude's first check
+        // runs beside them: no dots, and nothing moves.
+        function test_systemRingsDontWait(data) {
+            monitor.usage.entries = {};
+            monitor.usage.pending = ["claude"];
+            apply(data.item, data);
+            const c = cell(data.item);
+            const g = gauge(c);
+            const claude = gauge(cell("claude"));
+            verify(claude.loading);
+            verify(!g.loading);
+            compare([g.sweep, g.dotsShown], [1, 0]);
+            verify(!root.find(g, i => i.covered !== undefined).visible);
+            const arc = root.find(g, i => i.playReset !== undefined);
+            compare(arc.trackColor, Qt.alpha(Kirigami.Theme.textColor, 0.16 * Kirigami.Theme.textColor.a));
+            compare(arc.trackSweep, 1);
+            compare(line(c, "first").text, "–");
+            compare(line(c, "first").color, Kirigami.Theme.textColor);
+            tryCompare(claude, "moving", true, 3000);
+            verify(!g.moving && g.motion === 0);
+        }
+
         function test_lines_data() {
             const asleep = { phase: "asleep" };
             return [

@@ -58,8 +58,8 @@ QtObject {
     // the words and the popup. A countdown keeps to its largest unit, "6d",
     // "23h", "12m"; the popup and the words give more. With the limit reached
     // it turns red, as in the popup, since it then says how long the lock-out
-    // lasts. After a failed check both are dim, and with `cancelled`, while
-    // the ring is struck, dashes.
+    // lasts. Before a first reading and after a failed check both are dim,
+    // and with `cancelled`, while the ring is struck, dashes.
     function readout(item, nowMs, cancelled) {
         const percent = value => Number.isFinite(value) ? i18nc("@info:status a percentage", "%1%", Format.percent(value)) : "–";
         const temperature = celsius => Format.temperatureValid(celsius)
@@ -94,7 +94,7 @@ QtObject {
                      second: "–" + timeParts("", "", "")[0].unit, heat: 0 };
         }
         const parts = countdownParts(weekly ? weekly.resetsAt : null, now, true);
-        if (entry && entry.lastError !== undefined) {
+        if (!entry || entry.lastError !== undefined) {
             return { first: percent(weekly ? weekly.percent : NaN), off: true, second: spelled(parts) || "–", heat: 0 };
         }
         return { first: percent(weekly ? weekly.percent : NaN), level: Format.level(weekly ? weekly.percent : NaN),
@@ -119,10 +119,15 @@ QtObject {
     }
 
     // A Claude or Codex item: its weekly use, the limit on its inner ring,
-    // when the week resets, and a failed last check (see failedText()).
+    // when the week resets, and a failed last check (see failedText()); or,
+    // while its first check runs, that it is checking.
     function usageText(item, nowMs) {
         const usage = monitor.usage;
         const entry = usage.entry(item);
+        if (usage.loading(item)) {
+            return i18nc("@info:tooltip the first check of the Claude or Codex limits since Ringside started is running",
+                         "Checking your usage…");
+        }
         if (entry === null) {
             return usage.helperError || i18nc("@info:tooltip the usage has not been read yet", "Not checked yet");
         }
