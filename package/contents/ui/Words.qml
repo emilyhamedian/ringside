@@ -155,10 +155,10 @@ QtObject {
     function failedText(item, entry, reading, nowMs) {
         const weekly = entry.weekly ?? null;
         const lines = [i18nc("@info:tooltip %1 is a time, %2 why, a sentence, e.g. Can't reach api.anthropic.com.",
-                             "Last check failed at %1. %2", timeOfDay(entry.lastErrorAt, nowMs), failureReason(item, entry, nowMs))];
+                             "Last check failed at %1. %2", timeOfDay(entry.lastErrorAt, nowMs), failureReason(item, entry))];
         if (weekly && weekly.resetsAt <= nowMs / 1000) {
-            lines.push(i18nc("@info:tooltip %1 is a time", "The week reset at %1, with no reading since.",
-                             timeOfDay(weekly.resetsAt, nowMs)));
+            lines.push(i18nc("@info:tooltip %1 is a weekday and time, with a time zone where the reset has one, as in Sun 7:00 AM EDT",
+                             "The week reset at %1, with no reading since.", resetDate(weekly)));
         } else if (weekly) {
             lines.push(i18nc("@info:tooltip %1 is a time, %2 the reading, e.g. 52% used, resets in 2 days 21 hours",
                              "Last reading at %1: %2.", timeOfDay(entry.fetchedAt, nowMs), reading));
@@ -167,19 +167,27 @@ QtObject {
         return lines.join("\n");
     }
 
-    // "Checking now." or "Next check at 4:15 PM.", after a failed check.
+    // "Checking now." or "Next check at 4:15 PM.", after a failed check,
+    // with the weekday for a check on another day: "Next check at Fri
+    // 12:35 AM."
     function nextCheckText(item, nowMs) {
         const usage = monitor.usage;
+        const next = usage.nextCheck(item);
         return usage.checking ? i18nc("@info", "Checking now.")
-            : i18nc("@info %1 is a time", "Next check at %1.", timeOfDay(usage.nextCheck(item), nowMs));
+            : i18nc("@info %1 is a time, or a weekday and time", "Next check at %1.",
+                    new Date(next * 1000).toDateString() === new Date(nowMs).toDateString()
+                        ? shortTime(new Date(next * 1000)) : weekdayTime(next, null));
     }
 
     // Why a check failed, as a sentence, from the reason the helper gives
     // (see usage.py and code/report.js): the network, a server, a provider
     // asking to wait, or the helper itself. The helper's own message, which
     // names the Python error, is for the settings page and screen readers.
-    // Anything else is the helper's message as it gave it.
-    function failureReason(item, entry, nowMs) {
+    // Anything else, another check holding the helper's lock among it, is
+    // the helper's message as it gave it. A rate limit's end is left to
+    // the next check's time: the helper waits at least five minutes, which
+    // may be longer than the provider asked.
+    function failureReason(item, entry) {
         const host = entry.host ?? "";
         switch (entry.reason) {
         case "offline":
@@ -202,8 +210,10 @@ QtObject {
             break;
         case "rate-limited":
             return item === "claude"
-                ? i18nc("@info %1 is a time", "Anthropic asked Ringside to wait until %1.", timeOfDay(entry.retryAt, nowMs))
-                : i18nc("@info %1 is a time", "OpenAI asked Ringside to wait until %1.", timeOfDay(entry.retryAt, nowMs));
+                ? i18nc("@info", "Anthropic asked Ringside to wait before checking again.")
+                : i18nc("@info", "OpenAI asked Ringside to wait before checking again.");
+        case "missing":
+            return i18nc("@info", "python3 was not found on the Plasma session's PATH.");
         case "files":
             return i18nc("@info", "The usage helper couldn't read or write its files.");
         case "helper":

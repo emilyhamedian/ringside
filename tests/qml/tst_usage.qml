@@ -105,6 +105,11 @@ Item {
     }
 
     Component {
+        id: fakeUsageComponent
+        FakeUsage {}
+    }
+
+    Component {
         id: cellComponent
         UsageCellContent {
             item: "claude"
@@ -161,6 +166,16 @@ Item {
             compare(before.claude.lastError, "x", "the input is not modified");
         }
 
+        // A hold the provider's last report gave that ends later than five
+        // minutes, as a rate limit's, still holds: the helper keeps it.
+        function test_markFailedKeepsALongerHold() {
+            const before = { claude: { status: "ok", lastError: "x", reason: "rate-limited", retryAt: 4600 },
+                             codex: { status: "ok", lastError: "x", reason: "offline", retryAt: 1100 } };
+            const after = Report.markFailed(before, "boom", 1000, "helper");
+            compare([after.claude.reason, after.claude.retryAt], ["helper", 4600]);
+            compare([after.codex.reason, after.codex.retryAt], ["helper", 1300]);
+        }
+
         function test_markFailedAddsNoEntry() {
             compare(Object.keys(Report.markFailed({}, "boom", 1000, "helper")).length, 0);
             compare(Object.keys(Report.markFailed({ codex: { status: "ok" } }, "boom", 1000, "helper")), ["codex"]);
@@ -175,12 +190,13 @@ Item {
                 { tag: "missing", detail: "FileNotFoundError: [Errno 2] No such file or directory: '/x'", reason: "files" },
                 { tag: "key error", detail: "KeyError: 'weekly'", reason: "helper" },
                 { tag: "named in passing", detail: "RuntimeError: not an OSError", reason: "helper" },
-                { tag: "no detail", detail: "", reason: "helper" }
+                { tag: "no detail", detail: "", reason: "helper" },
+                { tag: "no python3", failure: { reason: "missing", code: 127, detail: "" }, reason: "missing" }
             ];
         }
 
         function test_failureReason(data) {
-            compare(Report.failureReason({ reason: "exited", code: 1, detail: data.detail }), data.reason);
+            compare(Report.failureReason(data.failure ?? { reason: "exited", code: 1, detail: data.detail }), data.reason);
         }
     }
 
@@ -269,8 +285,9 @@ Item {
             verify(usage.degraded("claude") && usage.degraded("codex"));
             verify(usage.claudePresent && usage.codexPresent, "a failed poll keeps the items");
             // The helper holds a refused provider back itself; the widget
-            // never polls sooner than its interval.
-            compare(timers().filter(t => t.running).map(t => t.interval), [5 * 60000]);
+            // never polls sooner than its interval, and watches for a tick a
+            // suspend has made late.
+            compare(timers().filter(t => t.running).map(t => t.interval), [5 * 60000, 60000]);
             compare(JSON.parse(config.usageStatus).claude,
                     { status: "error", message: "HTTP Error 500: Internal Server Error" });
             compare(JSON.parse(config.usageStatus).codex.status, "rate_limited");
@@ -307,7 +324,7 @@ Item {
         function test_helperFailure_data() {
             return [
                 { tag: "no python3", scenario: "no-python", message: "python3 was not found on the Plasma session's PATH.",
-                  reason: "helper" },
+                  reason: "missing" },
                 { tag: "traceback", scenario: "traceback", message: "The usage helper exited with code 1: KeyError: 'weekly'",
                   reason: "helper" },
                 { tag: "files", scenario: "files", reason: "files",
@@ -374,6 +391,29 @@ Item {
             compare(timers().filter(t => t.running).map(t => t.interval), [5 * 60000]);
         }
 
+        // After a suspend the poller's tick is late by the wall clock. While
+        // a check has failed, a tick over a minute overdue runs at once, and
+        // one that isn't waits.
+        function test_overdueTickRunsAfterASuspend() {
+            start("ok");
+            verify(!timers().some(t => t.interval === 60000 && t.running), "not watched while the checks succeed");
+            poll("failed");
+            const watch = timers().find(t => t.interval === 60000 && t.running);
+            verify(watch !== undefined, "watched while a check has failed");
+            const onTime = Date.now() / 1000 - 330;
+            usage.lastRun = onTime;
+            watch.triggered();
+            wait(100);
+            compare(usage.lastRun, onTime, "a tick less than a minute late is left alone");
+            const landed = spy("entriesChanged");
+            usage.lastRun = Date.now() / 1000 - 400;
+            watch.triggered();
+            tryVerify(() => Math.abs(usage.lastRun - Date.now() / 1000) < 2, 2000, "the overdue tick runs");
+            landed.wait(10000);
+            poll("ok");
+            verify(!watch.running, "not watched once the checks succeed");
+        }
+
         // A new interval starts counting when it is set.
         function test_newIntervalCountsFromNow() {
             start("ok");
@@ -389,6 +429,8 @@ Item {
             return [
                 { tag: "no hold", minutes: 5, retryAt: undefined, next: 300 },
                 { tag: "the tick's own hold", minutes: 5, retryAt: 302, next: 300 },
+                { tag: "a hold ending 9 s past the tick", minutes: 5, retryAt: 309, next: 300 },
+                { tag: "a hold ending 11 s past the tick", minutes: 5, retryAt: 311, next: 600 },
                 { tag: "on a tick", minutes: 5, retryAt: 3000, next: 3000 },
                 { tag: "between ticks", minutes: 5, retryAt: 3100, next: 3300 },
                 { tag: "longer interval", minutes: 15, retryAt: 302, next: 900 },
@@ -404,6 +446,9 @@ Item {
             usage.entries = { claude: { status: "ok", lastError: "x", lastErrorAt: 10000,
                                         retryAt: data.retryAt === undefined ? undefined : 10000 + data.retryAt } };
             compare(usage.nextCheck("claude"), 10000 + data.next);
+            const fake = createTemporaryObject(fakeUsageComponent, root, { refreshMinutes: data.minutes, lastRun: 10000,
+                                                                          entries: usage.entries });
+            compare(fake.nextCheck("claude"), 10000 + data.next, "the tests' stand-in agrees");
         }
 
         // Only when a check would really ask: the hold is over, none runs,
@@ -415,6 +460,10 @@ Item {
                 { tag: "held", ran: 400, retryAt: 100, can: false },
                 { tag: "rate limited", ran: 400, retryAt: 3000, reason: "rate-limited", can: false },
                 { tag: "files", ran: 400, retryAt: -100, reason: "files", can: false },
+                { tag: "no python3", ran: 400, retryAt: -100, reason: "missing", can: false },
+                { tag: "lock busy", ran: 400, retryAt: -100, reason: "busy", can: false },
+                { tag: "hold ends now", ran: 400, retryAt: 0, can: true },
+                { tag: "tick exactly a minute away", ran: 840, retryAt: -100, can: false },
                 { tag: "helper", ran: 400, retryAt: -100, reason: "helper", can: true },
                 { tag: "checking", ran: 400, retryAt: -100, checking: true, can: false },
                 { tag: "tick within a minute", ran: 850, retryAt: -100, can: false },
@@ -426,7 +475,8 @@ Item {
 
         function test_canRetry(data) {
             make("ok", []);
-            const now = Date.now() / 1000;
+            // Whole seconds, so the edges compare exactly.
+            const now = Math.floor(Date.now() / 1000);
             config.usageRefreshMinutes = data.minutes ?? 15;
             usage.lastRun = now - data.ran;
             usage.checking = data.checking ?? false;
@@ -434,6 +484,10 @@ Item {
             usage.entries = { claude: data.ok ? entry : Object.assign(entry, { lastError: "x", lastErrorAt: now - data.ran }) };
             compare(usage.canRetry("claude", now * 1000), data.can);
             compare(usage.canRetry("codex", now * 1000), false, "no entry, nothing to retry");
+            const fake = createTemporaryObject(fakeUsageComponent, root, { refreshMinutes: config.usageRefreshMinutes,
+                                                                          lastRun: usage.lastRun, checking: usage.checking,
+                                                                          entries: usage.entries });
+            compare(fake.canRetry("claude", now * 1000), data.can, "the tests' stand-in agrees");
         }
 
         function test_presentNotifiesOnlyWhenItFlips() {
@@ -1178,6 +1232,19 @@ Item {
             return Array.from(strike(cell).data).find(o => o.strokeColor !== undefined);
         }
 
+        function wordsOf(cell) {
+            return Array.from(cell.data).find(o => o.failureReason !== undefined);
+        }
+
+        // "Next check at …." as the cell's words should give it: the time
+        // alone today, the weekday and time on another day.
+        function nextCheckAt(cell) {
+            const next = monitor.usage.nextCheck(cell.item);
+            const w = wordsOf(cell);
+            return "Next check at " + (new Date(next * 1000).toDateString() === new Date(cell.nowMs).toDateString()
+                                       ? w.timeOfDay(next, cell.nowMs) : w.weekdayTime(next, null)) + ".";
+        }
+
         // The rings of thin panels too: a strip 18 to 24 px thick has rings
         // of 15 to 20 px.
         function test_failedCheckStrikesTheRing_data() {
@@ -1203,8 +1270,11 @@ Item {
             const face = arc.parent;
             verify(!strike(c).visible, "no stroke while the checks succeed");
             verify(gauge.pulsing);
+            const room = gauge.centreWidth;
+            const markWidth = mark(c).width;
 
-            setEntry("claude", Object.assign({}, ok, failure(600)));
+            const failed = Object.assign({}, ok, failure(600));
+            setEntry("claude", failed);
             tryCompare(gauge, "struck", 1, 3000);
             tryCompare(arc, "percent", 0, 3000);
             tryCompare(gauge, "innerShown", 0, 3000);
@@ -1213,6 +1283,7 @@ Item {
             const dim = String(Style.dim(Kirigami.Theme.textColor));
             compare([String(line(c, "first").color), String(line(c, "second").color)], [dim, dim]);
             fuzzyCompare(middle(c).opacity, 0.4, 1e-6);
+            compare([gauge.centreWidth, mark(c).width], [room, markWidth], "the mark keeps its size");
 
             const s = strike(c);
             const path = strikePath(c);
@@ -1230,17 +1301,20 @@ Item {
             const inside = arc.radius - arc.strokeWidth / 2;
             fuzzyCompare(tip, inside, 1e-6, "its caps end on the track's inner edge");
 
-            // A breath under way ends, and no other starts.
-            tryCompare(face, "opacity", 1, 2500);
-            wait(1200);
-            compare(face.opacity, 1, "no breathing");
+            // A breath under way ends, and no other starts, whatever the
+            // ring's size.
+            if (data.ring === 34) {
+                tryCompare(face, "opacity", 1, 2500);
+                wait(1200);
+                compare(face.opacity, 1, "no breathing");
+            }
             verify(gauge.Accessible.ignored);
-            const lines = c.accessibleDescription.split("\n");
-            compare(lines.length, 3, c.accessibleDescription);
-            verify(/^Last check failed at .+\. Can't reach api\.anthropic\.com\.$/.test(lines[0]), lines[0]);
-            verify(lines[1].startsWith("Last reading at ") && lines[1].endsWith(": " + root.localized("95%") + " used, Fable "
-                                                                                 + root.localized("78%") + ", resets in 5 hours."), lines[1]);
-            verify(/^Next check at .+\.$/.test(lines[2]), lines[2]);
+            const w = wordsOf(c);
+            compare(c.accessibleDescription.split("\n"), [
+                "Last check failed at " + w.timeOfDay(failed.lastErrorAt, c.nowMs) + ". Can't reach api.anthropic.com.",
+                "Last reading at " + w.timeOfDay(failed.fetchedAt, c.nowMs) + ": " + root.localized("95%") + " used, Fable "
+                    + root.localized("78%") + ", resets in 5 hours.",
+                nextCheckAt(c)]);
 
             setEntry("claude", ok);
             tryCompare(gauge, "struck", 0, 3000);
@@ -1255,7 +1329,7 @@ Item {
         // runs, a failed check keeps it in grey: the arcs and readings stay
         // where they were, with no amber, red or breathing, and no stroke.
         function test_failedCheckGreysFirst_data() {
-            return [{ tag: "first failure", age: 60, interval: 5, grey: true },
+            return [{ tag: "first failure", age: 60, interval: 5, grey: true, breath: true },
                     { tag: "under two intervals", age: 570, interval: 5, grey: true },
                     { tag: "two intervals", age: 600, interval: 5, grey: false },
                     { tag: "under two longer intervals", age: 1770, interval: 15, grey: true },
@@ -1293,9 +1367,11 @@ Item {
             compare(arc.color, Qt.alpha(Kirigami.Theme.textColor, 0.42 * Kirigami.Theme.textColor.a), "grey, not red");
             compare(innerArc(c).color, Qt.alpha(Kirigami.Theme.textColor, 0.55 * Kirigami.Theme.textColor.a), "grey, not amber");
             fuzzyCompare(middle(c).opacity, 0.4, 1e-6);
-            tryCompare(arc.parent, "opacity", 1, 2500);
-            wait(1200);
-            compare(arc.parent.opacity, 1, "no breathing");
+            if (data.breath) {
+                tryCompare(arc.parent, "opacity", 1, 2500);
+                wait(1200);
+                compare(arc.parent.opacity, 1, "no breathing");
+            }
             verify(c.accessibleDescription.startsWith("Last check failed at "), c.accessibleDescription);
 
             // The check that finds it two intervals old strikes it.
@@ -1330,8 +1406,14 @@ Item {
                   text: "api.anthropic.com didn't answer in time." },
                 { tag: "codex timeout", item: "codex", entry: { reason: "timeout", host: "" }, text: "Codex didn't answer in time." },
                 { tag: "server", entry: { reason: "server", host: "api.anthropic.com" }, text: "api.anthropic.com answered with an error." },
-                { tag: "rate limit", entry: { reason: "rate-limited", retryAt: Date.now() / 1000 + 3000 }, text: /^Anthropic asked Ringside to wait until .+\.$/ },
-                { tag: "codex rate limit", item: "codex", entry: { reason: "rate-limited", retryAt: Date.now() / 1000 + 3000 }, text: /^OpenAI asked Ringside to wait until .+\.$/ },
+                { tag: "rate limit", entry: { reason: "rate-limited", retryAt: Date.now() / 1000 + 3000 },
+                  text: "Anthropic asked Ringside to wait before checking again." },
+                { tag: "codex rate limit", item: "codex", entry: { reason: "rate-limited", retryAt: Date.now() / 1000 + 3000 },
+                  text: "OpenAI asked Ringside to wait before checking again." },
+                { tag: "no python3", entry: { reason: "missing", lastError: "python3 was not found on the Plasma session's PATH." },
+                  text: "python3 was not found on the Plasma session's PATH." },
+                { tag: "lock busy", entry: { reason: "busy", lastError: "another usage check is still running" },
+                  text: "Another usage check is still running." },
                 { tag: "files", entry: { reason: "files" }, text: "The usage helper couldn't read or write its files." },
                 { tag: "helper", entry: { reason: "helper" }, text: "The usage helper stopped with an error." },
                 { tag: "other", entry: { reason: "other", lastError: "codex CLI not found" }, text: "Codex CLI not found." },
@@ -1344,25 +1426,31 @@ Item {
 
         function test_failureWords(data) {
             const c = cell(data.item ?? "claude");
-            const words = Array.from(c.data).find(o => o.failureReason !== undefined);
-            const text = words.failureReason(data.item ?? "claude", Object.assign({ lastError: "x" }, data.entry), Date.now());
-            if (typeof data.text === "string") {
-                compare(text, data.text);
-            } else {
-                verify(data.text.test(text), text);
-            }
+            compare(wordsOf(c).failureReason(data.item ?? "claude", Object.assign({ lastError: "x" }, data.entry)), data.text);
         }
 
-        // The next check, or that one is running.
+        // The next check, or that one is running; a check on another day
+        // has its weekday. A week that has reset says when, as the popup's
+        // tile does.
         function test_failedWordsNameTheNextCheck() {
+            const usage = monitor.usage;
             const ok = hotClaude();
             const c = cell("claude");
             setEntry("claude", Object.assign({}, ok, failure(60)));
-            verify(/\nNext check at .+\.$/.test(c.accessibleDescription), c.accessibleDescription);
-            monitor.usage.checking = true;
+            const w = wordsOf(c);
+            const next = usage.nextCheck("claude");
+            verify(c.accessibleDescription.endsWith("\n" + nextCheckAt(c)), c.accessibleDescription);
+            verify(next !== usage.lastRun && nextCheckAt(c).includes(w.timeOfDay(next, c.nowMs)));
+            usage.lastRun = c.nowMs / 1000 + 86400 - 300;
+            const tomorrow = usage.nextCheck("claude");
+            verify(c.accessibleDescription.endsWith("\nNext check at " + w.weekdayTime(tomorrow, null) + "."), c.accessibleDescription);
+            verify(new Date(tomorrow * 1000).toDateString() !== new Date(c.nowMs).toDateString());
+            usage.checking = true;
             verify(c.accessibleDescription.endsWith("\nChecking now."), c.accessibleDescription);
-            setEntry("claude", Object.assign({}, ok, failure(60), { weekly: monitor.usage.window(95, -600, []) }));
-            verify(/\nThe week reset at .+, with no reading since\.\n/.test(c.accessibleDescription), c.accessibleDescription);
+            const weekly = usage.window(95, -600, []);
+            setEntry("claude", Object.assign({}, ok, failure(60), { weekly: weekly }));
+            verify(c.accessibleDescription.includes("\nThe week reset at " + w.resetDate(weekly) + ", with no reading since.\n"),
+                   c.accessibleDescription);
         }
 
         // The percentages in the locale's digits; the stand-in i18ncp
@@ -1712,14 +1800,19 @@ Item {
 
         // The ring and the bars carry the level; the countdown turns red only
         // once the limit is used up, when it is the time the lock-out lasts.
+        // A reading kept from a failed check may be out of date, so its
+        // countdown stays plain, as in the panel.
         function test_countdownRedOnlyAtTheLimit_data() {
             return [{ tag: "52", percent: 52, red: false }, { tag: "91", percent: 91, red: false },
-                    { tag: "100", percent: 100, red: true }];
+                    { tag: "100", percent: 100, red: true }, { tag: "100 failed", percent: 100, failed: true, red: false }];
         }
 
         function test_countdownRedOnlyAtTheLimit(data) {
             const usage = monitor.usage;
             setClaude({ weekly: usage.window(data.percent, 2 * usage.day + 21 * 3600, []) });
+            if (data.failed) {
+                failClaude(240);
+            }
             const readings = countdown(load("claude"));
             compare(readings.length, 2);
             const expected = String(data.red ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor);
@@ -2435,9 +2528,13 @@ Item {
             const status = checkStatus(popup);
             verify(status.visible);
             const shown = root.texts(status);
-            verify(shown.some(t => /^Last check failed at .+$/.test(t)), JSON.stringify(shown));
-            const said = shown.find(t => t.startsWith("<b>"));
-            verify(/^<b>HTTP Error 500<\/b>\. The readings below are from .+\. Next check at .+\.$/.test(said), said);
+            const e = popup.entry;
+            const w = status.texts;
+            verify(shown.includes("Last check failed at " + w.timeOfDay(e.lastErrorAt, popup.nowMs)), JSON.stringify(shown));
+            const said = "<b>HTTP Error 500</b>. The readings below are from " + w.timeOfDay(e.fetchedAt, popup.nowMs) + ". "
+                + w.nextCheckText("claude", popup.nowMs);
+            verify(shown.includes(said), JSON.stringify(shown) + " lacks " + said);
+            verify(w.nextCheckText("claude", popup.nowMs).includes(w.timeOfDay(monitor.usage.nextCheck("claude"), popup.nowMs)));
             verify(root.find(status, i => i.text === said).textFormat === Text.PlainText);
             const sign = root.find(status, i => i.outerTone !== undefined);
             verify(sign.cancelled && sign.struck === 1 && sign.Accessible.ignored, "the panel's sign, struck");
@@ -2446,6 +2543,9 @@ Item {
             verify(r.stale && !r.cancelled, "the header's ring keeps the reading, in grey");
             tryCompare(r, "greyed", 1, 3000);
             compare(r.text, root.localized("52%"));
+            // In the dim text colour, which keeps it legible, not the arc's grey.
+            const number = root.find(r, i => i !== r && i.text === r.text && i.color !== undefined);
+            compare(String(number.color), String(Style.dim(Kirigami.Theme.textColor)));
             const all = rows(popup);
             compare(all.length, 2);
             const dim = String(Style.dim(Kirigami.Theme.textColor));
@@ -2472,6 +2572,15 @@ Item {
             verify(!gap.visible, "gone with the next good check");
         }
 
+        // Without a failed check, a week whose reset has passed is still
+        // this week's until the next check brings the new one.
+        function test_passedResetIsThisWeekWhileChecksSucceed() {
+            setClaude({ weekly: monitor.usage.window(52, -600, []) });
+            const shown = root.texts(load("claude"));
+            verify(shown.some(t => /^THIS WEEK · resets .+$/.test(t)), JSON.stringify(shown));
+            verify(!shown.some(t => t.startsWith("LAST WEEK")), JSON.stringify(shown));
+        }
+
         // A reading from a week that has since reset says nothing of this
         // one: the header's ring is struck, the bars go, the graph stays as
         // last week's, and the status says the week reset.
@@ -2481,11 +2590,15 @@ Item {
             const popup = load("claude");
             const r = ring(popup);
             verify(r.cancelled && !r.stale);
+            compare(r.struck, 1, "struck as it opens");
             compare(r.text, "");
             compare(rows(popup).length, 0);
             const shown = root.texts(popup);
-            verify(shown.some(t => /^LAST WEEK · reset .+$/.test(t)), JSON.stringify(shown));
-            verify(shown.some(t => /The week reset at .+, with no reading since\./.test(t)), JSON.stringify(shown));
+            const tile = shown.find(t => /^LAST WEEK · reset .+$/.test(t));
+            verify(tile !== undefined, JSON.stringify(shown));
+            // When it reset, as the tile says it.
+            const when = tile.replace(/^LAST WEEK · reset /, "");
+            verify(shown.some(t => t.includes("The week reset at " + when + ", with no reading since.")), JSON.stringify(shown));
             compare(header(popup).subtitle, "Weekly limits", "as many as the reading had");
             verify(!graph(popup).failed, "nothing to hatch in a week that is over");
         }
@@ -2535,12 +2648,20 @@ Item {
 
         // The helper's own failure is said plainly; its message, which
         // names the Python error, is for screen readers.
-        function test_helperFailureInWords() {
-            failClaude(600, { lastError: "The usage helper exited with code 1: KeyError: 'weekly'", reason: "helper" });
+        function test_helperFailureInWords_data() {
+            return [{ tag: "helper", reason: "helper", said: "The usage helper stopped",
+                      message: "The usage helper exited with code 1: KeyError: 'weekly'" },
+                    { tag: "files", reason: "files", said: "The usage helper couldn't read or write its files",
+                      message: "The usage helper exited with code 1: PermissionError: [Errno 13] Permission denied: '/x'" },
+                    { tag: "provider", reason: "offline", said: "Can't reach", message: "", lastError: "can't reach api.anthropic.com: timed out" }];
+        }
+
+        function test_helperFailureInWords(data) {
+            failClaude(600, { lastError: data.lastError ?? data.message, reason: data.reason });
             const popup = load("claude");
-            const said = root.find(checkStatus(popup), i => typeof i.text === "string" && i.text.startsWith("The usage helper stopped"));
+            const said = root.find(checkStatus(popup), i => typeof i.text === "string" && i.text.startsWith(data.said));
             verify(said !== null, JSON.stringify(root.texts(popup)));
-            compare(said.Accessible.description, "The usage helper exited with code 1: KeyError: 'weekly'");
+            compare(said.Accessible.description, data.message);
         }
 
         function test_noStatusWhileTheChecksSucceed() {
@@ -3061,7 +3182,8 @@ Item {
                 projected: o.projected ?? "",
                 runOutText: o.runOutText ?? "",
                 pollAt: o.at ?? NaN,
-                nowMs: (o.now ?? o.at ?? start + day) * 1000
+                nowMs: (o.now ?? o.at ?? start + day) * 1000,
+                failed: o.failed ?? false
             });
         }
 
@@ -3284,6 +3406,27 @@ Item {
                 compare(marker.y + marker.height, g.floorY);
             }
             verify(!make([], { percent: 0, at: now - data.age, now: now }).stale, "no line, nothing to mark");
+        }
+
+        // While checks fail, now is marked once the gap to it is 4 px wide,
+        // about an hour of a week at 700 px, rather than after two hours.
+        function test_failedMarker_data() {
+            return [{ tag: "half an hour", age: 1800, stale: false }, { tag: "an hour and a half", age: 5400, stale: true }];
+        }
+
+        function test_failedMarker(data) {
+            const now = start + 3 * day;
+            const g = make([[start, 0], [now - data.age, 20]], { percent: 20, at: now - data.age, now: now, failed: true });
+            compare(g.stale, data.stale);
+        }
+
+        // A run-out projected from a reading that couldn't be renewed is
+        // in the graph's own colour at every level.
+        function test_greyRunOut() {
+            const g = make([[start, 0], [start + day, 20]], { percent: 20, at: start + day });
+            compare(g.levelColor(2), Kirigami.Theme.negativeTextColor);
+            g.grey = true;
+            compare([g.levelColor(1), g.levelColor(2)], [g.color, g.color]);
         }
 
         // Time runs left to right in every language.

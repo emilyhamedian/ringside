@@ -811,7 +811,7 @@ class ReadingCache(Isolated):
             report = self.run_main("--providers", "codex")
         self.assertEqual(report["providers"], {"codex": {"status": "error", "starter": OFF,
                                                          "message": "another usage check is still running",
-                                                         "reason": "other", "host": "",
+                                                         "reason": "busy", "host": "",
                                                          "retryAt": report["fetchedAt"]}})
         fetch.assert_not_called()
 
@@ -827,7 +827,7 @@ class ReadingCache(Isolated):
         self.assertEqual(report["providers"]["codex"]["weekly"]["history"], [])
         self.assertEqual(report["providers"]["claude"],
                          {"status": "error", "message": "another usage check is still running", "starter": OFF,
-                          "reason": "other", "host": "", "retryAt": report["providers"]["claude"]["retryAt"]})
+                          "reason": "busy", "host": "", "retryAt": report["providers"]["claude"]["retryAt"]})
 
     # ...and a failure it still holds, as a run with the lock would.
     def test_a_busy_run_replays_a_held_failure(self):
@@ -840,11 +840,11 @@ class ReadingCache(Isolated):
         self.assertEqual(report["providers"], {
             "claude": {"status": "signed_out", "starter": OFF},
             "codex": {"status": "error", "message": "another usage check is still running", "starter": OFF,
-                      "reason": "other", "host": "", "retryAt": report["providers"]["codex"]["retryAt"]}})
+                      "reason": "busy", "host": "", "retryAt": report["providers"]["codex"]["retryAt"]}})
 
     # A busy run replays a held failure as a run with the lock would, its
-    # hold's end included, and says of the rest that they may be asked
-    # again at once.
+    # hold's end included, and says of the rest that the lock was busy and
+    # nothing holds them back.
     def test_a_busy_run_replays_the_end_of_a_hold(self):
         now = int(time.time())
         usage.collect({"claude": mock.Mock(side_effect=usage.RateLimited(900, "api.anthropic.com"))}, now)

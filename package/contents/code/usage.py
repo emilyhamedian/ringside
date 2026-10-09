@@ -22,10 +22,10 @@ display "label". An ok entry's "fetchedAt" is when it was polled, which a
 cached reading keeps. Status is one of "ok", "signed_out", "rate_limited"
 (with "retryAfter", the seconds until the provider is polled again) or
 "error", and the last two carry a "message" to show, a "reason" the widget
-can put in its own words ("offline", "timeout", "server", "rate-limited" or
-"other"), the "host" that failed, or "" when none did, and "retryAt", when
-the provider may be polled again (epoch seconds). Tokens never reach stdout
-or stderr.
+can put in its own words ("offline", "timeout", "server", "rate-limited",
+"busy" when another run held the lock too long, or "other"), the "host" that
+failed, or "" when none did, and "retryAt", when the provider may be polled
+again (epoch seconds). Tokens never reach stdout or stderr.
 
 When Plasma's digital clock shows a zone other than system time, every window
 also carries "clockZone": {"offset": <seconds east of UTC>, "abbreviation":
@@ -1011,7 +1011,7 @@ def waiting(ids, message):
         elif wait:
             providers[name] = replay(entry, wait, now)
         else:
-            providers[name] = {"status": "error", "message": message, "reason": "other", "host": "", "retryAt": now}
+            providers[name] = {"status": "error", "message": message, "reason": "busy", "host": "", "retryAt": now}
     attach_history(providers, read_history(), now)
     return providers
 

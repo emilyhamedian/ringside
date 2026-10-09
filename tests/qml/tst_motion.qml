@@ -1119,6 +1119,21 @@ Item {
             monitor.usage.entries = Object.assign({}, monitor.usage.entries, { claude: entry });
         }
 
+        // The stroke and its path, which runs from the bottom left.
+        function strike(c) {
+            return root.all(c, i => i.lineWidth !== undefined)[0];
+        }
+
+        function strikePath(c) {
+            return Array.from(strike(c).data).find(o => o.strokeColor !== undefined);
+        }
+
+        // How much of the stroke's length is drawn, 0 to 1.
+        function drawnLength(c) {
+            const path = strikePath(c);
+            return (path.pathElements[0].x - path.startX) / (2 * strike(c).half);
+        }
+
         // The stroke starts as the arcs near the end of their way down, and
         // the dashes come with it; on recovery the stroke comes off, the
         // readings return, and only then do the arcs grow back. Each way
@@ -1130,27 +1145,92 @@ Item {
             const arc = outerArc(c);
             const seen = [];
             createTemporaryObject(samplerComponent, c, {
-                sample: () => seen.push({ at: Date.now(), struck: g.struck, percent: arc.percent, first: line(c, "first").text })
+                sample: () => seen.push({ at: Date.now(), struck: g.struck, percent: arc.percent, first: line(c, "first").text,
+                                          opacity: strike(c).opacity, drawn: drawnLength(c) })
             });
             const start = Date.now();
             setClaude(failed(ok));
             tryCompare(g, "struck", 1, 3000);
+            // Timed here: the last frame may not have been sampled yet.
+            const struckAt = Date.now() - start;
             tryCompare(arc, "percent", 0, 3000);
             const first = seen.find(f => f.struck > 0);
             verify(first.percent <= 52 / 3, "the arc is mostly down when the stroke starts: " + first.percent);
+            verify(first.at - start >= Kirigami.Units.longDuration / 2 - 20, "it waits for the arcs: " + (first.at - start) + " ms");
+            // It starts as a short stroke fading in, then draws to its end.
+            verify(seen.filter(f => f.struck > 0).every(f => Math.abs(f.opacity - Math.min(1, 4 * f.struck)) < 1e-6
+                                                        && Math.abs(f.drawn - (0.15 + 0.85 * f.struck)) < 1e-6),
+                   JSON.stringify(seen));
             verify(seen.some(f => f.struck > 0 && f.struck < 1), "the stroke draws on");
             verify(seen.every(f => (f.first === "––%") === (f.struck > 0.25)), "the dashes come with the stroke: " + JSON.stringify(seen));
-            const struckAt = seen.find(f => f.struck === 1).at - start;
             verify(struckAt <= 2.5 * Kirigami.Units.longDuration + 200, "struck in " + struckAt + " ms");
 
             seen.length = 0;
+            const back = Date.now();
             setClaude(ok);
+            tryCompare(g, "struck", 0, 3000);
+            const offAt = Date.now() - back;
+            verify(offAt <= Kirigami.Units.longDuration + 200, "off in " + offAt + " ms");
             tryCompare(arc, "percent", 52, 3000);
-            compare(g.struck, 0);
             const grown = seen.find(f => f.percent > 0);
             verify(grown.struck <= 0.25, "the stroke is off before the arc grows: " + grown.struck);
             verify(seen.some(f => f.struck > 0 && f.struck < 1), "the stroke comes off");
             verify(seen.every(f => (f.first === "––%") === (f.struck > 0.25)), "the readings return with it");
+        }
+
+        // A grey reading that grows too old unwinds in grey into the stroke:
+        // no amber or red, and never brighter than the grey, as the arcs
+        // pass down through the levels.
+        function test_greyIntoTheStrike() {
+            const base = monitor.usage.entries.claude;
+            const hot = Object.assign({}, base, { weekly: Object.assign({}, base.weekly, { percent: 93 }),
+                                                  scoped: [Object.assign({}, base.scoped[0], { percent: 97 })] });
+            setClaude(hot);
+            const c = cell();
+            const g = c.children[0];
+            const arcs = root.all(c, i => i.playReset !== undefined).sort((a, b) => b.radius - a.radius);
+            tryCompare(arcs[0], "percent", 93, 3000);
+            setClaude(Object.assign(failed(hot), { fetchedAt: Date.now() / 1000 - 60 }));
+            tryCompare(g, "greyed", 1, 3000);
+            const text = Kirigami.Theme.textColor;
+            const seen = [];
+            createTemporaryObject(samplerComponent, c, {
+                sample: () => seen.push(arcs.map(a => [a.color.r, a.color.g, a.color.b, a.color.a]))
+            });
+            setClaude(failed(hot));
+            tryCompare(g, "struck", 1, 3000);
+            tryCompare(arcs[0], "percent", 0, 3000);
+            verify(seen.length > 0);
+            const plain = rgba => Math.abs(rgba[0] - text.r) < 0.01 && Math.abs(rgba[1] - text.g) < 0.01
+                && Math.abs(rgba[2] - text.b) < 0.01;
+            verify(seen.every(([outer, inner]) => plain(outer) && plain(inner)), "no amber or red: " + JSON.stringify(seen));
+            verify(seen.every(([outer]) => outer[3] <= 0.42 * text.a + 0.01), "no brighter than grey: " + JSON.stringify(seen));
+        }
+
+        // A ring made struck, as a popup's opening on a failed check, shows
+        // its stroke whole from the first frame rather than drawing it.
+        function test_madeStruck() {
+            const g = createTemporaryObject(gaugeComponent, root, { cancelled: true });
+            verify(g.settle > 0);
+            const seen = [];
+            createTemporaryObject(samplerComponent, g, { sample: () => seen.push(g.struck) });
+            compare(g.struck, 1);
+            wait(2 * Kirigami.Units.longDuration);
+            verify(seen.length > 0 && seen.every(v => v === 1), JSON.stringify(seen));
+        }
+
+        // A change of Plasma's speed to Instant while the stroke waits to
+        // draw strikes the ring at once.
+        function test_instantWhileStriking() {
+            const c = cell();
+            const g = c.children[0];
+            setClaude(failed(monitor.usage.entries.claude));
+            wait(20);
+            verify(g.struck < 1, "still to draw");
+            g.settle = 0;
+            compare(g.struck, 1);
+            wait(2 * Kirigami.Units.longDuration);
+            compare(g.struck, 1, "and stays");
         }
 
         // Grey comes and goes as a fade, with the arcs where they are.
