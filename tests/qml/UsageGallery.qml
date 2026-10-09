@@ -226,7 +226,7 @@ ColumnLayout {
                           lastErrorAt: firstFailedUsage.createdAt - 30, reason: "offline", host: "api.anthropic.com",
                           retryAt: firstFailedUsage.createdAt + 270 },
                 codex: { status: "error", lastError: "codex CLI not found", lastErrorAt: firstFailedUsage.createdAt - 30,
-                         reason: "other", host: "", retryAt: firstFailedUsage.createdAt + 270 }
+                         reason: "not-installed", host: "", retryAt: firstFailedUsage.createdAt + 270 }
             })
         }
     }

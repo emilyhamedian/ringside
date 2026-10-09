@@ -232,8 +232,6 @@ Item {
             compare(Plasmoid.configured, configured + 1, "a click opens the settings");
         }
 
-        // An open popup moves to its item's new cell when the strip rebuilds,
-        // and closes when its item goes.
         // Claude and Codex show from the start while their first check
         // runs, and stay when it fails; signed out hides them.
         function test_usageItemsWhileLoading() {
@@ -251,6 +249,42 @@ Item {
             checkCells(applet, false, 44);
         }
 
+        // A cell stays while others come and go, so Claude's first reading
+        // fills its ring in though Codex, signed out, goes on the same
+        // report, and keeps it when the items are put in another order.
+        function test_cellsStayWhileOthersGo() {
+            const applet = panel(false, 44);
+            const s = strip(applet);
+            const usage = s.monitor.usage;
+            s.monitor.enabledItems = ["cpu", "claude", "codex"];
+            usage.entries = {};
+            usage.pending = ["claude", "codex"];
+            settle();
+            const claude = s.cellAt(1);
+            compare(claude.item, "claude");
+            const gauge = find(claude, i => i.dotsShown !== undefined);
+            tryCompare(gauge, "dotsShown", 1, 1000, "waiting");
+            const sweeps = [];
+            const record = () => sweeps.push(gauge.sweep);
+            gauge.sweepChanged.connect(record);
+            usage.entries = { claude: { status: "ok", fetchedAt: usage.createdAt, weekly: usage.window(52, 2 * usage.day, []), scoped: [] },
+                              codex: { status: "signed_out" } };
+            compare(applet.items, ["cpu", "claude"]);
+            verify(s.cellAt(1) === claude, "the same cell");
+            tryCompare(gauge, "dotsShown", 0, 3000);
+            gauge.sweepChanged.disconnect(record);
+            verify(sweeps.some(v => v > 0 && v < 1), "the track fills in: " + JSON.stringify(sweeps));
+
+            s.monitor.enabledItems = ["claude", "cpu"];
+            settle();
+            compare(applet.items, ["claude", "cpu"]);
+            verify(s.cellAt(0) === claude, "moved, not made again");
+            compare(s.cellAt(1).item, "cpu");
+            checkCells(applet, false, 44);
+        }
+
+        // An open popup stays on its item's cell as other items go, and
+        // closes when its item goes.
         function test_popupFollowsItsCell() {
             const applet = panel(false, 44);
             const s = strip(applet);
@@ -262,8 +296,8 @@ Item {
             compare(applet.openCell, memory);
             s.monitor.enabledItems = ["cpu", "memory", "network"];
             settle();
-            tryVerify(() => applet.openCell !== null && applet.openCell.item === "memory", 2000, "on the new memory cell");
-            compare(applet.openCell, s.cellAt(1));
+            compare(applet.openCell, memory, "on the same cell");
+            compare(s.cellAt(1), memory);
             verify(popup(applet).visible, "still open");
             s.monitor.enabledItems = ["cpu", "network"];
             tryCompare(popup(applet), "visible", false, 2000, "closed with its item");

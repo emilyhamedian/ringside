@@ -85,8 +85,9 @@ follows [Semantic Versioning](https://semver.org/).
   second only fills the ring in. The first reading fills the track in over
   the dots from twelve as the arc draws in and the numbers fade in. A first
   check that fails strikes the ring, with the tooltip and popup saying why,
-  where the item used to stay hidden. The popup says "Checking your
-  usage…" meanwhile. A tool last seen signed out stays hidden, as before.
+  where the item used to stay hidden; a Codex whose CLI isn't installed
+  says so, with no *Try again*. The popup says "Checking your usage…"
+  meanwhile. A tool last seen signed out stays hidden, as before.
 - A panel item with keyboard focus has a line around it in the theme's
   focus colour.
 - A switch in the Claude and Codex popups, off by default, starts the next

@@ -128,11 +128,11 @@ scripts/install.sh
 
 ![The Claude popup: the weekly limit, the Fable limit in amber with a sentence saying when it is on pace to run out, and a graph of this week's usage with a dashed amber line at the time the Fable limit runs out](docs/usage.png)
 
-Turn them on under *Configure Ringside… → Panel Items*. Each shows while its
-command-line tool is signed in on this machine; if one doesn't appear, its row
-under *Panel Items* says why. While the first check after Ringside starts is
-running, each shows a ring of dots; if that check fails, the ring is struck
-through and its tooltip says why.
+Turn them on under *Configure Ringside… → Panel Items*. While the first check
+after Ringside starts, or after you turn one on, is running, it shows a ring of
+dots; if that check fails, the ring is struck through and its tooltip says why.
+One whose command-line tool was last seen signed out stays hidden, and its row
+under *Panel Items* says why.
 
 - **Claude** needs [Claude Code](https://docs.claude.com/en/docs/claude-code)
   signed in with a Claude subscription. Ringside reads its login from

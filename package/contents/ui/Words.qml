@@ -186,12 +186,13 @@ QtObject {
 
     // Why a check failed, as a sentence, from the reason the helper gives
     // (see usage.py and code/report.js): the network, a server, a provider
-    // asking to wait, or the helper itself. The helper's own message, which
-    // names the Python error, is for the settings page and screen readers.
-    // Anything else, another check holding the helper's lock among it, is
-    // the helper's message as it gave it. A rate limit's end is left to
-    // the next check's time: the helper waits at least five minutes, which
-    // may be longer than the provider asked.
+    // asking to wait, a Codex CLI that isn't installed, or the helper
+    // itself. The helper's own message, which names the Python error, is
+    // for the settings page and screen readers. Anything else, another
+    // check holding the helper's lock among it, is the helper's message as
+    // it gave it. A rate limit's end is left to the next check's time: the
+    // helper waits at least five minutes, which may be longer than the
+    // provider asked.
     function failureReason(item, entry) {
         const host = entry.host ?? "";
         switch (entry.reason) {
@@ -217,6 +218,11 @@ QtObject {
             return item === "claude"
                 ? i18nc("@info", "Anthropic asked Ringside to wait before checking again.")
                 : i18nc("@info", "OpenAI asked Ringside to wait before checking again.");
+        case "not-installed":
+            if (item === "codex") {
+                return i18nc("@info", "Codex isn't installed; install it or turn Codex off.");
+            }
+            break;
         case "missing":
             return i18nc("@info", "python3 was not found on the Plasma session's PATH.");
         case "files":
