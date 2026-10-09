@@ -215,17 +215,19 @@ Item {
     // Whether a failed check is worth trying again now: only once the
     // helper's hold is over, so it would really ask; not while a check
     // runs or with the next tick under a minute away; and never for a
-    // helper that can't read its files, which would only fail again.
+    // helper that can't read its files or can't be started, which would
+    // only fail again, or one that found another check holding its lock,
+    // which a click would only queue behind.
     function canRetry(id, nowMs) {
         const e = entry(id);
         const now = nowMs / 1000;
-        return e !== null && e.lastError !== undefined && e.reason !== "files" && !checking
+        return e !== null && e.lastError !== undefined && !["files", "missing", "busy"].includes(e.reason) && !checking
             && now >= e.retryAt && nextCheck(id) - now > 60;
     }
 
-    // Checks now, and counts the next interval from here.
+    // Checks now, and counts the next interval from here: the timer's
+    // start runs the check.
     function checkNow() {
-        refresh();
         poller.restart();
     }
 
@@ -444,6 +446,24 @@ Item {
             usage.refresh();
         }
         onIntervalChanged: usage.lastRun = Date.now() / 1000
+    }
+
+    // The poller counts time the machine is awake, so after a suspend its
+    // tick is late by the wall clock that nextCheck() and canRetry() go by,
+    // and the next check they give would lie in the past. While a check has
+    // failed, and they are shown, a tick over a minute overdue runs at once
+    // and the interval counts from there. It is the check that came due
+    // during the suspend, so nothing is asked sooner than the interval
+    // allows.
+    Timer {
+        interval: 60000
+        running: usage.ids.some(id => usage.degraded(id))
+        repeat: true
+        onTriggered: {
+            if (Date.now() / 1000 - usage.lastRun > usage.refreshMinutes * 60 + 60) {
+                poller.restart();
+            }
+        }
     }
 
     // Due times are compared with the wall clock, so after a suspend the

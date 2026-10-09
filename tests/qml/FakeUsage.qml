@@ -111,7 +111,7 @@ QtObject {
     function canRetry(id, nowMs) {
         const e = entry(id);
         const now = nowMs / 1000;
-        return e !== null && e.lastError !== undefined && e.reason !== "files" && !checking
+        return e !== null && e.lastError !== undefined && !["files", "missing", "busy"].includes(e.reason) && !checking
             && now >= e.retryAt && nextCheck(id) - now > 60;
     }
 

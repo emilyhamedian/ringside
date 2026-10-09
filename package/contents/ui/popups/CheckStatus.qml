@@ -86,10 +86,10 @@ GridLayout {
             if (!e) {
                 return "";
             }
-            const parts = [status.texts.failureReason(status.item, e, status.nowMs)];
+            const parts = [status.texts.failureReason(status.item, e)];
             if (status.weekly && status.weekly.resetsAt <= status.nowMs / 1000) {
-                parts.push(i18nc("@info %1 is a time", "The week reset at %1, with no reading since.",
-                                 status.texts.timeOfDay(status.weekly.resetsAt, status.nowMs)));
+                parts.push(i18nc("@info %1 is a weekday and time, with a time zone where the reset has one, as in Sun 7:00 AM EDT",
+                                 "The week reset at %1, with no reading since.", status.texts.resetDate(status.weekly)));
             } else if (status.weekly) {
                 parts.push(i18nc("@info %1 is a time", "The readings below are from %1.",
                                  status.texts.timeOfDay(e.fetchedAt, status.nowMs)));

@@ -6,6 +6,7 @@ import QtQuick
 import QtQuick.Shapes
 import org.kde.kirigami as Kirigami
 import "code/format.js" as Format
+import "code/style.js" as Style
 
 // A progress ring filling clockwise from twelve o'clock, with an optional
 // thinner, dimmer ring inside it for a second reading: the integrated GPU
@@ -55,9 +56,11 @@ Item {
     readonly property real outerValue: held ? NaN : value
     readonly property bool innerOn: inner && !held
     // The reading kept, drawn in grey with no alert colours and the middle
-    // greyed, as one that may be out of date.
+    // greyed, as one that may be out of date. A ring struck through is grey
+    // too, so arcs unwinding from a reading that is gone carry no colour,
+    // and a grey ring stays grey as it is struck.
     property bool stale: false
-    property real greyed: stale ? 1 : 0
+    property real greyed: stale || held ? 1 : 0
     Behavior on greyed {
         enabled: gauge.settle > 0
         NumberAnimation { duration: Kirigami.Units.longDuration; easing.type: Easing.InOutCubic }
@@ -141,8 +144,12 @@ Item {
     onCancelledChanged: Qt.callLater(restrike)
     onSettleChanged: restrike()
     // A ring that starts cancelled, as a popup opening on a failed check,
-    // starts struck.
-    Component.onCompleted: struck = cancelled ? 1 : 0
+    // starts struck, rather than drawing the stroke from a change of
+    // `settle` while it was being made.
+    Component.onCompleted: {
+        strikeMotion.stop();
+        struck = cancelled ? 1 : 0;
+    }
 
     SequentialAnimation {
         id: strikeMotion
@@ -351,7 +358,9 @@ Item {
             y: parent.height / 2 + gauge.figureHeight / 2 - baselineOffset
             visible: gauge.text !== "" && !gauge.inner && gauge.width >= 24
             text: gauge.text
-            color: outer.color
+            // A grey reading's number in the theme's dim text colour, which
+            // keeps text legible, rather than the arc's fainter grey.
+            color: outer.mix(outer.color, Style.dim(gauge.color), gauge.greyed)
             font.family: Kirigami.Theme.defaultFont.family
             font.features: ({ "tnum": 1 })
             font.pixelSize: Math.round(gauge.width * gauge.textScale)
