@@ -130,7 +130,9 @@ scripts/install.sh
 
 Turn them on under *Configure Ringside… → Panel Items*. Each shows while its
 command-line tool is signed in on this machine; if one doesn't appear, its row
-under *Panel Items* says why.
+under *Panel Items* says why. While the first check after Ringside starts is
+running, each shows a ring of dots; if that check fails, the ring is struck
+through and its tooltip says why.
 
 - **Claude** needs [Claude Code](https://docs.claude.com/en/docs/claude-code)
   signed in with a Claude subscription. Ringside reads its login from
