@@ -77,6 +77,16 @@ follows [Semantic Versioning](https://semver.org/).
   reset with no reading since as last week's. *Try again* appears only when
   a check would really ask. This replaces the fade, which looked like a
   sleeping GPU.
+- Claude and Codex show from the moment the widget starts. While their
+  first check runs, the ring is a circle of still dots with the mark dimmed
+  and a dim dash over a dash beside it; after a second a lit dot travels
+  round it, at a fixed pace, until the check ends, 30 s have passed or the
+  panel is hidden, and never at Plasma's Instant speed. A reply within the
+  second only fills the ring in. The first reading fills the track in over
+  the dots from twelve as the arc draws in and the numbers fade in. A first
+  check that fails strikes the ring, with the tooltip and popup saying why,
+  where the item used to stay hidden. The popup says "Checking your
+  usage…" meanwhile. A tool last seen signed out stays hidden, as before.
 - A panel item with keyboard focus has a line around it in the theme's
   focus colour.
 - A switch in the Claude and Codex popups, off by default, starts the next
