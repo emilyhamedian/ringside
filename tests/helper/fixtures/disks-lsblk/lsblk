@@ -1,4 +1,7 @@
 #!/bin/sh
+# SPDX-FileCopyrightText: 2026 Emily Hamedian <me@emily.dev>
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 # Fake lsblk: what "lsblk -dnr -o NAME,TYPE" prints on a machine with two NVMe
 # drives, a SATA disk, an SD card, an optical drive, a loop mount and zram swap.
 # lsblk calls zram a disk, so only its name tells it apart.

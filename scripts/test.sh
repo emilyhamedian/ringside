@@ -131,7 +131,9 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests/python || failed
 
 echo
 echo "== shellcheck =="
-sh_files=$(find package/contents/code scripts tests \( -name '*.sh' -o -name '*.bash' \) | sort)
+# The hardware helper's fixtures also hold executable stand-ins for the
+# commands it runs, such as ip and lsblk, named without a .sh suffix.
+sh_files=$(find package/contents/code scripts tests \( -name '*.sh' -o -path 'tests/helper/fixtures/*' -type f -perm -u+x \) | sort)
 if command -v shellcheck >/dev/null 2>&1; then
     # shellcheck disable=SC2086
     shellcheck $sh_files || failed=1
