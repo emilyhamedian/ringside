@@ -7,6 +7,7 @@ import org.kde.ksysguard.sensors as Sensors
 import "code/format.js" as Format
 import "code/gpugate.js" as Gate
 import "code/gpushare.js" as GpuShare
+import "code/hardware.js" as Hardware
 import "code/log.js" as Log
 
 // One GPU's readings. Monitor keeps one reader per GPU the helper found and
@@ -137,8 +138,7 @@ QtObject {
         // Both, as a binding dependency: see Monitor.member().
         void sensors.model;
         void sensors.count;
-        const sensor = sensors.objectAt(index) as Sensors.Sensor;
-        return sensor && typeof sensor.value === "number" ? sensor.value : NaN;
+        return Hardware.sensorValue(sensors.objectAt(index) as Sensors.Sensor);
     }
 
     // Asleep, the GPU has no reading for the panel whatever its sensors last

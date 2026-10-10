@@ -165,9 +165,8 @@ Item {
     // How long the arcs take to reach a new reading. They follow it
     // critically damped, so they never pass it, and a reading that arrives
     // while they move bends the motion rather than starting it over. 0
-    // moves them at once, as at Plasma's Instant speed, where Kirigami's
-    // durations are a millisecond or two rather than none.
-    property real settle: Kirigami.Units.longDuration > 1
+    // moves them at once, as at Plasma's Instant speed.
+    property real settle: Style.animated(Kirigami.Units)
         ? Math.min(Kirigami.Units.veryLongDuration, interval > 0 ? interval / 2 : Infinity) : 0
     // An inner ring that comes or goes, or an outer reading that comes from
     // none or goes to none, is a change of rings rather than of readings:
@@ -288,9 +287,7 @@ Item {
     }
 
     function tone(level) {
-        const live = level === 2 ? Kirigami.Theme.negativeTextColor
-                   : level === 1 ? Kirigami.Theme.neutralTextColor
-                   : color;
+        const live = Style.levelColor(level, Kirigami.Theme, color);
         return greyed > 0 ? outer.mix(live, Qt.alpha(color, 0.42 * color.a), greyed) : live;
     }
 
@@ -351,9 +348,9 @@ Item {
     readonly property real from: 0
     readonly property real to: 100
 
-    // The height of the figures in the middle text, to set it by them.
-    // capitalHeight needs Qt 6.9; the ink of "0" stands in before that.
-    readonly property real figureHeight: percentMetrics.capitalHeight ?? figureSample.tightBoundingRect.height // qmllint disable missing-property
+    // The height of the figures in the middle text, to set it by them; the
+    // ink of "0" stands in before Qt 6.9.
+    readonly property real figureHeight: Style.capHeight(percentMetrics, figureSample)
 
     FontMetrics {
         id: percentMetrics
@@ -370,7 +367,7 @@ Item {
     implicitHeight: implicitWidth
 
     Accessible.role: Accessible.ProgressBar
-    Accessible.description: hasValue ? i18nc("@info:status a percentage", "%1%", Format.percent(value))
+    Accessible.description: hasValue ? i18nc("@info a percentage", "%1%", Format.percent(value))
                           : loading ? i18nc("@info:status waiting for a first reading", "checking")
                                     : i18nc("@info:status no reading", "unavailable")
 

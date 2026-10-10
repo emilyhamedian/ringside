@@ -7,6 +7,7 @@ import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
 import org.kde.ksysguard.sensors as Sensors
 import "../code/format.js" as Format
+import "../code/hardware.js" as Hardware
 import "../code/style.js" as Style
 import ".."
 
@@ -14,10 +15,6 @@ PopupPage {
     id: popup
 
     readonly property int threads: monitor.cpuThreads
-
-    function sensorValue(sensor) {
-        return sensor && typeof sensor.value === "number" ? sensor.value : NaN;
-    }
 
     // The load averages spoken as one, a missing one as a word rather than
     // the dash shown on screen.
@@ -42,15 +39,11 @@ PopupPage {
             const m = popup.monitor;
             const count = m.cpuCores > 0 && m.cpuThreads > 0
                 ? i18nc("@info cores and threads, e.g. 8C / 16T", "%1C / %2T", m.cpuCores, m.cpuThreads) : "";
-            return [m.cpuModel, count].filter(s => s !== "").join(" · ");
+            return words.joined([m.cpuModel, count]);
         }
         value: Format.temperature(popup.monitor.cpuTemperature, popup.monitor.fahrenheit)
         degreeUnit: popup.monitor.fahrenheit ? "F" : "C"
-        valueColor: {
-            const level = popup.monitor.heat(popup.monitor.cpuTemperature);
-            return level === 2 ? Kirigami.Theme.negativeTextColor
-                 : level === 1 ? Kirigami.Theme.neutralTextColor : Kirigami.Theme.textColor;
-        }
+        valueColor: Style.levelColor(popup.monitor.heat(popup.monitor.cpuTemperature), Kirigami.Theme)
         caption: words.sensorName(popup.monitor.cpuTemperatureLabel)
     }
 
@@ -61,7 +54,7 @@ PopupPage {
 
     GridLayout {
         Layout.fillWidth: true
-        Layout.leftMargin: Math.round(Kirigami.Units.largeSpacing * 2)
+        Layout.leftMargin: Style.contentEdge(Kirigami.Units.largeSpacing)
         Layout.rightMargin: Layout.leftMargin
         Layout.topMargin: Math.round(Kirigami.Units.smallSpacing * 1.5)
         Layout.bottomMargin: Math.round(Kirigami.Units.largeSpacing * 1.5)
@@ -74,7 +67,7 @@ PopupPage {
             Layout.columnSpan: 2
             caption: i18nc("@title:group", "Usage")
             spans: popup.monitor
-            graphTop: i18nc("@info a percentage", "%1%", Format.percent(100))
+            graphTop: words.percent(100)
 
             Graph {
                 Layout.fillWidth: true
@@ -100,10 +93,10 @@ PopupPage {
 
             Reading {
                 id: frequencyReading
-                readonly property var f: Format.frequency(popup.sensorValue(frequency))
+                readonly property var f: Format.frequency(Hardware.sensorValue(frequency))
                 value: f.value
                 unit: f.unit
-                pointSize: Kirigami.Theme.defaultFont.pointSize * 1.38
+                pointSize: Style.tilePointSize(Kirigami.Theme.defaultFont.pointSize)
             }
         }
 
@@ -121,15 +114,15 @@ PopupPage {
             // first readings arriving set off a layout polish loop.
             Row {
                 id: load
-                readonly property real pointSize: Kirigami.Theme.defaultFont.pointSize * 1.38
+                readonly property real pointSize: Style.tilePointSize(Kirigami.Theme.defaultFont.pointSize)
                 spacing: Kirigami.Units.largeSpacing
                 Accessible.role: Accessible.StaticText
-                Accessible.name: popup.loadAverageName(popup.sensorValue(load1), popup.sensorValue(load5),
-                                                       popup.sensorValue(load15))
+                Accessible.name: popup.loadAverageName(Hardware.sensorValue(load1), Hardware.sensorValue(load5),
+                                                       Hardware.sensorValue(load15))
 
                 Reading {
                     id: lastMinute
-                    value: Format.load(popup.sensorValue(load1))
+                    value: Format.load(Hardware.sensorValue(load1))
                     pointSize: load.pointSize
                     accessibleIgnored: true
                 }
@@ -140,7 +133,7 @@ PopupPage {
                     delegate: Text {
                         required property var modelData
                         anchors.baseline: lastMinute.baseline
-                        text: Format.load(popup.sensorValue(modelData))
+                        text: Format.load(Hardware.sensorValue(modelData))
                         color: Style.dim(Kirigami.Theme.textColor)
                         font.family: Kirigami.Theme.defaultFont.family
                         font.features: ({ "tnum": 1 })
@@ -199,12 +192,12 @@ PopupPage {
                         id: bar
 
                         required property int modelData
-                        readonly property real usage: popup.sensorValue(sensor)
+                        readonly property real usage: Hardware.sensorValue(sensor)
 
                         Layout.fillWidth: true
                         Layout.fillHeight: true
                         radius: 2
-                        color: Qt.alpha(Kirigami.Theme.textColor, 0.08)
+                        color: Qt.alpha(Kirigami.Theme.textColor, Style.TRACK)
                         clip: true
 
                         Accessible.role: Accessible.ProgressBar

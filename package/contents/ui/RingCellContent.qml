@@ -5,6 +5,7 @@ import QtQuick
 import org.kde.kirigami as Kirigami
 import "code/format.js" as Format
 import "code/hardware.js" as Hardware
+import "code/style.js" as Style
 
 // A panel ring with the item's name inside it, and beside it the ring's
 // percentage over the CPU's or GPU's temperature or the memory in use. The
@@ -40,7 +41,7 @@ Item {
 
     // Off changes the readings, and the name in the ring, at once, as at
     // Plasma's Instant speed. A test seam.
-    property bool animated: Kirigami.Units.longDuration > 1
+    property bool animated: Style.animated(Kirigami.Units)
     readonly property var lines: words.readout(item)
     readonly property string described: describes()
     // The readings shown: set rather than bound, so a fade can hold them.

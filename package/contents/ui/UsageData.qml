@@ -9,6 +9,7 @@ import "code/limits.js" as Limits
 import "code/log.js" as Log
 import "code/report.js" as Report
 import "code/reset.js" as Reset
+import "code/shell.js" as Shell
 
 // The Claude and Codex readings, from contents/code/usage.py run on a timer.
 // Only the ids in `providers` are polled; with none, the helper never runs.
@@ -38,8 +39,7 @@ Item {
     // Ids to poll, e.g. ["claude", "codex"].
     property var providers: []
     // The helper. A test seam.
-    property string helperPath: decodeURIComponent(Qt.resolvedUrl("../code/usage.py").toString()
-                                                   .replace(/^file:\/\//, ""))
+    property string helperPath: Shell.path(Qt.resolvedUrl("../code/usage.py"))
     // The merged entry per polled id, in the helper's shape (see usage.py).
     property var entries: ({})
     // Why the helper itself gave no report; empty once one arrives.
@@ -59,8 +59,8 @@ Item {
     readonly property var ids: Items.USAGE.filter(id => Array.from(usage.providers).includes(id))
     // Split by sh quoting rules, whether KProcess starts python3 itself or
     // hands the line to sh, so the install path and each chosen program are
-    // quoted (see quoted()). -B keeps Python from writing bytecode into the
-    // package.
+    // quoted (see code/shell.js). -B keeps Python from writing bytecode into
+    // the package.
     readonly property string command: helperCommand(ids, "")
     // The claude and codex programs chosen in the settings; empty finds
     // them. Every run passes them, so choosing one checks it at once.
@@ -123,18 +123,13 @@ Item {
         return / --providers ([\w,]+) --start$/.exec(source)?.[1].split(",") ?? [];
     }
 
-    // Text as one sh word: in single quotes, where nothing is special, with
-    // each quote in it closed, escaped and reopened.
-    function quoted(text) {
-        return "'" + text.replace(/'/g, "'\\''") + "'";
-    }
-
     // The chosen programs come before --providers, so the patterns that
     // read a run's ids and mode from its end never meet a path.
     function helperCommand(providerIds, args) {
         return providerIds.length > 0
-            ? "python3 -B " + quoted(helperPath)
-              + providerIds.filter(id => programs[id]).map(id => " --program " + quoted(id + "=" + programs[id])).join("")
+            ? "python3 -B " + Shell.quoted(helperPath)
+              + providerIds.filter(id => programs[id]).map(id => " --program " + Shell.quoted(id + "=" + programs[id]))
+                           .join("")
               + " --providers " + providerIds.join(",") + args : "";
     }
 

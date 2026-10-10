@@ -94,28 +94,28 @@ QtObject {
     // first reading and after a failed check both are dim,
     // and with `cancelled`, while the ring is struck, dashes.
     function readout(item, nowMs, cancelled) {
-        const percent = value => Number.isFinite(value) ? i18nc("@info:status a percentage", "%1%", Format.percent(value)) : "–";
+        const reading = value => Number.isFinite(value) ? percent(value) : "–";
         const temperature = celsius => Format.temperatureValid(celsius)
             ? Format.temperature(celsius, monitor.fahrenheit) + "°" : "–";
         // Every key, whatever the item.
         const lines = (first, level, off, second, heat) => ({ first: first, level: level, off: off, second: second, heat: heat });
         switch (item) {
         case "cpu":
-            return lines(percent(monitor.panel.cpuUsage), Format.level(monitor.panel.cpuUsage), false,
+            return lines(reading(monitor.panel.cpuUsage), Format.level(monitor.panel.cpuUsage), false,
                          temperature(monitor.panel.cpuTemperature), monitor.heat(monitor.panel.cpuTemperature));
         case "gpu": {
             const gpu = Hardware.gpuView(monitor.gpuOuter, monitor.gpuInner).primary;
             if (gpu.phase === "asleep") {
                 return lines(i18nc("@info:status the GPU is powered down", "off"), 0, true, "", 0);
             }
-            return lines(percent(gpu.panelUsage), Format.level(gpu.panelUsage), false,
+            return lines(reading(gpu.panelUsage), Format.level(gpu.panelUsage), false,
                          gpu.reportsTemperature ? temperature(gpu.panelTemperature) : "",
                          gpu.reportsTemperature ? monitor.heat(gpu.panelTemperature) : 0);
         }
         case "memory": {
             const used = Format.panelBytes(monitor.panel.memoryUsed);
-            return lines(percent(monitor.panel.memoryPercent), Format.level(monitor.panel.memoryPercent), false,
-                         used.unit === "" ? used.value : used.value + " " + used.unit, 0);
+            return lines(reading(monitor.panel.memoryPercent), Format.level(monitor.panel.memoryPercent), false,
+                         bytesText(used), 0);
         }
         }
         const entry = monitor.usage.entry(item);
@@ -124,12 +124,12 @@ QtObject {
         // so a language's sign keeps its place, and one before the days'
         // letter.
         if (cancelled) {
-            return lines(i18nc("@info:status a percentage", "%1%", "––"), 0, true, "–" + timeUnits()[0], 0);
+            return lines(i18nc("@info a percentage", "%1%", "––"), 0, true, "–" + timeUnits()[0], 0);
         }
         const used = weekly ? weekly.percent : NaN;
         const left = spelled(countdownParts(weekly ? weekly.resetsAt : null, nowMs, true)) || "–";
         const failed = !entry || entry.lastError !== undefined;
-        return lines(percent(used), failed ? 0 : Format.level(used), failed, left, 0);
+        return lines(reading(used), failed ? 0 : Format.level(used), failed, left, 0);
     }
 
     // The memory in use as the panel can show it, in the units it shows: up
@@ -140,26 +140,43 @@ QtObject {
     function memoryRoom() {
         const units = Format.panelByteUnits();
         const total = Format.panelBytes(monitor.memoryTotal);
+        const widest = unit => bytesText({ value: Format.decimal(100, 1), unit: unit });
         if (total.unit === "") {
-            return units.map(unit => Format.decimal(100, 1) + " " + unit);
+            return units.map(widest);
         }
         const giga = 3;
-        return [total.value + " " + total.unit].concat(units.slice(giga, units.indexOf(total.unit))
-                                                            .map(unit => Format.decimal(100, 1) + " " + unit));
+        return [bytesText(total)].concat(units.slice(giga, units.indexOf(total.unit)).map(widest));
+    }
+
+    // An amount of data and its unit as one text, "13.4 GiB", from Format's
+    // { value, unit }; the value alone, a dash say, without a unit.
+    function bytesText(reading) {
+        return reading.unit ? i18nc("@info an amount of data and its unit, e.g. 13.4 GiB", "%1 %2", reading.value, reading.unit)
+                            : reading.value;
+    }
+
+    // The parts of a line that are there, in order and set apart as the
+    // language sets them apart: "AMD Ryzen 7 7840HS · 8C / 16T". Empty with
+    // none.
+    function joined(parts) {
+        const shown = parts.filter(part => part !== "");
+        return shown.length > 0
+            ? shown.reduce((line, part) => i18nc("@info two parts of one line, e.g. 32 GiB · DDR5-5600", "%1 · %2", line, part))
+            : "";
     }
 
     // The texts readout() can give for `item` at their widest, line by line,
     // with every digit counting as the widest: the room the panel keeps for
     // them whatever they read.
     function widest(item) {
-        const percent = i18nc("@info:status a percentage", "%1%", Format.percent(100));
+        const widestPercent = percent(100);
         // Memory to one decimal and its unit (see memoryRoom()); a countdown
         // in two figures and its unit, "23h".
         const second = item === "cpu" || item === "gpu" ? [Format.whole(100) + "°"]
                      : item === "memory" ? memoryRoom()
                      : timeUnits().map(unit => Format.whole(10) + unit);
         return {
-            first: item === "gpu" ? [percent, i18nc("@info:status the GPU is powered down", "off")] : [percent],
+            first: item === "gpu" ? [widestPercent, i18nc("@info:status the GPU is powered down", "off")] : [widestPercent],
             second: second
         };
     }
@@ -522,9 +539,14 @@ QtObject {
         return format.replace(/[:.]ss?/, "");
     }
 
+    // A percentage, "62%", in the locale's digits, as every view writes
+    // one; a dash in place of the number without a reading.
+    function percent(value) {
+        return i18nc("@info a percentage", "%1%", Format.percent(value));
+    }
+
     function percentText(value) {
-        return Number.isFinite(value) ? i18nc("@info:tooltip a percentage", "%1%", Format.percent(value))
-                                      : i18nc("@info:tooltip no reading", "unavailable");
+        return Number.isFinite(value) ? percent(value) : i18nc("@info:tooltip no reading", "unavailable");
     }
 
     function temperatureText(celsius) {

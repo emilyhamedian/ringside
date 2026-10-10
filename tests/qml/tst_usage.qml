@@ -9,6 +9,7 @@ import "../../package/contents/ui"
 import "../../package/contents/ui/popups"
 import "../../package/contents/ui/code/format.js" as Format
 import "../../package/contents/ui/code/report.js" as Report
+import "../../package/contents/ui/code/shell.js" as Shell
 import "../../package/contents/ui/code/style.js" as Style
 import "starterstates.js" as StarterStates
 import "journal.js" as Journal
@@ -788,7 +789,7 @@ Item {
                 compare(JSON.parse(config.usageStatus).codex.program.path, path);
             }
             compare(runs.count, nastyPaths.length, "one check per change, none waiting for the timer");
-            compare(runs.signalArguments.map(a => a[0]), nastyPaths.map(path => "python3 -B " + usage.quoted(usage.helperPath)
+            compare(runs.signalArguments.map(a => a[0]), nastyPaths.map(path => "python3 -B " + Shell.quoted(usage.helperPath)
                 + " --program '" + ("codex=" + path).replace(/'/g, "'\\''") + "' --providers claude,codex"));
             // A starter run passes them too, and is still read as one.
             const polled = spy("statusesChanged");

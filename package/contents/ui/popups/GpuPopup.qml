@@ -27,7 +27,7 @@ PopupPage {
     // that a GPU going to sleep is still among them when it is noticed.
     property var open: []
     // Off opens and closes sections at once, as at Plasma's Instant speed.
-    property bool animated: Kirigami.Units.longDuration > 1
+    property bool animated: Style.animated(Kirigami.Units)
 
     Component.onCompleted: open = awake
     onAwakeChanged: {
@@ -120,7 +120,7 @@ PopupPage {
 
             Text {
                 Layout.fillWidth: true
-                Layout.leftMargin: Math.round(Kirigami.Units.largeSpacing * 2)
+                Layout.leftMargin: Style.contentEdge(Kirigami.Units.largeSpacing)
                 Layout.rightMargin: Layout.leftMargin
                 // Where it opens the page, as far down as a header would start.
                 Layout.topMargin: popup.open.length > 0 || sleeper.index > 0
@@ -153,6 +153,8 @@ PopupPage {
         // Intel GPUs publish no temperature, so theirs is left out rather than shown as a dash.
         readonly property bool temperatureShown: slot.reportsTemperature
         readonly property bool hasPower: Number.isFinite(slot.power)
+        // Smaller than other popups' tiles' (Style.tilePointSize()), so a
+        // row of three readings fits.
         readonly property real tilePointSize: Kirigami.Theme.defaultFont.pointSize * 1.23
 
         Layout.fillWidth: true
@@ -162,6 +164,11 @@ PopupPage {
         Behavior on opacity {
             enabled: section.animated
             NumberAnimation { duration: Kirigami.Units.longDuration; easing.type: Easing.InOutQuad }
+        }
+
+        Words {
+            id: sectionWords
+            monitor: section.monitor
         }
 
         Divider {
@@ -187,17 +194,13 @@ PopupPage {
             }
             value: section.temperatureShown ? Format.temperature(section.slot.temperature, section.monitor.fahrenheit) : ""
             degreeUnit: section.monitor.fahrenheit ? "F" : "C"
-            valueColor: {
-                const level = section.monitor.heat(section.slot.temperature);
-                return level === 2 ? Kirigami.Theme.negativeTextColor
-                     : level === 1 ? Kirigami.Theme.neutralTextColor : Kirigami.Theme.textColor;
-            }
+            valueColor: Style.levelColor(section.monitor.heat(section.slot.temperature), Kirigami.Theme)
             caption: section.temperatureName
         }
 
         GridLayout {
             Layout.fillWidth: true
-            Layout.leftMargin: Math.round(Kirigami.Units.largeSpacing * 2)
+            Layout.leftMargin: Style.contentEdge(Kirigami.Units.largeSpacing)
             Layout.rightMargin: Layout.leftMargin
             Layout.topMargin: Math.round(Kirigami.Units.smallSpacing * 1.5)
             Layout.bottomMargin: Math.round(Kirigami.Units.largeSpacing * 1.5)
@@ -212,7 +215,7 @@ PopupPage {
                 Layout.columnSpan: parent.columns
                 caption: i18nc("@title:group", "Usage")
                 spans: section.monitor
-                graphTop: i18nc("@info a percentage", "%1%", Format.percent(100))
+                graphTop: sectionWords.percent(100)
 
                 Graph {
                     Layout.fillWidth: true
@@ -246,7 +249,7 @@ PopupPage {
                     readonly property var b: ofTotal ? Format.bytesOf(section.slot.vramUsed, section.slot.knownVramTotal)
                                                      : Format.bytes(section.slot.vramUsed, false)
                     value: b.value
-                    unit: ofTotal && b.unit ? "/ " + b.total + " " + b.unit : b.unit
+                    unit: ofTotal && b.unit ? "/ " + sectionWords.bytesText({ value: b.total, unit: b.unit }) : b.unit
                     pointSize: section.tilePointSize
                 }
             }

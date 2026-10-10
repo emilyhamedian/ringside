@@ -117,9 +117,7 @@ PopupPage {
     }
 
     function tone(level) {
-        return greyShown ? Style.dim(Kirigami.Theme.textColor)
-             : level === 2 ? Kirigami.Theme.negativeTextColor
-             : level === 1 ? Kirigami.Theme.neutralTextColor : Kirigami.Theme.textColor;
+        return greyShown ? Style.dim(Kirigami.Theme.textColor) : Style.levelColor(level, Kirigami.Theme);
     }
 
     systemMonitorShown: false
@@ -170,7 +168,7 @@ PopupPage {
     // Why there is nothing to show.
     Text {
         Layout.fillWidth: true
-        Layout.leftMargin: Math.round(Kirigami.Units.largeSpacing * 2)
+        Layout.leftMargin: Style.contentEdge(Kirigami.Units.largeSpacing)
         Layout.rightMargin: Layout.leftMargin
         Layout.bottomMargin: Kirigami.Units.largeSpacing
         visible: text !== ""
@@ -195,7 +193,7 @@ PopupPage {
     CheckStatus {
         visible: popup.failed
         Layout.fillWidth: true
-        Layout.leftMargin: Math.round(Kirigami.Units.largeSpacing * 2)
+        Layout.leftMargin: Style.contentEdge(Kirigami.Units.largeSpacing)
         Layout.rightMargin: Layout.leftMargin
         Layout.topMargin: Kirigami.Units.largeSpacing
         Layout.bottomMargin: Math.round(Kirigami.Units.largeSpacing * 1.25)
@@ -213,7 +211,7 @@ PopupPage {
         id: barsColumn
         visible: popup.weekly !== null && (popup.limits.length > 1 || popup.paceText !== "")
         Layout.fillWidth: true
-        Layout.leftMargin: Math.round(Kirigami.Units.largeSpacing * 2)
+        Layout.leftMargin: Style.contentEdge(Kirigami.Units.largeSpacing)
         Layout.rightMargin: Layout.leftMargin
         Layout.topMargin: Math.round(Kirigami.Units.smallSpacing / 2)
         Layout.bottomMargin: Math.round(Kirigami.Units.largeSpacing * 1.75)
@@ -242,7 +240,7 @@ PopupPage {
                 Follower {
                     id: bar
                     target: Number.isFinite(row.reading) ? Math.round(row.reading) : 0
-                    settle: popup.limits.length > 1 && Kirigami.Units.longDuration > 1 ? Kirigami.Units.veryLongDuration : 0
+                    settle: popup.limits.length > 1 && Style.animated(Kirigami.Units) ? Kirigami.Units.veryLongDuration : 0
                     // A quarter of a pixel of the bar.
                     precision: 25 / Math.max(1, track.width)
                 }
@@ -294,7 +292,7 @@ PopupPage {
                         Layout.fillWidth: true
                         implicitHeight: Math.round(Kirigami.Units.smallSpacing * 1.5)
                         radius: height / 2
-                        color: Qt.alpha(Kirigami.Theme.textColor, 0.08)
+                        color: Qt.alpha(Kirigami.Theme.textColor, Style.TRACK)
 
                         Rectangle {
                             anchors.left: parent.left
@@ -328,7 +326,7 @@ PopupPage {
     GridLayout {
         visible: popup.limits.length > 0
         Layout.fillWidth: true
-        Layout.leftMargin: Math.round(Kirigami.Units.largeSpacing * 2)
+        Layout.leftMargin: Style.contentEdge(Kirigami.Units.largeSpacing)
         Layout.rightMargin: Layout.leftMargin
         // Straight under the header, as far from it as the other popups'
         // tiles are; under the bars, their own wider margin keeps it apart.
@@ -339,7 +337,7 @@ PopupPage {
         Tile {
             caption: i18nc("@title:group the current weekly window", "This week")
             // The rule's, so only while the graph draws one.
-            graphTop: week.placed ? i18nc("@info a percentage", "%1%", Format.percent(100)) : ""
+            graphTop: week.placed ? words.percent(100) : ""
             foot: popup.innerLimit !== null ? allModels : week.foot
             detail: {
                 const date = words.resetDate(popup.weekly);

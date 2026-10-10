@@ -3,6 +3,7 @@
 
 import QtQuick
 import QtQuick.Shapes
+import "code/style.js" as Style
 
 // The thin down or up arrow beside a transfer rate, sized to its text. A
 // Shape's implicit size follows its scaled path; wrapped in a plain Item, that
@@ -13,7 +14,7 @@ Item {
     property bool up: false
     property color color
 
-    width: height * 0.8
+    width: height * Style.ARROW_ASPECT
 
     Shape {
         anchors.fill: parent

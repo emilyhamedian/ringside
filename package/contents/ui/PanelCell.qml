@@ -3,6 +3,7 @@
 
 import QtQuick
 import org.kde.kirigami as Kirigami
+import "code/buttons.js" as Buttons
 
 // One item in the panel: a button that opens its popup, with the panel's
 // hover and pressed looks. Across a horizontal panel the wash leaves a sliver
@@ -16,8 +17,8 @@ MouseArea {
     property bool vertical: false
     // The loaded content, which the cell sizes itself around.
     property Item contentItem: null
-    // Its readings in words.
-    property string description: ""
+    // Its readings in words, as the content gives them, if it does.
+    readonly property string description: contentItem?.accessibleDescription ?? "" // qmllint disable missing-property
     // Between the wash and the panel's edges, across a horizontal panel.
     readonly property real inset: vertical ? 0 : Math.round(Kirigami.Units.smallSpacing / 2)
     // Between the content and the cell's ends. Along a horizontal panel two
@@ -46,7 +47,7 @@ MouseArea {
 
     onClicked: activated()
     Keys.onPressed: event => {
-        if ([Qt.Key_Space, Qt.Key_Enter, Qt.Key_Return, Qt.Key_Select].includes(event.key)) {
+        if (Buttons.pressedBy(event)) {
             activated();
             event.accepted = true;
         }

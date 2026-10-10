@@ -13,6 +13,8 @@
 
 var KNOWN = ["cpu", "gpu", "memory", "network", "disk", "claude", "codex"];
 var SYSTEM = ["cpu", "gpu", "memory", "network", "disk"];
+// The providers with weekly limits, the one list of them: limits.js and
+// reset.js read it, and providers.js has the facts of each.
 var USAGE = ["claude", "codex"];
 
 function isUsage(item) {

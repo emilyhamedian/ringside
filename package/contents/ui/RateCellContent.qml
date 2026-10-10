@@ -64,7 +64,7 @@ GridLayout {
         return Math.round(face.lineHeight * 0.62);
     }
     function markerRoom(face) {
-        return network ? arrowHeight(face) * 0.8 : face.room(face.plain, [readLetter, writeLetter]);
+        return network ? arrowHeight(face) * Style.ARROW_ASPECT : face.room(face.plain, [readLetter, writeLetter]);
     }
 
     // Across the panel in three figures, for the fixed slots; along a
@@ -98,7 +98,8 @@ GridLayout {
     // the unit, so the unit reads as the value's and the marker stands apart;
     // along a vertical panel, what fits.
     readonly property real markerGap: tight ? tightSpacing : looseSpacing
-    // Between a value and its unit, close enough that they read as one.
+    // Between a value and its unit, close enough that they read as one: the
+    // panel's own gap, where the popups' Style.unitGap() follows the digits.
     readonly property real unitGap: Math.round(Kirigami.Units.smallSpacing * 0.75)
     readonly property real markerWidth: markerRoom(drawn)
     // Along a vertical panel, room for the widest value at the size drawn.

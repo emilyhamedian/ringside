@@ -8,6 +8,7 @@ import QtQuick.Shapes
 import org.kde.kirigami as Kirigami
 import "../code/format.js" as Format
 import "../code/history.js" as History
+import "../code/style.js" as Style
 
 // A temperature's history, as quiet as the other graphs: no grid. The
 // scale comes from every reading the three spans keep, so it holds still
@@ -116,7 +117,7 @@ Tile {
         }
 
         Layout.fillWidth: true
-        implicitHeight: Kirigami.Units.gridUnit * 2.7
+        implicitHeight: Kirigami.Units.gridUnit * Style.GRAPH_HEIGHT
         clip: true
 
         // Moved down from the top so that its line runs through hotY.
@@ -134,21 +135,21 @@ Tile {
 
             ShapePath {
                 strokeColor: "transparent"
-                fillColor: Qt.alpha(Kirigami.Theme.textColor, 0.6 * 0.15)
+                fillColor: Qt.alpha(Kirigami.Theme.textColor, Style.BAND)
                 PathMultiline { paths: graph.bands }
             }
 
             ShapePath {
                 strokeColor: "transparent"
-                fillColor: Qt.alpha(Kirigami.Theme.textColor, 0.15)
+                fillColor: Qt.alpha(Kirigami.Theme.textColor, Style.AREA)
                 PathMultiline { paths: graph.areas }
             }
 
             // Hotter pieces over cooler ones, so where two meet the hotter
             // one's round end shows.
-            Stroke { lines: graph.lines(0); strokeColor: Kirigami.Theme.textColor }
-            Stroke { lines: graph.lines(1); strokeColor: Kirigami.Theme.neutralTextColor }
-            Stroke { lines: graph.lines(2); strokeColor: Kirigami.Theme.negativeTextColor }
+            Stroke { lines: graph.lines(0); strokeColor: Style.levelColor(0, Kirigami.Theme) }
+            Stroke { lines: graph.lines(1); strokeColor: Style.levelColor(1, Kirigami.Theme) }
+            Stroke { lines: graph.lines(2); strokeColor: Style.levelColor(2, Kirigami.Theme) }
         }
     }
 

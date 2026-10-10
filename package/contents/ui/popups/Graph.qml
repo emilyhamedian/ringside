@@ -6,6 +6,7 @@ import QtQuick
 import QtQuick.Shapes
 import org.kde.kirigami as Kirigami
 import "../code/history.js" as History
+import "../code/style.js" as Style
 
 // A history graph: a filled area under the main series and an optional
 // dashed second series (upload under download), with no grid. Percentages
@@ -33,7 +34,7 @@ Item {
     // Whether the top is a fixed 100 % worth a labelled rule.
     property bool ceiling: true
     readonly property color color: Kirigami.Theme.textColor
-    readonly property real fillOpacity: 0.15
+    readonly property real fillOpacity: Style.AREA
 
     // The top sits where the rule would, with or without it, so a rate's
     // peak sits under the caption line as 100 % does.
@@ -63,7 +64,7 @@ Item {
         return Qt.point(p.x, p.y);
     }
 
-    implicitHeight: Kirigami.Units.gridUnit * 2.7
+    implicitHeight: Kirigami.Units.gridUnit * Style.GRAPH_HEIGHT
     clip: true
 
     LimitRule {
@@ -78,7 +79,7 @@ Item {
 
         ShapePath {
             strokeColor: "transparent"
-            fillColor: Qt.alpha(graph.color, 0.6 * graph.fillOpacity * graph.color.a)
+            fillColor: Qt.alpha(graph.color, Style.BAND * graph.color.a)
             PathMultiline { paths: graph.drawn.bands }
         }
 

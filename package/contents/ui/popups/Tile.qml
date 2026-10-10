@@ -4,6 +4,7 @@
 import QtQuick
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
+import "../code/style.js" as Style
 
 // A captioned reading on a faint rounded panel.
 Rectangle {
@@ -34,8 +35,7 @@ Rectangle {
     readonly property real topTrim: captionText.visible ? Math.round((captionMetrics.ascent - capHeight) / 2) : 0
     readonly property real inkInset: verticalPadding + (captionText.visible ? captionMetrics.ascent - capHeight - topTrim : 0)
     readonly property real bottomPadding: Math.max(0, Math.round(inkInset - (foot ? foot.implicitHeight - foot.baselineOffset : 0)))
-    // capitalHeight needs Qt 6.9; the ink of "H" stands in before that.
-    readonly property real capHeight: captionMetrics.capitalHeight ?? capSample.tightBoundingRect.height // qmllint disable missing-property
+    readonly property real capHeight: Style.capHeight(captionMetrics, capSample)
 
     Layout.fillWidth: true
     implicitWidth: column.implicitWidth + 2 * horizontalPadding

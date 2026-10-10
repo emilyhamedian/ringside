@@ -4,6 +4,7 @@
 import QtQuick
 import QtQuick.Shapes
 import org.kde.kirigami as Kirigami
+import "code/style.js" as Style
 
 // A hidden animation, kept out of the README, the changelog, the settings
 // and the translations, and with no text of its own. Typing the Konami code
@@ -46,7 +47,7 @@ Item {
     property Item stage: null
     property bool vertical: false
     // Off at Plasma's Instant speed. A test seam.
-    property bool animated: Kirigami.Units.longDuration > 1
+    property bool animated: Style.animated(Kirigami.Units)
 
     // In milliseconds.
     readonly property int length: 2000

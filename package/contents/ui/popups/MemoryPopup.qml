@@ -13,8 +13,12 @@ PopupPage {
 
     // "11.7 GiB", or the dash alone before a reading arrives.
     function size(bytes, trim) {
-        const b = Format.bytes(bytes, trim);
-        return b.unit ? b.value + " " + b.unit : b.value;
+        return words.bytesText(Format.bytes(bytes, trim));
+    }
+
+    Words {
+        id: words
+        monitor: popup.monitor
     }
 
     PopupHeader {
@@ -29,7 +33,7 @@ PopupPage {
             const m = popup.monitor;
             if (m.memoryModules !== "") {
                 const installed = m.hardware.memory.modules.reduce((sum, bytes) => sum + Number(bytes), 0);
-                return popup.size(installed, true) + " · " + m.memoryModules;
+                return words.joined([popup.size(installed, true), m.memoryModules]);
             }
             return m.memoryTotal > 0 ? popup.size(m.memoryTotal, true) : "";
         }
@@ -40,7 +44,7 @@ PopupPage {
 
     ColumnLayout {
         Layout.fillWidth: true
-        Layout.leftMargin: Math.round(Kirigami.Units.largeSpacing * 2)
+        Layout.leftMargin: Style.contentEdge(Kirigami.Units.largeSpacing)
         Layout.rightMargin: Layout.leftMargin
         Layout.topMargin: Math.round(Kirigami.Units.smallSpacing / 2)
         Layout.bottomMargin: Math.round(Kirigami.Units.largeSpacing * 1.25)
@@ -60,7 +64,7 @@ PopupPage {
                 usedEnd + step + share(popup.monitor.memoryCached) * (1 - 2 * step))
             readonly property color usedColor: Kirigami.Theme.textColor
             readonly property color cachedColor: Qt.alpha(Kirigami.Theme.textColor, 0.4)
-            readonly property color trackColor: Qt.alpha(Kirigami.Theme.textColor, 0.08)
+            readonly property color trackColor: Qt.alpha(Kirigami.Theme.textColor, Style.TRACK)
 
             Layout.fillWidth: true
             implicitHeight: Kirigami.Units.smallSpacing * 2
@@ -127,7 +131,7 @@ PopupPage {
 
     GridLayout {
         Layout.fillWidth: true
-        Layout.leftMargin: Math.round(Kirigami.Units.largeSpacing * 2)
+        Layout.leftMargin: Style.contentEdge(Kirigami.Units.largeSpacing)
         Layout.rightMargin: Layout.leftMargin
         Layout.topMargin: Kirigami.Units.smallSpacing
         Layout.bottomMargin: Math.round(Kirigami.Units.largeSpacing * 1.5)
@@ -140,7 +144,7 @@ PopupPage {
             Layout.columnSpan: 2
             caption: i18nc("@title:group memory in use", "Used")
             spans: popup.monitor
-            graphTop: i18nc("@info a percentage", "%1%", Format.percent(100))
+            graphTop: words.percent(100)
 
             Graph {
                 Layout.fillWidth: true
@@ -162,9 +166,9 @@ PopupPage {
                 readonly property bool none: !(popup.monitor.swapTotal > 0)
                 readonly property var swap: Format.bytesOf(popup.monitor.swapUsed, popup.monitor.swapTotal)
                 value: none ? i18nc("@info no swap space configured", "none") : swap.value
-                unit: none ? "" : "/ " + swap.total + " " + swap.unit
+                unit: none ? "" : "/ " + words.bytesText({ value: swap.total, unit: swap.unit })
                 color: none ? Style.dim(Kirigami.Theme.textColor) : Kirigami.Theme.textColor
-                pointSize: Kirigami.Theme.defaultFont.pointSize * 1.38
+                pointSize: Style.tilePointSize(Kirigami.Theme.defaultFont.pointSize)
             }
         }
 
@@ -179,7 +183,7 @@ PopupPage {
             Reading {
                 id: pressureReading
                 value: Format.fixed(popup.monitor.memoryPressure, 2)
-                pointSize: Kirigami.Theme.defaultFont.pointSize * 1.38
+                pointSize: Style.tilePointSize(Kirigami.Theme.defaultFont.pointSize)
             }
         }
     }

@@ -2,13 +2,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 .pragma library
+.import "items.js" as Items
 
 // Model-specific weekly limits: which one a Claude or Codex ring draws inside
 // its weekly arc, and what the settings page offers to choose from.
 //
 // A choice is "" for automatic, "none" for no inner ring, or a limit's id.
-
-const PROVIDERS = ["claude", "codex"];
 
 // The scoped limit a ring draws, or null for the all-models ring alone.
 // Automatic shows the only limit a provider reports; with several, none until
@@ -29,7 +28,7 @@ function pick(scoped, choice) {
 // still name it. A provider without a reading keeps what was stored.
 function known(providers, stored, choices) {
     const result = {};
-    for (const id of PROVIDERS) {
+    for (const id of Items.USAGE) {
         const before = stored?.[id] ?? [];
         if (!providers?.[id]?.scoped) {
             result[id] = before;

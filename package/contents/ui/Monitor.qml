@@ -11,6 +11,7 @@ import "code/history.js" as History
 import "code/items.js" as Items
 import "code/log.js" as Log
 import "code/publicaddress.js" as Lookup
+import "code/shell.js" as Shell
 
 // Every reading the panel and the popups show, and the only place the widget
 // subscribes to ksystemstats. Each sensor id has exactly one Sensor here:
@@ -125,8 +126,7 @@ Item {
     // Which popup is open, so GPU reads can follow what's on screen.
     property string openPopup: ""
     // The hardware helper.
-    property string helperPath: decodeURIComponent(Qt.resolvedUrl("../code/ringside-info.sh").toString()
-                                                   .replace(/^file:\/\//, ""))
+    property string helperPath: Shell.path(Qt.resolvedUrl("../code/ringside-info.sh"))
 
     // The items switched on, and whether any of them reads ksystemstats: a
     // widget showing only Claude and Codex subscribes nothing. While any
@@ -148,10 +148,10 @@ Item {
     signal configureRequested()
 
     // CPU
-    readonly property real cpuUsage: value(cpuUsageSensor)
+    readonly property real cpuUsage: Hardware.sensorValue(cpuUsageSensor)
     readonly property string cpuTemperatureSensorId: config.cpuTemperatureSensor || "cpu/all/maximumTemperature"
     readonly property real cpuTemperature: {
-        const t = value(member(cpuTemperatureReaders, 0));
+        const t = Hardware.sensorValue(member(cpuTemperatureReaders, 0));
         return Format.temperatureValid(t) ? t : NaN;
     }
     readonly property string cpuTemperatureLabel: {
@@ -164,7 +164,7 @@ Item {
     readonly property string cpuModel: hardware.cpu ? Format.cpuModel(hardware.cpu.model) : ""
     readonly property int cpuCores: hardware.cpu ? hardware.cpu.cores : 0
     // ksystemstats' coreCount is the number of logical processors.
-    readonly property int cpuThreads: hardware.cpu ? hardware.cpu.threads : Math.max(0, value(coreCountSensor)) || 0
+    readonly property int cpuThreads: hardware.cpu ? hardware.cpu.threads : Math.max(0, Hardware.sensorValue(coreCountSensor)) || 0
     // ksystemstats names CPUs by processor number, which skips offline threads.
     readonly property var cpuIds: hardware.cpu && Array.isArray(hardware.cpu.ids) ? hardware.cpu.ids
                                 : Array.from({ length: cpuThreads }, (_, i) => i)
@@ -181,21 +181,23 @@ Item {
     // slab, which "used" already holds. So free is taken from "application"
     // (total - MemFree - Cached - Buffers - Slab), which makes it MemFree, and
     // cached is the rest of what's available. The three add up to the total.
-    readonly property real memoryTotal: value(memoryTotalSensor)
-    readonly property real memoryUsed: value(memoryUsedSensor)
-    readonly property var memoryParts: Hardware.memoryParts(memoryTotal, memoryUsed, value(memoryApplicationSensor),
-                                                            value(memoryCacheSensor), value(memoryBufferSensor))
+    readonly property real memoryTotal: Hardware.sensorValue(memoryTotalSensor)
+    readonly property real memoryUsed: Hardware.sensorValue(memoryUsedSensor)
+    readonly property var memoryParts: Hardware.memoryParts(memoryTotal, memoryUsed,
+                                                            Hardware.sensorValue(memoryApplicationSensor),
+                                                            Hardware.sensorValue(memoryCacheSensor),
+                                                            Hardware.sensorValue(memoryBufferSensor))
     readonly property real memoryFree: memoryParts.free
     readonly property real memoryCached: memoryParts.cached
     readonly property real memoryPercent: memoryTotal > 0 ? memoryUsed / memoryTotal * 100 : NaN
     readonly property string memoryModules: Format.memoryModules(hardware.memory)
-    readonly property real swapUsed: value(swapUsedSensor)
-    readonly property real swapTotal: value(swapTotalSensor)
+    readonly property real swapUsed: Hardware.sensorValue(swapUsedSensor)
+    readonly property real swapTotal: Hardware.sensorValue(swapTotalSensor)
     // "zram", "disk" or "zram + disk" for the swap tile's caption.
     readonly property string swapLabel: (hardware.swap || []).map(kind =>
         kind === "disk" ? i18nc("@info swap on a disk partition or file", "disk") : kind).join(" + ")
     // Plasma 6.2 and later; NaN before.
-    readonly property real memoryPressure: value(pressureSensor)
+    readonly property real memoryPressure: Hardware.sensorValue(pressureSensor)
     property var memoryHistory: []
     property var memoryHighs: []
 
@@ -254,7 +256,7 @@ Item {
     readonly property string diskTemperatureSensorId: config.diskTemperatureSensor === "none" ? ""
         : config.diskTemperatureSensor || (!config.diskDevice && hardware.root ? hardware.root.tempSensor : "")
     readonly property real diskTemperature: {
-        const t = value(member(diskTemperatureReaders, 0));
+        const t = Hardware.sensorValue(member(diskTemperatureReaders, 0));
         return Format.temperatureValid(t) ? t : NaN;
     }
     property var diskReadHistory: []
@@ -277,10 +279,6 @@ Item {
         return highlightTemperatures ? Format.heat(celsius, warmCelsius, hotCelsius) : 0;
     }
 
-    function value(sensor) {
-        return sensor && typeof sensor.value === "number" ? sensor.value : NaN;
-    }
-
     // An Instantiator's object at index, as a binding dependency. Qt 6.10 and
     // older emit no countChanged when the objects are recreated at the same
     // count (new ids, same length); modelChanged comes after regeneration.
@@ -291,7 +289,7 @@ Item {
     }
 
     function groupValue(group, index) {
-        return value(member(group, index));
+        return Hardware.sensorValue(member(group, index));
     }
 
     function groupText(group, index) {
@@ -802,9 +800,9 @@ Item {
     P5Support.DataSource {
         id: helper
 
-        // Run by sh, so a quote in the install path is closed, escaped and reopened.
+        // Run by sh, with the install path as one word.
         function command(args) {
-            return "sh '" + monitor.helperPath.replace(/'/g, "'\\''") + "' " + args;
+            return "sh " + Shell.quoted(monitor.helperPath) + " " + args;
         }
 
         engine: "executable"

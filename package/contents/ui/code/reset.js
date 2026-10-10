@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 .pragma library
+.import "items.js" as Items
 
 // Which weekly windows started over between two sets of entries, as
 // "<provider>.weekly" or "<provider>.scoped.<id>" -> { from, early }.
@@ -28,7 +29,7 @@ function detect(before, after, now) {
             events[key] = { from: was.percent, early: was.resetsAt > now };
         }
     }
-    for (const id of ["claude", "codex"]) {
+    for (const id of Items.USAGE) {
         compare(id + ".weekly", before[id]?.weekly, after[id]?.weekly);
         const previous = before[id]?.scoped ?? [];
         for (const limit of after[id]?.scoped ?? []) {

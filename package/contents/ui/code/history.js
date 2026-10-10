@@ -190,7 +190,7 @@ const TIERS = {
     day: { period: 600, length: 144 }
 };
 
-// A series' record: the minute's readings, as push() or record() keep them,
+// A series' record: the minute's readings, as push() keeps them,
 // and a tier (see tier()) for the hour and one for the day.
 function series() {
     return { minute: [], hour: tier("hour"), day: tier("day") };

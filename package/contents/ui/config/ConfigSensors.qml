@@ -43,7 +43,8 @@ ConfigPage {
             if (kind === "lmsensors") {
                 // The tree appends the unit, "Composite (°C)"; every entry here is a temperature.
                 const name = (row.name || sensor).replace(/\s*\([^()]*\)$/, "");
-                temperatures.push({ text: groupName + " · " + name, value: row.id });
+                temperatures.push({ text: i18nc("@item:inlistbox a temperature sensor: its group, then its name, e.g. k10temp · Tctl",
+                                                "%1 · %2", groupName, name), value: row.id });
             } else if (kind === "network") {
                 interfaces.push({ text: groupName === group ? group
                                       : i18nc("@item:inlistbox network interface: name (interface)", "%1 (%2)", groupName, group),
@@ -77,7 +78,8 @@ ConfigPage {
     function gpuText(gpu) {
         const name = gpuName(gpu);
         // Two identical cards need their ids to tell them apart.
-        const shown = gpus.some(g => g !== gpu && gpuName(g) === name) ? name + " · " + gpu.id : name;
+        const shown = gpus.some(g => g !== gpu && gpuName(g) === name)
+            ? i18nc("@item:inlistbox a GPU's name, then its id, e.g. AMD Radeon RX 7700S · gpu1", "%1 · %2", name, gpu.id) : name;
         return gpu.kind === "discrete" ? i18nc("@item:inlistbox %1 is a GPU name", "%1 (discrete)", shown)
              : gpu.kind === "integrated" ? i18nc("@item:inlistbox %1 is a GPU name", "%1 (integrated)", shown)
              : shown;

@@ -9,6 +9,7 @@ import org.kde.kirigami as Kirigami
 import "../code/format.js" as Format
 import "../code/history.js" as History
 import "../code/publicaddress.js" as Lookup
+import "../code/style.js" as Style
 import ".."
 
 PopupPage {
@@ -39,7 +40,7 @@ PopupPage {
 
             ShapePath {
                 strokeColor: "transparent"
-                fillColor: key.area ? Qt.alpha(key.color, 0.15 * key.color.a) : "transparent"
+                fillColor: key.area ? Qt.alpha(key.color, Style.AREA * key.color.a) : "transparent"
                 startX: 0
                 startY: label.implicitHeight / 2
                 PathLine { x: Math.round(Kirigami.Units.gridUnit * 0.9); y: label.implicitHeight / 2 }
@@ -117,7 +118,7 @@ PopupPage {
         subtitle: popup.monitor.networkConnection
         // With the public address on, both addresses go under the header,
         // where a long IPv6 address has the popup's width.
-        detail: popup.compared ? "" : [popup.monitor.networkAddress, popup.monitor.networkInterface].filter(s => s !== "").join(" · ")
+        detail: popup.compared ? "" : words.joined([popup.monitor.networkAddress, popup.monitor.networkInterface])
 
         // The arrows in a column that follows the layout's direction, and
         // each rate's number and unit left to right beside them, as in the
@@ -128,7 +129,7 @@ PopupPage {
 
             readonly property var down: Format.rate(popup.monitor.networkDown, popup.monitor.networkBits)
             readonly property var up: Format.rate(popup.monitor.networkUp, popup.monitor.networkBits)
-            readonly property real pointSize: Kirigami.Theme.defaultFont.pointSize * 1.38
+            readonly property real pointSize: Style.tilePointSize(Kirigami.Theme.defaultFont.pointSize)
             readonly property real valueWidth: Math.max(downRate.numberWidth, upRate.numberWidth)
             readonly property real pairWidth: valueWidth + downRate.unitSpacing + Math.max(downRate.suffixWidth, upRate.suffixWidth)
             readonly property real arrowHeight: Math.round(downRate.implicitHeight * 0.62)
@@ -187,7 +188,7 @@ PopupPage {
     AddressBlock {
         visible: popup.compared
         Layout.fillWidth: true
-        Layout.leftMargin: Math.round(Kirigami.Units.largeSpacing * 2)
+        Layout.leftMargin: Style.contentEdge(Kirigami.Units.largeSpacing)
         Layout.rightMargin: Layout.leftMargin
         Layout.bottomMargin: Kirigami.Units.smallSpacing
         localAddress: popup.monitor.networkAddress
@@ -205,7 +206,7 @@ PopupPage {
         readonly property var tops: History.tops(history,
                                                  popup.monitor.networkDownHighs.concat(popup.monitor.networkUpHighs))
 
-        Layout.leftMargin: Math.round(Kirigami.Units.largeSpacing * 2)
+        Layout.leftMargin: Style.contentEdge(Kirigami.Units.largeSpacing)
         Layout.rightMargin: Layout.leftMargin
         Layout.topMargin: Math.round(Kirigami.Units.smallSpacing * 1.5)
         Layout.bottomMargin: Math.round(Kirigami.Units.largeSpacing * 1.5)
