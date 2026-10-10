@@ -259,11 +259,18 @@ Item {
     Component {
         id: freshStart
         FakeMonitor {
+            id: fresh
             cpuHistory: graphSpan === "minute" ? [20, 21] : []
             cpuHighs: []
             cpuTemperatureHistory: graphSpan === "minute" ? [60, 61] : []
             cpuTemperatureHighs: []
             cpuTemperatureExtent: [60, 61]
+            gpuOuter.temperatureHistory: fresh.graphSpan === "minute" ? [48, 49] : []
+            gpuOuter.temperatureHighs: []
+            gpuOuter.temperatureExtent: [48, 49]
+            diskTemperatureHistory: graphSpan === "minute" ? [39, 40] : []
+            diskTemperatureHighs: []
+            diskTemperatureExtent: [39, 40]
         }
     }
 
@@ -2124,6 +2131,28 @@ Item {
                 verify(tile.visible, "the tile stays");
                 compare(popup.implicitHeight, height, "and the popup's height");
                 tryVerify(() => span.activeFocus && span.visualFocus, 2000, "the focus is back on its span");
+            } finally {
+                // The popup goes before its monitor.
+                host.active = false;
+            }
+        }
+
+        // At an hour, on a widget whose first buckets are still open, every
+        // popup keeps its temperature tile, and the span control in it.
+        function test_freshTemperatureTileAtAnHour_data() {
+            return [{ tag: "cpu", popup: "CpuPopup" }, { tag: "gpu", popup: "GpuPopup" }, { tag: "disk", popup: "DiskPopup" }];
+        }
+
+        function test_freshTemperatureTileAtAnHour(data) {
+            const fresh = createTemporaryObject(freshStart, root);
+            const host = createTemporaryObject(escapeHost, root, { width: Kirigami.Units.gridUnit * 30 });
+            host.setSource(Qt.resolvedUrl("../../package/contents/ui/popups/" + data.popup + ".qml"), { monitor: fresh });
+            try {
+                fresh.chooseSpan("hour");
+                const tiles = temperatureTiles(host.item);
+                compare(tiles.length, 1);
+                verify(!tiles[0].hasReading, "nothing to draw yet");
+                verify(spanOf(tiles[0]).visible);
             } finally {
                 // The popup goes before its monitor.
                 host.active = false;

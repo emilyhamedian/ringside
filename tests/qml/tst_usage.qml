@@ -264,8 +264,10 @@ Item {
             compare(usage.helperError, "");
             compare(JSON.parse(config.knownLimits),
                     { claude: [{ id: "Fable", label: "Fable", reported: true }], codex: [] });
-            compare(JSON.parse(config.usageStatus), { claude: { status: "ok", message: "", starter: false },
-                                                      codex: { status: "ok", message: "", starter: false }, helperError: "" });
+            const found = name => ({ path: "/usr/bin/" + name, chosen: false, problem: "" });
+            compare(JSON.parse(config.usageStatus), { claude: { status: "ok", message: "", program: found("claude"), starter: false },
+                                                      codex: { status: "ok", message: "", program: found("codex"), starter: false },
+                                                      helperError: "" });
         }
 
         function test_innerFollowsTheChoice() {
@@ -282,15 +284,15 @@ Item {
             start("ok");
             poll("failed");
             compare(usage.entry("claude").weekly.percent, 52);
-            compare(usage.entry("claude").lastError, "HTTP Error 500: Internal Server Error");
+            compare(usage.entry("claude").lastError, "rate limited, retrying in 3600 s");
             verify(Math.abs(usage.entry("claude").lastErrorAt - Date.now() / 1000) < 60);
-            compare(usage.entry("codex").lastError, "HTTP Error 429: Too Many Requests");
+            compare(usage.entry("codex").lastError, "no answer from codex app-server in 20 s");
             // The helper's reason, host and end of its hold come through.
             const claude = usage.entry("claude");
-            compare([claude.reason, claude.host], ["server", "api.anthropic.com"]);
-            verify(Math.abs(claude.retryAt - (Date.now() / 1000 + 300)) < 60, claude.retryAt);
-            compare([usage.entry("codex").reason, usage.entry("codex").host], ["rate-limited", ""]);
-            verify(Math.abs(usage.entry("codex").retryAt - (Date.now() / 1000 + 3600)) < 60);
+            compare([claude.reason, claude.host], ["rate-limited", "api.anthropic.com"]);
+            verify(Math.abs(claude.retryAt - (Date.now() / 1000 + 3600)) < 60, claude.retryAt);
+            compare([usage.entry("codex").reason, usage.entry("codex").host], ["timeout", ""]);
+            verify(Math.abs(usage.entry("codex").retryAt - (Date.now() / 1000 + 300)) < 60);
             verify(usage.degraded("claude") && usage.degraded("codex"));
             verify(usage.claudePresent && usage.codexPresent, "a failed poll keeps the items");
             // The helper holds a refused provider back itself; the widget
@@ -298,8 +300,9 @@ Item {
             // suspend has made late.
             compare(timers().filter(t => t.running).map(t => t.interval), [5 * 60000, 60000]);
             compare(JSON.parse(config.usageStatus).claude,
-                    { status: "error", message: "HTTP Error 500: Internal Server Error", starter: false });
-            compare(JSON.parse(config.usageStatus).codex.status, "rate_limited");
+                    { status: "rate_limited", message: "rate limited, retrying in 3600 s",
+                      program: { path: "/usr/bin/claude", chosen: false, problem: "" }, starter: false });
+            compare(JSON.parse(config.usageStatus).codex.status, "error");
 
             poll("ok");
             verify(!usage.degraded("claude") && !usage.degraded("codex"));
@@ -324,7 +327,8 @@ Item {
             const codex = usage.entry("codex");
             compare([codex.status, codex.lastError, codex.reason, codex.weekly], ["error", "codex CLI not found", "not-installed", undefined]);
             verify(usage.codexPresent && usage.degraded("codex"));
-            compare(JSON.parse(config.usageStatus).codex, { status: "error", message: "codex CLI not found", starter: false });
+            compare(JSON.parse(config.usageStatus).codex, { status: "error", message: "codex CLI not found",
+                                                            program: { path: "", chosen: false, problem: "" }, starter: false });
 
             poll("ok");
             verify(usage.claudePresent && usage.codexPresent);
@@ -355,14 +359,15 @@ Item {
             start("failed");
             const claude = usage.entry("claude");
             compare([claude.status, claude.lastError, claude.reason, claude.host, claude.weekly],
-                    ["error", "HTTP Error 500: Internal Server Error", "server", "api.anthropic.com", undefined]);
-            verify(Math.abs(claude.retryAt - (Date.now() / 1000 + 300)) < 60, claude.retryAt);
-            compare([usage.entry("codex").status, usage.entry("codex").reason], ["rate_limited", "rate-limited"]);
+                    ["rate_limited", "rate limited, retrying in 3600 s", "rate-limited", "api.anthropic.com", undefined]);
+            verify(Math.abs(claude.retryAt - (Date.now() / 1000 + 3600)) < 60, claude.retryAt);
+            compare([usage.entry("codex").status, usage.entry("codex").reason], ["error", "timeout"]);
             for (const id of ["claude", "codex"]) {
                 verify(!usage.loading(id) && usage.present(id) && usage.degraded(id), id);
             }
-            compare(JSON.parse(config.usageStatus).claude, { status: "error", message: "HTTP Error 500: Internal Server Error",
-                                                             starter: false });
+            compare(JSON.parse(config.usageStatus).codex, { status: "error", message: "no answer from codex app-server in 20 s",
+                                                            program: { path: "/usr/bin/codex", chosen: false, problem: "" },
+                                                            starter: false });
 
             poll("ok");
             compare(usage.entry("claude").weekly.percent, 52);
@@ -775,7 +780,7 @@ Item {
                 config.codexProgram = path;
                 landed.wait(10000);
                 compare(usage.statuses.codex.program, { path: path, chosen: true, problem: "" }, path);
-                compare(usage.statuses.claude.program, undefined, "claude's program, unchosen, isn't passed");
+                compare(usage.statuses.claude.program.chosen, false, "claude's program, unchosen, isn't passed");
                 compare(JSON.parse(config.usageStatus).codex.program.path, path);
             }
             compare(runs.count, nastyPaths.length, "one check per change, none waiting for the timer");
@@ -799,7 +804,7 @@ Item {
             const status = JSON.parse(config.usageStatus);
             compare(status.claude.starter, true);
             compare(status.codex.starter, false);
-            compare(status.claude.program, undefined, "the stub reports no program unless one is chosen");
+            compare(status.claude.program, { path: "/usr/bin/claude", chosen: false, problem: "" });
         }
 
         function runner() {
@@ -831,7 +836,7 @@ Item {
             poll("failed");
             compare(usage.starter("claude").state, "off");
             verify(usage.degraded("claude"));
-            compare(usage.entry("codex").status, "ok", "the reading before the rate limit");
+            compare(usage.entry("codex").status, "ok", "the reading before the failure");
             compare(usage.starter("codex").state, "off");
         }
 
@@ -3785,7 +3790,7 @@ Item {
                 { tag: "claude at its limit", item: "claude", weekly: [90, 3600], first: "90%", level: 2, second: "1h" },
                 { tag: "claude last hour", item: "claude", weekly: [40, 59 * 60], first: "40%", second: "59m" },
                 { tag: "claude amber", item: "claude", weekly: [75, 12 * 60], first: "75%", level: 1, second: "12m" },
-                { tag: "claude used up", item: "claude", weekly: [100, 2 * 86400], first: "100%", level: 2, second: "2d", heat: 2 },
+                { tag: "claude used up", item: "claude", weekly: [100, 2 * 86400], first: "100%", level: 2, second: "2d" },
                 { tag: "used up, reset passed", item: "claude", weekly: [100, -600], first: "100%", level: 2, second: "–" },
                 { tag: "reset passed", item: "claude", weekly: [40, -600], first: "40%", second: "–" },
                 // On pace to run out before the reset, the percentage keeps

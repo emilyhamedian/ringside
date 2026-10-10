@@ -224,8 +224,7 @@ PopupPage {
 
             // As in the CPU popup: under the usage it follows.
             TemperatureTile {
-                id: temperature
-                visible: temperature.hasReading && section.temperatureGraphed
+                graphed: section.temperatureGraphed
                 Layout.columnSpan: parent.columns
                 monitor: section.monitor
                 history: section.slot.temperatureHistory

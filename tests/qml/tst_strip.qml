@@ -6,6 +6,7 @@ import QtTest
 import org.kde.kirigami as Kirigami
 import "../../package/contents/ui"
 import "../../package/contents/ui/code/format.js" as Format
+import "../../package/contents/ui/code/style.js" as Style
 
 // The panel strip with FakeMonitor's readings: rings follow the panel's
 // thickness inside the hover wash, with the item's name inside them and their
@@ -766,14 +767,17 @@ Item {
             compare([line(1, "first").text, line(1, "second").text], ["52%", "2d"]);
             compare([line(2, "first").text, line(2, "second").text], ["24%", "5d"]);
 
-            // At the limit both readings turn red, and nothing moves.
+            // At the limit the percentage turns red, the countdown stays dim,
+            // and nothing moves.
             const at = geometry();
             const entries = JSON.parse(JSON.stringify(monitor.usage.entries));
             entries.claude.weekly.percent = 100;
             entries.claude.weekly.resetsAt = monitor.usage.createdAt + 600;
             sizeAfter(strip, () => monitor.usage.entries = entries);
             compare([line(1, "first").text, line(1, "second").text], ["100%", "10m"]);
-            compare([line(1, "first").color, line(1, "second").color], [root.hotColor, root.hotColor]);
+            compare(line(1, "first").color, root.hotColor);
+            // As "#aarrggbb": Text keeps 8 bits a channel, Qt.alpha() more.
+            compare(String(line(1, "second").color), String(Style.dim(Kirigami.Theme.textColor)));
             checkFits("at the limit");
             checkRow("at the limit");
             compare(geometry(), at, "at the limit");
