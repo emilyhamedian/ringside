@@ -590,7 +590,7 @@ def retry_seconds(value):
         pass
     try:
         at = parsedate_to_datetime(value)
-    except (TypeError, ValueError):
+    except ValueError:
         return RETRY_AFTER_DEFAULT
     if at.tzinfo is None:
         at = at.replace(tzinfo=timezone.utc)
@@ -762,7 +762,7 @@ def store_claude(path, spent, fresh):
             continue
         stored = current.get("claudeAiOauth") if isinstance(current, dict) else None
         if not isinstance(stored, dict) or stored.get("refreshToken") != spent:
-            return False
+            return
         current["claudeAiOauth"] = {**stored, **fresh}
         data = json.dumps(current).encode()
         fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".credentials.", suffix=".tmp")
@@ -783,7 +783,7 @@ def store_claude(path, spent, fresh):
                     os.fsync(folder)
                 finally:
                     os.close(folder)
-                return True
+                return
             except OSError:
                 pass
             try:
@@ -795,7 +795,7 @@ def store_claude(path, spent, fresh):
                     fh.truncate()
                     fh.flush()
                     os.fsync(fh.fileno())
-                return True
+                return
             except OSError as err:
                 kept = True
                 raise RuntimeError(f"the renewed login couldn't be saved ({err.strerror}); "
@@ -1147,11 +1147,9 @@ def collect_locked(fetchers, now):
     history = read_history()
     if polled or stepped:
         write_private(CACHE_FILE, cache)
-    if polled:
-        updated = record_history(history, polled, now)
-        if updated != history:
-            write_private(HISTORY_FILE, updated)
-            history = updated
+    if any(report["status"] == "ok" for report in polled.values()):
+        history = record_history(history, polled, now)
+        write_private(HISTORY_FILE, history)
     return providers, history
 
 
@@ -1245,11 +1243,12 @@ def waiting(ids, message):
     providers = {}
     for name in ids:
         entry = cache.get(name)
-        wait = held(entry, now, PROGRAMS.get(name, ""))
         if fresh(entry, now):
             providers[name] = entry
             event("debug", name, "cached", age=now - entry["fetchedAt"])
-        elif wait:
+            continue
+        wait = held(entry, now, PROGRAMS.get(name, ""))
+        if wait:
             providers[name] = replay(entry, wait, now)
             event("debug", name, "held", wait=wait, why=failure_why(name, entry))
         else:
@@ -1963,9 +1962,7 @@ def arguments(argv):
 
 def main(argv=None):
     args = arguments(argv)
-    EVENTS.clear()
     ids = args.providers
-    PROGRAMS.clear()
     PROGRAMS.update(args.program)
     fake = os.environ.get("RINGSIDE_USAGE_FAKE")
     if fake:

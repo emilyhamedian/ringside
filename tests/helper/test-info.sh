@@ -58,10 +58,9 @@ fi
 for case_dir in "$FIXTURES"/*/; do
     case_dir=${case_dir%/}
     name=$(basename "$case_dir")
-    [ "$name" = "common" ] && continue
     [ -f "$case_dir/env" ] || continue
 
-    args=$(cat "$case_dir/args" 2>/dev/null || echo static)
+    args=$(cat "$case_dir/args")
     actual="$WORK/$name.out"
 
     (
