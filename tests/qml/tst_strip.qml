@@ -283,24 +283,24 @@ Item {
                     monitor.gpuOuter.usage = 0; monitor.gpuOuter.temperature = 9;
                     monitor.networkDown = 0; monitor.networkUp = 0; monitor.diskRead = 0; monitor.diskWrite = 0;
                     setWeeks([0, 6 * 86400 + 23 * 3600], [0, 6 * 86400 + 20 * 3600]);
-                }, shows: ["0%", "9°", "0B", "0.00", "6d"] },
+                }, shows: ["0%", "9°", "0 B", "0.00", "6d"] },
                 { what: "all at their most", change: () => {
                     monitor.cpuUsage = 100; monitor.cpuTemperature = 105; monitor.memoryUsed = 1023 * gib; monitor.memoryPercent = 100;
                     monitor.gpuOuter.usage = 100; monitor.gpuOuter.temperature = 105;
                     monitor.networkDown = 1023 * gib; monitor.networkUp = 1023 * gib; monitor.diskRead = 1023 * gib; monitor.diskWrite = 1023 * gib;
                     setWeeks([100, 59 * 60], [100, 5 * 60]);
-                }, shows: ["100%", "105°", "1.00T", "TiB/s", "59m", "5m"] },
+                }, shows: ["100%", "105°", "1.0 TiB", "TiB/s", "59m", "5m"] },
                 { what: "302 °F", change: () => { monitor.fahrenheit = true; monitor.cpuTemperature = 149.9; }, shows: ["302°"] },
                 { what: "unit edges", change: () => {
                     monitor.fahrenheit = false; monitor.cpuTemperature = 61; monitor.memoryUsed = 1000 * mib; monitor.memoryPercent = 6;
                     monitor.networkDown = 999.4e3 / 8; monitor.networkUp = 999.5e3 / 8; monitor.diskRead = 999.4 * 1024; monitor.diskWrite = 1023 * 1024;
                     setWeeks([88, 23 * 3600 + 59 * 60], [41, 86400 + 7 * 3600]);
-                }, shows: ["0.98G", "999", "1.00", "23h", "1d"] },
+                }, shows: ["1.0 GiB", "999", "1.00", "23h", "1d"] },
                 { what: "usual", change: () => {
                     monitor.cpuUsage = 12; monitor.memoryUsed = 9.6 * gib; monitor.memoryPercent = 60;
                     monitor.gpuOuter.usage = 4; monitor.gpuOuter.temperature = 46;
                     monitor.networkDown = 8.4e6 / 8; monitor.networkUp = 100e3 / 8; monitor.diskRead = 4.1 * 1024; monitor.diskWrite = 353 * 1024;
-                }, shows: ["12%", "9.60G", "4%", "4.10", "353"] },
+                }, shows: ["12%", "9.6 GiB", "4%", "4.10", "353"] },
                 { what: "the discrete GPU asleep", change: () => { monitor.gpuOuter.phase = "asleep"; }, shows: ["3%", "41°"] },
                 { what: "both GPUs asleep", change: () => { monitor.gpuInner.phase = "asleep"; }, shows: ["off"] },
                 { what: "the GPUs awake", change: () => { monitor.gpuOuter.phase = "live"; monitor.gpuInner.phase = "live"; }, shows: ["4%", "46°"] },
@@ -823,7 +823,7 @@ Item {
                 });
             }
             compare([line(0, "first").text, line(0, "second").text], ["23%", "61°"]);
-            compare([line(2, "first").text, line(2, "second").text], ["42%", "13.4G"]);
+            compare([line(2, "first").text, line(2, "second").text], ["42%", "13.4 GiB"]);
             const texts = visibleTexts(strip);
             verify(!texts.includes("%") && !texts.includes("°"), JSON.stringify(texts));
         }

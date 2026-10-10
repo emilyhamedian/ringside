@@ -240,25 +240,30 @@ TestCase {
         verify(Format.panelRateUnits(data.bits).includes(result.unit), result.unit + " is one of the units the panel keeps room for");
     }
 
-    // Memory for the panel steps its unit as the rates do, in three figures.
+    // Memory for the panel is one decimal, its unit stepping at 999.95.
     function test_panelBytes_data() {
         const mib = 1024 * 1024;
         const gib = 1024 * mib;
         return [
             { tag: "bytes stay whole", v: 500, value: "500", unit: "B" },
-            { tag: "353 MiB", v: 353 * mib, value: "353", unit: "MiB" },
-            { tag: "999.4 MiB", v: 999.4 * mib, value: "999", unit: "MiB" },
-            { tag: "1000 MiB", v: 1000 * mib, value: "0.98", unit: "GiB" },
-            { tag: "1023 MiB", v: 1023 * mib, value: "1.00", unit: "GiB" },
-            { tag: "9.6 GiB", v: 9.6 * gib, value: "9.60", unit: "GiB" },
-            { tag: "13.4 GiB", v: 13.4 * gib, value: "13.4", unit: "GiB" },
-            { tag: "128 GiB", v: 128 * gib, value: "128", unit: "GiB" },
+            { tag: "512 KiB", v: 512 * 1024, value: "512.0", unit: "KiB" },
+            { tag: "353 MiB", v: 353 * mib, value: "353.0", unit: "MiB" },
+            { tag: "512 MiB", v: 512 * mib, value: "512.0", unit: "MiB" },
+            { tag: "999.9 MiB", v: 999.9 * mib, value: "999.9", unit: "MiB" },
+            { tag: "999.96 MiB", v: 999.96 * mib, value: "1.0", unit: "GiB" },
+            { tag: "1023 MiB", v: 1023 * mib, value: "1.0", unit: "GiB" },
+            { tag: "9.6 GiB", v: 9.6 * gib, value: "9.6", unit: "GiB" },
+            { tag: "9.64 GiB", v: 9.64 * gib, value: "9.6", unit: "GiB" },
+            { tag: "24.6 GiB", v: 24.6 * gib, value: "24.6", unit: "GiB" },
+            { tag: "128 GiB", v: 128 * gib, value: "128.0", unit: "GiB" },
+            { tag: "1023 GiB", v: 1023 * gib, value: "1.0", unit: "TiB" },
             { tag: "no reading", v: NaN, value: "–", unit: "" }
         ];
     }
     function test_panelBytes(data) {
         const result = Format.panelBytes(data.v);
         compare([result.value, result.unit], [local(data.value), data.unit]);
+        verify(Format.panelByteUnits().includes(result.unit) || result.unit === "", result.unit + " is one of the units the panel keeps room for");
     }
 
     function test_frequency_data() {

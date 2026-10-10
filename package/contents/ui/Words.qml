@@ -80,7 +80,7 @@ QtObject {
         case "memory": {
             const used = Format.panelBytes(monitor.panel.memoryUsed);
             return { first: percent(monitor.panel.memoryPercent), level: Format.level(monitor.panel.memoryPercent),
-                     second: used.value + used.unit.charAt(0) };
+                     second: used.unit === "" ? used.value : used.value + " " + used.unit };
         }
         }
         const entry = monitor.usage.entry(item);
@@ -106,11 +106,10 @@ QtObject {
     // them whatever they read.
     function widest(item) {
         const percent = i18nc("@info:status a percentage", "%1%", Format.percent(100));
-        // Memory in three figures and a unit's letter, "13.4G" or "353M"; a
+        // Memory to one decimal and its unit, "13.4 GiB" or "353.0 MiB"; a
         // countdown in two figures and its unit, "23h".
-        const letters = ["B", "K", "M", "G", "T", "P"];
         const second = item === "cpu" || item === "gpu" ? [Format.whole(100) + "°"]
-                     : item === "memory" ? letters.map(unit => Format.decimal(10, 1) + unit).concat(letters.map(unit => Format.whole(100) + unit))
+                     : item === "memory" ? Format.panelByteUnits().map(unit => Format.decimal(100, 1) + " " + unit)
                      : timeParts(Format.whole(10), Format.whole(10), Format.whole(10)).map(part => part.value + part.unit);
         return {
             first: item === "gpu" ? [percent, i18nc("@info:status the GPU is powered down", "off")] : [percent],

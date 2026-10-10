@@ -165,18 +165,25 @@ function panelRate(bytesPerSecond, bits) {
     return { value: significant(v), unit: units[i] };
 }
 
-// Bytes for the panel as panelRate() steps them: "9.95 GiB", "13.4 GiB".
+// The units panelBytes() steps through.
+function panelByteUnits() {
+    return BYTE_UNITS.slice();
+}
+
+// Bytes for the panel to one decimal, "9.6 GiB", "512.0 MiB". The unit steps
+// up from 999.95 of the one shown, so no value takes a fourth digit before
+// the point: 1000 MiB reads "1.0 GiB". Bytes stay whole.
 function panelBytes(v) {
     if (!usable(v)) {
         return { value: DASH, unit: "" };
     }
     let i = 0;
     let scaled = v;
-    while (i < BYTE_UNITS.length - 1 && Math.abs(scaled) >= 999.5) {
+    while (i < BYTE_UNITS.length - 1 && Math.abs(scaled) >= 999.95) {
         scaled /= 1024;
         ++i;
     }
-    return { value: i === 0 ? whole(scaled) : significant(scaled), unit: BYTE_UNITS[i] };
+    return { value: i === 0 ? whole(scaled) : decimal(scaled, 1), unit: BYTE_UNITS[i] };
 }
 
 function frequency(megahertz) {
