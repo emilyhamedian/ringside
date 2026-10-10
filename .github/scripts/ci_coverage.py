@@ -13,23 +13,10 @@ import urllib.request
 from pathlib import Path
 
 
-DEVELOPMENT_PREFIXES = ("codex/", "fix/", "feat/", "feature/", "docs/", "ci/")
 DOCUMENTS = {
     "README.md", "CONTRIBUTING.md", "CHANGELOG.md",
     "docs/panel.png", "docs/popups.png", "docs/usage.png",
 }
-
-
-def development(event_name, event, ref):
-    default = event["repository"]["default_branch"]
-    if event_name == "pull_request":
-        pr = event["pull_request"]
-        branch = pr["head"]["ref"]
-        return pr["base"]["ref"] == default and branch != default and branch.startswith(DEVELOPMENT_PREFIXES)
-    if event_name == "push" and ref.startswith("refs/heads/"):
-        branch = ref.removeprefix("refs/heads/")
-        return branch != default and branch.startswith(DEVELOPMENT_PREFIXES)
-    return False
 
 
 def changed_paths(before, after):
@@ -122,17 +109,15 @@ def pr_covers_push(event, ref, sha, repository, token, get=api_get):
 
 def coverage(event_name, event, ref, sha, diff=changed_paths, base=push_base,
              repository="", token="", covered=pr_covers_push):
+    # The workflow runs this only for development branches. A PR must
+    # validate its final merge head, including docs changes; test.yml defers
+    # a draft's jobs itself.
     if event_name == "pull_request":
-        # A ready PR must validate its final merge head, including docs changes.
-        if event["pull_request"]["base"]["ref"] == event["repository"]["default_branch"]:
-            return "draft" if event["pull_request"].get("draft") is True else "full"
         return "full"
-    if not development(event_name, event, ref):
-        return "full"
-    if event_name == "push" and covered(event, ref, sha, repository, token):
+    if covered(event, ref, sha, repository, token):
         return "covered"
     try:
-        before = event["pull_request"]["base"]["sha"] if event_name == "pull_request" else base(event, sha)
+        before = base(event, sha)
         paths = diff(before, sha)
     except (ValueError, UnicodeError, subprocess.CalledProcessError):
         print("Comparison unavailable; running full checks.")
