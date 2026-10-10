@@ -89,9 +89,9 @@ QtObject {
     // Intel GPUs, which publish no temperature. `level` and `heat` choose
     // their colours (see Readout). The integrated GPU's temperature stays in
     // the words and the popup. A countdown keeps to its largest unit, "6d",
-    // "23h", "12m"; the popup and the words give more. With the limit reached
-    // it turns red, as in the popup, since it then says how long the lock-out
-    // lasts. Before a first reading and after a failed check both are dim,
+    // "23h", "12m"; the popup and the words give more. It stays dim whatever
+    // the reading: the ring and the percentage carry the level. Before a
+    // first reading and after a failed check both are dim,
     // and with `cancelled`, while the ring is struck, dashes.
     function readout(item, nowMs, cancelled) {
         const percent = value => Number.isFinite(value) ? i18nc("@info:status a percentage", "%1%", Format.percent(value)) : "–";
@@ -131,7 +131,7 @@ QtObject {
             return { first: percent(weekly ? weekly.percent : NaN), off: true, second: spelled(parts) || "–", heat: 0 };
         }
         return { first: percent(weekly ? weekly.percent : NaN), level: Format.level(weekly ? weekly.percent : NaN),
-                 second: spelled(parts) || "–", heat: parts.length > 0 && weekly.percent >= 100 ? 2 : 0 };
+                 second: spelled(parts) || "–", heat: 0 };
     }
 
     // The memory in use as the panel can show it, in the units it shows: up

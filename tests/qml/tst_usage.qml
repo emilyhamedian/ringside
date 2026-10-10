@@ -1394,24 +1394,25 @@ Item {
             compare(String(line(c, "second").color), String(Style.dim(Kirigami.Theme.textColor)), "the time stays dim");
         }
 
-        function test_countdownRedAtTheLimit_data() {
-            return [{ tag: "99", percent: 99, left: 2 * 86400, shows: "2d", tone: "dim" },
-                    { tag: "100", percent: 100, left: 2 * 86400, shows: "2d", tone: "negative" },
-                    { tag: "100 last minutes", percent: 100, left: 10 * 60, shows: "10m", tone: "negative" },
-                    { tag: "100 reset passed", percent: 100, left: -600, shows: "–", tone: "dim" }];
+        function test_countdownStaysDim_data() {
+            return [{ tag: "52", percent: 52, left: 2 * 86400, shows: "2d" },
+                    { tag: "83", percent: 83, left: 14 * 3600, shows: "14h" },
+                    { tag: "99", percent: 99, left: 2 * 86400, shows: "2d" },
+                    { tag: "100", percent: 100, left: 2 * 86400, shows: "2d" },
+                    { tag: "100 last minutes", percent: 100, left: 10 * 60, shows: "10m" },
+                    { tag: "100 reset passed", percent: 100, left: -600, shows: "–" }];
         }
 
-        // At the limit the countdown says how long the lock-out lasts, and
-        // turns red with the percentage, as the popup's does. A reset that
-        // has passed shows a dim dash until the next check. On one line the
-        // dot between them stays dim.
-        function test_countdownRedAtTheLimit(data) {
+        // The countdown stays dim at every level, at the limit too: the ring
+        // and the percentage carry the level. On one line the dot between
+        // them stays dim.
+        function test_countdownStaysDim(data) {
             claudeAt(data.percent, data.left);
             const dim = String(Style.dim(Kirigami.Theme.textColor));
             for (const twoLines of [true, false]) {
                 const c = cell("claude", { twoLines: twoLines });
                 compare(line(c, "second").text, root.localized(data.shows));
-                compare(String(line(c, "second").color), data.tone === "dim" ? dim : String(Kirigami.Theme.negativeTextColor));
+                compare(String(line(c, "second").color), dim);
                 compare(line(c, "first").color, c.children[0].outerTone, "the percentage follows the ring");
                 const dot = root.find(c, i => i.visible && i.text === "·");
                 compare(dot ? String(dot.color) : dim, dim, "the dot");
@@ -2176,16 +2177,14 @@ Item {
             }
         }
 
-        // The ring and the bars carry the level; the countdown turns red only
-        // once the limit is used up, when it is the time the lock-out lasts.
-        // A reading kept from a failed check may be out of date, so its
-        // countdown stays plain, as in the panel.
-        function test_countdownRedOnlyAtTheLimit_data() {
-            return [{ tag: "52", percent: 52, red: false }, { tag: "91", percent: 91, red: false },
-                    { tag: "100", percent: 100, red: true }, { tag: "100 failed", percent: 100, failed: true, red: false }];
+        // The ring and the bars carry the level; the countdown stays plain at
+        // every level, at the limit too, and after a failed check.
+        function test_countdownStaysPlain_data() {
+            return [{ tag: "52", percent: 52 }, { tag: "83", percent: 83 }, { tag: "91", percent: 91 },
+                    { tag: "100", percent: 100 }, { tag: "100 failed", percent: 100, failed: true }];
         }
 
-        function test_countdownRedOnlyAtTheLimit(data) {
+        function test_countdownStaysPlain(data) {
             const usage = monitor.usage;
             setClaude({ weekly: usage.window(data.percent, 2 * usage.day + 21 * 3600, []) });
             if (data.failed) {
@@ -2193,8 +2192,7 @@ Item {
             }
             const readings = countdown(load("claude"));
             compare(readings.length, 2);
-            const expected = String(data.red ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor);
-            readings.forEach(r => compare(String(r.color), expected));
+            readings.forEach(r => compare(String(r.color), String(Kirigami.Theme.textColor)));
         }
 
         // Once the reset has passed with the reading still at 100 %, no
