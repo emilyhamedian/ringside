@@ -50,10 +50,18 @@ PlasmaExtras.PlasmoidHeading {
 
         PlasmaComponents.ToolButton {
             id: configure
-            // Level with the switch, above the status under it.
-            Layout.alignment: lead.visible ? Qt.AlignTop : Qt.AlignVCenter
-            // The icon on the readings' far edge, in every popup alike.
+            // Level with the lead's content. The lead's own room above and
+            // below it is the button's too, or the button would be centred on
+            // that room instead.
+            readonly property Item leadItem: lead.visible ? lead.children[0] : null
+            Layout.alignment: Qt.AlignVCenter
+            Layout.topMargin: leadItem?.Layout.topMargin ?? 0
+            Layout.bottomMargin: leadItem?.Layout.bottomMargin ?? 0
+            // The icon's drawing on the readings' far edge, in every popup
+            // alike. Breeze's 22 px icons keep 3 px free around the drawing,
+            // so the icon sits that much past the edge.
             Layout.rightMargin: Math.round(Kirigami.Units.largeSpacing * 2) - footer.rightPadding - configure.rightPadding
+                                - Kirigami.Units.iconSizes.smallMedium * 3 / 22
             icon.name: "configure"
             display: T.AbstractButton.IconOnly
             text: i18nc("@action:button", "Configure Ringside…")

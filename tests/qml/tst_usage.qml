@@ -2566,6 +2566,11 @@ Item {
             return root.find(popup, i => i.icon !== undefined && i.icon.name === "configure");
         }
 
+        // Breeze's 22 px configure icon keeps 3 px free at each side of its
+        // drawing; the footer puts the icon that far past the readings' edge
+        // so the drawing sits on it.
+        readonly property real iconSlack: Kirigami.Units.iconSizes.smallMedium * 3 / 22
+
         function setStarter(item, starter) {
             monitor.usage.starters = Object.assign({}, monitor.usage.starters, { [item]: Object.assign({ at: null, next: null, reason: null }, starter) });
         }
@@ -2593,14 +2598,15 @@ Item {
             fuzzyCompare(toggle.mapToItem(popup, Qt.point(toggle.width, 0)).x,
                          button.mapToItem(popup, Qt.point(0, 0)).x - Kirigami.Units.largeSpacing - Kirigami.Units.smallSpacing, 0.5);
             compare(toggle.mapToItem(popup, Qt.point(0, 0)).x, Math.round(Kirigami.Units.largeSpacing * 2), "on the readings' edge");
-            compare(button.mapToItem(popup, Qt.point(button.width - button.rightPadding, 0)).x,
-                    popup.width - Math.round(Kirigami.Units.largeSpacing * 2), "the icon on the readings' far edge");
-            verify(status.mapToItem(popup, Qt.point(0, 0)).y >= toggle.mapToItem(popup, Qt.point(0, toggle.height)).y, "under the label");
+            compare(button.mapToItem(popup, Qt.point(button.width - button.rightPadding - iconSlack, 0)).x,
+                    popup.width - Math.round(Kirigami.Units.largeSpacing * 2), "the icon's drawing on the readings' far edge");
+            const label = root.find(toggle.contentItem, i => i.visible && i.text === toggle.text && i.contentWidth !== undefined);
+            verify(status.mapToItem(popup, Qt.point(0, 0)).y >= label.mapToItem(popup, Qt.point(0, label.height)).y, "under the label");
             // The last line's baseline two large spacings above the popup's
             // edge, as the label's capitals are below the footer's rule.
             const lastBaseline = status.mapToItem(popup, Qt.point(0, status.height)).y - (status.height / 2 - status.baselineOffset);
             fuzzyCompare(popup.height - lastBaseline, Math.round(Kirigami.Units.largeSpacing * 2), 1);
-            const texts = toggle.parent.texts;
+            const texts = toggle.texts;
             StarterStates.ROWS.filter(row => (row.only ?? data.item) === data.item).forEach(row => {
                 const starter = starterFor(row);
                 setStarter(data.item, starter);
@@ -2689,6 +2695,60 @@ Item {
                    "a second line adds one line: " + (heights[2] - heights[1]));
         }
 
+        // The track and the configure icon are centred on the label and the
+        // status together, whether the status takes one line, two, or none,
+        // and while the switch is struck and disabled; and the room left of
+        // the track and right of the icon's drawing is the same, and the
+        // readings' margin, in either direction of writing.
+        function test_starterFooterIsCentred_data() {
+            return [{ tag: "left to right", mirrored: false }, { tag: "right to left", mirrored: true }];
+        }
+
+        function test_starterFooterIsCentred(data) {
+            const popup = load("claude", data.mirrored);
+            const toggle = starterSwitch(popup);
+            const status = starterStatus(popup);
+            const button = configureButton(popup);
+            const label = root.find(toggle.contentItem, i => i.visible && i.text === toggle.text && i.contentWidth !== undefined);
+            const rect = i => ({ left: i.mapToItem(popup, 0, 0).x, right: i.mapToItem(popup, i.width, 0).x,
+                                 top: i.mapToItem(popup, 0, 0).y, bottom: i.mapToItem(popup, 0, i.height).y });
+            const margin = Math.round(Kirigami.Units.largeSpacing * 2);
+            const lines = {};
+            const check = tag => {
+                waitForRendering(popup);
+                const block = { top: rect(label).top, bottom: rect(status).bottom };
+                const middle = (block.top + block.bottom) / 2;
+                const track = rect(toggle.indicator);
+                const icon = rect(button);
+                fuzzyCompare((track.top + track.bottom) / 2, middle, 1, tag + ": the track on the text");
+                fuzzyCompare((icon.top + icon.bottom) / 2, middle, 1, tag + ": the icon on the text");
+                const drawing = { left: icon.left + button.leftPadding + iconSlack, right: icon.right - button.rightPadding - iconSlack };
+                const room = data.mirrored ? { start: drawing.left, end: popup.width - track.right }
+                                           : { start: track.left, end: popup.width - drawing.right };
+                fuzzyCompare(room.start, room.end, 1, tag + ": the same room at both sides");
+                fuzzyCompare(room.start, margin, 1, tag + ": the readings' margin");
+                lines[status.text === "" ? 0 : status.lineCount] = true;
+            };
+            // An unknown state says nothing, the shortest status there is.
+            StarterStates.ROWS.concat([{ state: "later", enabled: true }]).forEach(row => {
+                setStarter("claude", starterFor(row));
+                check(row.state + " " + (row.reason ?? ""));
+            });
+            setStarter("claude", { enabled: true, state: "waiting", next: monitor.usage.createdAt + 3600 });
+            failClaude(600);
+            verify(!toggle.enabled);
+            check("struck");
+            // No status here is short enough for one line at this width, so
+            // a translation stands in for one.
+            root.translations = { "Can be changed once Ringside can check your usage again.": "Held." };
+            try {
+                check("struck, one line");
+            } finally {
+                root.translations = {};
+            }
+            verify(lines[0] && lines[1] && lines[2], "statuses of none, one and two lines: " + Object.keys(lines));
+        }
+
         // A status too long for its two lines, such as one with a long
         // error, reads in full from a tool tip while the pointer is on the
         // status or the switch, or the switch has keyboard focus.
@@ -2710,7 +2770,7 @@ Item {
             setStarter("claude", { enabled: true, state: "failed", reason: "switch", error: error });
             waitForRendering(popup);
             verify(status.truncated);
-            const full = toggle.parent.texts.starterStatus("claude", monitor.usage.starter("claude"), popup.nowMs);
+            const full = toggle.texts.starterStatus("claude", monitor.usage.starter("claude"), popup.nowMs);
             verify(full.endsWith(error));
             mouseMove(status, 3, 3);
             tryVerify(() => tip.visible, 5000);
@@ -2740,7 +2800,7 @@ Item {
             const popup = load("claude");
             const toggle = starterSwitch(popup);
             const status = starterStatus(popup);
-            const own = () => toggle.parent.texts.starterStatus("claude", usage.starter("claude"), popup.nowMs);
+            const own = () => toggle.texts.starterStatus("claude", usage.starter("claude"), popup.nowMs);
             verify(toggle.enabled, "a grey reading keeps it");
             compare(status.text, own());
 
@@ -2781,6 +2841,7 @@ Item {
             verify(label);
             const x = (i, at) => i.mapToItem(popup, Qt.point(at, 0)).x;
             const track = toggle.indicator;
+            compare(label.effectiveHorizontalAlignment, data.mirrored ? Text.AlignRight : Text.AlignLeft);
             if (data.mirrored) {
                 compare(x(track, 0) - x(label, label.width), Kirigami.Units.largeSpacing);
                 compare(x(status, status.width), x(label, label.width));
