@@ -76,7 +76,6 @@ class Isolated(unittest.TestCase):
             "XDG_STATE_HOME": str(self.tmp / "state"),
             "CLAUDE_CONFIG_DIR": str(self.tmp / "claude"),
             "CODEX_HOME": str(self.tmp / "codex"),
-            "RINGSIDE_USAGE_FAKE": "",
         }))
         paths = load_helper()
         self.enterContext(mock.patch.multiple(usage, **{name: getattr(paths, name) for name in (
@@ -1173,12 +1172,25 @@ class ProviderChoice(Isolated):
         self.codex.assert_not_called()
         self.assertFalse(usage.CACHE_DIR.exists())
 
+    # The script as the widget runs it, in a home with no logins, no cache
+    # and nothing on PATH: both providers are signed out, nothing is polled
+    # and the starter flags are taken.
     def test_the_script_itself(self):
-        env = dict(os.environ, RINGSIDE_USAGE_FAKE=str(FIXTURES / "fake_report.json"))
-        run = subprocess.run([sys.executable, HELPER, "--providers", "claude"], env=env,
+        home = self.tmp / "fresh"
+        home.mkdir()
+        env = {"PATH": str(home), "HOME": str(home), "XDG_CACHE_HOME": str(home / "cache"),
+               "XDG_CONFIG_HOME": str(home / "config"), "XDG_STATE_HOME": str(home / "state"),
+               "CLAUDE_CONFIG_DIR": str(home / "claude"), "CODEX_HOME": str(home / "codex")}
+        run = subprocess.run([sys.executable, HELPER, "--start", "--starter-set", "codex=on"], env=env,
                              capture_output=True, text=True, timeout=30)
         self.assertEqual(run.returncode, 0, run.stderr)
-        self.assertEqual(list(json.loads(run.stdout)["providers"]), ["claude"])
+        report = json.loads(run.stdout)
+        self.assertEqual({name: entry["status"] for name, entry in report["providers"].items()},
+                         {"claude": "signed_out", "codex": "signed_out"})
+        self.assertEqual(report["providers"]["claude"]["starter"], OFF)
+        self.assertEqual((report["providers"]["codex"]["starter"]["enabled"],
+                          report["providers"]["codex"]["starter"]["state"]), (True, "failed"))
+        self.assertEqual(sorted(os.listdir(home)), ["cache", "config", "state"])
         run = subprocess.run([sys.executable, HELPER, "--providers", "nope"], env=env,
                              capture_output=True, text=True, timeout=30)
         self.assertEqual(run.returncode, 2)
@@ -1317,29 +1329,6 @@ class History(Isolated):
         self.assertEqual(sorted(os.listdir(usage.CACHE_DIR)), ["usage-history.json", "usage.json", "usage.lock"])
 
 
-class Fake(Isolated):
-    def setUp(self):
-        super().setUp()
-        self.enterContext(mock.patch.dict(os.environ, {"RINGSIDE_USAGE_FAKE": str(FIXTURES / "fake_report.json")}))
-        self.claude = self.enterContext(mock.patch.object(usage, "claude_usage"))
-        self.codex = self.enterContext(mock.patch.object(usage, "codex_usage"))
-
-    def test_reports_the_requested_providers_without_polling(self):
-        self.assertEqual(list(self.run_main("--providers", "codex")["providers"]), ["codex"])
-        self.assertEqual(set(self.run_main()["providers"]), {"claude", "codex"})
-        self.claude.assert_not_called()
-        self.codex.assert_not_called()
-        self.assertFalse(usage.CACHE_DIR.exists())
-
-    def test_every_window_carries_a_history(self):
-        providers = self.run_main()["providers"]
-        self.assertEqual(providers["claude"]["weekly"]["history"],
-                         fixture("fake_report.json")["providers"]["claude"]["weekly"]["history"])
-        self.assertEqual(providers["claude"]["scoped"][0]["history"], [])
-        self.assertEqual(providers["codex"]["weekly"]["history"], [])
-        self.assertEqual(providers["codex"]["scoped"][0]["history"], [])
-
-
 class ClockZone(Isolated):
     # The tray's weather applet reuses the clock's id one level down.
     APPLETSRC = """[Containments][23][Applets][28][Applets][38]
@@ -1454,12 +1443,6 @@ selectedTimeZones=Local,America/New_York
         cached = json.loads(usage.CACHE_FILE.read_text())["claude"]
         self.assertNotIn("clockZone", cached["weekly"])
         self.assertNotIn("clockZone", cached["scoped"][0])
-
-    def test_fake_reports_carry_the_zone(self):
-        with mock.patch.dict(os.environ, {"RINGSIDE_USAGE_FAKE": str(FIXTURES / "fake_report.json")}):
-            report = self.run_main()
-        self.assertEqual(report["providers"]["codex"]["weekly"]["clockZone"]["abbreviation"], "EDT")
-        self.assertEqual(report["providers"]["codex"]["scoped"][0]["clockZone"]["abbreviation"], "EDT")
 
 
 if __name__ == "__main__":
