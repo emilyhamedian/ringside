@@ -8,8 +8,8 @@ import QtTest
 import org.kde.kirigami as Kirigami
 import "../../package/contents/ui"
 import "../../package/contents/ui/config"
-import "../../package/contents/ui/code/log.js" as Log
 import "../../package/contents/ui/code/publicaddress.js" as Lookup
+import "journal.js" as Journal
 
 // The public address in the network popup: the service's URLs and replies,
 // when the checker may send anything, the minute between checks shared by
@@ -173,7 +173,7 @@ Item {
         property var monitors: []
 
         function cleanup() {
-            Log.unlisten(listener);
+            Journal.unlisten();
             popupMonitor.publicAddress = null;
             for (const m of monitors) {
                 m.destroy();
@@ -775,7 +775,7 @@ Item {
 
         function journal() {
             logged = [];
-            Log.listen(listener);
+            Journal.listen(listener);
         }
 
         // Each request is debug with the host asked and how long it took;
@@ -786,7 +786,7 @@ Item {
             root.now += 230;
             answer(set.made, "v4", 200, JSON.stringify({ ip: "203.0.113.7", city: "Oslo", country: "Norway" }));
             answer(set.made, "v6", 200, "2001:db8::1c");
-            Log.unlisten(listener);
+            Journal.unlisten();
             compare(set.checker.status, "shown");
             compare(set.checker.record.result.places.v4.city, "Oslo");
             compare(logged, ["ringside.network debug asked journal.example: answered after 230 ms",
@@ -814,7 +814,7 @@ Item {
             answer(set.made, "v4", 200, "203.0.113.7");
             again();
             compare(set.checker.status, "shown");
-            Log.unlisten(listener);
+            Journal.unlisten();
             compare(logged, ["ringside.network warning asked journal-fails.example: HTTP 503 after 0 ms",
                              "ringside.network debug asked journal-fails.example: HTTP 503 after 0 ms",
                              "ringside.network warning asked journal-fails.example: a reply that isn't an address after 0 ms",
@@ -827,7 +827,7 @@ Item {
             tryCompare(late.checker, "status", "failed", 2000);
             const moved = checker({}, own("journal-moved", false));
             answer(moved.made, "v4", 200, "203.0.113.7", "https://elsewhere.example/ip");
-            Log.unlisten(listener);
+            Journal.unlisten();
             compare(logged, ["ringside.network warning asked journal-late.example: timed out after 0 ms",
                              "ringside.network warning asked journal-moved.example: an answer from another address after 0 ms"]);
         }
@@ -840,7 +840,7 @@ Item {
             journal();
             const set = checker({}, { publicAddressUrl4: data.url, publicAddressUrl6: "" });
             answer(set.made, "v4", 503, "");
-            Log.unlisten(listener);
+            Journal.unlisten();
             compare(logged, ["ringside.network warning asked the custom service: HTTP 503 after 0 ms"]);
         }
 
@@ -1272,7 +1272,9 @@ Item {
                 verify(!shown.some(t => t.indexOf("Oslo") >= 0), shown);
             } finally {
                 // So the tests after this one find ipify.org never asked.
-                Lookup.forget();
+                for (const key of Object.keys(Lookup.records)) {
+                    delete Lookup.records[key];
+                }
             }
         }
 

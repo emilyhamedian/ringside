@@ -104,8 +104,7 @@ Item {
     readonly property bool keepHistory: config.keepGraphHistory === true
     property string widgetId: ""
     // Loaded only while the setting is on, and only by URL, so a missing
-    // LocalStorage module costs the setting rather than the widget. The
-    // tests point it elsewhere.
+    // LocalStorage module costs the setting rather than the widget.
     property url storeUrl: Qt.resolvedUrl("HistoryStore.qml")
     property QtObject store: null
     // The store couldn't load, so the history stays in memory.
@@ -125,7 +124,7 @@ Item {
     property var hardware: ({})
     // Which popup is open, so GPU reads can follow what's on screen.
     property string openPopup: ""
-    // The hardware helper; the tests swap in a stub.
+    // The hardware helper.
     property string helperPath: decodeURIComponent(Qt.resolvedUrl("../code/ringside-info.sh").toString()
                                                    .replace(/^file:\/\//, ""))
 
@@ -140,7 +139,8 @@ Item {
     readonly property alias usage: usageData
     // The mark in the Codex ring: "codex", or "openai" for the OpenAI logo.
     readonly property string codexMark: config.codexMark === "openai" ? "openai" : "codex"
-    // The Claude and Codex helper; the tests swap in a stub.
+    // The Claude and Codex helper. It, helperPath and storeUrl are test
+    // seams: nothing in the package sets them.
     property alias usageHelperPath: usageData.helperPath
 
     // Asked for by the popups' footers.

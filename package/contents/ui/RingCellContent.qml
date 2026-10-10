@@ -39,7 +39,7 @@ Item {
     readonly property string accessibleDescription: words.describe(item)
 
     // Off changes the readings, and the name in the ring, at once, as at
-    // Plasma's Instant speed. The tests turn it off to check layouts.
+    // Plasma's Instant speed. A test seam.
     property bool animated: Kirigami.Units.longDuration > 1
     readonly property var lines: words.readout(item)
     readonly property string described: describes()

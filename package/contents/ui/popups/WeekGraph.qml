@@ -57,7 +57,7 @@ Item {
     property string runOutText: ""
     // A new stretch of line draws on over twice this, and the rest fades
     // over it or half of it: Kirigami's long duration, or 0 at Plasma's
-    // Instant speed, where everything is drawn at once.
+    // Instant speed, where everything is drawn at once. A test seam.
     property int duration: Kirigami.Units.longDuration > 1 ? Kirigami.Units.longDuration : 0
 
     // The time axis, in epoch seconds.

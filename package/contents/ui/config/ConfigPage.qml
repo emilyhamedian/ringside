@@ -88,8 +88,7 @@ KCM.SimpleKCM {
     property string cfg_detectedHardwareDefault
 
     readonly property var reports: ["knownLimits", "usageStatus", "detectedHardware"]
-    // The live configuration: undefined outside Plasma, where tests hand
-    // over a stand-in.
+    // The live configuration: undefined outside Plasma. A test seam.
     property var live: Plasmoid.configuration
 
     // One of the reports, parsed; {} while it is empty or unreadable.

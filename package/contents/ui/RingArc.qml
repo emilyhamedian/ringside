@@ -59,7 +59,7 @@ Shape {
     readonly property real span: 3.6 * (head - tail)
     // Qt 6.12 can stroke the arc with its gradient, which costs a good deal
     // less to redraw as the arc moves than the filled band that draws it on
-    // earlier Qt. The tests turn it off to check the band.
+    // earlier Qt. A test seam, which can turn the band on there too.
     property bool stroked: "strokeGradient" in reading
 
     // Only implicit: a gauge stretches its arcs over itself, which keeps

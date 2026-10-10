@@ -4,7 +4,7 @@
 import QtQuick
 import QtTest
 import "../../package/contents/ui"
-import "../../package/contents/ui/code/log.js" as Log
+import "journal.js" as Journal
 
 // The subscription side of the sleep gate: a GpuReader must never switch its
 // Sensors on for a GPU that may be asleep, and only one reader per GPU across
@@ -52,11 +52,11 @@ TestCase {
         ++serial;
         reader = createTemporaryObject(readerComponent, testCase, { info: discrete(true), onRing: true });
         logged = [];
-        Log.listen(listener);
+        Journal.listen(listener);
     }
 
     function cleanup() {
-        Log.unlisten(listener);
+        Journal.unlisten();
     }
 
     function above() {

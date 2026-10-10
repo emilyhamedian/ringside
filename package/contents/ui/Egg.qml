@@ -45,7 +45,7 @@ Item {
     // The strip the rings are in, and whether it runs down the panel.
     property Item stage: null
     property bool vertical: false
-    // Off at Plasma's Instant speed. The tests turn it off to stand in.
+    // Off at Plasma's Instant speed. A test seam.
     property bool animated: Kirigami.Units.longDuration > 1
 
     // In milliseconds.

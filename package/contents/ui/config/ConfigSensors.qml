@@ -24,8 +24,8 @@ ConfigPage {
     // The sensors a picker can use, as { id, name, groupName } rows: the
     // ksystemstats id and the tree's names for the sensor and its group, ""
     // where the tree gives none. collect() reads them from the tree into
-    // fromTree. Not readonly: tests substitute fixed rows, so they don't
-    // depend on this machine's sensors.
+    // fromTree. A test seam: fixed rows given here stay, however the tree
+    // fills in afterwards.
     property var listed: fromTree
     property var fromTree: []
 

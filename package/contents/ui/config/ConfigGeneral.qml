@@ -14,7 +14,7 @@ ConfigPage {
 
     // The graphs' history is kept with Qt's LocalStorage module, which
     // Debian and Ubuntu package on their own; without it the box is greyed
-    // out and says why. The tests point this elsewhere.
+    // out and says why. A test seam.
     property url storeUrl: Qt.resolvedUrl("../HistoryStore.qml")
     readonly property bool storeAvailable: Qt.createComponent(storeUrl).status === Component.Ready
     readonly property string historyLine: storeAvailable

@@ -25,12 +25,12 @@ Item {
     property string mark: item
     // RingGauge.centreWidth: the clear width inside the innermost ring.
     required property real room
-    // Scales the name's font. The package never sets it: the tests do, to
-    // stand in for Breeze's 8 pt small font with their own theme's larger one.
+    // Scales the name's font. A test seam, standing in for Breeze's 8 pt
+    // small font where the theme's is larger.
     property real sizeFactor: 1
     property bool active: true
     // Off draws a new size, and a name that comes or goes, at once, as at
-    // Plasma's Instant speed. The tests turn it off to check layouts.
+    // Plasma's Instant speed.
     property bool animated: Kirigami.Units.longDuration > 1
     // The size laid out, a name's pixel size or a mark's, and the one
     // drawn, eased from the last: the name is laid out once at its new
@@ -115,8 +115,6 @@ Item {
         sourceComponent: Shape {
             id: mark
 
-            // Names the mark for the tests, which can't read a path.
-            readonly property string markName: name.mark
             readonly property var art: name.art
             // Scene pixels per viewBox unit.
             readonly property real unit: name.markSize / art.box[2]

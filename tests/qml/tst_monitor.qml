@@ -6,7 +6,7 @@ import QtQuick.LocalStorage as Sql
 import QtTest
 import org.kde.plasma.plasma5support as P5Support
 import "../../package/contents/ui"
-import "../../package/contents/ui/code/log.js" as Log
+import "journal.js" as Journal
 
 // Monitor with a stub helper (data/fake-info.sh): its bindings evaluate
 // without script errors, the helper's report drives the GPU rings and the
@@ -441,7 +441,7 @@ TestCase {
     function test_journalSetup() {
         const logged = [];
         const listener = (category, level, text) => logged.push(category + " " + level + " " + text);
-        Log.listen(listener);
+        Journal.listen(listener);
         const setup = () => logged.filter(line => line.startsWith("ringside.setup "));
         const broken = makeMonitor({ helperPath: dataPath("no-such-helper.sh") });
         tryVerify(() => setup().length > 0, 10000);
@@ -453,7 +453,7 @@ TestCase {
         monitor.noteMissingSensors();
         monitor.noteMissingSensors();
         monitor.noteMissingSensors();
-        Log.unlisten(listener);
+        Journal.unlisten();
         const named = logged.filter(line => line === "ringside.setup info ksystemstats has no sensor ringside/test/nothing, "
                                             + "so its reading stays empty"
                                             || line.startsWith("ringside.setup warning no sensor has answered"));

@@ -1346,7 +1346,7 @@ Item {
         // What holds the mark in the ring's middle, which dims it.
         function middle(c) {
             const face = outerArc(c).parent;
-            let item = root.all(c, i => i.markName !== undefined)[0];
+            let item = root.all(c, i => i.art !== undefined && i.unit !== undefined)[0];
             while (item.parent !== face) {
                 item = item.parent;
             }
