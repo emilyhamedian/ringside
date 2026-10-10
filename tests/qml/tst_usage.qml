@@ -1487,7 +1487,7 @@ Item {
             compare([line(c, "first").text, line(c, "second").text], ["––%", "–d"]);
             const dim = String(Style.dim(Kirigami.Theme.textColor));
             compare([String(line(c, "first").color), String(line(c, "second").color)], [dim, dim]);
-            fuzzyCompare(middle(c).opacity, 0.15, 1e-6, "fainter than the stroke once struck");
+            tryVerify(() => Math.abs(middle(c).opacity - 0.15) < 1e-6, 3000, "fainter than the stroke once struck");
             compare([gauge.centreWidth, mark(c).width], [room, markWidth], "the mark keeps its size");
 
             const s = strike(c);
@@ -1526,7 +1526,8 @@ Item {
             tryCompare(arc, "percent", 95, 3000);
             verify(!strike(c).visible);
             compare([line(c, "first").text, line(c, "second").text], ["95%", "5h"].map(root.localized));
-            fuzzyCompare(middle(c).opacity, 1, 1e-6);
+            // Once the grey has faded out too.
+            tryVerify(() => Math.abs(middle(c).opacity - 1) < 1e-6, 3000, "the mark back in full");
             compare(c.accessibleDescription, root.localized("95%") + " used, Fable " + root.localized("78%") + ", resets in 5 hours");
         }
 
@@ -1578,7 +1579,7 @@ Item {
             compare([String(line(c, "first").color), String(line(c, "second").color)], [dim, dim]);
             compare(arc.color, Qt.alpha(Kirigami.Theme.textColor, 0.42 * Kirigami.Theme.textColor.a), "grey, not red");
             compare(innerArc(c).color, Qt.alpha(Kirigami.Theme.textColor, 0.55 * Kirigami.Theme.textColor.a), "grey, not amber");
-            fuzzyCompare(middle(c).opacity, 0.4, 1e-6);
+            tryVerify(() => Math.abs(middle(c).opacity - 0.4) < 1e-6, 3000, "greyed out");
             if (data.breath) {
                 tryCompare(arc.parent, "opacity", 1, 2500);
                 wait(1200);
@@ -1656,7 +1657,7 @@ Item {
             compare([line(c, "first").text, line(c, "second").text], ["–", "–"]);
             const dim = String(Style.dim(Kirigami.Theme.textColor));
             compare([String(line(c, "first").color), String(line(c, "second").color)], [dim, dim]);
-            fuzzyCompare(middle(c).opacity, 0.4, 1e-6);
+            tryVerify(() => Math.abs(middle(c).opacity - 0.4) < 1e-6, 3000, "greyed out");
             const marked = mark(c).visible;
             verify(!strike(c).visible);
             compare(c.accessibleDescription, "Checking your usage…");
@@ -1686,7 +1687,7 @@ Item {
             compare(strikePath(c).strokeColor, arc.trackColor, "struck in the track's grey");
             compare(arc.percent, 0);
             compare([line(c, "first").text, line(c, "second").text], ["––%", "–d"]);
-            fuzzyCompare(middle(c).opacity, 0.15, 1e-6, "fainter than the stroke once struck");
+            tryVerify(() => Math.abs(middle(c).opacity - 0.15) < 1e-6, 3000, "fainter than the stroke once struck");
             compare(c.accessibleDescription.split("\n"), [
                 "Last check failed at " + wordsOf(c).timeOfDay(failed.lastErrorAt, c.nowMs) + ". Can't reach api.anthropic.com.",
                 nextCheckAt(c)]);
