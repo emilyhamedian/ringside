@@ -130,6 +130,8 @@ follows [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- Rings are shaded, lighter at the top and deeper at the bottom, in the
+  theme's colours.
 - A Claude check waits up to 20 seconds for Anthropic, as a Codex check
   always has for Codex, so a slow or lossy connection greys the ring less
   often.

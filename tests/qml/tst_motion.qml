@@ -764,9 +764,12 @@ Item {
             return root.all(g, i => i.playReset !== undefined).sort((a, b) => b.radius - a.radius)[0];
         }
 
-        // The path an arc draws its reading with, after its track.
-        function readingPath(arc) {
-            return Array.from(arc.data).filter(o => o.strokeColor !== undefined).pop();
+        // 1 while an arc draws its reading, with the gradient on the stroke
+        // or on the filled band, whichever draws it on this Qt; else 0.
+        function painted(arc) {
+            const paths = Array.from(arc.data).filter(o => o.capStyle !== undefined);
+            return (arc.stroked ? paths.find(o => o.capStyle === ShapePath.RoundCap).strokeGradient
+                                : paths.find(o => o.fillRule === ShapePath.WindingFill).fillGradient) !== null ? 1 : 0;
         }
 
         // An arc's width as a length along it, in percent.
@@ -818,19 +821,19 @@ Item {
             const c = cell();
             const g = gauge(c);
             const arc = innerArc(g);
-            const path = readingPath(arc);
             const room = rooms(g);
             compare(arc.percent, 40);
             const seen = [];
             createTemporaryObject(samplerComponent, c, {
-                sample: () => seen.push([arc.percent, g.innerShown, g.centreWidth, path.strokeColor.a])
+                sample: () => seen.push([arc.percent, g.innerShown, g.centreWidth, painted(arc)])
             });
             monitor.gpuInner.phase = "asleep";
             compare(g.innerShown, 1, "the track stays while the arc unwinds");
             tryCompare(g, "innerShown", 0, 2000);
             verify(!arc.visible);
             compare(g.centreWidth, room.single);
-            verify(seen.every(([, shown, width, alpha]) => alpha === 0 || shown === 1 && width === room.dual),
+            verify(seen.some(([, , , drawn]) => drawn === 1), "drawn as it starts to unwind: " + JSON.stringify(seen));
+            verify(seen.every(([, shown, width, drawn]) => drawn === 0 || shown === 1 && width === room.dual),
                    "the track and the name wait for the arc: " + JSON.stringify(seen));
             verify(seen.every(([, shown, width]) => shown === 1 || width === room.single),
                    "the name takes its room back as the track goes: " + JSON.stringify(seen));
@@ -890,14 +893,14 @@ Item {
             monitor.gpuOuter.usage = 12;
             const c = cell();
             const arc = outerArc(gauge(c));
-            const path = readingPath(arc);
             const width = widthAlong(arc);
             const seen = [];
-            createTemporaryObject(samplerComponent, c, { sample: () => seen.push([arc.percent, path.strokeColor.a]) });
+            createTemporaryObject(samplerComponent, c, { sample: () => seen.push([arc.percent, painted(arc)]) });
             monitor.gpuOuter.usage = NaN;
             tryCompare(arc, "percent", 0, 2000);
             verify(seen.some(([percent]) => percent > 0 && percent < width), "it unwinds through its width: " + JSON.stringify(seen));
-            verify(seen.every(([percent, alpha]) => percent >= width || alpha === 0), JSON.stringify(seen));
+            verify(seen.some(([, drawn]) => drawn === 1), "drawn while it is long enough: " + JSON.stringify(seen));
+            verify(seen.every(([percent, drawn]) => percent >= width || drawn === 0), JSON.stringify(seen));
         }
 
         // The name scales as a texture, so its strokes soften rather than

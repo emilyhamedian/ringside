@@ -470,6 +470,7 @@ Item {
             trackColor: Qt.alpha(gauge.color, 0.16 * gauge.color.a * (gauge.sweep > 0 ? 1 : 1 - gauge.dotsShown))
             trackSweep: gauge.sweep > 0 ? gauge.sweep : 1
             gap: gauge.gap
+            shading: 1 - gauge.greyed
         }
 
         RingArc {
@@ -484,6 +485,7 @@ Item {
             color: gauge.innerColor(gauge.drawnInnerLevel)
             trackColor: Qt.alpha(gauge.color, 0.22 * 0.55 * gauge.color.a)
             gap: gauge.gap
+            shading: 1 - gauge.greyed
         }
 
         // The name or mark, greyed out further while the ring is grey or
