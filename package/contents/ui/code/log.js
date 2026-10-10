@@ -16,14 +16,26 @@
 
 const listeners = [];
 
-// level is "debug", "info" or "warning".
+// level is "debug", "info" or "warning". Up to Qt 6.6 at least, a
+// LoggingCategory written to before its component completes, as from a
+// handler that runs while the widget is being built, throws; the line then
+// goes out under Qt's own category with the name in front, and a debug
+// line is dropped, since that category shows debug lines by default.
 function write(category, level, text) {
-    if (level === "debug") {
-        console.debug(category, text);
-    } else if (level === "info") {
-        console.info(category, text);
-    } else {
-        console.warn(category, text);
+    try {
+        if (level === "debug") {
+            console.debug(category, text);
+        } else if (level === "info") {
+            console.info(category, text);
+        } else {
+            console.warn(category, text);
+        }
+    } catch (err) {
+        if (level === "info") {
+            console.info(category.name + ": " + text);
+        } else if (level !== "debug") {
+            console.warn(category.name + ": " + text);
+        }
     }
     for (const listener of listeners.slice()) {
         listener(category.name, level, text);

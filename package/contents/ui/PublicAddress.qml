@@ -282,7 +282,7 @@ Item {
         onTriggered: {
             const late = checker.pending.filter(s => !s.done);
             for (const s of late) {
-                checker.settle(s, null, "no answer in " + checker.timeoutMs / 1000 + " s");
+                checker.settle(s, null, "timed out");
             }
             for (const s of late) {
                 s.request.abort();

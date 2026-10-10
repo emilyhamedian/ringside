@@ -442,9 +442,10 @@ TestCase {
         const logged = [];
         const listener = (category, level, text) => logged.push(category + " " + level + " " + text);
         Log.listen(listener);
+        const setup = () => logged.filter(line => line.startsWith("ringside.setup "));
         const broken = makeMonitor({ helperPath: dataPath("no-such-helper.sh") });
-        tryVerify(() => logged.length > 0, 10000);
-        verify(/^ringside\.setup warning ringside-info\.sh exited with code \d+: .*; trying again in 5 s$/.test(logged[0]), logged[0]);
+        tryVerify(() => setup().length > 0, 10000);
+        verify(/^ringside\.setup warning ringside-info\.sh exited with code \d+: .*; trying again in 5 s$/.test(setup()[0]), setup()[0]);
         broken.destroy();
         logged.length = 0;
 
@@ -456,7 +457,7 @@ TestCase {
         const named = logged.filter(line => line === "ringside.setup info ksystemstats has no sensor ringside/test/nothing, "
                                             + "so its reading stays empty"
                                             || line.startsWith("ringside.setup warning no sensor has answered"));
-        compare(named.length, 1, logged);
+        compare(named.length, 1, setup());
     }
 
     // The helper prints "BDF  auto" when runtime_status can't be read: the
@@ -1095,7 +1096,7 @@ TestCase {
     // Where the store can't load, Qt's LocalStorage module missing, the
     // widget still runs, keeps its history in memory and says so once.
     function test_aMissingStoreKeepsHistoryInMemory() {
-        ignoreWarning(/^the graphs' history stays in memory, as the store can't load:/);
+        ignoreWarning(/the graphs' history stays in memory, as the store can't load:/);
         failOnWarning(/graphs' (saved )?history/);
         const m = sampling(keeping("w1", true, { storeUrl: Qt.resolvedUrl("data/MissingStore.qml") }));
         verify(m.storeMissing);
