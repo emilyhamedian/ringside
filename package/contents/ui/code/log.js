@@ -16,12 +16,20 @@
 
 const listeners = [];
 
-// level is "debug", "info" or "warning". Up to Qt 6.6 at least, a
-// LoggingCategory written to before its component completes, as from a
-// handler that runs while the widget is being built, throws; the line then
-// goes out under Qt's own category with the name in front, and a debug
-// line is dropped, since that category shows debug lines by default.
+// level is "debug", "info" or "warning". The journal keeps the category in
+// its QT_CATEGORY field, not in the text, which is how the README finds
+// Ringside's lines. Up to Qt 6.6 at least, a LoggingCategory written to
+// before its component completes, as from a handler that runs while the
+// widget is being built, throws; the line then goes out a moment later,
+// once it has, so it keeps its category.
 function write(category, level, text) {
+    emit(category, level, text, true);
+    for (const listener of listeners.slice()) {
+        listener(category.name, level, text);
+    }
+}
+
+function emit(category, level, text, retry) {
     try {
         if (level === "debug") {
             console.debug(category, text);
@@ -31,14 +39,9 @@ function write(category, level, text) {
             console.warn(category, text);
         }
     } catch (err) {
-        if (level === "info") {
-            console.info(category.name + ": " + text);
-        } else if (level !== "debug") {
-            console.warn(category.name + ": " + text);
+        if (retry) {
+            Qt.callLater(() => emit(category, level, text, false));
         }
-    }
-    for (const listener of listeners.slice()) {
-        listener(category.name, level, text);
     }
 }
 
