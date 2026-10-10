@@ -943,8 +943,8 @@ class ReadingCache(Isolated):
         self.assertGreaterEqual(codex["retryAt"], now)
         self.assertLessEqual(codex["retryAt"], report["fetchedAt"])
 
-    # A hold cached by 0.2 has no reason or host; it is replayed as it was,
-    # with none to give, rather than polled again.
+    # A hold without a reason or host is replayed as it was, with none to
+    # give, rather than polled again.
     def test_a_hold_without_a_reason_replays_as_other(self):
         for entry, report in (
                 ({"status": "error", "message": "down", "heldUntil": 1300, "holdSeconds": 300},
@@ -975,6 +975,7 @@ class ReadingCache(Isolated):
                       {"status": "ok", "fetchedAt": 999, "weekly": dict(window, resetsAt="soon")},
                       {"status": "ok", "fetchedAt": 999, "weekly": dict(window, percent=1.5)},
                       {"status": "ok", "fetchedAt": 999, "weekly": dict(window, windowSeconds=float(WEEK))},
+                      {"status": "ok", "fetchedAt": 999, "weekly": {"percent": 1, "resetsAt": 5}},
                       {"status": "ok", "fetchedAt": 999, "weekly": window, "scoped": [window]},
                       {"status": "rate_limited", "heldUntil": "later"},
                       {"status": "error", "heldUntil": 1100, "holdSeconds": 300}):

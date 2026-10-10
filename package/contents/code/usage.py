@@ -1048,9 +1048,10 @@ def read_cache():
 
 
 def well_formed(window, scoped=False):
+    """A cached window as window_from() writes one, its length included."""
     return (isinstance(window, dict) and type(window.get("percent")) is int
             and (window.get("resetsAt") is None or type(window.get("resetsAt")) is int)
-            and type(window.get("windowSeconds", 0)) is int
+            and type(window.get("windowSeconds")) is int
             and (not scoped or isinstance(window.get("id"), str)))
 
 
@@ -1223,7 +1224,7 @@ def within(series, window, now):
     """
     start = now - WEEK_SECONDS
     if window.get("resetsAt") is not None:
-        start = max(start, window["resetsAt"] - window.get("windowSeconds", WEEK_SECONDS))
+        start = max(start, window["resetsAt"] - window["windowSeconds"])
     return [point for point in series if start <= point[0] <= now]
 
 
@@ -1548,7 +1549,7 @@ class Starter:
             self.set("weekly", next_=weekly["resetsAt"] + 1)
             return
         if window:
-            start = window["resetsAt"] - window.get("windowSeconds", self.period)
+            start = window["resetsAt"] - window["windowSeconds"]
             # A step again within the window it started, as after the clock
             # stepped back, finds it started still.
             ours = rec["sentAt"] is not None or (rec["state"] == "started" and rec["at"] == start)
@@ -1606,8 +1607,7 @@ def codex_running(reading, now):
         raise Unreadable()
     if reset is None or reset <= now:
         return None
-    if week["percent"] == 0 and abs(reset - reading["fetchedAt"] - week.get("windowSeconds", WEEK_SECONDS)) \
-            <= ROLLING_SLACK:
+    if week["percent"] == 0 and abs(reset - reading["fetchedAt"] - week["windowSeconds"]) <= ROLLING_SLACK:
         return None
     return week
 
@@ -1615,9 +1615,9 @@ def codex_running(reading, now):
 def starter_read(name, now, not_before):
     """The provider's reading, through the cache and its floor as any poll.
     A confirmation needs a reading taken after the send; while the cache
-    still holds an older one, the step waits for it to go stale. Readings
-    cached by 0.2, which lack Claude's session, wait the same way. A new
-    reading that can't say whether a session runs is a failed read."""
+    still holds an older one, the step waits for it to go stale. A cached
+    Claude reading without a session waits the same way. A new reading
+    that can't say whether a session runs is a failed read."""
     entry = read_cache().get(name)
     if fresh(entry, now) and ((not_before is not None and entry["fetchedAt"] < not_before)
                               or (name == "claude" and "session" not in entry)):
@@ -1679,10 +1679,8 @@ def cli_environment(config_home, settings=None):
     return env
 
 
-# The output cap leaves room for a short greeting. A reply that runs past it
-# makes the CLI ask again to finish, four requests in all, and then exit
-# with an error: Haiku sometimes answers "Hi" in more than 8 tokens even
-# when told to reply with OK.
+# The output cap leaves room for a short greeting: a reply that runs past
+# it costs the CLI more requests to finish.
 def claude_environment():
     return cli_environment("CLAUDE_CONFIG_DIR", {
         "MAX_THINKING_TOKENS": "0", "CLAUDE_CODE_MAX_OUTPUT_TOKENS": "256",
@@ -1715,12 +1713,8 @@ def send_claude(binary, wanted):
     "not-subscription".
 
     Once the send has started, the reading five minutes later decides
-    whether it worked, and the CLI's output is not checked. usage-reset,
-    which this ports, also required a JSON result with no error, a reply
-    and exactly the pinned model: 3 of the 13 sends its journal still
-    holds failed that check although the next reading showed a window
-    started at the send. It kept no output; the likely cause is the
-    8-token output cap it used, which a short greeting overruns.
+    whether it worked; the CLI's output is not checked, since a send can
+    start a window and still exit with an error.
     """
     try:
         claude_access_token(CLI_TOKEN_MARGIN)
@@ -1802,6 +1796,9 @@ def send_codex(binary, wanted):
         pass
 
 
+# The per-provider tables are functions so that the names are looked up
+# when a run needs them: the tests patch the fetchers and senders on the
+# module, which a dict built at import would not see.
 def fetchers():
     return {"claude": claude_usage, "codex": codex_usage}
 

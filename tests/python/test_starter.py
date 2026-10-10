@@ -2,8 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 """The session starter: its steps on a fake clock with fake reads and sends,
-the commands it runs, the lock and login it keeps, and what it reports.
-Ported in part from usage-reset's scheduler and CLI tests."""
+the commands it runs, the lock and login it keeps, and what it reports."""
 
 import fcntl
 import io
@@ -186,7 +185,7 @@ class Steps(unittest.TestCase):
                 self.assertEqual(h.shows(), shows)
 
     # A reading that finds the weekly limit reached holds even a send it
-    # would otherwise confirm, as usage-reset did.
+    # would otherwise confirm.
     def test_the_weekly_limit_reached_while_confirming_holds(self):
         h = Harness(NOW)
         h.step()
@@ -650,7 +649,7 @@ class Commands(Isolated):
         with self.assertRaises(usage.NotSent):
             usage.send_claude("/mock/claude", switched_on)
 
-    # usage-reset counted these as uncertain; the reading decides now.
+    # The reading five minutes later decides; the send's outcome doesn't.
     def test_once_started_any_outcome_is_left_to_the_reading(self):
         for result in ((0, json.dumps({"type": "result", "subtype": "success", "is_error": False, "result": "OK",
                                        "modelUsage": {"claude-haiku-4-5-20251001": {}, "claude-haiku-5": {}}})),
@@ -694,7 +693,7 @@ class Commands(Isolated):
         usage.CODEX_MODEL_CACHE.parent.mkdir(parents=True, exist_ok=True)
         usage.CODEX_MODEL_CACHE.write_text(json.dumps({"models": models} if isinstance(models, list) else models))
 
-    # Owner decision: the newest Luna the CLI lists, at its lightest effort.
+    # The newest Luna the CLI lists, at its lightest effort.
     def test_codex_sends_with_the_newest_listed_luna(self):
         def luna(slug, *efforts, visibility="list"):
             return {"slug": slug, "visibility": visibility,
@@ -992,7 +991,7 @@ class StarterRuns(Isolated):
         self.assertEqual(self.calls, [])
 
     # The --start polls the bad reply itself: one cached by the switch's
-    # run would defer it as a reading from 0.2.
+    # run would defer it as a reading without a session.
     def test_a_reply_that_cant_tell_a_session_sends_nothing(self):
         weekly = {"utilization": 10, "resets_at": int(time.time()) + 86400}
         for body in ({"seven_day": weekly}, {"seven_day": weekly, "five_hour": "soon"}):

@@ -170,8 +170,8 @@ class Checks(Isolated):
         self.assertEqual(lines("level", "kind"), [{"level": "debug", "kind": "renewed"},
                                                   {"level": "debug", "kind": "check"}])
 
-    # The widget of before reads "fetchedAt" and "providers", and the cache
-    # takes neither the events nor the HTTP status kept for them.
+    # The report keeps "fetchedAt" and "providers" beside the events, and
+    # the cache takes neither the events nor the HTTP status kept for them.
     def test_the_report_keeps_its_shape_and_the_cache_takes_no_events(self):
         with mock.patch.object(usage, "claude_usage",
                                side_effect=usage.CheckFailed("HTTP 502 from api.anthropic.com", "server",
