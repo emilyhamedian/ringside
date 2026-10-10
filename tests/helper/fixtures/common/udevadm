@@ -1,4 +1,7 @@
 #!/bin/sh
+# SPDX-FileCopyrightText: 2026 Emily Hamedian <me@emily.dev>
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 # Fake udevadm: answers only what ringside-info.sh asks for.
 #   info -q property -p <sysfs-path>     -> ID_MODEL_FROM_DATABASE for known PCI paths
 # Unknown paths print nothing, like real udevadm with no hwdb match.
