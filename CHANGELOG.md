@@ -166,6 +166,8 @@ follows [Semantic Versioning](https://semver.org/).
   space, with the drive's temperature where the CPU and GPU headers have
   theirs. Its read and write graphs span the popup, with their time span
   and peak on the caption line, as the other popups' graphs do.
+- The network graph draws upload as strongly as download, told apart by
+  longer dashes, and its legend shows a sample of each line.
 - Each GPU in the GPU popup opens with the header the CPU and Claude popups
   use: its usage ring, its name, its kind and memory, and its temperature.
   A second GPU follows after a rule with a header of its own, and a
