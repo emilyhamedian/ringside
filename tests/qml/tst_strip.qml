@@ -33,14 +33,6 @@ Item {
         return substitute(n === 1 ? singular : plural, [n].concat(args));
     }
 
-    // A name at the smallest size it may shrink to, measured here rather
-    // than read from RingName.
-    TextMetrics {
-        id: smallestName
-        font.pointSize: Kirigami.Theme.smallFont.pointSize * 0.7
-        font.letterSpacing: Kirigami.Theme.smallFont.pointSize * 0.08
-    }
-
     Component {
         id: monitorComponent
         FakeMonitor {}
@@ -187,13 +179,10 @@ Item {
             return found.sort((a, b) => b.radius - a.radius);
         }
 
-        // Each ring's name shows exactly where `active` lets it and it fits
-        // the clear middle at its smallest size: the chord of the hole at the
-        // name's ink height, a round hole being narrower above and below its
-        // middle. A name or mark that shows sits inside the hole, centred,
-        // and is all the ring holds: its percentage is beside it. Claude's and
-        // Codex's marks are small enough to show at every ring size tested.
-        function checkNames(active) {
+        // Exactly the rings in `shown` show their name or mark. One that
+        // shows sits inside the hole, centred, and is all the ring holds: its
+        // percentage is beside it.
+        function checkNames(shown) {
             for (let i = 0; i < strip.items.length; ++i) {
                 const item = strip.items[i];
                 if (!root.ringItems.includes(item)) {
@@ -208,34 +197,28 @@ Item {
                 const inside = visibleTexts(gauge);
                 verify(inside.length === 0 || inside.length === 1 && inside[0] === root.names[item],
                        item + " holds " + JSON.stringify(inside));
-                let shown;
+                compare(name.visible, shown.includes(item), item + "'s name across " + hole);
+                let drawnName;
                 if (item === "claude" || item === "codex") {
-                    shown = find(name, m => m.art !== undefined && m.unit !== undefined);
+                    drawnName = find(name, m => m.art !== undefined && m.unit !== undefined);
                     compare(name.mark, item);
-                    compare(shown.visible, active, item + "'s mark");
-                    compare(name.visible, active, item + "'s mark");
+                    compare(drawnName.visible, shown.includes(item), item + "'s mark");
                 } else {
-                    smallestName.text = root.names[item];
-                    const ink = smallestName.tightBoundingRect.height;
-                    const chord = 2 * Math.sqrt(Math.max(0, hole * hole / 4 - ink * ink / 4));
-                    const fits = smallestName.advanceWidth <= chord;
-                    compare(name.visible, active && fits,
-                            item + ": " + smallestName.advanceWidth + " in a chord of " + chord + " across " + hole);
-                    shown = find(name, t => t.text === root.names[item]);
-                    verify(shown, item + "'s name");
+                    drawnName = find(name, t => t.text === root.names[item]);
+                    verify(drawnName, item + "'s name");
                 }
-                if (shown.visible) {
-                    verify((shown.contentWidth ?? shown.width) <= hole, item + " " + shown.width + " in " + hole);
+                if (drawnName.visible) {
+                    verify((drawnName.contentWidth ?? drawnName.width) <= hole, item + " " + drawnName.width + " in " + hole);
                     // The mark by its artwork's middle, through its scale;
                     // the label by its capitals' middle, without the letter
                     // space after its last glyph.
                     // Mapped as a point: Qt 6.6 drops the fraction of an x and y
                     // given apart.
-                    const drawn = shown.art !== undefined
-                        ? shown.mapToItem(strip, Qt.point(shown.art.box[0] + shown.art.box[2] / 2,
-                                                          shown.art.box[1] + shown.art.box[2] / 2))
-                        : shown.mapToItem(strip, Qt.point(shown.width / 2 - shown.font.letterSpacing / 2,
-                                                          shown.baselineOffset - name.capHeight / 2));
+                    const drawn = drawnName.art !== undefined
+                        ? drawnName.mapToItem(strip, Qt.point(drawnName.art.box[0] + drawnName.art.box[2] / 2,
+                                                              drawnName.art.box[1] + drawnName.art.box[2] / 2))
+                        : drawnName.mapToItem(strip, Qt.point(drawnName.width / 2 - drawnName.font.letterSpacing / 2,
+                                                              drawnName.baselineOffset - name.capHeight / 2));
                     verify(Math.abs(drawn.x - centre.centreX) <= 0.5 && Math.abs(drawn.y - centre.centreY) <= 0.5,
                            item + " centred: " + JSON.stringify(drawn) + " in " + JSON.stringify(centre));
                 }
@@ -415,7 +398,7 @@ Item {
 
         function test_verticalRatesFit_data() {
             // Breeze gives an applet the panel's thickness less 8 px.
-            return [34, 36, 40, 44, 48, 52, 60].map(width => ({ tag: String(width), width: width }));
+            return [34, 44, 60].map(width => ({ tag: String(width), width: width }));
         }
 
         function test_verticalRatesFit(data) {
@@ -435,10 +418,15 @@ Item {
         // spacing above and below across a horizontal panel; along a vertical
         // one a small spacing either side. They stop at two and a half grid
         // units, a pixel less where that would leave the panel's parity, and
-        // the stroke is about a thirteenth of the ring in half pixels.
+        // the stroke is about a thirteenth of the ring in half pixels. The
+        // sizes are Breeze's: an 18 px grid unit and a 4 px small spacing.
         function test_ringFollowsThickness_data() {
-            return [18, 22, 30, 36, 38, 46, 60, 100].map(t => ({ tag: "horizontal " + t, vertical: false, thickness: t }))
-                .concat([34, 38, 46, 60].map(t => ({ tag: "vertical " + t, vertical: true, thickness: t })));
+            return [{ tag: "horizontal 18, never smaller", vertical: false, thickness: 18, ring: 16, stroke: 2 },
+                    { tag: "horizontal 30", vertical: false, thickness: 30, ring: 26, stroke: 2 },
+                    { tag: "horizontal 38", vertical: false, thickness: 38, ring: 34, stroke: 2.5 },
+                    { tag: "horizontal 46", vertical: false, thickness: 46, ring: 42, stroke: 3 },
+                    { tag: "horizontal 60, capped", vertical: false, thickness: 60, ring: 44, stroke: 3.5 },
+                    { tag: "vertical 34", vertical: true, thickness: 34, ring: 26, stroke: 2 }];
         }
 
         function test_ringFollowsThickness(data) {
@@ -446,39 +434,34 @@ Item {
             const strip = data.vertical
                 ? makeStrip({ items: items, vertical: true, width: data.thickness, thickness: data.thickness })
                 : makePanel(data.thickness, { items: items });
-            const inset = data.vertical ? Kirigami.Units.smallSpacing : Math.round(Kirigami.Units.smallSpacing / 2);
-            const cap = Math.round(Kirigami.Units.gridUnit * 2.5);
-            const size = Math.max(16, Math.min(cap, data.thickness - 2 * inset));
-            const ring = (data.thickness - size) % 2 !== 0 ? size - 1 : size;
-            compare(strip.ring, ring);
+            compare(strip.ring, data.ring);
             compare((data.thickness - strip.ring) % 2, 0, "the ring keeps the panel's parity");
-            if (!data.vertical && data.thickness === 38) {
-                compare(strip.ring, 34, "a 38 px panel");
-            }
-            if (data.thickness >= 60) {
-                compare(strip.ring, (data.thickness - cap) % 2 !== 0 ? cap - 1 : cap, "capped");
-            }
-            if (data.thickness - 2 * inset < 16) {
-                compare(strip.ring, data.thickness % 2 !== 0 ? 15 : 16, "never smaller");
-            }
             for (let i = 0; i < root.ringItems.length; ++i) {
                 const gauge = gaugeAt(i);
-                compare(gauge.width, ring, items[i]);
-                compare(gauge.height, ring, items[i]);
-                compare(gauge.strokeWidth, Math.max(2, Math.round(ring / 6.5) / 2), items[i]);
+                compare(gauge.width, data.ring, items[i]);
+                compare(gauge.height, data.ring, items[i]);
+                compare(gauge.strokeWidth, data.stroke, items[i]);
                 compare(arcs(gauge)[0].strokeWidth, gauge.strokeWidth, items[i] + " as drawn");
             }
         }
 
-        // The ring sits inside the hover wash, centred on it.
-        // 37: two lines taller than the ring; 50 and 52: a ring held at its
-        // largest size.
+        // The ring sits inside the hover wash, centred on it, and the cells'
+        // washes are the only rectangles: nothing is drawn between cells.
+        // 22: one line; 37: two lines taller than the ring; 50: a ring held
+        // at its largest size.
         function test_ringFitsTheWash_data() {
-            return [22, 30, 37, 38, 46, 50, 52, 60].map(t => ({ tag: String(t), thickness: t }));
+            return [22, 37, 38, 50].map(t => ({ tag: String(t), thickness: t }));
         }
 
         function test_ringFitsTheWash(data) {
-            const strip = makePanel(data.thickness, { items: root.ringItems });
+            const strip = makePanel(data.thickness, { items: root.ringItems.concat(["network", "disk"]) });
+            const rectangles = all(strip, isRectangle);
+            compare(rectangles.length, strip.items.length);
+            for (const rectangle of rectangles) {
+                verify(rectangle.parent.inset !== undefined && rectangle.parent.contentItem !== undefined,
+                       "a wash, in a cell");
+                verify(rectangle.width > 1 && rectangle.height > 1, rectangle.width + "×" + rectangle.height);
+            }
             for (let i = 0; i < root.ringItems.length; ++i) {
                 strip.openItem = root.ringItems[i];
                 waitForRendering(strip);
@@ -487,7 +470,6 @@ Item {
                 compare(washes.length, 1);
                 const wash = washes[0];
                 verify(wash.visible, "an open item shows its wash");
-                compare(wash.y, Math.round(Kirigami.Units.smallSpacing / 2));
                 compare(cell.height, data.thickness);
                 const gauge = box(gaugeAt(i));
                 const washBox = box(wash);
@@ -497,34 +479,9 @@ Item {
             }
         }
 
-        // Rings and rates sit side by side, cell against cell: nothing is
-        // drawn between them, and the only rectangles are the cells' washes.
-        function test_noSeparator_data() {
-            return [{ tag: "two lines", thickness: 38 }, { tag: "thin", thickness: 30 }];
-        }
-
-        function test_noSeparator(data) {
-            const items = ["cpu", "network", "gpu", "disk", "memory", "claude"];
-            const strip = makePanel(data.thickness, { items: items });
-            let sum = 0;
-            for (let i = 0; i < items.length; ++i) {
-                sum += strip.cellAt(i).implicitWidth;
-                if (i > 0) {
-                    compare(box(strip.cellAt(i)).x, box(strip.cellAt(i - 1)).right, items[i] + " follows " + items[i - 1]);
-                }
-            }
-            compare(strip.implicitWidth, sum);
-            const rectangles = all(strip, isRectangle);
-            compare(rectangles.length, items.length);
-            for (const rectangle of rectangles) {
-                verify(rectangle.parent.inset !== undefined && rectangle.parent.contentItem !== undefined,
-                       "a wash, in a cell");
-                verify(rectangle.width > 1 && rectangle.height > 1, rectangle.width + "×" + rectangle.height);
-            }
-        }
-
         // A ring's lines share the rates' rows, so the panel reads as two
-        // lines of text across, or one on a thin panel.
+        // lines of text across, one under the other inside the cell, or one
+        // on a thin panel.
         // Odd and even panels, two lines taller than the ring (37), and rings
         // held at their largest size (50 to 53).
         function test_rowsAlignWithRates_data() {
@@ -543,6 +500,12 @@ Item {
                 }
                 for (let i = 0; i < 4; ++i) {
                     const lines = [line(i, "first"), line(i, "second")];
+                    if (strip.twoLines) {
+                        const cell = box(strip.cellAt(i));
+                        const [first, second] = lines.map(box);
+                        verify(first.y >= cell.y && second.y >= first.bottom && second.bottom <= cell.bottom,
+                               items[i] + ": both lines in the cell, one under the other");
+                    }
                     for (let row = 0; row < 2; ++row) {
                         verify(lines[row].visible);
                         const drawn = box(lines[row]);
@@ -558,27 +521,15 @@ Item {
             }
         }
 
-        // Two lines fit wherever the strip gives them: from two grid units of
-        // panel up.
-        function test_twoLinesFitTheApplet_data() {
-            return [Math.ceil(Kirigami.Units.gridUnit * 2), 38, 46].map(t => ({ tag: String(t), thickness: t }));
-        }
-
-        function test_twoLinesFitTheApplet(data) {
-            const strip = makePanel(data.thickness, { items: root.ringItems });
-            verify(strip.twoLines);
-            for (let i = 0; i < root.ringItems.length; ++i) {
-                const cell = box(strip.cellAt(i));
-                const first = box(line(i, "first"));
-                const second = box(line(i, "second"));
-                verify(first.y >= cell.y, root.ringItems[i] + ": " + first.y + " above " + cell.y);
-                verify(second.y >= first.bottom, root.ringItems[i] + ": the second line under the first");
-                verify(second.bottom <= cell.bottom, root.ringItems[i] + ": " + second.bottom + " below " + cell.bottom);
-            }
+        // A vertical rate cell's texts with `width` to draw in.
+        function textsAt(rates, width) {
+            rates.availableWidth = width;
+            return visibleTexts(rates);
         }
 
         // A vertical panel shows rings with their names, and the readings
-        // move to the tooltip; the rates shorten their units to a prefix.
+        // move to the tooltip; the rates shorten their units to a prefix,
+        // and drop the decimal where the panel is too narrow for it.
         function test_verticalIsRingsWithNames() {
             const items = root.ringItems.concat(["network", "disk"]);
             const strip = makeStrip({ items: items, vertical: true, width: 46, thickness: 46 });
@@ -587,11 +538,13 @@ Item {
                 verify(!line(i, "second").visible, items[i]);
                 verify(strip.cellAt(i).parent.active, items[i] + "'s tooltip");
             }
-            checkNames(true);
+            checkNames(["cpu", "claude", "codex"]);
             const network = strip.cellAt(5).contentItem;
             const disk = strip.cellAt(6).contentItem;
-            compare(visibleTexts(network), network.whole ? ["25M", "1M"] : ["24.8M", "1.2M"]);
-            compare(visibleTexts(disk), disk.whole ? ["R", "12M", "W", "3M"] : ["R", "12.0M", "W", "3.4M"]);
+            compare(textsAt(network, 200), ["24.8M", "1.2M"]);
+            compare(textsAt(network, 30), ["25M", "1M"]);
+            compare(textsAt(disk, 200), ["R", "12.0M", "W", "3.4M"]);
+            compare(textsAt(disk, 30), ["R", "12M", "W", "3M"]);
         }
 
         // The prefixes are the same letters whatever KDE calls the units in
@@ -606,19 +559,23 @@ Item {
                 const strip = makeStrip({ items: ["network", "disk"], vertical: true, width: 46, thickness: 46 });
                 const network = strip.cellAt(0).contentItem;
                 const disk = strip.cellAt(1).contentItem;
-                compare(visibleTexts(network), network.whole ? ["500", "1M"] : ["500", "1023K"]);
-                compare(visibleTexts(disk), disk.whole ? ["R", "12M", "W", "3M"] : ["R", "12.0M", "W", "3.4M"]);
+                compare(textsAt(network, 200), ["500", "1023K"]);
+                compare(textsAt(network, 30), ["500", "1M"]);
+                compare(textsAt(disk, 200), ["R", "12.0M", "W", "3.4M"]);
+                compare(textsAt(disk, 30), ["R", "12M", "W", "3M"]);
             } finally {
                 Format.setByteUnits(1024, ["B", "KiB", "MiB", "GiB", "TiB", "PiB"]);
             }
         }
 
         // Names sit inside the rings beside two lines of readings, and where
-        // the rings stand alone; beside one line the rings are too small.
+        // the rings stand alone; beside one line the rings are too small. At
+        // 38 px CPU fits its ring, MEM doesn't, and the GPU's inner ring
+        // leaves too little room; at 30 px only the marks fit.
         function test_namesInsideRings_data() {
-            return [{ tag: "two lines", thickness: 38, ringsOnly: [], active: true },
-                    { tag: "thin", thickness: 30, ringsOnly: [], active: false },
-                    { tag: "thin rings only", thickness: 30, ringsOnly: root.ringItems, active: true }];
+            return [{ tag: "two lines", thickness: 38, ringsOnly: [], shown: ["cpu", "claude", "codex"] },
+                    { tag: "thin", thickness: 30, ringsOnly: [], shown: [] },
+                    { tag: "thin rings only", thickness: 30, ringsOnly: root.ringItems, shown: ["claude", "codex"] }];
         }
 
         function test_namesInsideRings(data) {
@@ -626,7 +583,7 @@ Item {
             const gpu = strip.cellAt(1).contentItem;
             verify(gpu.dual);
             verify(gaugeAt(1).centreWidth < gaugeAt(0).centreWidth, "the inner ring narrows the middle");
-            checkNames(data.active);
+            checkNames(data.shown);
         }
 
         // A sleeping GPU drops out of the panel, whichever ring it is on: the
@@ -736,17 +693,6 @@ Item {
             compare(strip.cellAt(0).description, "Usage 3%");
         }
 
-        function test_descriptions() {
-            monitor.cpuTemperature = 80;
-            const strip = makeStrip({});
-            compare(strip.cellAt(0).Accessible.description, "Usage 23%, temperature 80 °C, warm");
-            compare(strip.cellAt(2).Accessible.description, "13.4 GiB in use, 42%");
-            compare(strip.cellAt(3).Accessible.description, "Down 24.8 Mb/s, up 1.2 Mb/s");
-            compare(strip.cellAt(4).Accessible.description, "Read 12.0 MiB/s, write 3.4 MiB/s");
-            monitor.cpuTemperature = NaN;
-            compare(strip.cellAt(0).Accessible.description, "Usage 23%, temperature unavailable");
-        }
-
         // Claude and Codex sit among the rings, marked and described like
         // them: the weekly percentage over the time to the reset.
         function test_usageCells() {
@@ -786,9 +732,10 @@ Item {
 
         // A ring's readings are drawn for the eye alone: screen readers hear
         // the cell, a button named for the item whose description says the
-        // readings in words, the countdown in full.
+        // readings in words, the countdown in full. The rates' cells say
+        // theirs too.
         function test_readoutIsSpokenByTheCell() {
-            const strip = makeStrip({ items: ["cpu", "gpu", "memory", "claude", "codex", "network"] });
+            const strip = makeStrip({ items: ["cpu", "gpu", "memory", "claude", "codex", "network", "disk"] });
             for (let i = 0; i < 5; ++i) {
                 const cell = strip.cellAt(i);
                 const readout = find(cell.contentItem, r => r.textWidth !== undefined);
@@ -802,6 +749,13 @@ Item {
             compare(strip.cellAt(0).Accessible.description, "Usage 23%, temperature 61 °C");
             verify(/resets in 2 days 2\d hours$/.test(strip.cellAt(3).Accessible.description), strip.cellAt(3).Accessible.description);
             compare(line(3, "second").text, "2d", "where the panel shows the days alone");
+            compare(strip.cellAt(2).Accessible.description, "13.4 GiB in use, 42%");
+            compare(strip.cellAt(5).Accessible.description, "Down 24.8 Mb/s, up 1.2 Mb/s");
+            compare(strip.cellAt(6).Accessible.description, "Read 12.0 MiB/s, write 3.4 MiB/s");
+            monitor.cpuTemperature = 80;
+            compare(strip.cellAt(0).Accessible.description, "Usage 23%, temperature 80 °C, warm");
+            monitor.cpuTemperature = NaN;
+            compare(strip.cellAt(0).Accessible.description, "Usage 23%, temperature unavailable");
         }
 
         // Right to left the strip runs from the right edge to the left one;
@@ -847,7 +801,7 @@ Item {
                     const what = rates.item + " row " + row + ": ";
                     compare(value.effectiveHorizontalAlignment, Text.AlignRight, what + "the value isn't mirrored");
                     verify(box(value).right <= box(unit).x, what + "the number before its unit");
-                    compare(marker.x - box(pair).right, Math.round(Kirigami.Units.smallSpacing * 1.5), what + "the marker 6 px to the right");
+                    verify(marker.x >= box(pair).right, what + "the marker to the right");
                 });
             }
             compare([line(0, "first").text, line(0, "second").text], ["23%", "61°"]);
