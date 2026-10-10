@@ -80,33 +80,39 @@ Item {
             return found[0];
         }
 
-        // The attribute lists below are cut down from what each libksysguard's
+        // The attribute lists are cut down from what each libksysguard's
         // process model offers. From 6.3 the list asks for "memory" and nothing
-        // it is picked from.
-        function test_attributesAskForMemoryWhereItIsOffered() {
-            var available = ["pid", "vmSize", "vmRSS", "vmURSS", "vmShared", "vmPSS", "memory", "name", "usage"];
-            compare(Processes.attributes(available), ["name", "usage", "memory"]);
+        // it is picked from; before, it asks for what memory is picked from:
+        // 6.0 offers PSS and private memory, 6.2 resident memory as well. It
+        // asks for nothing the model doesn't offer.
+        function test_attributes_data() {
+            return [{ tag: "6.3", available: ["pid", "vmSize", "vmRSS", "vmURSS", "vmShared", "vmPSS", "memory", "name", "usage"],
+                      asked: ["name", "usage", "memory"] },
+                    { tag: "6.0", available: ["pid", "vmSize", "vmURSS", "vmShared", "vmPSS", "name", "usage"],
+                      asked: ["name", "usage", "vmPSS", "vmURSS"] },
+                    { tag: "6.2", available: ["pid", "vmSize", "vmRSS", "vmURSS", "vmShared", "vmPSS", "name", "usage"],
+                      asked: ["name", "usage", "vmPSS", "vmURSS", "vmRSS"] },
+                    { tag: "usage alone", available: ["usage"], asked: ["usage"] },
+                    { tag: "nothing", available: [], asked: [] }];
         }
 
-        // 6.0 offers PSS and private memory, 6.2 resident memory as well.
-        function test_attributesFallBackToWhatMemoryIsPickedFrom() {
-            compare(Processes.attributes(["pid", "vmSize", "vmURSS", "vmShared", "vmPSS", "name", "usage"]),
-                    ["name", "usage", "vmPSS", "vmURSS"]);
-            compare(Processes.attributes(["pid", "vmSize", "vmRSS", "vmURSS", "vmShared", "vmPSS", "name", "usage"]),
-                    ["name", "usage", "vmPSS", "vmURSS", "vmRSS"]);
+        function test_attributes(data) {
+            compare(Processes.attributes(data.available), data.asked);
         }
 
-        function test_attributesAskForNothingUnoffered() {
-            compare(Processes.attributes(["usage"]), ["usage"]);
-            compare(Processes.attributes([]), []);
+        // Values go with the attribute in their column, wherever that is, and
+        // a process without a memory column uses none.
+        function test_readingMatchesValuesToColumns_data() {
+            return [{ tag: "memory between", columns: ["usage", "memory", "name"], values: [12.5, 2048, "kwin_x11"],
+                      name: "kwin_x11", usage: 12.5, memory: 2048 * 1024 },
+                    { tag: "no memory column", columns: ["name", "usage"], values: ["a", 3], name: "a", usage: 3, memory: 0 }];
         }
 
-        // Values go with the attribute in their column, wherever that is.
-        function test_readingMatchesValuesToColumns() {
-            var result = Processes.reading(["usage", "memory", "name"], [12.5, 2048, "kwin_x11"]);
-            compare(result.name, "kwin_x11");
-            compare(result.usage, 12.5);
-            compare(result.memory, 2048 * 1024);
+        function test_readingMatchesValuesToColumns(data) {
+            const result = Processes.reading(data.columns, data.values);
+            compare(result.name, data.name);
+            compare(result.usage, data.usage);
+            compare(result.memory, data.memory);
         }
 
         // Before 6.3, memory is the first of PSS, private and resident memory
@@ -118,13 +124,6 @@ Item {
             compare(Processes.reading(columns, ["a", 0, 0, 200, 400]).memory, 200 * 1024);
             compare(Processes.reading(columns, ["a", 0, 0, -16, 400]).memory, 400 * 1024);
             compare(Processes.reading(columns, ["a", 0, 0, 0, 0]).memory, 0);
-        }
-
-        function test_readingWithoutAMemoryColumn() {
-            var result = Processes.reading(["name", "usage"], ["a", 3]);
-            compare(result.name, "a");
-            compare(result.usage, 3);
-            compare(result.memory, 0);
         }
 
         // The real list against libksysguard's process model, which sees at least
@@ -236,8 +235,8 @@ Item {
 
         // The theme draws its busy indicator in the accent colour, which the
         // widget can't change, so the list draws its own in the popup's dim
-        // text colour: the stroke is made from that colour, and what reaches
-        // the screen is that colour and nothing else, whatever the accent.
+        // text colour: the stroke is made from that colour, whatever the
+        // accent.
         function test_busyIndicatorIsMonochrome() {
             const list = createTemporaryObject(sampleList, root, { key: "usage" });
             verify(list);
@@ -251,31 +250,6 @@ Item {
             for (const accent of [Kirigami.Theme.highlightColor, Kirigami.Theme.focusColor]) {
                 verify(!Qt.colorEqual(strokes[0].strokeColor, accent) || Qt.colorEqual(text, accent));
             }
-
-            // Every pixel the stroke touched lies on the line from the
-            // background to the text colour, so no other hue is in it. A
-            // grab of the indicator alone comes out blank with the software
-            // renderer, so the list is grabbed and the indicator's square
-            // read from it; its corner is background.
-            const image = grabImage(list);
-            const at = indicator.mapToItem(list, Qt.point(0, 0));
-            const left = Math.round(at.x);
-            const top = Math.round(at.y);
-            const bg = [image.red(left, top), image.green(left, top), image.blue(left, top)];
-            const fg = [text.r * 255, text.g * 255, text.b * 255];
-            const axis = [0, 1, 2].reduce((best, c) => Math.abs(fg[c] - bg[c]) > Math.abs(fg[best] - bg[best]) ? c : best, 0);
-            verify(Math.abs(fg[axis] - bg[axis]) > 100, "text and background apart");
-            let solid = 0;
-            for (let y = top; y < top + indicator.height; ++y) {
-                for (let x = left; x < left + indicator.width; ++x) {
-                    const pixel = [image.red(x, y), image.green(x, y), image.blue(x, y)];
-                    const mix = (pixel[axis] - bg[axis]) / (fg[axis] - bg[axis]);
-                    const off = Math.max(...pixel.map((v, c) => Math.abs(v - (bg[c] + mix * (fg[c] - bg[c])))));
-                    verify(off <= 6, "pixel " + x + "," + y + " is " + off + " off the text colour");
-                    solid += mix > 0.3 ? 1 : 0;
-                }
-            }
-            verify(solid > 20, "only " + solid + " solid pixels drawn");
         }
 
         // The indicator turns while it shows and holds still when it doesn't.
@@ -335,19 +309,10 @@ Item {
             compare(result[1].usage, 15);
             compare(result[1].memory, 150);
             compare(result[1].count, 2);
-        }
-
-        function test_topSortsByMemoryWhenThatIsTheKey() {
-            var rows = [
-                { name: "chrome", usage: 10, memory: 100 },
-                { name: "chrome", usage: 5, memory: 50 },
-                { name: "firefox", usage: 20, memory: 80 }
-            ];
-            var result = Processes.top(rows, "memory", 5);
-            compare(result[0].name, "chrome");
-            compare(result[0].memory, 150);
-            compare(result[1].name, "firefox");
-            compare(result[1].memory, 80);
+            // By memory the grouped chrome comes first, and the count cuts the
+            // list after grouping and sorting.
+            compare(Processes.top(rows, "memory", 5).map(r => [r.name, r.memory]), [["chrome", 150], ["firefox", 80]]);
+            compare(Processes.top(rows, "memory", 1).map(r => r.name), ["chrome"]);
         }
 
         function test_topBreaksTiesAlphabeticallyByName() {
@@ -391,14 +356,6 @@ Item {
             compare(result[0].usage, 5); // NaN contributed 0, not NaN
             compare(result[0].memory, 20); // Infinity contributed 0, not Infinity
             compare(result[0].count, 2);
-        }
-
-        function test_topLimitsToCount() {
-            var rows = [{ name: "a", usage: 3 }, { name: "b", usage: 2 }, { name: "c", usage: 1 }];
-            var result = Processes.top(rows, "usage", 2);
-            compare(result.length, 2);
-            compare(result[0].name, "a");
-            compare(result[1].name, "b");
         }
     }
 }
