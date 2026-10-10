@@ -23,11 +23,11 @@ modules, and Python 3.11+. `scripts/test.sh` also runs `shellcheck` and
 `scripts/pictures.sh` also needs Pillow, and `scripts/logo.py` fontTools,
 Nunito and `rsvg-convert`.
 
-CI runs the full suite and the gallery on Fedora 44, and the floor tests on
-Fedora 40 as released. Pushes to development branches (`fix/`, `feat/`,
-`docs/` and the like) that change only the docs run REUSE lint alone, and
-draft PRs to main wait until they're marked ready. The rules and their
-tests are in `.github/scripts/`.
+CI runs on PRs and on pushes to main, release branches and tags: the full
+suite and the gallery on Fedora 44, and the floor tests on Fedora 40 as
+released. Draft PRs to main wait until they're marked ready, and PRs that
+change only the README, this file, the changelog or the pictures in `docs/`
+skip both; that rule and its tests are in `.github/scripts/`.
 
 ## Branches
 
