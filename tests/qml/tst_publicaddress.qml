@@ -69,6 +69,24 @@ Item {
         }
     }
 
+    // A window of its own, so a popup can be laid out before it has drawn.
+    Component {
+        id: windowHost
+        Window {
+            id: window
+            property bool mirrored: false
+            readonly property alias loader: loader
+            width: root.width
+            height: root.height
+            visible: true
+            Loader {
+                id: loader
+                LayoutMirroring.enabled: window.mirrored
+                LayoutMirroring.childrenInherit: true
+            }
+        }
+    }
+
     Component {
         id: generalComponent
         ConfigGeneral {
@@ -1703,6 +1721,60 @@ Item {
             }
             const ipv4 = addressLines(page).find(l => l.address === "198.51.100.24");
             compare(ipv4.roomy, true, "a short address keeps its interface beside it");
+        }
+
+        // Addresses through a VPN that arrive before the popup is laid out,
+        // in a window that hasn't drawn yet or in an open popup, are laid
+        // out in one go: Qt 6.6 reports a polish loop where an interface
+        // moves under its address part way through.
+        function test_vpnAddressesLaidOutAtOnce_data() {
+            return [{ tag: "beforeFirstFrame", drawn: false, mirrored: false },
+                    { tag: "beforeFirstFrame rightToLeft", drawn: false, mirrored: true },
+                    { tag: "whileOpen", drawn: true, mirrored: false },
+                    { tag: "whileOpen rightToLeft", drawn: true, mirrored: true }];
+        }
+        function test_vpnAddressesLaidOutAtOnce(data) {
+            failOnWarning(/polish loop|Binding loop/);
+            const set = shownIn({ egress: route("wg0-mullvad", "wg0-mullvad", true, true) }, own("vpnatonce" + (data.drawn ? "open" : "fresh") + (data.mirrored ? "rtl" : "ltr")));
+            let page;
+            if (data.drawn) {
+                page = popup(set.monitor, data.mirrored);
+                compare(block(page).info.state, "checking");
+            } else {
+                const window = createTemporaryObject(windowHost, root, { mirrored: data.mirrored });
+                window.loader.setSource(Qt.resolvedUrl("../../package/contents/ui/popups/NetworkPopup.qml"), { monitor: set.monitor });
+                page = window.loader.item;
+            }
+            answer(set.made, "v4", 200, "198.51.100.24");
+            answer(set.made, "v6", 200, "2001:db8:85a3:4d1c:9d2e:51f4:c8a3:7e61");
+            waitForRendering(page);
+
+            const lines = addressLines(page);
+            compare(lines.length, 3);
+            for (const line of lines) {
+                compare(line.width, block(page).lineWidth, "decided against the width it got: " + line.spoken);
+            }
+            const shown = (line, text) => all(line, i => i instanceof Text && i.text === text).find(i => {
+                for (let p = i; p && p !== line; p = p.parent) {
+                    if (!p.visible) {
+                        return false;
+                    }
+                }
+                return true;
+            });
+            const row = (line, address) => {
+                const at = t => t.mapToItem(line, Qt.point(0, 0));
+                const a = at(shown(line, address));
+                const via = shown(line, "wg0-mullvad");
+                verify(!via.truncated, "in full");
+                return at(via).y > a.y ? "under" : at(via).x > a.x ? "beside" : "before";
+            };
+            const v4 = lines.find(l => l.address === "198.51.100.24");
+            compare(v4.roomy, true);
+            compare(row(v4, "198.51.100.24"), "beside");
+            const v6 = lines.find(l => l.address.indexOf("2001:db8:85a3") === 0);
+            compare(v6.roomy, false);
+            compare(row(v6, v6.address), "under");
         }
 
         // ---- The settings ----

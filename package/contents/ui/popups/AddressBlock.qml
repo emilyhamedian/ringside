@@ -35,6 +35,16 @@ GridLayout {
     readonly property real valuePointSize: Kirigami.Theme.defaultFont.pointSize * 0.88
     readonly property color dimColor: Style.dim(Kirigami.Theme.textColor)
     readonly property var lines: info.state === "shown" ? [info.v4, info.v6].filter(l => l) : []
+    // The width an address line gets: the block's share of its parent, less
+    // the captions' column. Whether an interface fits beside its address is
+    // decided against this, settled before the block lays out, rather than
+    // against the line's own width, which arrives only as the popup lays the
+    // line out, and in a block shown afresh first at the block's implicit
+    // width: on Qt 6.6 an interface moving under its address part way
+    // through costs the popup more passes than the two it allows, and it
+    // gives up as a polish loop.
+    readonly property real lineWidth: (parent ? parent.width - Layout.leftMargin - Layout.rightMargin : 0)
+        - Math.ceil(Math.max(localCaption.implicitWidth, publicCaption.implicitWidth)) - columnSpacing
     readonly property var places: {
         const p4 = place(info.v4);
         const p6 = place(info.v6);
@@ -74,9 +84,10 @@ GridLayout {
         property string via: ""
         property bool tunnel: false
         property string spoken: ""
-        // Until it is laid out, a line counts as having room, so the usual
-        // short line isn't split and joined again on its way in.
-        readonly property bool roomy: via === "" || width <= 0 || width >= addressText.implicitWidth + inline.fullWidth
+        // Until the popup is laid out, a line counts as having room, so the
+        // usual short line isn't split and joined again on its way in.
+        readonly property bool roomy: via === "" || block.lineWidth <= 0
+            || block.lineWidth >= addressText.implicitWidth + inline.fullWidth
 
         Layout.fillWidth: true
         LayoutMirroring.enabled: false
@@ -199,6 +210,7 @@ GridLayout {
     }
 
     Caption {
+        id: localCaption
         Layout.alignment: Qt.AlignBaseline | Qt.AlignLeft
         label: i18nc("@label the address this computer has on its own network", "Local")
         // The line beside it says so.
@@ -216,6 +228,7 @@ GridLayout {
     }
 
     Caption {
+        id: publicCaption
         Layout.alignment: Qt.AlignTop | Qt.AlignLeft
         // On the first line's baseline: the caption is smaller than the values.
         Layout.topMargin: Math.round(publicFirst.baselineOffset - baselineOffset)
