@@ -3,7 +3,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 # Draws the logo: the panel's gauge ring over "Ringside" in Nunito, outlined
-# so the files need no font. Writes docs/logo.svg for the README, docs/social-preview.png for GitHub's social preview, and
+# so the files need no font. Writes docs/logo.svg for the README,
+# docs/social-preview.png for GitHub's social preview, and
 # package/contents/icons/ringside.svg for the widget's icon.
 #
 # Needs fontTools, Nunito (ttf-nunito on Arch, fonts-nunito elsewhere, or set
