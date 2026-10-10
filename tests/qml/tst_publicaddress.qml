@@ -810,7 +810,7 @@ Item {
             const moved = checker({}, own("journal-moved", false));
             answer(moved.made, "v4", 200, "203.0.113.7", "https://elsewhere.example/ip");
             Log.unlisten(listener);
-            compare(logged, ["ringside.network warning asked journal-late.example: no answer in 0.1 s after 0 ms",
+            compare(logged, ["ringside.network warning asked journal-late.example: timed out after 0 ms",
                              "ringside.network warning asked journal-moved.example: an answer from another address after 0 ms"]);
         }
 
