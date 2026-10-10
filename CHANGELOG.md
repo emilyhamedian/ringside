@@ -170,8 +170,9 @@ follows [Semantic Versioning](https://semver.org/).
   discrete GPU that wakes opens below it instead of pushing it down.
 - Translators are told that CPU, GPU and MEM sit inside a ring in at most
   three characters.
-- The Codex ring shows the Codex mark, its cloud drawn as an outline, instead
-  of the OpenAI logo.
+- The Codex ring shows the Codex mark, its cloud drawn as an outline, or the
+  OpenAI logo it showed before, at its old size: choose which on AI
+  Providers, where the choice appears once Codex is on or has reported.
 - How often Claude and Codex are checked, and which per-model limit each
   inner ring shows, moved from General and Sensors to a new AI Providers
   page in the settings. Existing settings carry over.

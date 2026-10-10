@@ -51,6 +51,7 @@ QtObject {
 
     // The Claude and Codex readings, as Monitor.usage.
     property FakeUsage usage: FakeUsage {}
+    property string codexMark: "codex"
 
     property real cpuUsage: 23
     property real cpuTemperature: 61

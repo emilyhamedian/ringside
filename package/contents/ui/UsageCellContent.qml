@@ -94,6 +94,7 @@ Item {
 
         RingName {
             item: content.item
+            mark: content.item === "codex" ? content.monitor.codexMark : content.item
             room: gauge.centreWidth
             // Readings on one line, on a thin panel, go unnamed as the
             // rings there are too small to name them all.

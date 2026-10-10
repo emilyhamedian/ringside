@@ -570,6 +570,69 @@ Item {
             verify(draws(15, 15.4), "the prompt");
         }
 
+        // The setting swaps the Codex ring's mark for the OpenAI logo, centred
+        // as the others are, and leaves Claude's alone.
+        function test_codexRingShowsTheChosenLogo() {
+            const c = breezeSized(cell("codex", { ring: 46, textShown: true, twoLines: true }));
+            const codex = nameIn(c);
+            const claude = nameIn(breezeSized(cell("claude", { ring: 46, textShown: true, twoLines: true })));
+            compare(mark(codex).markName, "codex");
+            monitor.codexMark = "openai";
+            settle();
+            compare(mark(codex).markName, "openai");
+            compare(mark(codex).art.box, [178, 178, 360]);
+            compare(mark(claude).markName, "claude");
+            verify(codex.visible);
+            const g = gauge(c);
+            const art = mark(codex).art;
+            const middle = mark(codex).mapToItem(g, Qt.point(art.box[0] + art.box[2] / 2, art.box[1] + art.box[2] / 2));
+            verify(Math.abs(middle.x - g.width / 2) <= 0.5 && Math.abs(middle.y - g.height / 2) <= 0.5,
+                   "centred: " + middle.x + ", " + middle.y);
+            const drawn = grabImage(codex);
+            mark(codex).visible = false;
+            const bare = grabImage(codex);
+            mark(codex).visible = true;
+            let differ = false;
+            for (let x = 0; x < codex.width && !differ; ++x) {
+                for (let y = 0; y < codex.height && !differ; ++y) {
+                    differ = !Qt.colorEqual(drawn.pixel(x, y), bare.pixel(x, y));
+                }
+            }
+            verify(differ, "the logo draws");
+            monitor.codexMark = "codex";
+            settle();
+            compare(mark(codex).markName, "codex");
+        }
+
+        function test_openaiLogoAtItsOldSize_data() {
+            const rows = [];
+            for (let ring = 16; ring <= 52; ring += 2) {
+                rows.push({ tag: String(ring), ring: ring });
+            }
+            return rows;
+        }
+
+        // The OpenAI logo is drawn at the size it had before the Codex mark
+        // replaced it, 1.2 times a name's line, the Claude star's size, and
+        // wherever the ring has room for that, with no smallest size of its
+        // own: at 22 px the Codex cloud is left out but the logo shows.
+        function test_openaiLogoAtItsOldSize(data) {
+            monitor.codexMark = "openai";
+            const name = nameIn(breezeSized(cell("codex", { ring: data.ring, textShown: false })));
+            const star = nameIn(breezeSized(cell("claude", { ring: data.ring, textShown: false })));
+            const metrics = createTemporaryObject(metricsComponent, root, { font: label(name).font });
+            const size = Math.max(0, Math.min(Math.round(metrics.height * 1.2), Math.floor(name.room) - 2));
+            compare(mark(name).markName, "openai");
+            compare(name.markSize, size);
+            compare(name.visible, size >= Kirigami.Units.iconSizes.small / 2 && size <= name.room);
+            if (name.room === star.room) {
+                compare(name.markSize, star.markSize, "the Claude star's size");
+            }
+            if (data.ring === 22) {
+                verify(name.visible, "shown where the cloud is left out");
+            }
+        }
+
         function test_nameFitsTheHole_data() {
             const rows = [];
             for (let ring = 16; ring <= 52; ring += 2) {

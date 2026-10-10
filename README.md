@@ -252,8 +252,9 @@ Right-click the widget and choose *Configure Ringside…*.
   without their text. Rings grow and shrink with the panel.
 - **Sensors**: the CPU temperature source, which GPU goes on which ring, the
   network interface, the disk and volume, and the disk temperature sensor.
-- **AI Providers**: how often Claude and Codex are checked, and which
-  per-model limit each inner ring shows.
+- **AI Providers**: how often Claude and Codex are checked, which per-model
+  limit each inner ring shows, and whether the Codex ring carries the Codex
+  logo or the OpenAI one.
 
 ## What it reads
 
