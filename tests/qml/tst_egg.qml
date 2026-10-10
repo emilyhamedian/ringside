@@ -277,6 +277,22 @@ Item {
             finish();
         }
 
+        // The pass keeps to the wall clock, so steps it misses, as when no
+        // window draws for a while, don't leave the band stranded: the next
+        // step catches up and it ends on time.
+        function test_endsOnTimeAfterMissedSteps() {
+            makeStrip(false);
+            makeKeys();
+            const before = rings().map(snapshot);
+            typeCode();
+            verify(egg.playing);
+            egg.started -= egg.length + 1000;
+            tryCompare(egg, "playing", false, 500, "over at its next step");
+            compare(egg.progress, 1);
+            verify(rings().every(r => !wheelOf(r).visible));
+            compare(rings().map(snapshot), before);
+        }
+
         // At Instant nothing plays, and a change to Instant ends one at once.
         function test_instant() {
             makeStrip(false);

@@ -52,6 +52,8 @@ Item {
     readonly property int length: 2000
     property bool playing: false
     property real progress: 0
+    // When the current play began, on the wall clock.
+    property real started: 0
 
     // The theme's accent and status colours, each once (an accent colour can
     // also be the link colour), red last.
@@ -105,8 +107,16 @@ Item {
             return;
         }
         arrange();
+        started = Date.now();
+        progress = 0;
         playing = true;
         run.restart();
+    }
+
+    function finish() {
+        run.stop();
+        progress = 1;
+        playing = false;
     }
 
     // Numbers the strip's shown rings along it; a hidden one sits it out.
@@ -135,21 +145,25 @@ Item {
 
     // A change to Instant mid-way ends it at once.
     onAnimatedChanged: {
-        if (!animated) {
-            run.complete();
+        if (!animated && playing) {
+            finish();
         }
     }
 
-    NumberAnimation {
+    // Stepped from the wall clock by a timer rather than by a Qt animation:
+    // an animation advances only while a window draws frames, so one that
+    // started from a popup's keys could stall when the popup closed and
+    // leave the band on the rings. A timer runs on the event loop, and
+    // whatever it misses it makes up on its next step, so the pass always
+    // ends on time.
+    Timer {
         id: run
-        target: egg
-        property: "progress"
-        from: 0
-        to: 1
-        duration: egg.length
-        onRunningChanged: {
-            if (!running) {
-                egg.playing = false;
+        interval: 16
+        repeat: true
+        onTriggered: {
+            egg.progress = Math.min(1, (Date.now() - egg.started) / egg.length);
+            if (egg.progress >= 1) {
+                egg.finish();
             }
         }
     }
