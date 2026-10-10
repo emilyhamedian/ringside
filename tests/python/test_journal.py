@@ -317,8 +317,10 @@ class Privacy(Isolated):
         headers["X-Forwarded-For"] = SECRETS[6]
         if retry_after:
             headers["Retry-After"] = retry_after
-        return urllib.error.HTTPError(f"{usage.CLAUDE_USAGE_URL}?token=QUERYSECRET", code, LEAKY, headers,
-                                      io.BytesIO(LEAKY.encode()))
+        error = urllib.error.HTTPError(f"{usage.CLAUDE_USAGE_URL}?token=QUERYSECRET", code, LEAKY, headers,
+                                       io.BytesIO(LEAKY.encode()))
+        self.addCleanup(error.close)
+        return error
 
     def assert_clean(self, events):
         self.assertTrue(events)
@@ -342,10 +344,10 @@ class Privacy(Isolated):
                     self.assert_clean(self.run_main("--providers", "claude")["events"])
 
     def test_a_failed_renewal(self):
-        def urlopen(request, timeout):
-            raise urllib.error.HTTPError(f"{usage.CLAUDE_TOKEN_URL}?code=QUERYSECRET", 400, LEAKY,
+        refused = urllib.error.HTTPError(f"{usage.CLAUDE_TOKEN_URL}?code=QUERYSECRET", 400, LEAKY,
                                          email.message.Message(), io.BytesIO(LEAKY.encode()))
-        with mock.patch.object(usage.urllib.request, "urlopen", side_effect=urlopen):
+        self.addCleanup(refused.close)
+        with mock.patch.object(usage.urllib.request, "urlopen", side_effect=refused):
             self.assert_clean(self.run_main("--providers", "claude")["events"])
 
     def test_codex_failures(self):
