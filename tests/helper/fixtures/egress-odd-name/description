@@ -1,0 +1,2 @@
+Names Linux doesn't allow for an interface, with a colon (an alias) or a
+slash, are dropped before they reach a path.

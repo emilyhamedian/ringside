@@ -10,6 +10,7 @@
 #   env          shell snippet exporting the RINGSIDE_* variables for this case
 #   args         the arguments to pass after ringside-info.sh (e.g. "static")
 #   expected.json  or  expected.txt
+#   status       the exit status to expect, when it isn't 0
 #
 # Cases may share a sysfs/procfs tree (see legacy-ids and empty-slot, which
 # point their env at another case's tree) rather than duplicating fixtures.
@@ -62,6 +63,7 @@ for case_dir in "$FIXTURES"/*/; do
 
     args=$(cat "$case_dir/args")
     actual="$WORK/$name.out"
+    expected_status=$(cat "$case_dir/status" 2>/dev/null || echo 0)
 
     (
         # shellcheck disable=SC1090,SC1091
@@ -69,6 +71,14 @@ for case_dir in "$FIXTURES"/*/; do
         # shellcheck disable=SC2086
         sh "$INFO_SH" $args
     ) >"$actual" 2>"$WORK/$name.err"
+    status=$?
+
+    if [ "$status" -ne "$expected_status" ]; then
+        echo "FAIL  $name (exit status $status, expected $expected_status)"
+        echo "      command: ringside-info.sh $args"
+        fail=$((fail + 1))
+        continue
+    fi
 
     if [ -f "$case_dir/expected.json" ]; then
         expected="$case_dir/expected.json"

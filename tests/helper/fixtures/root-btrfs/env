@@ -1,0 +1,10 @@
+export RINGSIDE_SYSFS="$FIXTURES/laptop/sys"
+export RINGSIDE_PROCFS="$FIXTURES/laptop/proc"
+export RINGSIDE_UDEVADM="$FIXTURES/common/udevadm"
+export RINGSIDE_AMDGPU_IDS="$FIXTURES/common/amdgpu.ids"
+export RINGSIDE_DMI_PROPS="$FIXTURES/laptop/dmi-props"
+export RINGSIDE_FINDMNT="$FIXTURES/root-btrfs/findmnt"
+export RINGSIDE_LSBLK="$FIXTURES/root-btrfs/lsblk"
+unset RINGSIDE_ROOT_UUID RINGSIDE_ROOT_DISK
+export RINGSIDE_PLASMA_VERSION="6.7.5"
+export RINGSIDE_DISKS="nvme0n1"

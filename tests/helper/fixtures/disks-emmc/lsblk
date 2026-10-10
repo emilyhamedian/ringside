@@ -1,0 +1,8 @@
+#!/bin/sh
+# SPDX-FileCopyrightText: 2026 Emily Hamedian <me@emily.dev>
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+# Fake lsblk: what "lsblk -dnr -o NAME,TYPE" prints on a board with an eMMC,
+# whose boot and RPMB partitions are block devices of their own that lsblk
+# calls disks, an SD card and a SATA disk.
+printf '%s\n' 'mmcblk0 disk' 'mmcblk0boot0 disk' 'mmcblk0boot1 disk' 'mmcblk0rpmb disk' 'mmcblk1 disk' 'sda disk'
