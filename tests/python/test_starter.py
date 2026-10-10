@@ -754,9 +754,9 @@ class Commands(Isolated):
         local.mkdir(parents=True)
         (local / "claude").write_text("#!/bin/sh\n")
         with mock.patch.object(usage.shutil, "which", return_value="/usr/bin/claude"):
-            self.assertEqual(usage.find_cli("claude"), "/usr/bin/claude")
+            self.assertEqual(usage.find_cli("claude"), ("/usr/bin/claude", ""))
             (local / "claude").chmod(0o700)
-            self.assertEqual(usage.find_cli("claude"), str(local / "claude"))
+            self.assertEqual(usage.find_cli("claude"), (str(local / "claude"), ""))
 
 
 REAL_FIND_CLI = usage.find_cli
@@ -856,7 +856,7 @@ class StarterRuns(Isolated):
         # An idle Codex account: 0% and a reset a week from now.
         self.codex = self.enterContext(mock.patch.object(
             usage, "codex_usage", side_effect=lambda: {"weekly": week(0, int(time.time()) + WEEK), "scoped": []}))
-        self.enterContext(mock.patch.object(usage, "find_cli", side_effect=lambda name: f"/mock/{name}"))
+        self.enterContext(mock.patch.object(usage, "find_cli", side_effect=lambda name, chosen="": (f"/mock/{name}", "")))
         self.enterContext(mock.patch.object(usage, "claude_access_token", return_value="token"))
         self.enterContext(mock.patch.object(usage, "run_cli", side_effect=self.run_cli))
 
@@ -921,6 +921,27 @@ class StarterRuns(Isolated):
             report = self.run_main("--providers", "claude", "--starter-set", "claude=on")
         self.assertEqual(report["providers"]["claude"]["starter"], OFF)
         self.assertEqual(err.getvalue(), "another usage check is still running\n")
+
+    # A chosen claude that can't be run stops the starter until the user
+    # fixes it, and one that can is the one run.
+    def test_the_starter_runs_the_chosen_program(self):
+        self.enterContext(mock.patch.object(usage, "find_cli", REAL_FIND_CLI))
+        self.run_main("--providers", "claude", "--starter-set", "claude=on")
+        chosen = Path.home() / "claude"
+        chosen.write_text("#!/bin/sh\n")
+        report = self.run_main("--providers", "claude", "--start", "--program", "claude=~/claude")
+        self.assertEqual((report["providers"]["claude"]["starter"]["state"], report["providers"]["claude"]["starter"]["reason"]),
+                         ("failed", "program"))
+        self.assertEqual(report["providers"]["claude"]["program"], {"path": str(chosen), "chosen": True,
+                                                                     "problem": "not-executable"})
+        self.assertEqual(self.calls, [])
+        self.assertEqual(usage.read_starter_states()["claude"]["reason"], "program")
+        chosen.chmod(0o700)
+        states = json.loads(usage.STARTER_STATE.read_text())
+        states["claude"]["next"] = 0
+        usage.STARTER_STATE.write_text(json.dumps(states))
+        self.run_main("--providers", "claude", "--start", "--program", "claude=~/claude")
+        self.assertEqual({argv[0] for argv in self.calls}, {str(chosen)})
 
     def test_bad_switches_exit_with_a_usage_error(self):
         for value in ("claude", "claude=yes", "gemini=on", "=on"):

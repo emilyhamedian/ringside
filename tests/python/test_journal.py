@@ -16,7 +16,7 @@ from pathlib import Path
 from unittest import mock
 
 from test_starter import AUTH, NOW, SESSION, Harness, claude, week
-from test_usage import OFF, Isolated, reading, usage
+from test_usage import NOT_FOUND, OFF, REAL_FIND_CLI, Isolated, reading, usage
 
 
 def lines(*fields):
@@ -128,11 +128,36 @@ class Checks(Isolated):
         usage.CODEX_AUTH.parent.mkdir()
         usage.CODEX_AUTH.write_text("{}")
         cli = str(Path.home() / ".local" / "bin" / "codex")
-        with mock.patch.object(usage, "find_cli", return_value=cli), \
+        with mock.patch.object(usage, "find_cli", return_value=(cli, "")), \
              mock.patch.object(usage, "codex_rate_limits", side_effect=RuntimeError("app-server closed")):
             self.collect(1000, codex=usage.codex_usage)
         self.assertEqual(usage.EVENTS[0]["message"], "Codex: asking ~/.local/bin/codex app-server")
         self.assertEqual(usage.EVENTS[0]["level"], "debug")
+
+    # A chosen codex that can't run is named as the settings show it, with
+    # what is wrong with it; the recovery names the one that failed.
+    def test_a_chosen_program_that_cant_run_says_which_and_why(self):
+        self.enterContext(mock.patch.object(usage, "find_cli", REAL_FIND_CLI))
+        usage.CODEX_AUTH.parent.mkdir()
+        usage.CODEX_AUTH.write_text("{}")
+        folder = Path.home() / "bin" / "codex"
+        folder.mkdir(parents=True)
+        for chosen, words in ((str(folder), "~/bin/codex, can't be run: it is a folder"),
+                              ("~/none/codex", "~/none/codex, can't be run: there is no file there"),
+                              ("/opt/none/codex", "/opt/none/codex, can't be run: there is no file there")):
+            with self.subTest(chosen=chosen):
+                usage.CACHE_FILE.unlink(missing_ok=True)
+                usage.PROGRAMS["codex"] = chosen
+                self.collect(1000, codex=usage.codex_usage)
+                [e] = usage.EVENTS
+                self.assertEqual((e["level"], e["kind"]), ("warning", "failed"))
+                self.assertEqual(e["message"], f"Codex: check failed after {e['ms']} ms: the codex program set in "
+                                               f"Settings, {words}")
+        usage.PROGRAMS["codex"] = "~/elsewhere/codex"
+        self.collect(1060, codex=lambda: reading(1, 5000))
+        recovered = [e for e in usage.EVENTS if e["kind"] == "recovered"]
+        self.assertEqual(len(recovered), 1)
+        self.assertIn("/opt/none/codex", recovered[0]["message"])
 
     def test_a_renewed_claude_login_is_debug(self):
         usage.CLAUDE_CREDENTIALS.parent.mkdir()
@@ -156,7 +181,8 @@ class Checks(Isolated):
         claude_entry = report["providers"]["claude"]
         self.assertEqual(claude_entry, {"status": "error", "message": "HTTP 502 from api.anthropic.com",
                                         "reason": "server", "host": "api.anthropic.com",
-                                        "retryAt": claude_entry["retryAt"], "starter": OFF})
+                                        "retryAt": claude_entry["retryAt"], "starter": OFF,
+                                        "program": NOT_FOUND})
         self.assertEqual([e["kind"] for e in report["events"]], ["failed"])
         cached = usage.CACHE_FILE.read_text()
         self.assertNotIn("events", cached)
@@ -223,6 +249,13 @@ class Starter(unittest.TestCase):
         h.step(NOW + 600)
         self.assertEqual(self.kinds(), [("warning", "starter-failed")])
 
+    def test_a_chosen_program_that_cant_run(self):
+        h = Harness(NOW)
+        h.starter.check = mock.Mock(side_effect=usage.Failed("program"))
+        h.step()
+        self.assertEqual(usage.EVENTS[0]["message"], "Claude session starter can't send: the program set in Settings "
+                                                     "can't be run; trying again in 300 s")
+
     def test_switched_off_before_the_send(self):
         Harness(NOW, outcome=usage.SwitchedOff()).step()
         self.assertEqual(self.kinds(), [("info", "starter-switched-off")])
@@ -233,7 +266,7 @@ class StarterRuns(Isolated):
         super().setUp()
         self.enterContext(mock.patch.object(usage, "claude_usage", side_effect=lambda: {
             "weekly": week(10, int(time.time()) + 86400), "scoped": [], "session": None}))
-        self.enterContext(mock.patch.object(usage, "find_cli", side_effect=lambda name: f"/mock/{name}"))
+        self.enterContext(mock.patch.object(usage, "find_cli", side_effect=lambda name, chosen="": (f"/mock/{name}", "")))
         self.enterContext(mock.patch.object(usage, "claude_access_token", return_value="token"))
         self.enterContext(mock.patch.object(usage, "run_cli", return_value=(0, json.dumps(AUTH))))
 
@@ -357,9 +390,21 @@ class Privacy(Isolated):
                         OSError(13, LEAKY), KeyError(LEAKY)):
             with self.subTest(failure=type(failure).__name__):
                 usage.CACHE_FILE.unlink(missing_ok=True)
-                with mock.patch.object(usage, "find_cli", return_value=cli), \
+                with mock.patch.object(usage, "find_cli", return_value=(cli, "")), \
                      mock.patch.object(usage, "codex_rate_limits", side_effect=failure):
                     self.assert_clean(self.run_main("--providers", "codex")["events"])
+
+    # A chosen program is named as the settings show it: the home folder,
+    # which names the user, as ~.
+    def test_a_chosen_program_under_home(self):
+        self.enterContext(mock.patch.object(usage, "find_cli", REAL_FIND_CLI))
+        for chosen in (str(Path.home() / "bin" / "codex"), "~/bin/codex"):
+            with self.subTest(chosen=chosen):
+                usage.CACHE_FILE.unlink(missing_ok=True)
+                events = self.run_main("--providers", "codex", "--program", f"codex={chosen}")["events"]
+                self.assert_clean(events)
+                self.assertIn("~/bin/codex", json.dumps(events))
+                self.assertNotIn(str(Path.home()), json.dumps(events))
 
     # A host that only a tampered cache could hold is left out too.
     def test_a_held_failure_from_the_cache(self):
@@ -380,7 +425,7 @@ class Privacy(Isolated):
                 self.login()
                 usage.STARTER_STATE.unlink(missing_ok=True)
                 usage.CACHE_FILE.unlink(missing_ok=True)
-                with mock.patch.object(usage, "find_cli", return_value="/mock/claude"), \
+                with mock.patch.object(usage, "find_cli", return_value=("/mock/claude", "")), \
                      mock.patch.object(usage, "run_cli", return_value=preflight), \
                      mock.patch.object(usage.urllib.request, "urlopen", side_effect=urlopen):
                     events = self.run_main("--providers", "claude", "--start")["events"]

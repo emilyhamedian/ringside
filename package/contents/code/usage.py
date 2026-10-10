@@ -23,8 +23,9 @@ cached reading keeps. Status is one of "ok", "signed_out", "rate_limited"
 (with "retryAfter", the seconds until the provider is polled again) or
 "error", and the last two carry a "message" to show, a "reason" the widget
 can put in its own words ("offline", "timeout", "server", "rate-limited",
-"not-installed" when the Codex CLI isn't, "busy" when another run held the
-lock too long, or "other"), the "host" that failed, or "" when none did, and
+"not-installed" when the Codex CLI isn't, "program" when the codex program
+chosen with --program can't be run, "busy" when another run held the lock
+too long, or "other"), the "host" that failed, or "" when none did, and
 "retryAt", when the provider may be polled again (epoch seconds). Tokens
 never reach stdout or stderr.
 
@@ -54,6 +55,13 @@ points of its current span, oldest first.
 Claude's entry also carries "session", its five-hour window, or null when
 no session is running; it is left out when the reply doesn't say.
 
+--program <provider>=<path> names the program to run for a provider, as the
+user chose it in Ringside's settings; ~ stands for the home folder. Without
+one, the program is found by itself (see find_cli()). Every entry carries
+"program": {"path": <where it is, or "" when it isn't found>, "chosen":
+bool, "problem": "" or what keeps a chosen path from running: "missing",
+"not-executable" or "folder"}, looked up afresh on every run.
+
 Every entry carries "starter", the session starter's state: {"enabled":
 bool, "state": ..., "at": <epoch seconds> or null, "next": <epoch seconds>
 or null, "reason": ... or null}. The states are "off"; "waiting" (next is
@@ -61,8 +69,9 @@ when the next window starts); "confirming" (at is the send, next the read
 that confirms it); "started" (at is when the window started, next when the
 next one starts, which the popup shows only for Claude); "weekly" (the
 weekly limit is reached; next is its reset); "failed" (reason says why:
-"not-installed", "signed-out", "not-subscription" for a CLI logged in
-other than with a claude.ai subscription, "not-responding" for one whose
+"not-installed", "program" for a chosen program that can't be run,
+"signed-out", "not-subscription" for a CLI logged in other than with a
+claude.ai subscription, "not-responding" for one whose
 check before sending failed, "unchecked" for a failed read or a reading
 that doesn't say when a reached weekly limit or a running week ends, or
 "not-sent" for a send that never left; the last three back off, with next
@@ -74,7 +83,8 @@ toggled.
 
 Set RINGSIDE_USAGE_FAKE to a JSON report to print it instead of polling,
 limited to the requested providers and with the clock zone added as on a live
-run. --start and --starter-set change nothing then.
+run. --start and --starter-set change nothing then, and each "program" is
+as the file gives it.
 """
 
 import argparse
@@ -88,6 +98,7 @@ import re
 import selectors
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import tempfile
@@ -142,6 +153,11 @@ HOLD_MAX = 24 * 3600
 HISTORY_POINTS = 2100
 # A fall of this many points means the provider cleared the window early.
 HISTORY_CLEARED = 20
+
+# The programs chosen with --program, by provider. A chosen program is the
+# only one run for its provider: one that can't run is reported, never
+# swapped for another the user didn't pick.
+PROGRAMS = {}
 
 CONFIG_HOME = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
 APPLETSRC = CONFIG_HOME / "plasma-org.kde.plasma.desktop-appletsrc"
@@ -201,8 +217,8 @@ class RateLimited(Exception):
 
 class CheckFailed(RuntimeError):
     """A failed check whose cause is known: reason is "offline", "timeout",
-    "server" or "not-installed", host the server that failed, or "" for
-    the Codex CLI, and status the HTTP status a server answered with."""
+    "server", "not-installed" or "program", host the server that failed, or
+    "" for the Codex CLI, and status the HTTP status a server answered with."""
 
     def __init__(self, message, reason, host="", status=None):
         super().__init__(message)
@@ -256,6 +272,7 @@ MESSAGES = {
 # Why a session starter can't send, by its reason.
 STARTER_WHY = {
     "not-installed": "the CLI isn't installed",
+    "program": "the program set in Settings can't be run",
     "signed-out": "the CLI is signed out",
     "not-subscription": "the CLI isn't signed in with a subscription",
     "not-responding": "the CLI didn't answer its check before sending",
@@ -299,7 +316,25 @@ def failure_why(name, failure, asked=None, hold=None):
         return f"{host or 'the server'} answered with " + (f"HTTP {status}" if type(status) is int else "an error")
     if reason == "not-installed":
         return "the codex CLI isn't installed"
+    if reason == "program":
+        # A hold keeps the program it was for, which a recovery may have
+        # moved on from.
+        chosen = failure.get("program")
+        return program_why(name, chosen if isinstance(chosen, str) else PROGRAMS.get(name, ""))
     return "an unexpected error, which the popup shows"
+
+
+# What keeps a chosen program from running, by find_cli()'s problem.
+PROGRAM_PROBLEMS = {"missing": "there is no file there", "not-executable": "it isn't marked executable",
+                    "folder": "it is a folder"}
+
+
+def program_why(name, chosen):
+    """Why the program chosen for name can't run, naming it as the settings
+    show it, with the home folder as ~. The path is the user's own setting."""
+    path, problem = find_cli(name, chosen)
+    why = f"the {name} program set in Settings, {shown_path(path)}, can't be run"
+    return why + (f": {PROGRAM_PROBLEMS[problem]}" if problem in PROGRAM_PROBLEMS else "")
 
 
 def os_why(err):
@@ -339,13 +374,40 @@ def note_check(name, report, previous, ms, entry):
 # --- Codex -----------------------------------------------------------------
 
 
-def find_cli(name):
-    """~/.local/bin/<name> if executable, else name on PATH, which in a
-    Plasma session may lack ~/.local/bin."""
+def find_cli(name, chosen=""):
+    """Where the name program is and what keeps it from running, as (path,
+    problem).
+
+    A chosen path, with ~ expanded, is the only place looked: it is a file
+    that can be run, or problem says why not, "missing", "not-executable" or
+    "folder". A relative path is missing, as it names no place. Without
+    one, ~/.local/bin/<name> if executable, else name on PATH, which in a
+    Plasma session may lack ~/.local/bin; path is "" when neither has it.
+    """
+    if chosen:
+        path = os.path.expanduser(chosen)
+        try:
+            mode = os.stat(path).st_mode if os.path.isabs(path) else None
+        except (OSError, ValueError):
+            mode = None
+        if mode is None:
+            return path, "missing"
+        if stat.S_ISDIR(mode):
+            return path, "folder"
+        if not stat.S_ISREG(mode) or not os.access(path, os.X_OK):
+            return path, "not-executable"
+        return path, ""
     wrapper = Path.home() / ".local" / "bin" / name
     if os.access(wrapper, os.X_OK):
-        return str(wrapper)
-    return shutil.which(name)
+        return str(wrapper), ""
+    return shutil.which(name) or "", ""
+
+
+def program(name):
+    """The report's "program" for a provider."""
+    chosen = PROGRAMS.get(name, "")
+    path, problem = find_cli(name, chosen)
+    return {"path": path, "chosen": chosen != "", "problem": problem}
 
 
 def codex_rate_limits(binary):
@@ -473,7 +535,9 @@ def parse_codex(result):
 def codex_usage():
     if not CODEX_AUTH.exists():
         raise SignedOut()
-    binary = find_cli("codex")
+    binary, problem = find_cli("codex", PROGRAMS.get("codex", ""))
+    if problem:
+        raise CheckFailed("the codex program set in Settings can't be run", "program")
     if not binary:
         raise CheckFailed("codex CLI not found", "not-installed")
     event("debug", "codex", "cli", cli=shown_path(binary))
@@ -949,20 +1013,30 @@ def fresh(entry, now):
             and all(well_formed(w, scoped=True) for w in entry.get("scoped", [])))
 
 
-def held(entry, now):
+# Failures that depend on which program was run.
+PROGRAM_REASONS = ("not-installed", "program")
+
+
+def held(entry, now, chosen):
     """Seconds left before a provider whose last poll failed is polled again,
     or 0. Never more than the hold's own length, should the clock have stepped
-    back. Anything malformed in the cache reads as no hold."""
+    back. A program that couldn't be found or run holds back only the
+    program chosen then (chosen being the one chosen now), so choosing
+    another checks it at once. Anything malformed in the cache reads as no
+    hold."""
     if not (isinstance(entry, dict) and entry.get("status") in ("error", "signed_out", "rate_limited")
             and type(entry.get("heldUntil")) is int and type(entry.get("holdSeconds")) is int
             and (entry["status"] != "error" or isinstance(entry.get("message"), str))):
         return 0
+    if entry.get("reason") in PROGRAM_REASONS and entry.get("program", "") != chosen:
+        return 0
     return max(0, min(entry["heldUntil"] - now, entry["holdSeconds"], HOLD_MAX))
 
 
-def hold(report, now):
+def hold(report, now, chosen):
     """The cache entry that stands in for a failed poll: five minutes, or as
-    long as a rate-limit reply asked if that is longer, up to HOLD_MAX."""
+    long as a rate-limit reply asked if that is longer, up to HOLD_MAX. A
+    failure of the program keeps the one chosen, for held()."""
     length = CACHE_TTL
     if report["status"] == "rate_limited":
         length = min(max(CACHE_TTL, report["retryAfter"]), HOLD_MAX)
@@ -971,6 +1045,8 @@ def hold(report, now):
         entry["message"] = report["message"]
     if report["status"] != "signed_out":
         entry["reason"], entry["host"] = report["reason"], report["host"]
+    if entry.get("reason") in PROGRAM_REASONS:
+        entry["program"] = chosen
     return entry
 
 
@@ -1028,7 +1104,7 @@ def collect_locked(fetchers, now):
             providers[name] = entry
             event("debug", name, "cached", age=now - entry["fetchedAt"])
             continue
-        wait = held(entry, now)
+        wait = held(entry, now, PROGRAMS.get(name, ""))
         if wait:
             if entry["heldUntil"] - now > wait:
                 entry["heldUntil"] = now + wait
@@ -1043,7 +1119,7 @@ def collect_locked(fetchers, now):
             report["fetchedAt"] = now
             cache[name] = providers[name] = report
         else:
-            cache[name] = hold(report, now)
+            cache[name] = hold(report, now, PROGRAMS.get(name, ""))
             providers[name] = replay(cache[name], cache[name]["holdSeconds"], now)
         note_check(name, report, entry, ms, cache[name])
         polled[name] = report
@@ -1148,7 +1224,7 @@ def waiting(ids, message):
     providers = {}
     for name in ids:
         entry = cache.get(name)
-        wait = held(entry, now)
+        wait = held(entry, now, PROGRAMS.get(name, ""))
         if fresh(entry, now):
             providers[name] = entry
             event("debug", name, "cached", age=now - entry["fetchedAt"])
@@ -1187,7 +1263,7 @@ class NotSent(Exception):
 
 class Failed(Exception):
     """The starter can't send until the user acts; reason is "not-installed",
-    "signed-out" or "not-subscription"."""
+    "program", "signed-out" or "not-subscription"."""
 
     def __init__(self, reason):
         super().__init__(reason)
@@ -1218,7 +1294,7 @@ class Defer(Exception):
 
 
 STATES = ("waiting", "confirming", "started", "weekly", "failed", "retrying", "paused")
-REASONS = ("not-installed", "signed-out", "not-subscription", "not-responding", "unchecked", "not-sent")
+REASONS = ("not-installed", "program", "signed-out", "not-subscription", "not-responding", "unchecked", "not-sent")
 
 
 def blank_record():
@@ -1507,7 +1583,9 @@ def starter_read(name, now, not_before):
 
 
 def installed(name):
-    binary = find_cli(name)
+    binary, problem = find_cli(name, PROGRAMS.get(name, ""))
+    if problem:
+        raise Failed("program")
     if not binary:
         raise Failed("not-installed")
     return binary
@@ -1835,6 +1913,14 @@ def switch(text):
     return name, value == "on"
 
 
+def chosen_program(text):
+    """A --program value: the provider, then the path, which may hold "=" too."""
+    name, sep, path = text.partition("=")
+    if name not in PROVIDERS or not sep:
+        raise argparse.ArgumentTypeError(f"expected <provider>=<path>, not {text!r}")
+    return name, path
+
+
 def arguments(argv):
     parser = argparse.ArgumentParser(description="Report the weekly usage of Claude Code and Codex as JSON.")
     parser.add_argument("--providers", type=provider_list, default=list(PROVIDERS),
@@ -1843,6 +1929,8 @@ def arguments(argv):
                         help="run the session starter of each listed provider that is switched on and due")
     parser.add_argument("--starter-set", type=switch, action="append", default=[], metavar="PROVIDER=on|off",
                         help="switch a provider's session starter on or off for this user")
+    parser.add_argument("--program", type=chosen_program, action="append", default=[], metavar="PROVIDER=PATH",
+                        help="run the program at PATH for a provider rather than finding it; ~ is the home folder")
     return parser.parse_args(argv)
 
 
@@ -1850,6 +1938,8 @@ def main(argv=None):
     args = arguments(argv)
     EVENTS.clear()
     ids = args.providers
+    PROGRAMS.clear()
+    PROGRAMS.update(args.program)
     fake = os.environ.get("RINGSIDE_USAGE_FAKE")
     if fake:
         report = read_json(fake)
@@ -1886,6 +1976,8 @@ def main(argv=None):
             providers = waiting(ids, str(err))
         report = {"fetchedAt": int(time.time()), "providers": providers, "events": EVENTS}
         attach_starters(providers, report["fetchedAt"])
+        for name, entry in providers.items():
+            entry["program"] = program(name)
     # Read on every run, cached or not, so a change of clock zone shows by the
     # next poll; the cache itself never holds it.
     zone = clock_zone()
