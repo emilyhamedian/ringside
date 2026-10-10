@@ -473,12 +473,13 @@ Item {
             trackColor: Qt.alpha(gauge.color, 0.22 * 0.55 * gauge.color.a)
         }
 
-        // The name or mark, greyed out further while the ring is struck or
-        // waits.
+        // The name or mark, greyed out further while the ring is grey or
+        // waits, and fainter still once it is struck, so the stroke in the
+        // track's grey reads across it unbroken.
         Item {
             id: middle
             anchors.fill: parent
-            opacity: 1 - 0.6 * Math.max(gauge.struck, gauge.greyed, gauge.waitDim)
+            opacity: 1 - Math.max(0.85 * gauge.struck, 0.6 * Math.max(gauge.greyed, gauge.waitDim))
         }
 
         // The cancelling stroke, from the bottom left of the track to its
