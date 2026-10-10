@@ -17,6 +17,7 @@ var ROWS = [
     { label: "started, confirmed", state: "started", enabled: true, failed: false, at: -180, next: 297 * 60 },
     { label: "weekly limit reached", state: "weekly", enabled: true, failed: false, next: 3 * 86400 },
     { label: "failed: not installed", state: "failed", enabled: true, failed: true, reason: "not-installed" },
+    { label: "failed: the chosen program can't run", state: "failed", enabled: true, failed: true, reason: "program" },
     { label: "failed: signed out", state: "failed", enabled: true, failed: true, reason: "signed-out" },
     { label: "failed: not responding, retrying", state: "failed", enabled: true, failed: true, reason: "not-responding", next: 300 },
     { label: "failed: couldn't check the limits, retrying", state: "failed", enabled: true, failed: true, reason: "unchecked", next: 900 },

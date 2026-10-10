@@ -89,6 +89,8 @@ Item {
             property string codexInnerLimit: ""
             property string knownLimits: ""
             property string usageStatus: ""
+            property string claudeProgram: ""
+            property string codexProgram: ""
             property int knownLimitsWrites: 0
             property int usageStatusWrites: 0
             onKnownLimitsChanged: ++knownLimitsWrites
@@ -262,8 +264,8 @@ Item {
             compare(usage.helperError, "");
             compare(JSON.parse(config.knownLimits),
                     { claude: [{ id: "Fable", label: "Fable", reported: true }], codex: [] });
-            compare(JSON.parse(config.usageStatus), { claude: { status: "ok", message: "" },
-                                                      codex: { status: "ok", message: "" }, helperError: "" });
+            compare(JSON.parse(config.usageStatus), { claude: { status: "ok", message: "", starter: false },
+                                                      codex: { status: "ok", message: "", starter: false }, helperError: "" });
         }
 
         function test_innerFollowsTheChoice() {
@@ -296,7 +298,7 @@ Item {
             // suspend has made late.
             compare(timers().filter(t => t.running).map(t => t.interval), [5 * 60000, 60000]);
             compare(JSON.parse(config.usageStatus).claude,
-                    { status: "error", message: "HTTP Error 500: Internal Server Error" });
+                    { status: "error", message: "HTTP Error 500: Internal Server Error", starter: false });
             compare(JSON.parse(config.usageStatus).codex.status, "rate_limited");
 
             poll("ok");
@@ -322,7 +324,7 @@ Item {
             const codex = usage.entry("codex");
             compare([codex.status, codex.lastError, codex.reason, codex.weekly], ["error", "codex CLI not found", "not-installed", undefined]);
             verify(usage.codexPresent && usage.degraded("codex"));
-            compare(JSON.parse(config.usageStatus).codex, { status: "error", message: "codex CLI not found" });
+            compare(JSON.parse(config.usageStatus).codex, { status: "error", message: "codex CLI not found", starter: false });
 
             poll("ok");
             verify(usage.claudePresent && usage.codexPresent);
@@ -359,7 +361,8 @@ Item {
             for (const id of ["claude", "codex"]) {
                 verify(!usage.loading(id) && usage.present(id) && usage.degraded(id), id);
             }
-            compare(JSON.parse(config.usageStatus).claude, { status: "error", message: "HTTP Error 500: Internal Server Error" });
+            compare(JSON.parse(config.usageStatus).claude, { status: "error", message: "HTTP Error 500: Internal Server Error",
+                                                             starter: false });
 
             poll("ok");
             compare(usage.entry("claude").weekly.percent, 52);
@@ -564,6 +567,7 @@ Item {
                 { tag: "no python3", ran: 400, retryAt: -100, reason: "missing", can: false },
                 { tag: "lock busy", ran: 400, retryAt: -100, reason: "busy", can: false },
                 { tag: "not installed", ran: 400, retryAt: -100, reason: "not-installed", can: false },
+                { tag: "chosen program can't run", ran: 400, retryAt: -100, reason: "program", can: false },
                 { tag: "hold ends now", ran: 400, retryAt: 0, can: true },
                 { tag: "tick exactly a minute away", ran: 840, retryAt: -100, can: false },
                 { tag: "helper", ran: 400, retryAt: -100, reason: "helper", can: true },
@@ -724,6 +728,78 @@ Item {
             compare(usage.command, "python3 -B '/nonexistent/it'\\''s/usage.py' --providers claude,codex");
             // python3 can't open it; the helper failure says so.
             tryVerify(() => usage.helperError.startsWith("The usage helper exited with code 2"), 10000, usage.helperError);
+        }
+
+        // Paths a shell would take apart or run: spaces, both quotes, $,
+        // backticks, a command substitution, a glob, a newline, and words
+        // that look like the helper's own flags and the ends the widget
+        // reads a run's ids and mode from.
+        readonly property var nastyPaths: [
+            "/opt/my tools/codex",
+            "/tmp/it's here/codex",
+            "/tmp/\"quoted\"/$HOME/`id`/$(touch /tmp/ringside-pwned)/codex",
+            "/tmp/a;b&&c|d>e<f*?[x]~/{1,2}/codex\\",
+            "/tmp/line\nbreak/codex",
+            "/tmp/' --starter-set claude=on --providers claude,codex --start '/codex"
+        ]
+
+        // Every run passes each chosen program as one quoted word before
+        // --providers, so a path never reads as the run's ids or mode.
+        function test_commandPassesTheChosenPrograms() {
+            make("ok", []);
+            usage.helperPath = "/x/usage.py";
+            config.codexProgram = "~/bin/codex";
+            usage.providers = ["claude", "codex"];
+            compare(usage.command, "python3 -B '/x/usage.py' --program 'codex=~/bin/codex' --providers claude,codex");
+            config.claudeProgram = "/opt/it's/claude";
+            compare(usage.helperCommand(["claude"], " --start"),
+                    "python3 -B '/x/usage.py' --program 'claude=/opt/it'\\''s/claude' --providers claude --start");
+            compare(usage.helperCommand(usage.ids, " --starter-set codex=on"),
+                    "python3 -B '/x/usage.py' --program 'claude=/opt/it'\\''s/claude' --program 'codex=~/bin/codex'"
+                    + " --providers claude,codex --starter-set codex=on");
+            // Only the providers a run is for.
+            compare(usage.helperCommand(["codex"], ""), "python3 -B '/x/usage.py' --program 'codex=~/bin/codex' --providers codex");
+            config.codexProgram = "";
+            compare(usage.helperCommand(["codex"], ""), "python3 -B '/x/usage.py' --providers codex");
+        }
+
+        // Each path reaches the helper exactly as chosen, through whatever
+        // the executable engine hands the line to: the stub reports back
+        // what it was given, and a shell that read any of it would have
+        // changed it. A new path also checks at once, as Apply does.
+        function test_nastyProgramPathsReachTheHelperIntact() {
+            start("ok");
+            const runs = commands();
+            for (const path of nastyPaths) {
+                const landed = spy("statusesChanged");
+                config.codexProgram = path;
+                landed.wait(10000);
+                compare(usage.statuses.codex.program, { path: path, chosen: true, problem: "" }, path);
+                compare(usage.statuses.claude.program, undefined, "claude's program, unchosen, isn't passed");
+                compare(JSON.parse(config.usageStatus).codex.program.path, path);
+            }
+            compare(runs.count, nastyPaths.length, "one check per change, none waiting for the timer");
+            compare(runs.signalArguments.map(a => a[0]), nastyPaths.map(path => "python3 -B " + usage.quoted(usage.helperPath)
+                + " --program '" + ("codex=" + path).replace(/'/g, "'\\''") + "' --providers claude,codex"));
+            // A starter run passes them too, and is still read as one.
+            const polled = spy("statusesChanged");
+            config.claudeProgram = nastyPaths[5];
+            polled.wait(10000);
+            const landed = spy("startersChanged");
+            runner().connectSource(usage.helperCommand(["claude"], " --start"));
+            landed.wait(10000);
+            compare(usage.starters.claude.state, "confirming");
+            compare(usage.statuses.claude.program.path, nastyPaths[5]);
+        }
+
+        // What the settings page reads of each provider: its program as the
+        // helper reported it, and whether its starter is on.
+        function test_statusCarriesProgramAndStarter() {
+            start("starter");
+            const status = JSON.parse(config.usageStatus);
+            compare(status.claude.starter, true);
+            compare(status.codex.starter, false);
+            compare(status.claude.program, undefined, "the stub reports no program unless one is chosen");
         }
 
         function runner() {
@@ -1713,6 +1789,9 @@ Item {
                 { tag: "helper", entry: { reason: "helper" }, text: "The usage helper stopped with an error." },
                 { tag: "not installed", item: "codex", entry: { reason: "not-installed", lastError: "codex CLI not found" },
                   text: "Codex isn't installed; install it or turn Codex off." },
+                { tag: "chosen program", item: "codex",
+                  entry: { reason: "program", lastError: "the codex program set in Settings can't be run" },
+                  text: "The codex program set in Settings can't be run." },
                 { tag: "other", entry: { reason: "other", lastError: "app-server closed without answering" },
                   text: "App-server closed without answering." },
                 { tag: "no reason", entry: { lastError: "Claude Code's credentials can't be read" },
@@ -3475,6 +3554,8 @@ Item {
                 ["weeklyNextWeek", { state: "weekly", next: { day: 12, h: 23, m: 0 } },
                  ["Weekly limit reached. The next session starts %1, when the limit resets.", { day: 12, h: 23, m: 0 }]],
                 ["notInstalled", { state: "failed", reason: "not-installed" }, ["Can't start a session: Claude Code isn't installed."]],
+                ["program", { state: "failed", reason: "program" },
+                 ["Can't start a session: the claude program set in Settings can't be run."]],
                 ["signedOut", { state: "failed", reason: "signed-out" },
                  ["Can't start a session: Claude Code is signed out. Run claude in a terminal to sign in."]],
                 ["notSubscription", { state: "failed", reason: "not-subscription" },
@@ -3515,6 +3596,8 @@ Item {
                 ["startedYesterday", { state: "started", at: { day: 5, h: 23, m: 30 } }, ["Started this week %1.", { day: 5, h: 23, m: 30 }]],
                 ["weekly", { state: "weekly", next: F(2, 33) }, ["Weekly limit reached. The next week starts %1, when the limit resets.", F(2, 33)]],
                 ["notInstalled", { state: "failed", reason: "not-installed" }, ["Can't start a week: Codex isn't installed."]],
+                ["program", { state: "failed", reason: "program" },
+                 ["Can't start a week: the codex program set in Settings can't be run."]],
                 ["signedOut", { state: "failed", reason: "signed-out" },
                  ["Can't start a week: Codex is signed out. Run codex in a terminal to sign in."]],
                 ["notResponding", { state: "failed", reason: "not-responding", next: T(22, 5) },

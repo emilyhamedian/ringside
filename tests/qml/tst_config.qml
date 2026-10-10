@@ -3,6 +3,7 @@
 
 pragma ComponentBehavior: Bound
 import QtQuick
+import QtQuick.Controls as QQC2
 import QtTest
 import org.kde.kirigami as Kirigami
 import org.kde.ksysguard.sensors as Sensors
@@ -684,7 +685,11 @@ Item {
                 { tag: "Items", source: "config/ConfigItems.qml", key: "ringsOnly", value: ["cpu"] },
                 { tag: "Sensors", source: "config/ConfigSensors.qml", key: "diskDevice", value: "sda" },
                 { tag: "Providers", source: "config/ConfigProviders.qml", key: "usageRefreshMinutes", value: 10 },
-                { tag: "ProvidersCodexMark", source: "config/ConfigProviders.qml", key: "codexMark", value: "openai" }
+                { tag: "ProvidersCodexMark", source: "config/ConfigProviders.qml", key: "codexMark", value: "openai" },
+                { tag: "ProvidersClaudeProgram", source: "config/ConfigProviders.qml", key: "claudeProgram",
+                  value: "~/.bun/bin/claude" },
+                { tag: "ProvidersCodexProgram", source: "config/ConfigProviders.qml", key: "codexProgram",
+                  value: "/opt/my tools/codex" }
             ]);
         }
         function test_applySavesTheChange(data) {
@@ -821,8 +826,10 @@ Item {
             const host = createTemporaryObject(stretchedProviders, root,
                                                { mirrored: data.mirrored, width: data.width, height: root.height });
             verify(host);
-            waitForRendering(host);
             const page = host.page;
+            // Both Program rows, one with a problem under it.
+            showPrograms(page, "broken-claude");
+            waitForRendering(host);
             const texts = [];
             const walk = item => {
                 if (!item.visible) {
@@ -845,7 +852,8 @@ Item {
             }
             const note = texts.find(t => t.text.startsWith("Automatic shows"));
             verify(note.lineCount > 1, "the inner rings' note wraps");
-            for (const name of ["Check every", "Claude inner ring", "OpenAI inner ring"]) {
+            for (const name of ["Check every", "Claude inner ring", "OpenAI inner ring", "Path to claude", "Path to codex",
+                                "Choose where claude is", "Choose where codex is"]) {
                 const control = combo(page, host.stretch(name));
                 verify(control && control.visible, name);
                 verify(within(page, control), name + " runs off the page");
@@ -864,6 +872,284 @@ Item {
             } else {
                 verify(data.width < 660, "the form went narrow at full width");
             }
+        }
+
+        // What the helper reports of each program, and what the user chose,
+        // in the mock's five states and the moment before the first report.
+        // HOME stands for the home folder.
+        function program(path, chosen, problem) {
+            return { path: path, chosen: chosen, problem: problem ?? "" };
+        }
+        function programStates() {
+            return {
+                found: { claude: "", codex: "", status: {
+                    claude: { status: "ok", starter: true, program: program("HOME/.local/bin/claude", false) },
+                    codex: { status: "ok", starter: false, program: program("HOME/.local/bin/codex", false) } } },
+                "notfound-off": { claude: "", codex: "", status: {
+                    claude: { status: "ok", starter: false, program: program("", false) },
+                    codex: { status: "error", starter: false, program: program("", false) } } },
+                "notfound-on": { claude: "", codex: "", status: {
+                    claude: { status: "ok", starter: true, program: program("", false) },
+                    codex: { status: "error", starter: false, program: program("", false) } } },
+                custom: { claude: "~/.bun/bin/claude", codex: "HOME/.nvm/versions/node/v22.12.0/bin/codex", status: {
+                    claude: { status: "ok", starter: true, program: program("HOME/.bun/bin/claude", true) },
+                    codex: { status: "ok", starter: false, program: program("HOME/.nvm/versions/node/v22.12.0/bin/codex", true) } } },
+                broken: { claude: "/opt/claude-code/claude", codex: "~/.npm-global/bin/codex", status: {
+                    claude: { status: "ok", starter: true, program: program("/opt/claude-code/claude", true, "not-executable") },
+                    codex: { status: "error", starter: false, program: program("HOME/.npm-global/bin/codex", true, "missing") } } },
+                "broken-claude": { claude: "/opt/claude-code/claude", codex: "~/bin/codex", status: {
+                    claude: { status: "ok", starter: true, program: program("/opt/claude-code/claude", true, "not-executable") },
+                    codex: { status: "ok", starter: false, program: program("HOME/bin/codex", true) } } },
+                first: { claude: "", codex: "", status: {} }
+            };
+        }
+
+        // Puts a page in one of programStates() with both items on and both
+        // providers' limits known.
+        function showPrograms(page, state, items) {
+            const s = JSON.parse(JSON.stringify(programStates()[state]).replace(/HOME/g, page.home));
+            page.cfg_itemOrder = ["cpu", "claude", "codex"];
+            page.cfg_hiddenItems = items ?? [];
+            page.cfg_claudeProgram = s.claude;
+            page.cfg_codexProgram = s.codex;
+            page.usageStatus = s.status;
+            return s;
+        }
+
+        function field(page, command) {
+            return combo(page, "Path to " + command);
+        }
+        // The line under a program's row, which sits just under its field,
+        // or "" while none shows.
+        function noteItem(page, command) {
+            const row = field(page, command).parent;
+            return find(page, i => i.program === row);
+        }
+        function programNote(page, command) {
+            const note = noteItem(page, command);
+            if (note.visible) {
+                // Once the form has laid out the row it just showed.
+                tryVerify(() => below(note, field(page, command)), 2000, command + "'s note sits under its field");
+            }
+            return note.visible ? note.text : "";
+        }
+        function programNoteColor(page, command) {
+            return noteItem(page, command).color;
+        }
+
+        readonly property string claudeNote: "Only starting sessions needs it. Usage is read without it."
+        readonly property string claudeLost: "Not in ~/.local/bin or on Plasma's PATH. Starting sessions needs it; if claude is installed elsewhere, choose it."
+        readonly property string codexLost: "Not in ~/.local/bin or on Plasma's PATH, which leaves out what your shell adds. If codex is installed elsewhere, choose it."
+
+        // Which Program rows, notes and Codex settings show in each state.
+        // Codex's row shows while its item is on and a path is chosen or
+        // codex can't run; its inner ring and logo need codex to run.
+        // Claude's shows while its item is on and a path is chosen, or its
+        // starter is on and claude isn't found.
+        function test_programRows_data() {
+            return [
+                { tag: "1 found", state: "found", claude: null, codex: null, ring: true, logo: true, openai: true },
+                { tag: "2 notfound-off", state: "notfound-off", claude: null, codex: codexLost, ring: false, logo: false,
+                  openai: true },
+                { tag: "3 notfound-on", state: "notfound-on", claude: claudeLost, codex: codexLost, ring: false, logo: false,
+                  openai: true },
+                { tag: "4 custom", state: "custom", claude: claudeNote, codex: "", ring: true, logo: true, openai: true },
+                { tag: "5 broken", state: "broken", claude: "This file can't be run: it isn't marked executable.",
+                  codex: "There is no file at this path.", ring: false, logo: false, openai: true },
+                { tag: "before the first report", state: "first", claude: null, codex: null, ring: true, logo: true,
+                  openai: true },
+                { tag: "items off", state: "broken", items: ["claude", "codex"], claude: null, codex: null, ring: false,
+                  logo: false, openai: false },
+                { tag: "claude chosen, starter off", state: "custom", starter: false, claude: claudeNote, codex: "",
+                  ring: true, logo: true, openai: true }
+            ];
+        }
+        function test_programRows(data) {
+            const page = make(providers, { knownLimits: { claude: [{ id: "opus", label: "Opus", reported: true }],
+                                                          codex: [{ id: "gpt", label: "GPT-5.5-Codex", reported: true }] } });
+            showPrograms(page, data.state, data.items);
+            if (data.starter === false) {
+                page.usageStatus = Object.assign({}, page.usageStatus,
+                                                 { claude: Object.assign({}, page.usageStatus.claude, { starter: false }) });
+            }
+            waitForRendering(page);
+            for (const command of ["claude", "codex"]) {
+                const shown = data[command] !== null;
+                compare(field(page, command).visible, shown, command + "'s field");
+                if (shown) {
+                    compare(programNote(page, command), data[command], command + "'s note");
+                }
+            }
+            compare(combo(page, "OpenAI inner ring").visible, data.ring, "the OpenAI inner ring");
+            compare(findAll(page, i => i.text === page.automaticLine && i.visible).length, 1 + Number(data.ring),
+                    "the inner rings' notes");
+            compare(logoChoice(page, "Codex").visible, data.logo, "the ring logo");
+            compare(heading(page, "OpenAI").visible, data.openai, "the OpenAI heading");
+            compare(findAll(page, i => i.text === "Program:" && i.visible).length,
+                    Number(data.claude !== null) + Number(data.codex !== null), "Program: labels");
+        }
+
+        // A problem is said in the negative colour, an explanation dimmed.
+        function test_programNoteColours() {
+            const page = make(providers);
+            showPrograms(page, "broken");
+            verify(Qt.colorEqual(programNoteColor(page, "codex"), Kirigami.Theme.negativeTextColor));
+            showPrograms(page, "custom");
+            verify(!Qt.colorEqual(programNoteColor(page, "claude"), Kirigami.Theme.negativeTextColor));
+        }
+
+        function typeInto(item, text) {
+            item.forceActiveFocus();
+            item.selectAll();
+            keyClick(Qt.Key_Delete);
+            for (const c of text) {
+                keyClick(c);
+            }
+        }
+
+        // Emptying a field to type another path, or to go back to
+        // automatic, leaves the row where it is; nothing above it moves
+        // until Apply has had the new path checked.
+        function test_programRowStaysWhileEditing() {
+            const page = make(providers, { knownLimits: { codex: [{ id: "gpt", label: "GPT-5.5-Codex", reported: true }] } });
+            showPrograms(page, "custom");
+            const codex = field(page, "codex");
+            typeInto(codex, "");
+            compare(page.cfg_codexProgram, "");
+            verify(codex.visible, "the row went while its field was emptied");
+            compare(programNote(page, "codex"), "");
+
+            const lost = make(providers);
+            showPrograms(lost, "notfound-on");
+            typeInto(field(lost, "codex"), "/opt/codex");
+            compare(lost.cfg_codexProgram, "/opt/codex");
+            verify(!logoChoice(lost, "Codex").visible, "the logo showed before the path was checked");
+            compare(programNote(lost, "codex"), "", "the not-found note stays under a typed path");
+            typeInto(field(lost, "codex"), "");
+            verify(field(lost, "codex").visible);
+            compare(programNote(lost, "codex"), codexLost);
+        }
+
+        // What is typed stays as typed, spaces and ~ among it, and the
+        // setting holds it without the spaces around it.
+        function test_programTypedAsIs() {
+            const page = make(providers);
+            showPrograms(page, "notfound-on");
+            const codex = field(page, "codex");
+            typeInto(codex, page.home + "/my tools/codex ");
+            compare(codex.text, page.home + "/my tools/codex ");
+            compare(page.cfg_codexProgram, page.home + "/my tools/codex");
+            // A path set elsewhere, as by the file picker, shows.
+            page.cfg_codexProgram = "~/bin/codex";
+            compare(codex.text, "~/bin/codex");
+        }
+
+        // A path the helper can't take is caught as it is typed.
+        function test_programTypedPathCheck_data() {
+            return [
+                { tag: "a name", text: "codex", note: "Enter a full path, starting with / or ~/." },
+                { tag: "relative", text: "bin/codex", note: "Enter a full path, starting with / or ~/." },
+                { tag: "another user's home", text: "~bob/codex", note: "Enter a full path, starting with / or ~/." },
+                { tag: "full", text: "/usr/local/bin/codex", note: "" },
+                { tag: "home", text: "~/bin/codex", note: "" },
+                { tag: "spaces around", text: "  /opt/codex", note: "" }
+            ];
+        }
+        function test_programTypedPathCheck(data) {
+            const page = make(providers);
+            showPrograms(page, "custom");
+            typeInto(field(page, "codex"), data.text);
+            compare(programNote(page, "codex"), data.note);
+            if (data.note !== "") {
+                verify(Qt.colorEqual(programNoteColor(page, "codex"), Kirigami.Theme.negativeTextColor));
+            }
+            compare(field(page, "codex").Accessible.description, data.note);
+        }
+
+        // The helper's problem with a path shows only under that path, the
+        // stored ~ form and the reported full one being the same path.
+        function test_programStaleProblemHidden() {
+            const page = make(providers);
+            showPrograms(page, "broken");
+            const codex = field(page, "codex");
+            compare(programNote(page, "codex"), "There is no file at this path.");
+            typeInto(codex, "~/.npm-global/bin/codex2");
+            compare(programNote(page, "codex"), "");
+            typeInto(codex, page.home + "/.npm-global/bin/codex");
+            compare(programNote(page, "codex"), "There is no file at this path.", "the same path, written in full");
+            // A problem reported for automatic isn't the chosen path's.
+            page.usageStatus = { codex: { status: "error", starter: false,
+                                          program: program(page.home + "/.npm-global/bin/codex", false, "missing") } };
+            compare(programNote(page, "codex"), "");
+        }
+
+        // As Folder View has it: a field that fills the row and an icon-only
+        // button that names what it does to screen readers and in its tooltip.
+        function test_programControls() {
+            const page = make(providers);
+            showPrograms(page, "custom");
+            for (const command of ["claude", "codex"]) {
+                const f = field(page, command);
+                compare(f.placeholderText, "Path to " + command + "…");
+                verify(f.inputMethodHints & Qt.ImhNoPredictiveText);
+                const button = combo(page, "Choose where " + command + " is");
+                verify(button && button.visible, command + "'s button");
+                compare(button.text, "Choose where " + command + " is");
+                compare(button.display, 0 /* AbstractButton.IconOnly */);
+                compare(button.icon.name, "document-open");
+                compare(button.QQC2.ToolTip.text, button.text);
+                const row = f.parent;
+                fuzzyCompare(f.width + button.width + row.spacing, row.width, 1, command + "'s field fills the row");
+            }
+        }
+
+        // The file picker opens in the chosen program's folder, or at home
+        // while no full path is chosen. Qt's own dialog stands in for the
+        // desktop's here and picks differently, so what it stores is left
+        // to a check by hand.
+        function test_programFilePicker() {
+            const page = make(providers);
+            showPrograms(page, "custom");
+            page.cfg_codexProgram = "~/my tools/#1/codex";
+            const row = field(page, "codex").parent;
+            const picker = row.data.find(o => o.selectedFile !== undefined);
+            // As QUrl prints it: the # still escaped, which a bare path would
+            // have turned into a fragment.
+            compare(String(picker.currentFolder), "file://" + page.home + "/my tools/%231");
+            page.cfg_codexProgram = "codex";
+            compare(String(picker.currentFolder), "file://" + encodeURI(page.home));
+        }
+
+        // The path stays left to right in a right-to-left layout, the
+        // button beside it on the leading side and the label on the right.
+        function test_programRightToLeft() {
+            const host = createTemporaryObject(stretchedProviders, root, { mirrored: true, width: 660, height: root.height });
+            const page = host.page;
+            showPrograms(page, "custom");
+            waitForRendering(host);
+            const f = combo(page, host.stretch("Path to codex"));
+            const button = combo(page, host.stretch("Choose where codex is"));
+            compare(f.effectiveHorizontalAlignment, TextInput.AlignLeft);
+            verify(button.mapToItem(page, 0, 0).x + button.width <= f.mapToItem(page, 0, 0).x, "the button sits left of the field");
+            const label = findAll(page, i => i.text === host.stretch("Program:") && i.visible)[0];
+            verify(label.mapToItem(page, 0, 0).x >= f.mapToItem(page, 0, 0).x + f.width, "the label sits right of the field");
+        }
+
+        // Typing a path and pressing Apply saves it, as typed, under its key.
+        function test_applySavesTheTypedProgram_data() {
+            return orders([{ tag: "codex" }]);
+        }
+        function test_applySavesTheTypedProgram(data) {
+            const config = fakeConfiguration(Object.assign(settings(), { itemOrder: ["cpu", "codex"], hiddenItems: [] }));
+            const page = open("config/ConfigProviders.qml", config, data.order);
+            const d = dialog(page, config, data.order);
+            page.usageStatus = programStates()["notfound-off"].status;
+            waitForRendering(page);
+            typeInto(field(page, "codex"), "~/.npm-global/bin/codex");
+            verify(d.applyEnabled, "typing left Apply off");
+            d.apply();
+            compare(config.file.codexProgram, "~/.npm-global/bin/codex");
+            compare(config.file.claudeProgram, "");
         }
 
         function test_items_data() {

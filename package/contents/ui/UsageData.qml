@@ -32,7 +32,8 @@ Item {
     id: usage
 
     // Plasmoid.configuration, or an object with the keys usageRefreshMinutes,
-    // claudeInnerLimit, codexInnerLimit, knownLimits and usageStatus.
+    // claudeInnerLimit, codexInnerLimit, knownLimits and usageStatus, and
+    // optionally claudeProgram and codexProgram.
     required property var config
     // Ids to poll, e.g. ["claude", "codex"].
     property var providers: []
@@ -57,9 +58,13 @@ Item {
     // Known ids only, in a fixed order: the helper rejects an unknown one.
     readonly property var ids: Items.USAGE.filter(id => Array.from(usage.providers).includes(id))
     // Split by sh quoting rules, whether KProcess starts python3 itself or
-    // hands the line to sh, so a quote in the install path is closed, escaped
-    // and reopened. -B keeps Python from writing bytecode into the package.
+    // hands the line to sh, so the install path and each chosen program are
+    // quoted (see quoted()). -B keeps Python from writing bytecode into the
+    // package.
     readonly property string command: helperCommand(ids, "")
+    // The claude and codex programs chosen in the settings; empty finds
+    // them. Every run passes them, so choosing one checks it at once.
+    readonly property var programs: ({ claude: String(config.claudeProgram ?? ""), codex: String(config.codexProgram ?? "") })
     readonly property var innerChoices: ({ claude: config.claudeInnerLimit, codex: config.codexInnerLimit })
     // The last poll's status per id, as the settings page reads it.
     property var statuses: ({})
@@ -96,9 +101,19 @@ Item {
         return entries[id] ?? null;
     }
 
+    // Text as one sh word: in single quotes, where nothing is special, with
+    // each quote in it closed, escaped and reopened.
+    function quoted(text) {
+        return "'" + text.replace(/'/g, "'\\''") + "'";
+    }
+
+    // The chosen programs come before --providers, so the patterns that
+    // read a run's ids and mode from its end never meet a path.
     function helperCommand(providerIds, args) {
         return providerIds.length > 0
-            ? "python3 -B '" + helperPath.replace(/'/g, "'\\''") + "' --providers " + providerIds.join(",") + args : "";
+            ? "python3 -B " + quoted(helperPath)
+              + providerIds.filter(id => programs[id]).map(id => " --program " + quoted(id + "=" + programs[id])).join("")
+              + " --providers " + providerIds.join(",") + args : "";
     }
 
     // As reported; after a switch change the helper couldn't write, "failed"
@@ -136,7 +151,7 @@ Item {
     // One --starter-set at a time, so a quick on and off land in order.
     function writeStarter() {
         const id = Object.keys(starterWanted)[0];
-        if (id !== undefined && !runner.connectedSources.some(s => s.includes(" --starter-set "))) {
+        if (id !== undefined && !runner.connectedSources.some(s => / --starter-set \w+=(on|off)$/.test(s))) {
             runner.connectSource(helperCommand(ids, " --starter-set " + id + "=" + (starterWanted[id] ? "on" : "off")));
         }
     }
@@ -149,7 +164,7 @@ Item {
     // A switch turned off while a --start runs is the helper's to catch: it
     // reads the switch again just before it sends.
     function startDue() {
-        const busy = runner.connectedSources.some(s => s.endsWith(" --start") || s.includes(" --starter-set "));
+        const busy = runner.connectedSources.some(s => s.endsWith(" --start") || / --starter-set \w+=(on|off)$/.test(s));
         const now = Date.now() / 1000;
         // A switch the user turned off and the helper couldn't write starts
         // nothing either, until it is turned again.
@@ -256,12 +271,13 @@ Item {
     // helper's hold is over, so it would really ask; not while a check
     // runs or with the next tick under a minute away; and never for a
     // helper that can't read its files or can't be started, or a Codex CLI
-    // that isn't installed, which would only fail again, or one that found
-    // another check holding its lock, which a click would only queue behind.
+    // that isn't installed or a chosen one that can't run, which would only
+    // fail again until the user acts, or one that found another check
+    // holding its lock, which a click would only queue behind.
     function canRetry(id, nowMs) {
         const e = entry(id);
         const now = nowMs / 1000;
-        return e !== null && e.lastError !== undefined && !["files", "missing", "not-installed", "busy"].includes(e.reason)
+        return e !== null && e.lastError !== undefined && !["files", "missing", "not-installed", "program", "busy"].includes(e.reason)
             && !checking && now >= e.retryAt && nextCheck(id) - now > 60;
     }
 
@@ -326,7 +342,11 @@ Item {
                 }
                 continue;
             }
-            latest[id] = { status: next.status, message: next.message ?? "" };
+            // What the settings page needs of this check: whether the
+            // program was found or can run, and whether the starter is
+            // on, which is when Claude's program is needed.
+            latest[id] = { status: next.status, message: next.message ?? "", program: next.program,
+                           starter: next.starter?.enabled === true };
             if (next.status === "ok" || next.status === "signed_out") {
                 merged[id] = next;
             } else if (was || loading(id)) {
