@@ -397,22 +397,20 @@ Item {
             verify(popup(applet).visible, "Escape closed the menu alone");
         }
 
-        // The monitor keys the graphs' saved history to this widget.
-        function test_widgetIdReachesTheMonitor() {
-            compare(strip(panel(false, 44)).monitor.widgetId, String(Plasmoid.id));
-        }
-
-        // The monitor learns the widget's version for the public address
-        // check's User-Agent, and does without when there is none to read.
-        function test_versionReachesTheMonitor_data() {
+        // The monitor keys the graphs' saved history to this widget, and
+        // learns the widget's version for the public address check's
+        // User-Agent, doing without when there is none to read.
+        function test_widgetReachesTheMonitor_data() {
             return [{ tag: "metadata", metaData: { version: "0.3.0" }, version: "0.3.0" },
                     { tag: "none", metaData: undefined, version: "" }];
         }
-        function test_versionReachesTheMonitor(data) {
+        function test_widgetReachesTheMonitor(data) {
             const saved = Plasmoid.metaData;
             Plasmoid.metaData = data.metaData;
             try {
-                compare(strip(panel(false, 44)).monitor.version, data.version);
+                const monitor = strip(panel(false, 44)).monitor;
+                compare(monitor.widgetId, String(Plasmoid.id));
+                compare(monitor.version, data.version);
             } finally {
                 Plasmoid.metaData = saved;
             }
