@@ -22,7 +22,7 @@ ConfigPage {
         network: i18nc("@item panel item", "Network"),
         disk: i18nc("@item panel item", "Disk"),
         claude: i18nc("@item panel item", "Claude"),
-        codex: i18nc("@item panel item", "Codex")
+        codex: i18nc("@item panel item: the OpenAI weekly limits, read through Codex", "OpenAI")
     })
     // A vertical panel shows rings without their readings, whatever the setting.
     readonly property bool vertical: Plasmoid.formFactor === PlasmaCore.Types.Vertical

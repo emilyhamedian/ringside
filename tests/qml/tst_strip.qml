@@ -734,6 +734,9 @@ Item {
             verify(/^52% used, Fable 78%, resets in 2 days 2\d hours$/.test(claude.Accessible.description),
                    claude.Accessible.description);
             compare(strip.cellAt(2).Accessible.name, "Codex");
+            strip.monitor.codexMark = "openai";
+            compare(strip.cellAt(2).Accessible.name, "ChatGPT", "named for the OpenAI logo");
+            strip.monitor.codexMark = "codex";
             verify(/^24% used, resets in 5 days [34] hours$/.test(strip.cellAt(2).Accessible.description),
                    strip.cellAt(2).Accessible.description);
             const mark = find(gaugeAt(1), i => i.markName !== undefined);

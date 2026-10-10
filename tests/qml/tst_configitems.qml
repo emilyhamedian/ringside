@@ -95,10 +95,10 @@ Item {
             const page = make().page;
             verify(!button(page, "Move CPU up").enabled);
             verify(button(page, "Move CPU down").enabled);
-            // Claude and Codex trail the list by default, so Codex is now
+            // Claude and OpenAI trail the list by default, so OpenAI is now
             // the last row rather than Disk.
-            verify(button(page, "Move Codex up").enabled);
-            verify(!button(page, "Move Codex down").enabled);
+            verify(button(page, "Move OpenAI up").enabled);
+            verify(!button(page, "Move OpenAI down").enabled);
             const up = button(page, "Move GPU up");
             compare(up.QQC2.ToolTip.text, "Move GPU up");
             compare(up.icon.name, "go-up");
@@ -179,7 +179,7 @@ Item {
         function test_aiRowsUnchecked(data) {
             const page = openPage({ cfg_itemOrder: data.order, cfg_hiddenItems: data.hidden });
             verify(!checkbox(page, "Claude").checked, "Claude starts unchecked");
-            verify(!checkbox(page, "Codex").checked, "Codex starts unchecked");
+            verify(!checkbox(page, "OpenAI").checked, "OpenAI starts unchecked");
             compare(page.cfg_itemOrder, data.order, "loading writes nothing back");
             compare(page.cfg_hiddenItems, data.hidden, "loading writes nothing back");
         }
@@ -187,7 +187,7 @@ Item {
         function test_aiRowOnWhenOrderListsIt() {
             const page = openPage({ cfg_itemOrder: ["cpu", "claude", "gpu", "memory", "network", "disk"], cfg_hiddenItems: [] });
             verify(checkbox(page, "Claude").checked, "the stored order lists Claude");
-            verify(!checkbox(page, "Codex").checked, "the stored order doesn't list Codex");
+            verify(!checkbox(page, "OpenAI").checked, "the stored order doesn't list OpenAI");
         }
 
         // Whichever list the page writes, it writes both together: the order

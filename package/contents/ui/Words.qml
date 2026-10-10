@@ -50,6 +50,15 @@ QtObject {
         return "";
     }
 
+    // A provider's name as its popup and tooltip give it: the OpenAI item is
+    // ChatGPT while its ring shows the OpenAI logo, and Codex with the Codex
+    // mark.
+    function providerName(item) {
+        return item === "claude" ? i18nc("@title", "Claude")
+             : monitor.codexMark === "openai" ? i18nc("@title the OpenAI weekly limits, with the OpenAI logo chosen for their ring", "ChatGPT")
+             : i18nc("@title", "Codex");
+    }
+
     // The two short readings by a ring: the ring's own percentage, or "off"
     // for the only GPU while it sleeps, then its temperature, the memory in
     // use or the time to the weekly reset; empty where there is none, as for

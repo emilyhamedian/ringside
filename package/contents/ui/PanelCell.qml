@@ -18,6 +18,8 @@ MouseArea {
     property Item contentItem: null
     // Its readings in words.
     property string description: ""
+    // Which logo the OpenAI ring shows, which names it (see Monitor.codexMark).
+    property string codexMark: "codex"
     // Between the wash and the panel's edges, across a horizontal panel.
     readonly property real inset: vertical ? 0 : Math.round(Kirigami.Units.smallSpacing / 2)
     // Between the content and the cell's ends. Along a horizontal panel two
@@ -31,6 +33,7 @@ MouseArea {
                                   : item === "network" ? i18nc("@info:tooltip", "Network")
                                   : item === "disk" ? i18nc("@info:tooltip", "Disk activity")
                                   : item === "claude" ? i18nc("@info:tooltip the Claude Code weekly limits", "Claude")
+                                  : codexMark === "openai" ? i18nc("@info:tooltip the OpenAI weekly limits, with the OpenAI logo chosen for their ring", "ChatGPT")
                                   : i18nc("@info:tooltip the Codex weekly limits", "Codex")
 
     signal activated()

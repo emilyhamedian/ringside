@@ -149,7 +149,7 @@ PopupPage {
         ringCancelled: popup.struck
         ringStale: popup.greyShown
         ringLoading: popup.loading
-        title: popup.claude ? i18nc("@title", "Claude") : i18nc("@title", "Codex")
+        title: words.providerName(popup.item)
         // As many as the reading had, whether or not they are shown; how
         // many there are isn't known until the first check is done.
         subtitle: popup.loading
