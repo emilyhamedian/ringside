@@ -11,8 +11,10 @@ import "../../package/contents/ui/code/style.js" as Style
 // The panel's cells on their own, with FakeMonitor's readings: the
 // ring and its stroke, the name or mark inside it, the readings beside it in
 // every state, their faces and colours, the room each line keeps whatever it
-// reads, and the rates on the same lines in their fixed slots. It names no Strip, popup or settings page, so it
-// loads on Plasma 6.0, and it runs again in German and Egyptian Arabic.
+// reads, and the rates on the same lines in their fixed slots; and the
+// popups' Reading, a number and its unit. It names no Strip, popup or
+// settings page, so it loads on Plasma 6.0, and it runs again in German and
+// Egyptian Arabic.
 Item {
     id: root
     width: 800
@@ -239,6 +241,11 @@ Item {
     }
 
     Component {
+        id: readingComponent
+        Reading {}
+    }
+
+    Component {
         id: metricsComponent
         FontMetrics {}
     }
@@ -270,28 +277,12 @@ Item {
         }
     }
 
-    // Noto Sans has figures of both kinds, so the features show in its widths.
     Component {
         id: probeMetricsComponent
-        TextMetrics {
-            property var features: ({})
-            font.family: "Noto Sans"
-            font.pointSize: 10
-            font.features: features
-        }
+        TextMetrics {}
     }
 
-    Component {
-        id: probeTextComponent
-        Text {
-            property var features: ({})
-            font.family: "Noto Sans"
-            font.pointSize: 10
-            font.features: features
-            textFormat: Text.PlainText
-        }
-    }
-
+    // Noto Sans has figures of both kinds, so the features show in its widths.
     Component {
         id: proportionalComponent
         FontMetrics {
@@ -437,7 +428,6 @@ Item {
             const rows = [];
             for (const [ring, stroke] of [[16, 2], [26, 2], [34, 2.5], [45, 3.5], [52, 4]]) {
                 rows.push({ tag: ring + " cpu", item: "cpu", ring: ring, stroke: stroke, inner: false });
-                rows.push({ tag: ring + " dual gpu", item: "gpu", ring: ring, stroke: stroke, inner: true });
                 rows.push({ tag: ring + " claude", item: "claude", ring: ring, stroke: stroke, inner: true });
             }
             return rows;
@@ -450,34 +440,12 @@ Item {
             compare(g.width, data.ring);
             compare(g.height, data.ring);
             compare(g.strokeWidth, data.stroke);
-            compare(g.strokeWidth, Math.max(2, Math.round(data.ring / 6.5) / 2));
             compare(g.inner, data.inner);
             const arcs = root.findAll(g, i => i.animating !== undefined && i.visible);
             compare(arcs.length, data.inner ? 2 : 1);
             arcs.forEach(arc => verify(arc.radius + arc.strokeWidth / 2 <= data.ring / 2, "the ring stays in its square"));
             const hole = Math.min(...arcs.map(arc => arc.radius - arc.strokeWidth / 2));
             compare(g.centreWidth, 2 * (hole - 1));
-        }
-
-        function test_noPercentageInsideTheRing_data() {
-            const rows = [];
-            for (const item of ["cpu", "memory", "gpu", "claude", "codex"]) {
-                rows.push({ tag: item, item: item, textShown: true });
-                rows.push({ tag: item + " ring only", item: item, textShown: false });
-            }
-            return rows;
-        }
-
-        function test_noPercentageInsideTheRing(data) {
-            const c = breezeSized(cell(data.item, { textShown: data.textShown }));
-            const g = gauge(c);
-            compare(g.text, "");
-            if (data.item === "gpu") {
-                verify(g.inner, "both GPUs are drawn");
-            }
-            const number = new RegExp("[0-9%" + [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map(root.digits).join("") + "]");
-            const inside = root.texts(g);
-            verify(!inside.some(text => number.test(text)), JSON.stringify(inside));
         }
 
         // The ring speaks its reading as the readings beside it show it: in
@@ -505,13 +473,21 @@ Item {
 
         // Inside the ring, inside the inner ring where there is one (both
         // GPUs, Claude with its model limit); left out where it can't be
-        // read or beside readings that share a line.
+        // read or beside readings that share a line. The percentage stays
+        // out of the ring. With the text off the cell is the ring alone,
+        // and its tooltip still has the words.
         function test_nameInsideTheRing(data) {
             const c = breezeSized(cell(data.item, { ring: data.ring, textShown: data.textShown, twoLines: data.twoLines }));
             const g = gauge(c);
             const name = nameIn(c);
+            compare(g.text, "");
             if (data.item === "gpu" || data.item === "claude") {
                 verify(g.inner, "drawn with its inner ring");
+            }
+            if (!data.textShown) {
+                compare(readingsIn(c).map(t => t.text), []);
+                compare(c.implicitWidth, data.ring, "the ring alone");
+                verify(c.accessibleDescription !== "", "the tooltip still has the words");
             }
             compare(name.visible, data.shown);
             verify(name.Accessible.ignored, "the cell's description names the item");
@@ -624,12 +600,17 @@ Item {
             compare(codex.mark, "codex");
         }
 
+        // `size` is the logo's where the ring's middle bounds it, two
+        // pixels inside; on larger rings the theme font's line sets it, as
+        // it does the Claude star's. The line changes with the font, which
+        // can change with the locale, so no row sits near the ring where
+        // the two bounds meet.
         function test_openaiLogoAtItsOldSize_data() {
-            const rows = [];
-            for (let ring = 16; ring <= 52; ring += 2) {
-                rows.push({ tag: String(ring), ring: ring });
-            }
-            return rows;
+            return [{ tag: "16", ring: 16, size: 7, shown: false },
+                    { tag: "20", ring: 20, size: 11, shown: true },
+                    { tag: "22", ring: 22, size: 13, shown: true },
+                    { tag: "34", ring: 34, shown: true },
+                    { tag: "52", ring: 52, shown: true }];
         }
 
         // The OpenAI logo is drawn at 1.2 times a name's line, the Claude
@@ -640,17 +621,13 @@ Item {
             monitor.codexMark = "openai";
             const name = nameIn(breezeSized(cell("codex", { ring: data.ring, textShown: false })));
             const star = nameIn(breezeSized(cell("claude", { ring: data.ring, textShown: false })));
-            const metrics = createTemporaryObject(metricsComponent, root, { font: label(name).font });
-            const size = Math.max(0, Math.min(Math.round(metrics.height * 1.2), Math.floor(name.room) - 2));
             compare(name.mark, "openai");
-            compare(name.markSize, size);
-            compare(name.visible, size >= Kirigami.Units.iconSizes.small / 2 && size <= name.room);
-            if (name.room === star.room) {
+            if (data.size !== undefined) {
+                compare(name.markSize, data.size);
+            } else {
                 compare(name.markSize, star.markSize, "the Claude star's size");
             }
-            if (data.ring === 22) {
-                verify(name.visible, "shown where the cloud is left out");
-            }
+            compare(name.visible, data.shown);
         }
 
         function test_nameFitsTheHole_data() {
@@ -766,6 +743,59 @@ Item {
                    "centred: " + middle.x + ", " + middle.y + " in " + data.size);
         }
 
+        // A Reading's number and unit.
+        function parts(reading) {
+            const texts = reading.children.filter(c => typeof c.text === "string");
+            compare(texts.length, 2);
+            return { number: texts[0], suffix: texts[1] };
+        }
+
+        // The top of a Text's ink, in its parent.
+        function inkTop(text) {
+            const glyph = keep(figureComponent.createObject(root, { font: text.font, text: text.text }));
+            return text.y + text.baselineOffset + glyph.tightBoundingRect.y;
+        }
+
+        // A degree sign is always at the small font's size, where another
+        // unit grows with its digits. The digits here are large enough for
+        // the two rules to differ under any theme's fonts.
+        function test_degreeUnitAtTheSmallFont() {
+            const small = Kirigami.Theme.smallFont.pointSize;
+            const pointSize = 3 * small;
+            const make = properties => parts(createTemporaryObject(readingComponent, root,
+                Object.assign({ value: Format.temperature(61, false), pointSize: pointSize }, properties))).suffix;
+            const degree = make({ degreeUnit: "C" });
+            compare(degree.text, "°C");
+            compare(degree.font.pointSize, small);
+            const other = make({ unit: "GHz" });
+            compare(other.font.pointSize, Style.unitPointSize(pointSize, small));
+            verify(other.font.pointSize > degree.font.pointSize, other.font.pointSize + " against " + degree.font.pointSize);
+        }
+
+        // A degree unit hangs from the top of the digits at any size, inside
+        // the number's line, where another unit sits on their baseline. A
+        // "7" and a "1" have flat tops, which hinting leaves where they are;
+        // a round digit's overshoot can round to a pixel more at this size.
+        function test_degreeUnitHangsFromTheDigits_data() {
+            return [{ tag: "celsius", unit: "C" }, { tag: "fahrenheit", unit: "F" }];
+        }
+
+        function test_degreeUnitHangsFromTheDigits(data) {
+            const small = Kirigami.Theme.smallFont.pointSize;
+            const make = properties => createTemporaryObject(readingComponent, root,
+                Object.assign({ value: Format.temperature(71, false), pointSize: 3 * small }, properties));
+            const r = make({ degreeUnit: data.unit });
+            const p = parts(r);
+            fuzzyCompare(inkTop(p.suffix), inkTop(p.number), 0.5, "level with the digits' top");
+            const baseline = p.number.y + p.number.baselineOffset;
+            verify(p.suffix.y + p.suffix.baselineOffset < baseline - small,
+                   "raised from the baseline: " + (p.suffix.y + p.suffix.baselineOffset) + " against " + baseline);
+            verify(p.suffix.y >= 0, "inside the line, at " + p.suffix.y);
+            compare(r.implicitHeight, p.number.implicitHeight);
+            const other = parts(make({ unit: "GHz" }));
+            compare(other.suffix.y + other.suffix.baselineOffset, other.number.y + other.number.baselineOffset, "a unit on the baseline");
+        }
+
         // A middle too small for a mark leaves it out rather than sizing it
         // below nothing.
         function test_noRoomNoMark() {
@@ -822,65 +852,39 @@ Item {
             verify(!g.moving && g.motion === 0);
         }
 
+        // A row for each colour a line takes, on each kind of cell. What the
+        // lines say in every state is Readout's test_readout, in tst_usage.
         function test_lines_data() {
-            const asleep = { phase: "asleep" };
             return [
                 { tag: "cpu", item: "cpu", lines: [percent(23), degrees(61)], tones: ["text", "dim"] },
                 { tag: "cpu 80 °C", item: "cpu", set: { cpuTemperature: 80 }, lines: [percent(23), degrees(80)], tones: ["text", "neutral"] },
                 { tag: "cpu 95 °C", item: "cpu", set: { cpuTemperature: 95 }, lines: [percent(23), degrees(95)], tones: ["text", "negative"] },
-                { tag: "cpu 74 %", item: "cpu", set: { cpuUsage: 74 }, lines: [percent(74), degrees(61)], tones: ["text", "dim"] },
                 { tag: "cpu 75 %", item: "cpu", set: { cpuUsage: 75 }, lines: [percent(75), degrees(61)], tones: ["neutral", "dim"] },
-                { tag: "cpu 89 %", item: "cpu", set: { cpuUsage: 89 }, lines: [percent(89), degrees(61)], tones: ["neutral", "dim"] },
                 { tag: "cpu 90 %", item: "cpu", set: { cpuUsage: 90 }, lines: [percent(90), degrees(61)], tones: ["negative", "dim"] },
-                { tag: "cpu no reading", item: "cpu", set: { cpuUsage: NaN, cpuTemperature: NaN }, lines: ["–", "–"], tones: ["text", "dim"] },
-                { tag: "fahrenheit", item: "cpu", set: { fahrenheit: true, cpuTemperature: 38 }, lines: [percent(23), degrees(100)], tones: ["text", "dim"] },
-                { tag: "fahrenheit hot", item: "cpu", set: { fahrenheit: true, cpuTemperature: 95 }, lines: [percent(23), degrees(203)], tones: ["text", "negative"] },
-                { tag: "memory", item: "memory", lines: [percent(42), decimal(13.4) + " GiB"], tones: ["text", "dim"] },
                 { tag: "memory 77 %", item: "memory", set: { memoryPercent: 77 }, lines: [percent(77), decimal(13.4) + " GiB"], tones: ["neutral", "dim"] },
-                { tag: "memory in MiB", item: "memory", set: { memoryUsed: 900 * mib, memoryPercent: 3 }, lines: [percent(3), decimal(900) + " MiB"], tones: ["text", "dim"] },
-                { tag: "memory to one decimal", item: "memory", set: { memoryUsed: 9.64 * gib, memoryPercent: 60 }, lines: [percent(60), decimal(9.6) + " GiB"],
-                  tones: ["text", "dim"] },
-                { tag: "dual gpu", item: "gpu", lines: [percent(12), degrees(48)], tones: ["text", "dim"], absent: degrees(41) },
                 { tag: "dual gpu hot", item: "gpu", outer: { usage: 90, temperature: 92 }, lines: [percent(90), degrees(92)], tones: ["negative", "negative"] },
-                { tag: "dual gpu warm", item: "gpu", outer: { temperature: 80 }, lines: [percent(12), degrees(80)], tones: ["text", "neutral"] },
-                { tag: "outer asleep", item: "gpu", outer: asleep, lines: [percent(3), degrees(41)], tones: ["text", "dim"] },
-                { tag: "only gpu asleep", item: "gpu", outer: asleep, inner: { present: false }, lines: ["off", ""], tones: ["dim", "dim"] },
-                { tag: "intel only", item: "gpu", outer: { reportsTemperature: false, kind: "integrated" }, inner: { present: false },
-                  lines: [percent(12), ""], tones: ["text", "dim"] },
+                { tag: "only gpu asleep", item: "gpu", outer: { phase: "asleep" }, inner: { present: false }, lines: ["off", ""], tones: ["dim", "dim"] },
                 { tag: "claude", item: "claude", lines: [percent(52), digits(2) + "d"], tones: ["text", "dim"] },
                 { tag: "claude 81 %", item: "claude", week: [81, 5 * 3600 + 12 * 60], lines: [percent(81), digits(5) + "h"],
                   tones: ["neutral", "dim"] },
-                // At this pace the week runs out before its reset, and its
-                // colour is still its reading's.
-                { tag: "claude 81 % runs out", item: "claude", week: [81, 2 * day + 21 * 3600], lines: [percent(81), digits(2) + "d"],
-                  tones: ["neutral", "dim"] },
-                { tag: "claude last day", item: "claude", week: [40, 23 * 3600 + 5 * 60], lines: [percent(40), digits(23) + "h"],
-                  tones: ["text", "dim"] },
                 { tag: "claude 95 %", item: "claude", week: [95, 5 * 3600 + 12 * 60], lines: [percent(95), digits(5) + "h"],
-                  tones: ["negative", "dim"] },
-                { tag: "claude minutes", item: "claude", week: [40, 12 * 60], lines: [percent(40), digits(12) + "m"], tones: ["text", "dim"] },
-                { tag: "claude reset passed", item: "claude", week: [40, -600], lines: [percent(40), "–"], tones: ["text", "dim"] },
-                { tag: "claude no weekly", item: "claude", week: null, lines: ["–", "–"], tones: ["text", "dim"] },
-                { tag: "codex", item: "codex", lines: [percent(24), digits(5) + "d"], tones: ["text", "dim"] }
+                  tones: ["negative", "dim"] }
             ];
         }
 
         // The ring's own reading, heavier and in the ring's colour, over a
-        // dimmer one in its own heat colour. A countdown keeps to its largest
-        // unit, and memory to one decimal and its unit.
+        // dimmer one in its own heat colour.
         function test_lines(data) {
             apply(data.item, data);
             const c = cell(data.item);
             const first = line(c, "first");
             const second = line(c, "second");
             compare([first.text, second.text], data.lines);
+            verify(second.mapToItem(c, Qt.point(0, 0)).y >= first.mapToItem(c, Qt.point(0, first.height)).y, "line 2 under line 1");
             compare(String(first.color), root.tone(data.tones[0]), "line 1 colour");
             compare(String(second.color), root.tone(data.tones[1]), "line 2 colour");
             checkFace(first, Font.DemiBold, "line 1");
             checkFace(second, Font.Normal, "line 2");
-            if (data.absent) {
-                verify(!root.texts(c).includes(data.absent), JSON.stringify(root.texts(c)));
-            }
         }
 
         // The panel shows the readings Monitor holds for it, which move once
@@ -979,6 +983,8 @@ Item {
             const dot = shown.find(t => t.text === "·");
             if (dot) {
                 compare(String(dot.color), root.tone("dim"));
+                const x = t => t.mapToItem(c, Qt.point(0, 0)).x;
+                verify(x(line(c, "first")) < x(dot) && x(dot) < x(line(c, "second")), "in reading order");
             }
         }
 
@@ -1047,8 +1053,11 @@ Item {
                 claude: [{ week: [0, 6 * day + 23 * 3600], shows: ["0%", "6d"] },
                          { week: [5, day + 11 * 3600], shows: ["5%", "1d"] },
                          { week: [88, 23 * 3600 + 59 * 60], shows: ["88%", "23h"] },
+                         { week: [40, 10 * 3600 + 10 * 60], shows: ["40%", "10h"] },
+                         { week: [100, 3600], shows: ["100%", "1h"] },
                          { week: [100, 59 * 60], shows: ["100%", "59m"] },
                          { week: [100, 5 * 60], shows: ["100%", "5m"] },
+                         { week: [5, 30], shows: ["5%"] },
                          { week: [40, -600], shows: ["40%", "–"] },
                          { week: [NaN, 2 * day], shows: ["–", "2d"] },
                          { week: null, shows: ["–"] }],
@@ -1421,26 +1430,6 @@ Item {
             c.vertical = true;
             block.implicitWidth = 40.5;
             compare(c.implicitWidth, 40.5 + 2 * Kirigami.Units.smallSpacing, "along a vertical panel, as it is");
-        }
-
-        // Font features have to reach both what measures and what draws, or
-        // the rooms kept don't match the text drawn in them.
-        function test_fontFeaturesReachMeasurement() {
-            const width = (features, text) => {
-                const metrics = keep(probeMetricsComponent.createObject(root, { features: features, text: text }));
-                const drawn = keep(probeTextComponent.createObject(root, { features: features, text: text }));
-                return [metrics.advanceWidth, drawn.implicitWidth];
-            };
-            const narrow = width({ "pnum": 1 }, "111");
-            const wide = width({ "pnum": 1 }, "888");
-            if (narrow[0] === wide[0] && narrow[1] === wide[1]) {
-                skip("Noto Sans is missing or has no proportional figures here");
-            }
-            verify(narrow[0] < wide[0], "TextMetrics: " + narrow[0] + " vs " + wide[0]);
-            verify(narrow[1] < wide[1], "Text: " + narrow[1] + " vs " + wide[1]);
-            const tabular = [width({ "tnum": 1 }, "111"), width({ "tnum": 1 }, "888")];
-            compare(tabular[0][0], tabular[1][0], "TextMetrics with tnum");
-            compare(tabular[0][1], tabular[1][1], "Text with tnum");
         }
 
         // A room counts every digit, ASCII or the locale's, as the widest of

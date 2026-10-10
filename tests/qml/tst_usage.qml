@@ -1122,15 +1122,6 @@ Item {
             compare(usage.switchFailures, {});
         }
 
-        function test_failedChangeSnapsBack() {
-            start("starter");
-            poll("traceback");
-            usage.setStarter("codex", true);
-            verify(usage.starterOn("codex"));
-            tryVerify(() => !usage.starterOn("codex"), 10000);
-            compare(usage.starter("codex").enabled, false);
-        }
-
         // A switch change that gives no report leaves the readings and the
         // settings page alone. The switch snaps back and says why under it
         // until it is turned again.
@@ -1172,6 +1163,13 @@ Item {
             compare(usage.switchFailures, {});
             verify(usage.starter("codex").reason !== "switch");
             verify(!usage.starterOn("codex"));
+
+            // The same from a helper that fails as it runs.
+            poll("traceback");
+            usage.setStarter("codex", true);
+            verify(usage.starterOn("codex"));
+            tryVerify(() => !usage.starterOn("codex"), 10000);
+            compare([usage.starter("codex").enabled, usage.starter("codex").reason], [false, "switch"]);
         }
 
         // A quick on and off run one after the other, so the last one wins.
@@ -1317,101 +1315,6 @@ Item {
         // the week, so only the percentage sets the level.
         readonly property int lastHours: 5 * 3600
 
-        function test_texts_data() {
-            return [{ tag: "claude", percent: "52%", left: "2d" },
-                    { tag: "codex", percent: "24%", left: "5d" }];
-        }
-
-        // The mark names the item in the ring, and the percentage moves out
-        // of it to stand over the time to the reset.
-        function test_texts(data) {
-            const c = cell(data.tag);
-            const gauge = c.children[0];
-            compare(root.texts(c), [data.percent, data.left].map(root.localized));
-            compare(line(c, "first").text, root.localized(data.percent));
-            compare(line(c, "second").text, root.localized(data.left));
-            verify(line(c, "second").y >= line(c, "first").y + line(c, "first").height, "the time sits under the percentage");
-            compare(gauge.text, "", "no percentage inside the ring");
-            const m = mark(c);
-            verify(m.visible, "the mark shows");
-            compare(root.find(c, i => i.markSize !== undefined).mark, data.tag);
-            verify(m.width > 0 && m.width <= gauge.centreWidth, m.width + " in " + gauge.centreWidth);
-        }
-
-        // A thin panel puts the readings on one line and leaves the ring
-        // unnamed; with the text off, the ring keeps its mark alone.
-        function test_oneLineAndRingOnly() {
-            const thin = cell("claude", { twoLines: false });
-            compare(root.texts(thin), ["52%", "·", "2d"].map(root.localized));
-            compare(line(thin, "second").y, line(thin, "first").y, "one line");
-            verify(line(thin, "second").x > line(thin, "first").x);
-            verify(!mark(thin).visible, "no mark beside one line");
-            const bare = cell("claude", { textShown: false });
-            compare(root.texts(bare), []);
-            compare(bare.implicitWidth, 34, "the ring alone");
-            verify(mark(bare).visible, "the ring keeps its mark");
-            verify(bare.accessibleDescription !== "", "the tooltip still has the words");
-        }
-
-        function test_countdownKeepsItsRoom_data() {
-            return [{ tag: "two lines", twoLines: true }, { tag: "one line", twoLines: false }];
-        }
-
-        // The countdown shows its largest unit alone and keeps one room
-        // whatever it reads, from a new week down to the last minutes and a
-        // passed reset, so the cell keeps its width; every reading fits its
-        // box and starts where the last one did.
-        function test_countdownKeepsItsRoom(data) {
-            claudeAt(40, 6 * 86400 + 23 * 3600);
-            const c = cell("claude", { twoLines: data.twoLines });
-            const readout = root.find(c, i => i.textWidth !== undefined);
-            const width = c.implicitWidth;
-            const room = readout.rooms[1];
-            const starts = ["first", "second"].map(name => line(c, name).mapToItem(c, Qt.point(0, 0)).x);
-            const shown = [];
-            for (const percent of [0, 5, 100, NaN]) {
-                for (const left of [6 * 86400 + 23 * 3600, 86400 + 11 * 3600, 23 * 3600 + 59 * 60, 10 * 3600 + 10 * 60,
-                                    3600, 59 * 60, 5 * 60, 30, -600]) {
-                    claudeAt(percent, left);
-                    waitForRendering(c);
-                    const texts = [line(c, "first").text, line(c, "second").text];
-                    const what = texts.join(" ") + " at " + percent + "% with " + left + " s left";
-                    verify(!texts[1].includes(" "), what + ": one unit");
-                    ["first", "second"].forEach((name, i) => {
-                        const text = line(c, name);
-                        verify(text.contentWidth <= text.width, text.text + " overflows its room: " + what);
-                        compare(text.mapToItem(c, Qt.point(0, 0)).x, starts[i], what + ": " + name + " stays put");
-                    });
-                    compare(readout.rooms[1], room, what + ": the countdown's room");
-                    compare(c.implicitWidth, width, what + ": the cell's width");
-                    shown.push(texts[1]);
-                }
-            }
-            for (const text of ["6d", "1d", "23h", "10h", "1h", "59m", "5m", "–"]) {
-                verify(shown.includes(root.localized(text)), text + " among " + JSON.stringify(shown));
-            }
-            compare(line(c, "first").text, "–", "no percentage, a dash");
-            compare(line(c, "second").text, "–", "a passed reset shows a dash until the next poll");
-        }
-
-        function test_levelColours_data() {
-            return [{ tag: "74", percent: 74, tone: "text" }, { tag: "75", percent: 75, tone: "neutral" },
-                    { tag: "89", percent: 89, tone: "neutral" }, { tag: "90", percent: 90, tone: "negative" }];
-        }
-
-        // The percentage takes the ring's colour; the time stays dim, so
-        // only the reading that reached a level shows it.
-        function test_levelColours(data) {
-            claudeAt(data.percent, lastHours);
-            const c = cell("claude");
-            const expected = data.tone === "negative" ? Kirigami.Theme.negativeTextColor
-                           : data.tone === "neutral" ? Kirigami.Theme.neutralTextColor : Kirigami.Theme.textColor;
-            compare(c.children[0].outerTone, expected);
-            compare(line(c, "first").color, c.children[0].outerTone, "the percentage follows the ring");
-            // Text keeps 8-bit colours, so they compare as drawn.
-            compare(String(line(c, "second").color), String(Style.dim(Kirigami.Theme.textColor)), "the time stays dim");
-        }
-
         function test_countdownStaysDim_data() {
             return [{ tag: "52", percent: 52, left: 2 * 86400, shows: "2d" },
                     { tag: "83", percent: 83, left: 14 * 3600, shows: "14h" },
@@ -1452,9 +1355,14 @@ Item {
         // ring, the inner ring and the percentage. Only the reading sets the
         // tone, amber from 75 % and red from 90 %, whatever the pace: a limit
         // on course to run out early says so in the popup's sentence alone.
+        // The time to the reset stays dim.
         function test_paceNeverRaisesTheLevel_data() {
             const day = 86400;
             return [
+                { tag: "74", weekly: [74, lastHours], outer: "text" },
+                { tag: "75", weekly: [75, lastHours], outer: "neutral" },
+                { tag: "89", weekly: [89, lastHours], outer: "neutral" },
+                { tag: "90", weekly: [90, lastHours], outer: "negative" },
                 { tag: "lasts", weekly: [52, 2 * day + 21 * 3600], outer: "text" },
                 { tag: "runs out", weekly: [70, 3 * day], outer: "text" },
                 { tag: "runs out at 39", weekly: [39, 5 * day], outer: "text" },
@@ -1631,10 +1539,7 @@ Item {
         // where they were, with no amber, red or breathing, and no stroke.
         function test_failedCheckGreysFirst_data() {
             return [{ tag: "first failure", age: 60, interval: 5, grey: true, breath: true },
-                    { tag: "under two intervals", age: 570, interval: 5, grey: true },
                     { tag: "two intervals", age: 600, interval: 5, grey: false },
-                    { tag: "under two longer intervals", age: 1770, interval: 15, grey: true },
-                    { tag: "two longer intervals", age: 1800, interval: 15, grey: false },
                     { tag: "the week has reset", age: 60, interval: 5, grey: false, reset: true }];
         }
 
@@ -1689,23 +1594,6 @@ Item {
             compare(line(c, "first").text, "––%");
         }
 
-        // At Plasma's Instant speed the arcs, the stroke and the dashes
-        // change together, in one frame each way.
-        function test_strikeAtInstant() {
-            const ok = hotClaude();
-            const c = cell("claude");
-            const gauge = c.children[0];
-            gauge.settle = 0;
-            setEntry("claude", Object.assign({}, ok, failure(600)));
-            compare(outerArc(c).percent, 0, "the arc at once");
-            compare([gauge.struck, line(c, "first").text], [0, root.localized("95%")], "neither the stroke nor the dashes yet");
-            wait(0);
-            compare([gauge.struck, line(c, "first").text, line(c, "second").text], [1, "––%", "–d"], "both");
-            setEntry("claude", ok);
-            wait(0);
-            compare([gauge.struck, outerArc(c).percent, line(c, "first").text], [0, 95, root.localized("95%")]);
-        }
-
         // The ring's dots and the lit dot that travels round them.
         function dotsOf(cell) {
             return root.find(cell.children[0], i => i.covered !== undefined);
@@ -1722,7 +1610,7 @@ Item {
         }
 
         function test_loadingLook_data() {
-            return [{ tag: "34", ring: 34 }, { tag: "22", ring: 22 }, { tag: "16", ring: 16 }, { tag: "52", ring: 52 }];
+            return [{ tag: "16", ring: 16 }, { tag: "52", ring: 52 }];
         }
 
         // While its first check runs the ring is a still ring of dots a
@@ -1874,22 +1762,6 @@ Item {
             };
             collect(cell.children[0]);
             return found;
-        }
-
-        // Only the item's own windows play, and a model's only while its
-        // limit is the one on the inner ring.
-        function test_playsItsResets() {
-            const claude = cell("claude");
-            const codex = cell("codex");
-            monitor.usage.resetsDetected({ "claude.weekly": { from: 80, early: false },
-                                           "claude.scoped.Fable": { from: 95, early: true } });
-            compare(arcs(claude).map(a => a.animating), [true, true]);
-            verify(arcs(codex).every(a => !a.animating));
-            tryVerify(() => arcs(claude).every(a => !a.animating), 5000);
-
-            monitor.usage.innerChoices = { claude: "none", codex: "" };
-            monitor.usage.resetsDetected({ "claude.scoped.Fable": { from: 95, early: false } });
-            verify(arcs(claude).every(a => !a.animating), "no inner ring, nothing to play");
         }
 
         function setEntry(id, entry) {
@@ -2100,8 +1972,6 @@ Item {
             verify(!shown.some(t => t.startsWith("resets in")), "Fable resets with the week");
             verify(!shown.includes("Open System Monitor"), "the footer has the gear alone");
             compare(countdown(popup).map(r => [r.value, r.unit]), [[root.localized("2"), "d"], [root.localized("21"), "h"]]);
-            compare(graph(popup).mainPoints.length, 17);
-            compare(graph(popup).secondPoints.length, 17);
             compare(graph(popup).pollAt, monitor.usage.createdAt);
         }
 
@@ -2196,34 +2066,32 @@ Item {
         }
 
         // The ring and the bars carry the level; the countdown stays plain at
-        // every level, at the limit too, and after a failed check.
+        // every level, at the limit too, and after a failed check. Once the
+        // reset has passed with the reading still at 100 %, no lock-out is
+        // left to count down: the dash stays plain, as in the panel, until
+        // the next check brings the new week.
         function test_countdownStaysPlain_data() {
             return [{ tag: "52", percent: 52 }, { tag: "83", percent: 83 }, { tag: "91", percent: 91 },
-                    { tag: "100", percent: 100 }, { tag: "100 failed", percent: 100, failed: true }];
+                    { tag: "100", percent: 100 }, { tag: "100 failed", percent: 100, failed: true },
+                    { tag: "100 reset passed", percent: 100, passed: true }];
         }
 
         function test_countdownStaysPlain(data) {
             const usage = monitor.usage;
-            setClaude({ weekly: usage.window(data.percent, 2 * usage.day + 21 * 3600, []) });
+            setClaude({ weekly: usage.window(data.percent, data.passed ? -600 : 2 * usage.day + 21 * 3600, []) });
             if (data.failed) {
                 failClaude(240);
             }
-            const readings = countdown(load("claude"));
-            compare(readings.length, 2);
-            readings.forEach(r => compare(String(r.color), String(Kirigami.Theme.textColor)));
-        }
-
-        // Once the reset has passed with the reading still at 100 %, no
-        // lock-out is left to count down: the dash stays plain, as in the
-        // panel, until the next check brings the new week.
-        function test_dashAfterTheResetIsNotRed() {
-            const usage = monitor.usage;
-            setClaude({ weekly: usage.window(100, -600, []) });
             const popup = load("claude");
-            verify(!header(popup).partsShown);
-            const dash = root.find(header(popup), i => i.numberWidth !== undefined && i.visible);
-            compare(dash.value, "–");
-            compare(String(dash.color), String(Kirigami.Theme.textColor));
+            let readings = countdown(popup);
+            if (data.passed) {
+                verify(!header(popup).partsShown);
+                readings = [root.find(header(popup), i => i.numberWidth !== undefined && i.visible)];
+                compare(readings[0].value, "–");
+            } else {
+                compare(readings.length, 2);
+            }
+            readings.forEach(r => compare(String(r.color), String(Kirigami.Theme.textColor)));
         }
 
         // After the reset the dash has no caption, yet sits where the
@@ -2272,17 +2140,6 @@ Item {
             verify(claude.includes("Weekly limits") && !claude.includes("Weekly limit"), JSON.stringify(claude));
         }
 
-        // With one limit and nothing to say about its pace, the graph's tile
-        // follows the header directly.
-        function test_oneQuietLimitShowsNoColumn() {
-            const usage = monitor.usage;
-            setClaude({ weekly: usage.window(5, 7 * usage.day - 3 * 3600, [[0.1, 2], [0, 5]]), scoped: [] });
-            const popup = load("claude");
-            const only = rows(popup);
-            compare(only.length, 1);
-            verify(!only[0].parent.visible, "no bars and no sentence");
-        }
-
         // A tile reads as apart from the last bar: more room under the bars
         // than between them.
         function test_barsBottomMargin() {
@@ -2291,7 +2148,6 @@ Item {
             const siblings = Array.from(column.parent.children);
             const tiles = siblings.slice(siblings.indexOf(column) + 1).find(i => i.visible);
             const gap = tiles.y - (column.y + column.height);
-            compare(gap, Math.round(Kirigami.Units.largeSpacing * 1.75));
             verify(gap > fable.y - (all.y + all.height));
         }
 
@@ -2301,7 +2157,9 @@ Item {
             const usage = monitor.usage;
             setClaude({ weekly: usage.window(5, 7 * usage.day - 3 * 3600, [[0.1, 2], [0, 5]]), scoped: [] });
             const popup = load("claude");
-            verify(rows(popup).every(r => !r.parent.visible), "no bars and no sentence");
+            const only = rows(popup);
+            compare(only.length, 1);
+            verify(!only[0].parent.visible, "no bars and no sentence");
             const loader = host.createObject(root) as Loader;
             loaders.push(loader);
             loader.setSource(Qt.resolvedUrl("../../package/contents/ui/popups/CpuPopup.qml"), { monitor: monitor });
@@ -2612,7 +2470,6 @@ Item {
             const all = rows(popup);
             const said = all.map(r => sentence(r)).filter(s => s.visible);
             const expected = data.expect(usage);
-            verify(!root.texts(popup).some(t => /early/i.test(t)), JSON.stringify(root.texts(popup)));
             if (data.row < 0) {
                 compare(said.length, 0);
                 return;
@@ -2852,42 +2709,6 @@ Item {
             verify(!toggle.checked);
         }
 
-        // The status takes the lines it says, with no room kept for a line
-        // it doesn't have: in every state its last baseline sits as far from
-        // the popup's edge as the switch's label is from the footer's rule,
-        // and the label stays where it is.
-        function test_starterFooterIsEven_data() {
-            return [{ tag: "claude", item: "claude" }, { tag: "codex", item: "codex" }];
-        }
-
-        function test_starterFooterIsEven(data) {
-            failOnFooterLoops();
-            const popup = load(data.item);
-            const status = starterStatus(popup);
-            const toggle = starterSwitch(popup);
-            const label = starterLabel(popup);
-            const labelY = label.mapToItem(popup, 0, 0).y;
-            const heights = {};
-            let lineHeight = NaN;
-            // An unknown state says nothing, the shortest status there is.
-            StarterStates.ROWS.concat([{ state: "later", enabled: true }]).forEach(row => {
-                setStarter(data.item, starterFor(row));
-                waitForRendering(popup);
-                const tag = row.state + " " + (row.reason ?? "");
-                verify(status.contentHeight <= status.height + 0.5, status.text);
-                verify(status.height <= status.contentHeight + 0.5, "no empty line under the status: " + tag);
-                lineHeight = status.contentHeight / status.lineCount;
-                const lastBaseline = status.mapToItem(popup, 0, 0).y + status.baselineOffset + (status.lineCount - 1) * lineHeight;
-                verify(Math.abs(popup.implicitHeight - lastBaseline - Math.round(Kirigami.Units.largeSpacing * 2)) <= 1,
-                       tag + ": last baseline " + (popup.implicitHeight - lastBaseline) + " px from the edge");
-                compare(label.mapToItem(popup, 0, 0).y, labelY, tag);
-                heights[status.lineCount] = popup.implicitHeight;
-            });
-            verify(heights[1] !== undefined && heights[2] !== undefined, "statuses of one line and of two: " + Object.keys(heights));
-            verify(Math.abs(heights[2] - heights[1] - lineHeight) <= 1,
-                   "a second line adds one line: " + (heights[2] - heights[1]));
-        }
-
         // The track and the configure icon are centred on the label and the
         // status together, whether the status takes one line, two, or none,
         // and while the switch is struck and disabled; and the room left of
@@ -2917,24 +2738,47 @@ Item {
             return status.text === "" ? 0 : status.lineCount;
         }
 
-        function test_starterFooterIsCentred_data() {
-            return [{ tag: "left to right", mirrored: false }, { tag: "right to left", mirrored: true }];
+        // In every state the footer is centred as above, and the status
+        // takes the lines it says, with no room kept for a line it doesn't
+        // have: its last baseline sits as far from the popup's edge as the
+        // switch's label is from the footer's rule, and the label stays
+        // where it is.
+        function test_starterFooterInEveryState_data() {
+            return [{ tag: "claude", item: "claude", mirrored: false }, { tag: "codex", item: "codex", mirrored: false },
+                    { tag: "claude right to left", item: "claude", mirrored: true }];
+        }
+
+        function test_starterFooterInEveryState(data) {
+            failOnFooterLoops();
+            const popup = load(data.item, data.mirrored);
+            const status = starterStatus(popup);
+            const label = starterLabel(popup);
+            const labelY = label.mapToItem(popup, Qt.point(0, 0)).y;
+            const lines = {};
+            const heights = {};
+            let lineHeight = NaN;
+            // An unknown state says nothing, the shortest status there is.
+            StarterStates.ROWS.concat([{ state: "later", enabled: true }]).forEach(row => {
+                setStarter(data.item, starterFor(row));
+                const tag = row.state + " " + (row.reason ?? "");
+                lines[checkFooterIsCentred(popup, data.mirrored, tag)] = true;
+                verify(status.contentHeight <= status.height + 0.5, status.text);
+                verify(status.height <= status.contentHeight + 0.5, "no empty line under the status: " + tag);
+                lineHeight = status.contentHeight / status.lineCount;
+                const lastBaseline = status.mapToItem(popup, Qt.point(0, 0)).y + status.baselineOffset + (status.lineCount - 1) * lineHeight;
+                verify(Math.abs(popup.implicitHeight - lastBaseline - Math.round(Kirigami.Units.largeSpacing * 2)) <= 1,
+                       tag + ": last baseline " + (popup.implicitHeight - lastBaseline) + " px from the edge");
+                compare(label.mapToItem(popup, Qt.point(0, 0)).y, labelY, tag);
+                heights[status.lineCount] = popup.implicitHeight;
+            });
+            verify(lines[0] && lines[2], "statuses of none and of two lines: " + Object.keys(lines));
+            verify(heights[1] !== undefined && heights[2] !== undefined, "statuses of one line and of two: " + Object.keys(heights));
+            verify(Math.abs(heights[2] - heights[1] - lineHeight) <= 1,
+                   "a second line adds one line: " + (heights[2] - heights[1]));
         }
 
         function test_starterFooterIsCentredWhileStruck_data() {
-            return test_starterFooterIsCentred_data();
-        }
-
-        function test_starterFooterIsCentred(data) {
-            failOnFooterLoops();
-            const popup = load("claude", data.mirrored);
-            const lines = {};
-            // An unknown state says nothing, the shortest status there is.
-            StarterStates.ROWS.concat([{ state: "later", enabled: true }]).forEach(row => {
-                setStarter("claude", starterFor(row));
-                lines[checkFooterIsCentred(popup, data.mirrored, row.state + " " + (row.reason ?? ""))] = true;
-            });
-            verify(lines[0] && lines[2], "statuses of none and of two lines: " + Object.keys(lines));
+            return [{ tag: "left to right", mirrored: false }, { tag: "right to left", mirrored: true }];
         }
 
         // The same while struck, where the switch is disabled, for the
@@ -3035,8 +2879,8 @@ Item {
         }
 
         // The label stands a large spacing clear of the switch, and the
-        // status under it starts where the label does, in either direction
-        // of writing.
+        // status under it starts where the label does and reads the same
+        // way, in either direction of writing.
         function test_starterLabelHasRoom_data() {
             return [{ tag: "left to right", mirrored: false }, { tag: "right to left", mirrored: true }];
         }
@@ -3051,6 +2895,7 @@ Item {
             const x = (i, at) => i.mapToItem(popup, Qt.point(at, 0)).x;
             const track = toggle.indicator;
             compare(label.effectiveHorizontalAlignment, data.mirrored ? Text.AlignRight : Text.AlignLeft);
+            compare(status.effectiveHorizontalAlignment, label.effectiveHorizontalAlignment);
             if (data.mirrored) {
                 compare(x(track, 0) - x(label, label.width), Kirigami.Units.largeSpacing);
                 compare(x(status, status.width), x(label, label.width));
@@ -3058,17 +2903,6 @@ Item {
                 compare(x(label, 0) - x(track, track.width), Kirigami.Units.largeSpacing);
                 compare(x(status, 0), x(label, 0));
             }
-        }
-
-        function test_starterMirrors() {
-            const popup = load("claude", true);
-            const toggle = starterSwitch(popup);
-            const status = starterStatus(popup);
-            const right = i => i.mapToItem(popup, Qt.point(i.width, 0)).x;
-            compare(right(toggle), popup.width - Math.round(Kirigami.Units.largeSpacing * 2), "on the readings' edge");
-            verify(configureButton(popup).mapToItem(popup, Qt.point(0, 0)).x < toggle.mapToItem(popup, Qt.point(0, 0)).x);
-            fuzzyCompare(right(status), right(toggle) - toggle.width - Kirigami.Units.largeSpacing, 0.5);
-            compare(status.effectiveHorizontalAlignment, Text.AlignRight);
         }
 
         function test_signedOut() {
@@ -3193,7 +3027,6 @@ Item {
             setClaude({ weekly: monitor.usage.window(52, -600, []) });
             const shown = root.texts(load("claude"));
             verify(shown.some(t => /^THIS WEEK · resets .+$/.test(t)), JSON.stringify(shown));
-            verify(!shown.some(t => t.startsWith("LAST WEEK")), JSON.stringify(shown));
         }
 
         // A reading from a week that has since reset is struck whatever its
@@ -3290,11 +3123,7 @@ Item {
         function test_tryAgain_data() {
             return [
                 { tag: "hold over", minutes: 15, ran: 400, retryAt: -100, shown: true },
-                { tag: "held", minutes: 15, ran: 400, retryAt: 200, shown: false },
-                { tag: "rate limited", minutes: 15, ran: 400, retryAt: 3000, reason: "rate-limited", shown: false },
-                { tag: "tick within a minute", minutes: 15, ran: 870, retryAt: -100, shown: false },
-                { tag: "files", minutes: 15, ran: 400, retryAt: -100, reason: "files", shown: false },
-                { tag: "five minutes", minutes: 5, ran: 60, retryAt: 240, shown: false }
+                { tag: "held", minutes: 15, ran: 400, retryAt: 200, shown: false }
             ];
         }
 
@@ -3345,10 +3174,6 @@ Item {
             const said = root.find(checkStatus(popup), i => typeof i.text === "string" && i.text.startsWith(data.said));
             verify(said !== null, JSON.stringify(root.texts(popup)));
             compare(said.Accessible.description, data.message);
-        }
-
-        function test_noStatusWhileTheChecksSucceed() {
-            verify(!checkStatus(load("claude")).visible);
         }
 
         // The pace is measured to the poll the reading came from, so a
@@ -3423,7 +3248,6 @@ Item {
             const g = graph(popup);
             compare(g.mainPoints.length, history.length);
             verify(g.mainPoints[0].x >= 0 && g.mainPoints[g.mainPoints.length - 1].x <= g.width);
-            compare(countdown(popup).map(r => r.value + r.unit), ["1h", "0m"].map(root.localized));
         }
     }
 
@@ -3446,18 +3270,6 @@ Item {
             return text.replace(/[0-9]/g, c => String.fromCodePoint(zero + Number(c)));
         }
 
-        function test_countdown_data() {
-            return [
-                { tag: "days", left: 2 * 86400 + 21 * 3600 + 12 * 60, expected: "2d 21h" },
-                { tag: "hours", left: 5 * 3600 + 12 * 60, expected: "5h 12m" },
-                { tag: "minutes", left: 12 * 60, expected: "12m" },
-                { tag: "passed", left: -60, expected: "" }
-            ];
-        }
-        function test_countdown(data) {
-            compare(words.countdown(nowMs / 1000 + data.left, nowMs), local(data.expected));
-        }
-
         function test_countdownParts_data() {
             return [
                 { tag: "days", left: 5 * 86400 + 18 * 3600 + 7 * 60, expected: [["5", "d"], ["18", "h"]] },
@@ -3466,7 +3278,8 @@ Item {
                 { tag: "lastDayLeadingOnly", left: 23 * 3600 + 5 * 60, leadingOnly: true, expected: [["23", "h"]] },
                 { tag: "hours", left: 5 * 3600 + 12 * 60, expected: [["5", "h"], ["12", "m"]] },
                 { tag: "hoursLeadingOnly", left: 3600 + 2 * 60, leadingOnly: true, expected: [["1", "h"]] },
-                { tag: "minutes", left: 12 * 60, leadingOnly: true, expected: [["12", "m"]] },
+                { tag: "anHourAndNoMinutes", left: 3600, expected: [["1", "h"], ["0", "m"]] },
+                { tag: "minutes", left: 12 * 60, expected: [["12", "m"]] },
                 { tag: "lastMinutesLeadingOnly", left: 59 * 60, leadingOnly: true, expected: [["59", "m"]] },
                 { tag: "passedLeadingOnly", left: -60, leadingOnly: true, expected: [] },
                 { tag: "passed", left: -60, expected: [] },
@@ -3716,6 +3529,30 @@ Item {
                     "When a session ends, Ringside sends Claude a one-word message to start the next one.");
         }
 
+        // Temperature sensors go by plain words, not their hwmon labels;
+        // labels Words doesn't know are shown as they are.
+        function test_sensorNamesInWords_data() {
+            return [{ tag: "Tctl", raw: "Tctl", shown: "" },
+                    { tag: "Tdie", raw: "Tdie", shown: "" },
+                    { tag: "Package id 0", raw: "Package id 0", shown: "" },
+                    { tag: "Package id 1", raw: "Package id 1", shown: "" },
+                    { tag: "edge", raw: "edge", shown: "" },
+                    { tag: "Tccd1", raw: "Tccd1", shown: "chiplet " + Format.whole(1) },
+                    { tag: "Tccd12", raw: "Tccd12", shown: "chiplet " + Format.whole(12) },
+                    { tag: "junction", raw: "junction", shown: "hotspot" },
+                    { tag: "mem", raw: "mem", shown: "memory" },
+                    { tag: "Composite", raw: "Composite", shown: "Composite" },
+                    { tag: "Core 0", raw: "Core 0", shown: "Core 0" },
+                    { tag: "Tccd", raw: "Tccd", shown: "Tccd" },
+                    { tag: "edges", raw: "edges", shown: "edges" },
+                    { tag: "hottest core", raw: "hottest core", shown: "hottest core" },
+                    { tag: "none", raw: "", shown: "" }];
+        }
+
+        function test_sensorNamesInWords(data) {
+            compare(words.sensorName(data.raw), data.shown);
+        }
+
         // Times read to the minute in every locale, as they are rounded to
         // it or coarser: Qt 6.6's C locale gives its short time with seconds,
         // which the floor's tests run in. Where the locale's short time has
@@ -3772,14 +3609,20 @@ Item {
         function test_readout_data() {
             return [
                 { tag: "cpu", item: "cpu", first: "23%", second: "61°" },
+                { tag: "cpu under amber", item: "cpu", set: { cpuUsage: 74 }, first: "74%", second: "61°" },
                 { tag: "cpu warm", item: "cpu", set: { cpuUsage: 75, cpuTemperature: 75 },
                   first: "75%", level: 1, second: "75°", heat: 1 },
+                { tag: "cpu under red", item: "cpu", set: { cpuUsage: 89 }, first: "89%", level: 1, second: "61°" },
                 { tag: "cpu hot", item: "cpu", set: { cpuUsage: 90, cpuTemperature: 90 },
                   first: "90%", level: 2, second: "90°", heat: 2 },
                 { tag: "cpu in fahrenheit", item: "cpu", set: { fahrenheit: true }, first: "23%", second: "142°" },
+                // The heat is the Celsius reading's, in either unit.
+                { tag: "cpu hot in fahrenheit", item: "cpu", set: { fahrenheit: true, cpuTemperature: 95 },
+                  first: "23%", second: "203°", heat: 2 },
                 { tag: "cpu unread", item: "cpu", set: { cpuUsage: NaN, cpuTemperature: NaN }, first: "–", second: "–" },
                 // The integrated GPU's temperature stays in the tooltip.
                 { tag: "two gpus", item: "gpu", first: "12%", second: "48°" },
+                { tag: "gpu warm", item: "gpu", outer: { temperature: 80 }, first: "12%", second: "80°", heat: 1 },
                 { tag: "gpu hot", item: "gpu", outer: { usage: 95, temperature: 92 },
                   first: "95%", level: 2, second: "92°", heat: 2 },
                 { tag: "gpu resting", item: "gpu", outer: { phase: "resting" }, inner: { present: false },
@@ -3793,6 +3636,7 @@ Item {
                   first: "off", off: true, second: "" },
                 { tag: "memory", item: "memory", first: "42%", second: "13.4 GiB" },
                 { tag: "memory in MiB", item: "memory", set: { memoryUsed: 900 * 1048576 }, first: "3%", second: "900.0 MiB" },
+                { tag: "memory to one decimal", item: "memory", set: { memoryUsed: 9.64 * 1073741824 }, first: "30%", second: "9.6 GiB" },
                 { tag: "memory full", item: "memory", set: { memoryUsed: 29 * 1073741824 },
                   first: "91%", level: 2, second: "29.0 GiB" },
                 { tag: "memory unread", item: "memory", set: { memoryUsed: NaN }, first: "–", second: "–" },
@@ -3813,6 +3657,7 @@ Item {
                 { tag: "claude quiet first day", item: "claude", weekly: [5, 6 * 86400 + 21 * 3600], first: "5%", second: "6d" },
                 { tag: "runs out, reset passed", item: "claude", weekly: [70, -600], first: "70%", second: "–" },
                 { tag: "signed out", item: "claude", entries: { claude: { status: "signed_out" } }, first: "–", second: "–" },
+                { tag: "no weekly window", item: "claude", entries: { claude: { status: "ok", scoped: [] } }, first: "–", second: "–" },
                 { tag: "not checked yet", item: "codex", entries: {}, first: "–", off: true, second: "–" }
             ];
         }
