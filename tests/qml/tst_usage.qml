@@ -1788,7 +1788,7 @@ Item {
                 { tag: "files", entry: { reason: "files" }, text: "The usage helper couldn't read or write its files." },
                 { tag: "helper", entry: { reason: "helper" }, text: "The usage helper stopped with an error." },
                 { tag: "not installed", item: "codex", entry: { reason: "not-installed", lastError: "codex CLI not found" },
-                  text: "Codex isn't installed; install it or turn Codex off." },
+                  text: "Plasma can't find Codex. Install it, set where it is under AI Providers, or turn OpenAI off in Panel Items." },
                 { tag: "chosen program", item: "codex",
                   entry: { reason: "program", lastError: "the codex program set in Settings can't be run" },
                   text: "The codex program set in Settings can't be run." },

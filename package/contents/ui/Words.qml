@@ -243,7 +243,7 @@ QtObject {
                 : i18nc("@info", "OpenAI asked Ringside to wait before checking again.");
         case "not-installed":
             if (item === "codex") {
-                return i18nc("@info", "Codex isn't installed; install it or turn Codex off.");
+                return i18nc("@info AI Providers and Panel Items are settings pages; OpenAI is the item's name there", "Plasma can't find Codex. Install it, set where it is under AI Providers, or turn OpenAI off in Panel Items.");
             }
             break;
         case "program":
