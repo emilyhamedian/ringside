@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
 import QtQuick
+import "code/log.js" as Log
 import "code/publicaddress.js" as Lookup
 
 // The address websites see, for the network popup. Monitor owns it, so what
@@ -15,6 +16,10 @@ import "code/publicaddress.js" as Lookup
 // in the last minute, and when the route changes while it stays open, but
 // never sooner than a minute after the last. Nothing else polls. After a
 // failed check the popup offers a retry, which asks at once.
+//
+// Each request goes to the journal under ringside.network as debug, with
+// the host asked and how long it took, a failure as a warning when it
+// starts or changes and its end at info: never the address or the place.
 Item {
     id: checker
 
@@ -83,6 +88,14 @@ Item {
     property var pending: []
     property string pendingKey: ""
     property var listener: null
+    // Per host, why its last request failed, for the journal.
+    property var failures: ({})
+
+    LoggingCategory {
+        id: journal
+        name: "ringside.network"
+        defaultLogLevel: LoggingCategory.Info
+    }
 
     // Worked out from the inputs on every call: a change handler can run
     // before the bindings above have caught up with the change.
@@ -150,7 +163,8 @@ Item {
         pendingKey = now.key;
         // Every request exists before the first is sent, so one that
         // answers at once can't finish the check early.
-        const sent = now.families.map(f => ({ family: f, request: makeRequest(), done: false, answer: null }));
+        const sent = now.families.map(f => ({ family: f, request: makeRequest(), done: false, answer: null,
+                                             host: Lookup.host(now.service[f]), sentAt: clock(), problem: "" }));
         pending = sent;
         Lookup.begin(now.key, clock(), now.route, egress);
         timeout.restart();
@@ -162,10 +176,15 @@ Item {
                 // one. abort() only stops Ringside listening: Qt keeps
                 // reading whatever the service goes on sending.
                 if (request.readyState === XMLHttpRequest.LOADING && String(request.responseText).length > Lookup.REPLY_LIMIT) {
+                    s.problem = "a reply too long to be an address";
                     request.abort();
                 } else if (request.readyState === XMLHttpRequest.DONE) {
                     const trusted = request.status === 200 && Lookup.cameFrom(String(request.responseURL), url);
-                    checker.settle(s, trusted ? Lookup.reply(String(request.responseText), s.family, now.service.json) : null);
+                    const answer = trusted ? Lookup.reply(String(request.responseText), s.family, now.service.json) : null;
+                    checker.settle(s, answer, request.status === 0 ? "no answer"
+                                   : request.status !== 200 ? "HTTP " + request.status
+                                   : !trusted ? "an answer from another address"
+                                   : answer.address === "" ? "a reply that isn't an address" : "");
                 }
             };
             request.open("GET", url);
@@ -176,12 +195,13 @@ Item {
         }
     }
 
-    function settle(s, answer) {
+    function settle(s, answer, problem) {
         if (s.done) {
             return;
         }
         s.done = true;
         s.answer = answer;
+        note(s, s.problem || problem);
         if (pending.includes(s) && pending.every(p => p.done)) {
             const found = {};
             for (const p of pending) {
@@ -191,6 +211,18 @@ Item {
             timeout.stop();
             Lookup.finish(pendingKey, clock(), found);
         }
+    }
+
+    // A request's outcome for the journal. A host given as an address goes
+    // unnamed, so no address is ever written.
+    function note(s, problem) {
+        const host = s.host === "" || /^\[|^[\d.]+$/.test(s.host) ? "the custom service" : s.host;
+        const ms = Math.max(0, Math.round(clock() - s.sentAt));
+        const was = failures[host] ?? "";
+        const level = problem === "" ? (was !== "" ? "info" : "debug") : problem === was ? "debug" : "warning";
+        Log.write(journal, level, "asked " + host + ": " + (problem === "" ? "answered" : problem) + " after " + ms + " ms"
+                  + (problem === "" && was !== "" ? ", working again" : ""));
+        failures[host] = problem;
     }
 
     // Stops this checker's check without a result.
@@ -250,7 +282,7 @@ Item {
         onTriggered: {
             const late = checker.pending.filter(s => !s.done);
             for (const s of late) {
-                checker.settle(s, null);
+                checker.settle(s, null, "no answer in " + checker.timeoutMs / 1000 + " s");
             }
             for (const s of late) {
                 s.request.abort();

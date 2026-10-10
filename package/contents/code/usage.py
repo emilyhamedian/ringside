@@ -28,6 +28,10 @@ lock too long, or "other"), the "host" that failed, or "" when none did, and
 "retryAt", when the provider may be polled again (epoch seconds). Tokens
 never reach stdout or stderr.
 
+The report also carries "events", the lines this run has for Plasma's
+journal (see event()), which the widget writes there and the cache never
+holds.
+
 When Plasma's digital clock shows a zone other than system time, every window
 also carries "clockZone": {"offset": <seconds east of UTC>, "abbreviation":
 "EDT"}, the zone's offset and abbreviation at that window's reset. Claude's
@@ -197,13 +201,139 @@ class RateLimited(Exception):
 
 class CheckFailed(RuntimeError):
     """A failed check whose cause is known: reason is "offline", "timeout",
-    "server" or "not-installed", and host the server that failed, or "" for
-    the Codex CLI."""
+    "server" or "not-installed", host the server that failed, or "" for
+    the Codex CLI, and status the HTTP status a server answered with."""
 
-    def __init__(self, message, reason, host=""):
+    def __init__(self, message, reason, host="", status=None):
         super().__init__(message)
         self.reason = reason
         self.host = host
+        self.status = status
+
+
+# --- journal ---------------------------------------------------------------
+
+# The lines this run asks the widget to write to Plasma's journal, sent as
+# the report's "events": [{"level": "debug", "info" or "warning",
+# "provider", "kind", "message", "ms" where a check took time}]. Failures
+# and changes are info or warning; each check, cached reading and step is
+# debug. Messages are put together here from Ringside's own words and from
+# fields whose values it knows: a reason, one of its own hosts, an HTTP
+# status, a number. Never from an exception's text, a reply, a file or a
+# token, so none of those can reach the journal.
+EVENTS = []
+
+NAMES = {"claude": "Claude", "codex": "Codex"}
+# Who asks Ringside to wait, when the refusal names no host.
+COMPANIES = {"claude": "Anthropic", "codex": "OpenAI"}
+WINDOWS = {"claude": "session", "codex": "week"}
+
+MESSAGES = {
+    "check": "{name}: checked in {ms} ms",
+    "cached": "{name}: the reading taken {age} s ago still stands",
+    "held": "{name}: next check in {wait} s, after {why}",
+    "failed": "{name}: check failed after {ms} ms: {why}",
+    "failed-again": "{name}: check failed again after {ms} ms: {why}",
+    "recovered": "{name}: checked in {ms} ms, working again after: {why}",
+    "wait-over": "{name}: the wait {who} asked for is over",
+    "busy": "{name}: no check: another usage check held the lock for over {wait} s",
+    "cli": "{name}: asking {cli} app-server",
+    "renewed": "{name}: renewed the Claude Code login",
+    "starter-on": "{name} session starter switched on",
+    "starter-off": "{name} session starter switched off",
+    "starter-switch-failed": "{name} session starter switch not saved: {why}",
+    "starter-sent": "{name} session starter sent its message; a reading in {wait} s confirms it",
+    "starter-confirmed": "{name} session starter: the new {window} started",
+    "starter-unconfirmed": "{name} session starter: no new {window} after its message; trying once more in {wait} s",
+    "starter-paused": "{name} session starter paused for {hours} h: two messages in a row started no {window}",
+    "starter-failed": "{name} session starter can't send: {why}; trying again in {wait} s",
+    "starter-failed-again": "{name} session starter still can't send: {why}; trying again in {wait} s",
+    "starter-switched-off": "{name} session starter was switched off before its message went out",
+    "starter-next": "{name} session starter is {state}; next step at {at}",
+    "starter-stopped": "{name} session starter didn't run: {why}",
+}
+
+# Why a session starter can't send, by its reason.
+STARTER_WHY = {
+    "not-installed": "the CLI isn't installed",
+    "signed-out": "the CLI is signed out",
+    "not-subscription": "the CLI isn't signed in with a subscription",
+    "not-responding": "the CLI didn't answer its check before sending",
+    "unchecked": "the limits couldn't be read",
+    "not-sent": "the message couldn't be sent",
+}
+
+
+def event(level, provider, kind, ms=None, **fields):
+    entry = {"level": level, "provider": provider, "kind": kind,
+             "message": MESSAGES[kind].format(name=NAMES[provider], ms=ms, **fields)}
+    if ms is not None:
+        entry["ms"] = ms
+    EVENTS.append(entry)
+
+
+def own_host(host):
+    """host if it is one Ringside asks, else "": a cache that was tampered
+    with can't put anything else in the journal."""
+    return host if host in (CLAUDE_USAGE_URL.split("/")[2], CLAUDE_TOKEN_URL.split("/")[2]) else ""
+
+
+def failure_why(name, failure, asked=None, hold=None):
+    """A failure, as the popup gives it, from its status, reason, host and
+    HTTP status alone: a report from poll() or a cached hold."""
+    host = own_host(failure.get("host"))
+    reason = failure.get("reason")
+    if failure.get("status") == "signed_out":
+        return "Claude Code is signed out" if name == "claude" else "the Codex CLI is signed out"
+    if failure.get("status") == "rate_limited":
+        why = f"{host or COMPANIES[name]} asked Ringside to wait"
+        if type(asked) is int:
+            why += f" {asked} s"
+        return why + (f"; next check in {hold} s" if type(hold) is int else "")
+    if reason == "offline":
+        return f"can't reach {host or 'the server'}"
+    if reason == "timeout":
+        return f"{host} didn't answer in time" if host else f"the Codex CLI didn't answer in {CODEX_TIMEOUT} s"
+    if reason == "server":
+        status = failure.get("httpStatus")
+        return f"{host or 'the server'} answered with " + (f"HTTP {status}" if type(status) is int else "an error")
+    if reason == "not-installed":
+        return "the codex CLI isn't installed"
+    return "an unexpected error, which the popup shows"
+
+
+def os_why(err):
+    """An OSError or Busy in the system's words, without the file name."""
+    if isinstance(err, Busy):
+        return str(err)
+    return os.strerror(err.errno) if err.errno else "an unknown error"
+
+
+def shown_path(path):
+    """A path with the home folder as ~, so the journal doesn't name the user."""
+    home = str(Path.home())
+    return "~" + path[len(home):] if path.startswith(home + "/") else path
+
+
+def note_check(name, report, previous, ms, entry):
+    """The journal's line for a provider's poll: a failure when it starts or
+    its reason changes, the first success after one, and anything else,
+    each repeat of a failure among it, as debug. previous is the cache's
+    entry from the poll before, entry the one this poll left there."""
+    failed_before = isinstance(previous, dict) and previous.get("status") in ("error", "signed_out", "rate_limited")
+    if failed_before and previous["status"] == "rate_limited" and report["status"] != "rate_limited":
+        event("info", name, "wait-over", who=own_host(previous.get("host")) or COMPANIES[name])
+    if report["status"] == "ok":
+        if failed_before:
+            event("info", name, "recovered", ms, why=failure_why(name, previous))
+        else:
+            event("debug", name, "check", ms)
+        return
+    why = failure_why(name, report, report.get("retryAfter"), entry.get("holdSeconds"))
+    again = failed_before and (previous["status"], previous.get("reason"), own_host(previous.get("host"))) \
+        == (report["status"], report.get("reason"), own_host(report.get("host")))
+    level = "debug" if again else "info" if report["status"] == "signed_out" else "warning"
+    event(level, name, "failed-again" if again else "failed", ms, why=why)
 
 
 # --- Codex -----------------------------------------------------------------
@@ -346,6 +476,7 @@ def codex_usage():
     binary = find_cli("codex")
     if not binary:
         raise CheckFailed("codex CLI not found", "not-installed")
+    event("debug", "codex", "cli", cli=shown_path(binary))
     try:
         result = codex_rate_limits(binary)
     except RuntimeError as err:
@@ -394,7 +525,7 @@ def http_json(url, headers, body=None):
             raise SignedOut() from err
         if err.code == 429:
             raise RateLimited(retry_seconds(err.headers.get("retry-after")), host) from err
-        raise CheckFailed(f"HTTP {err.code} from {host}", "server", host) from err
+        raise CheckFailed(f"HTTP {err.code} from {host}", "server", host, err.code) from err
     except urllib.error.URLError as err:
         # A socket error's str() leads with its errno, as in "[Errno -2] Name or
         # service not known"; strerror is the readable part.
@@ -622,6 +753,7 @@ def claude_access_token(margin=CLAUDE_EXPIRY_MARGIN):
             return latest["accessToken"]
         raise
     store_claude(path, current["refreshToken"], fresh)
+    event("debug", "claude", "renewed")
     if "accessToken" not in fresh:
         raise RuntimeError("the token refresh returned no usable access token")
     return fresh["accessToken"]
@@ -734,8 +866,12 @@ def poll(fetch):
         return {"status": "rate_limited", "retryAfter": err.retry_after, "message": str(err),
                 "reason": "rate-limited", "host": err.host}
     except RuntimeError as err:
-        return {"status": "error", "message": str(err) or "error",
-                "reason": getattr(err, "reason", "other"), "host": getattr(err, "host", "")}
+        report = {"status": "error", "message": str(err) or "error",
+                  "reason": getattr(err, "reason", "other"), "host": getattr(err, "host", "")}
+        # For the journal only: hold() leaves it out of the cache.
+        if getattr(err, "status", None) is not None:
+            report["httpStatus"] = err.status
+        return report
     except Exception as err:  # noqa: BLE001 - every failure becomes a status
         # Anything else could carry request details, a token among them, so
         # only its type is reported.
@@ -890,6 +1026,7 @@ def collect_locked(fetchers, now):
             stepped = True
         if fresh(entry, now):
             providers[name] = entry
+            event("debug", name, "cached", age=now - entry["fetchedAt"])
             continue
         wait = held(entry, now)
         if wait:
@@ -897,14 +1034,18 @@ def collect_locked(fetchers, now):
                 entry["heldUntil"] = now + wait
                 stepped = True
             providers[name] = replay(entry, wait, now)
+            event("debug", name, "held", wait=wait, why=failure_why(name, entry))
             continue
+        started = time.monotonic()
         report = poll(fetch)
+        ms = round((time.monotonic() - started) * 1000)
         if report["status"] == "ok":
             report["fetchedAt"] = now
             cache[name] = providers[name] = report
         else:
             cache[name] = hold(report, now)
             providers[name] = replay(cache[name], cache[name]["holdSeconds"], now)
+        note_check(name, report, entry, ms, cache[name])
         polled[name] = report
     history = read_history()
     if polled or stepped:
@@ -1010,10 +1151,13 @@ def waiting(ids, message):
         wait = held(entry, now)
         if fresh(entry, now):
             providers[name] = entry
+            event("debug", name, "cached", age=now - entry["fetchedAt"])
         elif wait:
             providers[name] = replay(entry, wait, now)
+            event("debug", name, "held", wait=wait, why=failure_why(name, entry))
         else:
             providers[name] = {"status": "error", "message": message, "reason": "busy", "host": "", "retryAt": now}
+            event("warning", name, "busy", wait=LOCK_WAIT)
     attach_history(providers, read_history(), now)
     return providers
 
@@ -1154,7 +1298,7 @@ def private_state_dir():
 def set_switches(changes):
     """Apply changes, {provider: bool}, to the switch file. A lock of its
     own keeps two widgets from losing each other's change without waiting
-    for a send."""
+    for a send. Each switch that turns goes to the journal."""
     private_state_dir()
     with flocked(SWITCH_LOCK, LOCK_WAIT):
         try:
@@ -1163,9 +1307,12 @@ def set_switches(changes):
             data = {}
         if not isinstance(data, dict):
             data = {}
+        turned = [name for name, on in changes.items() if (data.get(name) is True) != on]
         data.update(changes)
         STARTER_FILE.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
         write_private(STARTER_FILE, data)
+    for name in turned:
+        event("info", name, "starter-on" if changes[name] else "starter-off")
 
 
 class Starter:
@@ -1187,15 +1334,22 @@ class Starter:
     NotSent or SwitchedOff when nothing went out. running(reading, now) is
     the window running now or None, or raises Unreadable when the reading
     can't tell, and period a window's length. The caller holds usage.lock
-    throughout.
+    throughout. name is the provider's, for the journal.
     """
 
-    def __init__(self, record, *, read, check, send, running, period, persist, clock):
-        self.record, self.read, self.check, self.send = record, read, check, send
+    def __init__(self, name, record, *, read, check, send, running, period, persist, clock):
+        self.name, self.record, self.read, self.check, self.send = name, record, read, check, send
         self.running, self.period, self.persist, self.clock = running, period, persist, clock
 
     def set(self, state, at=None, next_=None, reason=None):
-        self.record.update(state=state, at=at, next=next_, reason=reason)
+        """Moves to a state. A failure goes to the journal as it starts or
+        its reason changes, and as debug while it repeats."""
+        rec = self.record
+        if state == "failed":
+            again = rec["state"] == "failed" and rec["reason"] == reason
+            event("debug" if again else "warning", self.name, "starter-failed-again" if again else "starter-failed",
+                  why=STARTER_WHY.get(reason, "an unknown reason"), wait=next_ - self.clock())
+        rec.update(state=state, at=at, next=next_, reason=reason)
         self.persist()
 
     def back_off(self, at_least=0, reason="unchecked"):
@@ -1218,6 +1372,7 @@ class Starter:
             return False
         rec["sentAt"] = None
         self.set("paused", next_=now + PAUSE)
+        event("warning", self.name, "starter-paused", hours=PAUSE // 3600, window=WINDOWS[self.name])
         return True
 
     def step(self):
@@ -1271,6 +1426,8 @@ class Starter:
             # A step again within the window it started, as after the clock
             # stepped back, finds it started still.
             ours = rec["sentAt"] is not None or (rec["state"] == "started" and rec["at"] == start)
+            if rec["sentAt"] is not None:
+                event("info", self.name, "starter-confirmed", window=WINDOWS[self.name])
             rec.update(sentAt=None, uncertain=0, failures=0)
             if ours:
                 self.set("started", start, window["resetsAt"] + 1)
@@ -1280,6 +1437,7 @@ class Starter:
         if rec["state"] == "confirming":
             if not self.unconfirmed(now):
                 self.set("retrying", rec["sentAt"], now + CONFIRM_DELAY)
+                event("info", self.name, "starter-unconfirmed", window=WINDOWS[self.name], wait=CONFIRM_DELAY)
             return
         rec["pending"] = now
         self.persist()
@@ -1295,9 +1453,11 @@ class Starter:
             # Due at once should it be switched on again.
             rec.update(pending=None, sentAt=None, uncertain=0)
             self.set("waiting")
+            event("info", self.name, "starter-switched-off")
         else:
             rec.update(pending=None, sentAt=now, failures=0)
             self.set("confirming", now, now + CONFIRM_DELAY)
+            event("info", self.name, "starter-sent", wait=CONFIRM_DELAY)
 
 
 def claude_running(reading, now):
@@ -1540,13 +1700,16 @@ def run_starter(name):
             write_private(STARTER_STATE, states)
 
         sender = send_claude if name == "claude" else send_codex
-        Starter(record,
+        Starter(name, record,
                 read=lambda not_before: starter_read(name, int(time.time()), not_before),
                 check=lambda: installed(name),
                 send=lambda binary: sender(binary, lambda: name in read_switches()),
                 running=claude_running if name == "claude" else codex_running,
                 period=SESSION_SECONDS if name == "claude" else WEEK_SECONDS,
                 persist=persist, clock=lambda: int(time.time())).step()
+        if record["next"] is not None:
+            event("debug", name, "starter-next", state=record["state"],
+                  at=time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(record["next"])))
 
 
 STARTER_OFF = {"enabled": False, "state": "off", "at": None, "next": None, "reason": None}
@@ -1685,6 +1848,7 @@ def arguments(argv):
 
 def main(argv=None):
     args = arguments(argv)
+    EVENTS.clear()
     ids = args.providers
     fake = os.environ.get("RINGSIDE_USAGE_FAKE")
     if fake:
@@ -1704,6 +1868,8 @@ def main(argv=None):
                 set_switches(dict(args.starter_set))
             except (Busy, OSError) as err:
                 print(err, file=sys.stderr)
+                for name in dict(args.starter_set):
+                    event("warning", name, "starter-switch-failed", why=os_why(err))
         if args.start:
             for name in ids:
                 # A state that can't be written stops the starter, never the
@@ -1712,12 +1878,13 @@ def main(argv=None):
                     run_starter(name)
                 except (Busy, OSError) as err:
                     print(err, file=sys.stderr)
+                    event("warning", name, "starter-stopped", why=os_why(err))
         sources = fetchers()
         try:
             providers = collect({name: sources[name] for name in ids})
         except Busy as err:
             providers = waiting(ids, str(err))
-        report = {"fetchedAt": int(time.time()), "providers": providers}
+        report = {"fetchedAt": int(time.time()), "providers": providers, "events": EVENTS}
         attach_starters(providers, report["fetchedAt"])
     # Read on every run, cached or not, so a change of clock zone shows by the
     # next poll; the cache itself never holds it.

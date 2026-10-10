@@ -291,6 +291,23 @@ it also runs `claude` and `codex` from `~/.local/bin` or your PATH, keeps the
 switch in `~/.config/ringside/starter.json` and its state in
 `~/.local/state/ringside/`.
 
+## When something looks wrong
+
+Ringside writes what goes wrong to Plasma's journal. To see today's:
+
+```bash
+journalctl --user -t plasmashell --grep ringside --since today
+```
+
+It records failed Claude and Codex checks and why, the session starter's
+messages, a discrete GPU going to sleep or waking, and sensors or saved
+history that don't work. It never records tokens, addresses, places,
+account names or file contents.
+
+For every check with its timing, add the rule `ringside.*.debug=true` under
+*Custom Rules* in KDE's Debug Settings (`kdebugsettings`), or under
+`[Rules]` in `~/.config/QtProject/qtlogging.ini`, then restart Plasma.
+
 ## Development
 
 ```bash

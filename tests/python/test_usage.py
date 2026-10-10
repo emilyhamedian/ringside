@@ -522,7 +522,8 @@ class Http(Isolated):
                          {"status": "rate_limited", "retryAfter": 120,
                           "message": "rate limited, retrying in 120 s", "reason": "rate-limited", "host": "example.test"})
         self.assertEqual(self.poll_raising(down), {"status": "error", "message": "HTTP 503 from example.test",
-                                                   "reason": "server", "host": "example.test"})
+                                                   "reason": "server", "host": "example.test",
+                                                   "httpStatus": 503})
 
     def test_retry_after_may_be_an_http_date(self):
         busy = http_error(429, email.utils.formatdate(time.time() + 90, usegmt=True))

@@ -4,6 +4,7 @@
 import QtQuick
 import QtQuick.LocalStorage as Sql
 import "code/history.js" as History
+import "code/log.js" as Log
 
 // The graphs' hour and day buckets, kept across Plasma restarts and reboots
 // while "Keep graph history" is on. Monitor loads this file by URL and only
@@ -28,6 +29,11 @@ QtObject {
     // every 10 minutes.
     property bool failed: false
 
+    property LoggingCategory journal: LoggingCategory {
+        name: "ringside.setup"
+        defaultLogLevel: LoggingCategory.Info
+    }
+
     function open() {
         if (!db) {
             db = Sql.LocalStorage.openDatabaseSync(name, "", "Ringside graph history", 1000000);
@@ -51,7 +57,7 @@ QtObject {
             return true;
         } catch (err) {
             if (!failed) {
-                console.warn("ringside: graph history store:", err.message ?? err);
+                Log.write(journal, "warning", "the graphs' saved history can't be used: " + (err.message ?? err));
             }
             failed = true;
             return false;

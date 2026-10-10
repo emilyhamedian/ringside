@@ -111,6 +111,16 @@ follows [Semantic Versioning](https://semver.org/).
   widget's icon in Add Widgets and the panel. The About page shows it from
   Plasma 6.7; earlier Plasma shows nothing there. `scripts/logo.py` draws
   the files.
+- Ringside writes what goes wrong to Plasma's journal, under
+  `ringside.usage`, `ringside.network`, `ringside.gpu` and
+  `ringside.setup`: failed Claude and Codex checks and why, a wait the
+  provider asked for ending, the session starter's messages and pauses, a
+  discrete GPU going to sleep or waking and Ringside reading it or letting
+  go, and sensors, the hardware helper or saved history that don't work. A
+  failure that repeats is written once, and once more when it ends.
+  `ringside.*.debug=true` adds every check and public address request with
+  its timing. No tokens, addresses, places, account names or file contents
+  are written. See "When something looks wrong" in the README.
 
 ### Changed
 
