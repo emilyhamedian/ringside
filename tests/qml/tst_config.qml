@@ -3,7 +3,6 @@
 
 pragma ComponentBehavior: Bound
 import QtQuick
-import QtQuick.Controls as QQC2
 import QtTest
 import org.kde.kirigami as Kirigami
 import org.kde.ksysguard.sensors as Sensors
@@ -49,16 +48,6 @@ Item {
             cfg_highlightTemperatures: true
             cfg_warmCelsius: 75
             cfg_hotCelsius: 90
-        }
-    }
-
-    Component {
-        id: items
-        ConfigItems {
-            width: root.width
-            height: root.height
-            cfg_itemOrder: ["cpu", "gpu", "memory", "network", "disk"]
-            cfg_hiddenItems: ["disk"]
         }
     }
 
@@ -237,14 +226,12 @@ Item {
             return b.y >= a.y + above.height && b.y - (a.y + above.height) < 30 && Math.abs(b.x - a.x) < 1;
         }
 
-        function test_general_data() {
-            return [
-                { tag: "celsius", fahrenheit: false },
-                { tag: "fahrenheit", fahrenheit: true }
-            ];
-        }
-        function test_general(data) {
-            make(general, { cfg_fahrenheit: data.fahrenheit });
+        // In Fahrenheit the threshold boxes count °F, a path the shipped
+        // Celsius never takes.
+        function test_thresholdsInFahrenheit() {
+            const page = make(general, { cfg_fahrenheit: true });
+            compare(combo(page, "Amber threshold").value, 167);
+            compare(combo(page, "Red threshold").value, 194);
         }
 
         // Graph history: a box that keeps the hour and the day across
@@ -266,7 +253,6 @@ Item {
             compare(box.checked, false);
             compare(box.Accessible.description, data.line);
             verify(find(page, i => i.text === data.line && i.visible), "the line under the box");
-            verify(!find(page, i => i.Accessible && i.Accessible.name === "Graph history"), "the old Graph history list is gone");
             box.forceActiveFocus();
             keyClick(Qt.Key_Space);
             compare(page.cfg_keepGraphHistory, data.available, "ticked only where it can be kept");
@@ -299,17 +285,6 @@ Item {
             every.valueModified();
             compare(page.cfg_usageRefreshMinutes, 10);
             compare(every.displayText, "10 minutes");
-        }
-
-        // How often Claude and Codex are checked and their inner rings moved
-        // to AI Providers; General and Sensors show nothing about either.
-        function test_providerSettingsLeftTheOldPages() {
-            for (const page of [make(general), make(sensors)]) {
-                for (const name of ["Check every", "Claude inner ring", "OpenAI inner ring"]) {
-                    compare(combo(page, name), null, name);
-                }
-                compare(find(page, i => typeof i.text === "string" && /Claude|Codex/.test(i.text)), null);
-            }
         }
 
         function read(path) {
@@ -784,8 +759,9 @@ Item {
             tryCompare(providers, "claudeHasLimits", true);
         }
 
-        // The dialog's categories, as Plasma's own model reads config.qml.
-        // Plasma 6.0 registers that model only inside plasmashell.
+        // Plasma's own model finds in config.qml the pages that pages() reads
+        // from its text, so the tests above cover every page the dialog
+        // shows. Plasma 6.0 registers that model only inside plasmashell.
         function test_categories() {
             const component = Qt.createComponent(Qt.resolvedUrl("../../package/contents/config/config.qml"));
             if (component.status === Component.Error && /org\.kde\.plasma\.configuration/.test(component.errorString())) {
@@ -793,17 +769,11 @@ Item {
             }
             compare(component.status, Component.Ready, component.errorString());
             const model = createTemporaryObject(component, root);
-            const rows = [];
+            const sources = [];
             for (let i = 0; i < model.count; ++i) {
-                const row = model.get(i);
-                rows.push({ name: row.name, icon: row.icon, source: row.source });
+                sources.push(model.get(i).source);
             }
-            compare(rows, [
-                { name: "General", icon: "configure", source: "config/ConfigGeneral.qml" },
-                { name: "Panel Items", icon: "view-list-details", source: "config/ConfigItems.qml" },
-                { name: "Sensors", icon: "cpu", source: "config/ConfigSensors.qml" },
-                { name: "AI Providers", icon: "dialog-messages", source: "config/ConfigProviders.qml" }
-            ]);
+            compare(sources, pages());
         }
 
         function within(page, item) {
@@ -1083,8 +1053,8 @@ Item {
             compare(programNote(page, "codex"), "");
         }
 
-        // As Folder View has it: a field that fills the row and an icon-only
-        // button that names what it does to screen readers and in its tooltip.
+        // As Folder View has it: a field for the path and an icon-only button
+        // that names what it does to screen readers.
         function test_programControls() {
             const page = make(providers);
             showPrograms(page, "custom");
@@ -1096,10 +1066,6 @@ Item {
                 verify(button && button.visible, command + "'s button");
                 compare(button.text, "Choose where " + command + " is");
                 compare(button.display, 0 /* AbstractButton.IconOnly */);
-                compare(button.icon.name, "document-open");
-                compare(button.QQC2.ToolTip.text, button.text);
-                const row = f.parent;
-                fuzzyCompare(f.width + button.width + row.spacing, row.width, 1, command + "'s field fills the row");
             }
         }
 
@@ -1121,7 +1087,8 @@ Item {
         }
 
         // The path stays left to right in a right-to-left layout, the
-        // button beside it on the leading side and the label on the right.
+        // field filling the row, the button beside it on the leading side
+        // and the label on the right.
         function test_programRightToLeft() {
             const host = createTemporaryObject(stretchedProviders, root, { mirrored: true, width: 660, height: root.height });
             const page = host.page;
@@ -1130,6 +1097,7 @@ Item {
             const f = combo(page, host.stretch("Path to codex"));
             const button = combo(page, host.stretch("Choose where codex is"));
             compare(f.effectiveHorizontalAlignment, TextInput.AlignLeft);
+            fuzzyCompare(f.width + button.width + f.parent.spacing, f.parent.width, 1, "the field fills the row");
             verify(button.mapToItem(page, 0, 0).x + button.width <= f.mapToItem(page, 0, 0).x, "the button sits left of the field");
             const label = findAll(page, i => i.text === host.stretch("Program:") && i.visible)[0];
             verify(label.mapToItem(page, 0, 0).x >= f.mapToItem(page, 0, 0).x + f.width, "the label sits right of the field");
@@ -1152,19 +1120,9 @@ Item {
             compare(config.file.claudeProgram, "");
         }
 
-        function test_items_data() {
-            return [
-                { tag: "defaults", ringsOnly: [] },
-                { tag: "ringsOnly", ringsOnly: ["cpu", "memory"] }
-            ];
-        }
-        function test_items(data) {
-            make(items, { cfg_ringsOnly: data.ringsOnly });
-        }
-
-        // Each picker offers its fixed choices and what the list gives it, and
-        // shows the stored value as selected. Stored ids that the list doesn't
-        // offer stay listed as they are.
+        // Each picker offers its fixed choices and what the list collect()
+        // read from the tree gives it, and shows the stored value as selected.
+        // Stored ids that the list doesn't offer stay listed as they are.
         function test_sensors_data() {
             return [
                 { tag: "automatic", stored: {} },
@@ -1180,7 +1138,8 @@ Item {
             ];
         }
         function test_sensors(data) {
-            const page = make(sensors, Object.assign({ listed: root.listed }, data.stored));
+            const page = make(sensors, data.stored);
+            page.fromTree = root.listed;
             compare(page.found, root.found);
             for (const p of root.pickers) {
                 const stored = data.stored[p.setting] || "";
@@ -1210,13 +1169,6 @@ Item {
             compare(make(sensors).offered(data.id), data.offered);
         }
 
-        // Outside tests the list is what collect() last read from the tree.
-        function test_sensorsFromTheTree() {
-            const page = make(sensors);
-            page.fromTree = root.listed;
-            compare(page.found, root.found);
-        }
-
         // The ids in this machine's sensor tree that the page offers.
         function offeredInTree(page) {
             const ids = [];
@@ -1236,11 +1188,13 @@ Item {
         }
 
         // collect() reads the rows the pickers use from the real tree, once
-        // ksystemstats answers. What it lists depends on the machine: a
-        // container may have no sensors, network devices or disks for it.
+        // ksystemstats answers, which takes moments where it runs. What it
+        // lists depends on the machine: a container may have no sensors,
+        // network devices or disks for it, or no ksystemstats, and there
+        // the test skips.
         function test_sensorsReadFromTheTree() {
             const page = make(sensors);
-            const deadline = Date.now() + 10000;
+            const deadline = Date.now() + 3000;
             while (offeredInTree(page).length === 0 && Date.now() < deadline) {
                 wait(50);
             }

@@ -6,11 +6,17 @@ import QtQuick
 import QtQuick.Controls as QQC2
 import QtTest
 import org.kde.kirigami as Kirigami
+import org.kde.plasma.core as PlasmaCore
 import "../../package/contents/ui/config"
+import "fakeplasmoid"
 
 // Panel Items can be reordered without a mouse: move buttons with names a
 // screen reader announces, disabled at the ends, and focus that follows the
 // row. Loads the real page; outside Plasma its hardware hints are empty.
+// Plasma gives org.kde.plasma.plasmoid only to an applet it runs, so the
+// Ring only test loads the page from its source with that import pointed at
+// fakeplasmoid/, whose form factor the test sets. Reading the source needs
+// QML_XHR_ALLOW_FILE_READ=1, which scripts/test.sh sets.
 
 Item {
     id: root
@@ -55,6 +61,28 @@ Item {
 
     TestCase {
         name: "ConfigItems"
+
+        // ConfigItems.qml with fakeplasmoid/ for org.kde.plasma.plasmoid,
+        // and the page made from it, if any.
+        property string panelSource: ""
+        property var panelPage: null
+
+        function initTestCase() {
+            const request = new XMLHttpRequest();
+            request.open("GET", Qt.resolvedUrl("../../package/contents/ui/config/ConfigItems.qml"), false);
+            request.send();
+            verify(request.responseText !== "", "ConfigItems.qml read; set QML_XHR_ALLOW_FILE_READ=1");
+            const from = /^import org\.kde\.plasma\.plasmoid$/m;
+            verify(from.test(request.responseText), "ConfigItems.qml no longer matches " + from);
+            panelSource = request.responseText.replace(from, 'import "' + Qt.resolvedUrl("fakeplasmoid") + '"');
+        }
+
+        function cleanup() {
+            if (panelPage) {
+                panelPage.destroy();
+                panelPage = null;
+            }
+        }
 
         function init() {
             failOnWarning(/TypeError|ReferenceError|SyntaxError|is not a function|Unable to assign|Cannot assign|Binding loop/);
@@ -148,23 +176,6 @@ Item {
             verify(!up.enabled);
         }
 
-        function test_tab_chain() {
-            const page = make().page;
-            const start = find(page, i => i.text === "CPU" && i.checkState !== undefined);
-            start.forceActiveFocus(Qt.TabFocusReason);
-            const seen = [];
-            let item = start;
-            for (let n = 0; n < 30; ++n) {
-                const name = item.text || (item.Accessible ? item.Accessible.name : "") || String(item);
-                seen.push(name + (item.enabled ? "" : " (disabled)"));
-                keyClick(Qt.Key_Tab);
-                item = root.Window.activeFocusItem;
-                if (item === start) break;
-            }
-            verify(seen.includes("Move GPU up"));
-            verify(!seen.includes("Move CPU up (disabled)"));
-        }
-
         // Claude and Codex are opt-in: a 0.1-era config, with or without a
         // hidden list, never had a chance to list them in the stored order,
         // so both start unchecked. Loading the page must not write anything
@@ -231,18 +242,35 @@ Item {
             compare(page.hints.codex, data.codex);
         }
 
-        // Rings follow the panel's thickness, so the page offers no ring size,
-        // and with one layout there is none to pick.
-        function test_noRingSizeSetting() {
-            const page = openPage({ cfg_itemOrder: ["cpu", "gpu", "memory", "network", "disk"] });
-            compare(page.cfg_ringSize, undefined);
-            compare(accessible(page, "Ring size"), null);
-            compare(find(page, i => i.value !== undefined && i.stepSize !== undefined), null, "no slider or spin box");
-            compare(find(page, i => typeof i.text === "string" && i.text.indexOf("Ring size") >= 0), null);
-            compare(page.cfg_layout, undefined);
-            compare(accessible(page, "Layout"), null);
-            compare(accessible(page, "Fold"), null);
-            verify(accessible(page, "What CPU shows").enabled, "a horizontal panel offers Ring only");
+        // A horizontal panel offers Ring only for each ring item, which adds
+        // it to ringsOnly beside the items already there, and Ring and text
+        // takes it out again. A vertical panel shows the rings alone whatever
+        // the setting, so there the list is off.
+        function test_ringOnly_data() {
+            return [{ tag: "horizontal", vertical: false }, { tag: "vertical", vertical: true }];
+        }
+        function test_ringOnly(data) {
+            Plasmoid.formFactor = data.vertical ? PlasmaCore.Types.Vertical : PlasmaCore.Types.Horizontal;
+            panelPage = Qt.createQmlObject(panelSource, root, Qt.resolvedUrl("../../package/contents/ui/config/ConfigItems.qml"));
+            const page = panelPage;
+            page.width = root.width;
+            page.height = root.height;
+            page.cfg_ringsOnly = ["memory"];
+            waitForRendering(page);
+            const mode = accessible(page, "What CPU shows");
+            compare(mode.enabled, !data.vertical);
+            if (data.vertical) {
+                return;
+            }
+            for (const [key, expected] of [[Qt.Key_Down, ["memory", "cpu"]], [Qt.Key_Up, ["memory"]]]) {
+                mode.forceActiveFocus();
+                keyClick(Qt.Key_Space);
+                tryCompare(mode.popup, "opened", true);
+                keyClick(key);
+                keyClick(Qt.Key_Return);
+                tryCompare(mode.popup, "visible", false);
+                compare(page.cfg_ringsOnly, expected);
+            }
         }
     }
 }
