@@ -112,15 +112,32 @@ TestCase {
         compare(logged, []);
     }
 
-    function test_idsAreFixedAndIncludeBoardPower() {
-        compare(reader.sensors.count, 6);
-        compare(reader.sensors.objectAt(5).sensorId, "gpu/" + reader.info.id + "/power1");
+    // AMD reports board power as power1 and NVIDIA as power; an APU's
+    // power sensor measures the whole package, so it is left out. Only a
+    // discrete GPU is gated: an integrated one is read from the start.
+    function test_sensorIds_data() {
+        const common = ["usage", "temperature", "usedVram", "totalVram", "coreFrequency"];
+        return [
+            { tag: "amd", vendor: "1002", kind: "discrete", keys: common.concat(["power1"]), gated: true },
+            { tag: "nvidia", vendor: "10de", kind: "discrete", keys: common.concat(["power"]), gated: true },
+            { tag: "integrated", vendor: "1002", kind: "integrated", keys: common, gated: false }
+        ];
     }
-
-    function test_startsAsleepUntilAPollSaysOtherwise() {
+    function test_sensorIds(data) {
+        // An id apart from init()'s reader, so this one leads.
+        const id = "gpu" + (1900 + serial);
+        reader = createTemporaryObject(readerComponent, testCase,
+                                       { info: Object.assign(discrete(data.gated), { id: id, vendor: data.vendor, kind: data.kind }),
+                                         onRing: true });
+        const ids = [];
+        for (let i = 0; i < reader.sensors.count; ++i) {
+            ids.push(reader.sensors.objectAt(i).sensorId);
+        }
+        compare(ids, data.keys.map(key => "gpu/" + id + "/" + key));
         verify(reader.leading);
-        compare(reader.phase, "asleep");
-        compare(sensorStates(reader), off);
+        compare(reader.gated, data.gated);
+        compare(reader.phase, data.gated ? "asleep" : "live");
+        compare(sensorStates(reader), data.keys.map(() => !data.gated));
     }
 
     function test_anOpenPopupDoesNotWakeASleepingGpu() {
@@ -157,7 +174,9 @@ TestCase {
     // is known to be suspended: before its state is polled, or with an
     // awake state the gate hasn't acted on yet, it is a gap.
     function test_recordsZeroOnlyWhenKnownSuspended() {
+        verify(reader.leading);
         compare(reader.phase, "asleep");
+        compare(sensorStates(reader), off);
         verify(Number.isNaN(reader.recordedUsage), "not polled yet");
         reader.takeStatus("suspended", "auto", 1000);
         reader.tick(1500);
@@ -319,15 +338,5 @@ TestCase {
             property real clock: NaN
             property real power: NaN
         }
-    }
-
-    function test_integratedGpusLeaveOutPackagePower() {
-        reader = createTemporaryObject(readerComponent, testCase,
-                                       { info: Object.assign(discrete(false), { id: "gpu999", kind: "integrated" }),
-                                         onRing: true });
-        compare(reader.sensors.count, 5);
-        verify(!reader.gated);
-        compare(reader.phase, "live");
-        compare(sensorStates(reader), [true, true, true, true, true]);
     }
 }

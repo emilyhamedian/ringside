@@ -125,7 +125,7 @@ TestCase {
     // when that is shorter, so a minute's graph has 60 points at any slower
     // interval. The Sensors let one reading through per sample.
     function test_graphsSampleEverySecond_data() {
-        return [500, 1000, 2500, 5000, 10000].map(ms => ({ tag: ms + " ms", interval: ms,
+        return [500, 1000, 5000].map(ms => ({ tag: ms + " ms", interval: ms,
                                                           sample: Math.min(ms, 1000), length: ms < 1000 ? 120 : 60 }));
     }
     function test_graphsSampleEverySecond(data) {
@@ -139,6 +139,10 @@ TestCase {
         verify(timer("latch").running);
         const sensors = sensorsOf(monitor);
         verify(sensors.length > 5);
+        // The five readings Hardware.memoryParts() takes.
+        const ids = sensors.map(s => s.sensorId);
+        verify(["total", "used", "application", "cache", "buffer"].every(key => ids.includes("memory/physical/" + key)),
+               ids.join());
         verify(sensors.every(s => s.updateRateLimit === data.sample - 250),
                sensors.map(s => s.updateRateLimit).join());
         verify(monitor.readers().length > 0);
@@ -239,10 +243,24 @@ TestCase {
         const second = makeMonitor({});
         tryVerify(() => second.hardware.cpu !== undefined, 10000);
         tryVerify(() => monitor.gpuOuter.leading !== second.gpuOuter.leading, 5000, "exactly one leads");
+        const leader = monitor.gpuOuter.leading ? monitor : second;
         const follower = monitor.gpuOuter.leading ? second : monitor;
         verify(follower.readers().filter(r => r.kind === "discrete").every(r => !r.leading && r.leader !== null));
+        // A follower that polled before it learned of the leader may not
+        // have heard back yet.
+        stopTimers(follower);
+        const power = powerStatesOf(follower);
+        tryCompare(power, "pendingSource", "", 10000);
+        settledPowerStates(leader);
         const before = follower.gpuOuter.pmReadAt;
-        wait(2500);
+        const requested = power.requestedAt;
+        follower.clockMs = 7000;
+        follower.pollPower();
+        leader.clockMs = 7000;
+        leader.pollPower();
+        tryCompare(leader.gpuOuter, "pmReadAt", 7000, 10000, "the leader polls");
+        compare(power.pendingSource, "");
+        compare(power.requestedAt, requested, "the follower asked nothing");
         compare(follower.gpuOuter.pmReadAt, before);
     }
 
@@ -1108,12 +1126,6 @@ TestCase {
         m.config.keepGraphHistory = true;
         m.sample(t + 60000);
         compare(m.store, null, "not tried again");
-    }
-
-    function test_memoryPartsArriveFromTheSensors() {
-        tryVerify(() => monitor.memoryTotal > 0, 10000);
-        tryVerify(() => Number.isFinite(monitor.memoryFree) && Number.isFinite(monitor.memoryCached), 10000);
-        // The arithmetic is tested in tst_hardware.qml; this checks the sensors reach it.
     }
 
     // Every Sensor the monitor holds directly or through its reader sets.

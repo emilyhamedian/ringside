@@ -8,14 +8,10 @@ import "../../package/contents/ui/code/gpugate.js" as Gate
 TestCase {
     name: "GpuGate"
 
-    function test_initialStateIsAsleep() {
-        var state = Gate.initial();
-        compare(state.phase, "asleep");
-        compare(state.holdMs, 10000);
-    }
-
     function test_asleepWakesToLiveOnAFreshStatus() {
         var asleep = Gate.initial();
+        compare(asleep.phase, "asleep");
+        compare(asleep.holdMs, 10000);
         var result = Gate.step(asleep, { now: 1000, status: "active", statusAt: 900, usage: undefined, watched: false,
                                          autosuspendMs: 5000, vendor: "1002" });
         compare(result.phase, "live");
@@ -35,15 +31,6 @@ TestCase {
         var fresh = Gate.step(asleep, { now: 10000, status: "active", statusAt: 6001, usage: undefined, watched: false,
                                         autosuspendMs: 5000, vendor: "1002" });
         compare(fresh.phase, "live");
-    }
-
-    // The pm poll reports "" for a GPU it hasn't heard back about yet; that
-    // must not be mistaken for an awake state.
-    function test_unknownStatusStaysAsleep() {
-        var asleep = Gate.initial();
-        var result = Gate.step(asleep, { now: 500, status: "", usage: undefined, watched: false, autosuspendMs: 0 });
-        compare(result.phase, "asleep");
-        verify(result === asleep); // nothing changed, so no new object
     }
 
     function test_usageUndefinedBeforeFirstSampleIsNotIdle() {
@@ -141,15 +128,22 @@ TestCase {
         verify(result === resting);
     }
 
-    function test_anOpenPopupLeavesASleepingGpuAsleep() {
-        var statuses = ["suspended", "suspending", ""];
-        for (var i = 0; i < statuses.length; ++i) {
-            var asleep = Gate.initial();
-            var result = Gate.step(asleep, { now: 1000, status: statuses[i], statusAt: 900, usage: undefined,
-                                             watched: true, autosuspendMs: 5000, vendor: "10de" });
-            compare(result.phase, "asleep", statuses[i]);
-            verify(result === asleep);
-        }
+    // The pm poll reports "" for a GPU it hasn't heard back about yet; that
+    // must not be mistaken for an awake state, popup open or not.
+    function test_aSleepingGpuStaysAsleep_data() {
+        return [
+            { tag: "suspended", status: "suspended", watched: true },
+            { tag: "suspending", status: "suspending", watched: true },
+            { tag: "unknown", status: "", watched: true },
+            { tag: "unknownUnwatched", status: "", watched: false }
+        ];
+    }
+    function test_aSleepingGpuStaysAsleep(data) {
+        var asleep = Gate.initial();
+        var result = Gate.step(asleep, { now: 1000, status: data.status, statusAt: 900, usage: undefined,
+                                         watched: data.watched, autosuspendMs: 5000, vendor: "10de" });
+        compare(result.phase, "asleep");
+        verify(result === asleep); // nothing changed, so no new object
     }
 
     function test_watchedResetsTheIdleTimerWhileLive() {
