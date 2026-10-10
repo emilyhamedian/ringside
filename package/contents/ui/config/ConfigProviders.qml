@@ -47,7 +47,7 @@ ConfigPage {
     Kirigami.FormLayout {
         Item {
             Kirigami.FormData.isSection: true
-            Kirigami.FormData.label: i18nc("@title:group settings that apply to both Claude and Codex", "Claude and Codex")
+            Kirigami.FormData.label: i18nc("@title:group settings that apply to both Claude and OpenAI", "Claude and OpenAI")
         }
 
         QQC2.SpinBox {
@@ -65,7 +65,7 @@ ConfigPage {
         }
 
         Note {
-            text: i18nc("@info", "Applies while the Claude or Codex item is on in Panel Items.")
+            text: i18nc("@info", "Applies while the Claude or OpenAI item is on in Panel Items.")
         }
 
         // Each provider's section shows only while it has something to set.
@@ -77,7 +77,7 @@ ConfigPage {
 
         Picker {
             visible: page.claudeHasLimits
-            Kirigami.FormData.label: i18nc("@label:listbox which per-model limit the inner ring shows, under a Claude or Codex heading", "Inner ring:")
+            Kirigami.FormData.label: i18nc("@label:listbox which per-model limit the inner ring shows, under a Claude or OpenAI heading", "Inner ring:")
             Accessible.name: i18nc("@label:listbox", "Claude inner ring")
             current: page.cfg_claudeInnerLimit
             choices: page.limitChoices("claude")
@@ -91,14 +91,14 @@ ConfigPage {
 
         Item {
             Kirigami.FormData.isSection: true
-            Kirigami.FormData.label: i18nc("@title:group settings for the Codex item", "Codex")
+            Kirigami.FormData.label: i18nc("@title:group settings for the OpenAI item, whose limits are read through Codex", "OpenAI")
             visible: page.codexShown
         }
 
         Picker {
             visible: page.codexHasLimits
-            Kirigami.FormData.label: i18nc("@label:listbox which per-model limit the inner ring shows, under a Claude or Codex heading", "Inner ring:")
-            Accessible.name: i18nc("@label:listbox", "Codex inner ring")
+            Kirigami.FormData.label: i18nc("@label:listbox which per-model limit the inner ring shows, under a Claude or OpenAI heading", "Inner ring:")
+            Accessible.name: i18nc("@label:listbox", "OpenAI inner ring")
             current: page.cfg_codexInnerLimit
             choices: page.limitChoices("codex")
             onPicked: value => page.cfg_codexInnerLimit = value
@@ -111,17 +111,17 @@ ConfigPage {
 
         ColumnLayout {
             visible: page.codexShown
-            Kirigami.FormData.label: i18nc("@label the logo in the Codex ring, under a Codex heading", "Ring logo:")
+            Kirigami.FormData.label: i18nc("@label the logo in the OpenAI ring, under an OpenAI heading", "Ring logo:")
             Kirigami.FormData.buddyFor: codexLogo
 
             QQC2.RadioButton {
                 id: codexLogo
-                text: i18nc("@option:radio the logo in the Codex ring", "Codex")
+                text: i18nc("@option:radio the logo in the OpenAI ring: the Codex mark, and the item named Codex", "Codex")
                 checked: page.cfg_codexMark !== "openai"
                 onToggled: page.cfg_codexMark = "codex"
             }
             QQC2.RadioButton {
-                text: i18nc("@option:radio the logo in the Codex ring", "OpenAI")
+                text: i18nc("@option:radio the logo in the OpenAI ring: the OpenAI logo, and the item named ChatGPT", "ChatGPT")
                 checked: page.cfg_codexMark === "openai"
                 onToggled: page.cfg_codexMark = "openai"
             }
