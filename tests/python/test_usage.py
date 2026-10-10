@@ -28,6 +28,8 @@ HELPER = ROOT / "package" / "contents" / "code" / "usage.py"
 WEEK = 7 * 24 * 3600
 # What every entry says of its session starter while it is switched off.
 OFF = {"enabled": False, "state": "off", "at": None, "next": None, "reason": None}
+# What every entry says of its program when none is chosen or found.
+NOT_FOUND = {"path": "", "chosen": False, "problem": ""}
 
 
 def load_helper():
@@ -84,7 +86,8 @@ class Isolated(unittest.TestCase):
         self.enterContext(mock.patch.object(usage.urllib.request, "urlopen",
                                             side_effect=AssertionError("a test reached the network")))
         self.enterContext(mock.patch.object(usage, "run_cli", side_effect=AssertionError("a test ran a CLI")))
-        self.enterContext(mock.patch.object(usage, "find_cli", return_value=None))
+        self.enterContext(mock.patch.object(usage, "find_cli", return_value=("", "")))
+        self.enterContext(mock.patch.dict(usage.PROGRAMS, clear=True))
 
     def write_cache(self, data):
         usage.CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -646,7 +649,7 @@ class Polling(Isolated):
 
     def test_codex_login_errors_read_as_signed_out(self):
         with mock.patch.object(usage, "CODEX_AUTH", Path(__file__)), \
-             mock.patch.object(usage, "find_cli", return_value="codex"), \
+             mock.patch.object(usage, "find_cli", return_value=("codex", "")), \
              mock.patch.object(usage, "codex_rate_limits",
                                side_effect=RuntimeError("Not logged in")):
             self.assertEqual(usage.poll(usage.codex_usage), {"status": "signed_out"})
@@ -703,7 +706,7 @@ class ReadingCache(Isolated):
         claude.assert_called_once()
         retry = reports[0]["claude"]["retryAt"]
         self.assertLessEqual(abs(retry - (time.time() + usage.CACHE_TTL)), 5)
-        self.assertEqual(reports, [{"claude": dict(failed, retryAt=retry, starter=OFF)}] * 2)
+        self.assertEqual(reports, [{"claude": dict(failed, retryAt=retry, starter=OFF, program=NOT_FOUND)}] * 2)
 
     # A refusal holds the provider back for every run until Retry-After has
     # passed, and only that provider.
@@ -815,7 +818,7 @@ class ReadingCache(Isolated):
         fetch = mock.Mock(return_value=reading(1, 5))
         with mock.patch.object(usage, "LOCK_WAIT", 0.3), mock.patch.object(usage, "codex_usage", fetch):
             report = self.run_main("--providers", "codex")
-        self.assertEqual(report["providers"], {"codex": {"status": "error", "starter": OFF,
+        self.assertEqual(report["providers"], {"codex": {"status": "error", "starter": OFF, "program": NOT_FOUND,
                                                          "message": "another usage check is still running",
                                                          "reason": "busy", "host": "",
                                                          "retryAt": report["fetchedAt"]}})
@@ -833,7 +836,7 @@ class ReadingCache(Isolated):
         self.assertEqual(report["providers"]["codex"]["weekly"]["history"], [])
         self.assertEqual(report["providers"]["claude"],
                          {"status": "error", "message": "another usage check is still running", "starter": OFF,
-                          "reason": "busy", "host": "", "retryAt": report["providers"]["claude"]["retryAt"]})
+                          "program": NOT_FOUND, "reason": "busy", "host": "", "retryAt": report["providers"]["claude"]["retryAt"]})
 
     # ...and a failure it still holds, as a run with the lock would.
     def test_a_busy_run_replays_a_held_failure(self):
@@ -844,9 +847,9 @@ class ReadingCache(Isolated):
         with mock.patch.object(usage, "LOCK_WAIT", 0.3):
             report = self.run_main("--providers", "claude,codex")
         self.assertEqual(report["providers"], {
-            "claude": {"status": "signed_out", "starter": OFF},
+            "claude": {"status": "signed_out", "starter": OFF, "program": NOT_FOUND},
             "codex": {"status": "error", "message": "another usage check is still running", "starter": OFF,
-                      "reason": "busy", "host": "", "retryAt": report["providers"]["codex"]["retryAt"]}})
+                      "program": NOT_FOUND, "reason": "busy", "host": "", "retryAt": report["providers"]["codex"]["retryAt"]}})
 
     # A busy run replays a held failure as a run with the lock would, its
     # hold's end included, and says of the rest that the lock was busy and
@@ -965,6 +968,146 @@ class ReadingCache(Isolated):
             report = usage.collect({"codex": lambda: calls.append(1) or reading(9, 5)})
         self.assertEqual(calls, [])
         self.assertEqual(report["codex"]["fetchedAt"], 1010)
+
+
+class ChosenProgram(Isolated):
+    """A program chosen in the settings is run as it is, or reported, and
+    never traded for one found by itself."""
+
+    def setUp(self):
+        super().setUp()
+        self.enterContext(mock.patch.object(usage, "find_cli", REAL_FIND_CLI))
+        # Nothing on this machine's PATH.
+        self.enterContext(mock.patch.object(usage.shutil, "which", return_value=None))
+        # A codex the automatic search would find, to show it isn't used.
+        local = Path.home() / ".local" / "bin"
+        local.mkdir(parents=True)
+        self.found = local / "codex"
+        self.found.write_text("#!/bin/sh\n")
+        self.found.chmod(0o700)
+        self.programs = self.tmp / "programs"
+        self.programs.mkdir()
+
+    def program(self, name, mode=0o700):
+        path = self.programs / name
+        path.write_text("#!/bin/sh\n")
+        path.chmod(mode)
+        return str(path)
+
+    def test_a_chosen_program_that_runs(self):
+        path = self.program("codex")
+        self.assertEqual(usage.find_cli("codex", path), (path, ""))
+
+    def test_a_chosen_program_that_cant_run_says_why(self):
+        os.mkfifo(self.programs / "pipe")
+        (self.programs / "folder").mkdir(mode=0o700)
+        for chosen, problem in ((str(self.programs / "nothing"), "missing"),
+                                (self.program("plain", 0o600), "not-executable"),
+                                (str(self.programs / "pipe"), "not-executable"),
+                                (str(self.programs / "folder"), "folder"),
+                                ("codex", "missing"), ("bin/codex", "missing")):
+            with self.subTest(chosen=chosen):
+                self.assertEqual(usage.find_cli("codex", chosen), (chosen, problem))
+
+    def test_the_home_folder_is_expanded(self):
+        path = Path.home() / "my bin" / "codex"
+        path.parent.mkdir()
+        path.write_text("#!/bin/sh\n")
+        path.chmod(0o700)
+        self.assertEqual(usage.find_cli("codex", "~/my bin/codex"), (str(path), ""))
+        self.assertEqual(usage.find_cli("codex", "~/elsewhere/codex"), (str(Path.home() / "elsewhere" / "codex"), "missing"))
+
+    def test_a_chosen_program_never_falls_back(self):
+        missing = str(self.programs / "codex")
+        self.assertEqual(usage.find_cli("codex"), (str(self.found), ""))
+        self.assertEqual(usage.find_cli("codex", missing), (missing, "missing"))
+        usage.PROGRAMS["codex"] = missing
+        with mock.patch.object(usage, "CODEX_AUTH", Path(__file__)), \
+                mock.patch.object(usage, "codex_rate_limits", side_effect=AssertionError("ran a codex")):
+            report = usage.poll(usage.codex_usage)
+        self.assertEqual((report["status"], report["reason"]), ("error", "program"))
+        with self.assertRaises(usage.Failed) as failed:
+            usage.installed("codex")
+        self.assertEqual(failed.exception.reason, "program")
+
+    def test_the_chosen_program_is_the_one_run(self):
+        path = self.program("codex")
+        usage.PROGRAMS["codex"] = path
+        with mock.patch.object(usage, "CODEX_AUTH", Path(__file__)), \
+                mock.patch.object(usage, "codex_rate_limits", side_effect=RuntimeError("stop")) as run:
+            usage.poll(usage.codex_usage)
+        run.assert_called_once_with(path)
+        self.assertEqual(usage.installed("codex"), path)
+
+    # A program that couldn't be found or run is held back for five
+    # minutes like any failure, but only while the same one is chosen.
+    def test_a_program_hold_is_only_for_the_program_chosen_then(self):
+        fetch = mock.Mock(side_effect=usage.CheckFailed("codex CLI not found", "not-installed"))
+        self.assertEqual(usage.collect({"codex": fetch}, 1000)["codex"]["reason"], "not-installed")
+        usage.collect({"codex": fetch}, 1060)
+        self.assertEqual(fetch.call_count, 1, "the same program is held back")
+        usage.PROGRAMS["codex"] = "~/bin/codex"
+        fetch.side_effect = usage.CheckFailed("can't be run", "program")
+        self.assertEqual(usage.collect({"codex": fetch}, 1120)["codex"]["reason"], "program")
+        self.assertEqual(fetch.call_count, 2, "a newly chosen program is checked at once")
+        usage.collect({"codex": fetch}, 1180)
+        self.assertEqual(fetch.call_count, 2)
+        self.assertEqual(json.loads(usage.CACHE_FILE.read_text())["codex"]["program"], "~/bin/codex")
+        usage.PROGRAMS["codex"] = ""
+        usage.collect({"codex": fetch}, 1240)
+        self.assertEqual(fetch.call_count, 3, "going back to automatic checks at once")
+        # A hold cached before programs could be chosen holds automatic only.
+        cache = json.loads(usage.CACHE_FILE.read_text())
+        del cache["codex"]["program"]
+        self.write_cache(cache)
+        usage.PROGRAMS["codex"] = "/opt/codex"
+        usage.collect({"codex": fetch}, 1300)
+        self.assertEqual(fetch.call_count, 4)
+
+    # A busy run replays holds the same way.
+    def test_a_busy_run_ignores_another_programs_hold(self):
+        usage.collect({"codex": mock.Mock(side_effect=usage.CheckFailed("codex CLI not found", "not-installed"))})
+        usage.PROGRAMS["codex"] = "/opt/codex"
+        with mock.patch.object(usage, "read_history", return_value={}):
+            self.assertEqual(usage.waiting(["codex"], "busy")["codex"]["reason"], "busy")
+            usage.PROGRAMS["codex"] = ""
+            self.assertEqual(usage.waiting(["codex"], "busy")["codex"]["reason"], "not-installed")
+
+    # A rate limit is the account's, whichever program asked.
+    def test_other_holds_stay_whichever_program_is_chosen(self):
+        fetch = mock.Mock(side_effect=usage.RateLimited(900))
+        usage.collect({"codex": fetch}, 1000)
+        usage.PROGRAMS["codex"] = "/opt/codex"
+        self.assertEqual(usage.collect({"codex": fetch}, 1060)["codex"]["status"], "rate_limited")
+        self.assertEqual(fetch.call_count, 1)
+
+    def test_every_entry_reports_its_program(self):
+        plain = self.program("claude", 0o600)
+        with mock.patch.object(usage, "claude_usage", side_effect=usage.SignedOut()), \
+                mock.patch.object(usage, "codex_usage", return_value=reading(1, 2000000000)):
+            report = self.run_main("--program", f"claude={plain}")["providers"]
+            self.assertEqual(report["claude"]["program"], {"path": plain, "chosen": True, "problem": "not-executable"})
+            self.assertEqual(report["codex"]["program"], {"path": str(self.found), "chosen": False, "problem": ""})
+            # Looked up afresh on every run, a cached reading's too.
+            self.found.unlink()
+            report = self.run_main("--program", "codex=~/.local/bin/codex")["providers"]
+            self.assertEqual(report["codex"]["program"], {"path": str(self.found), "chosen": True, "problem": "missing"})
+            self.assertEqual(report["claude"]["program"], NOT_FOUND)
+        self.assertNotIn("program", json.loads(usage.CACHE_FILE.read_text())["codex"])
+
+    def test_program_arguments(self):
+        with mock.patch.object(usage, "collect", return_value={}):
+            self.run_main("--program", "codex=/a b/=c/$(x)`y`'z", "--program", "claude=")
+        self.assertEqual(usage.PROGRAMS, {"codex": "/a b/=c/$(x)`y`'z", "claude": ""})
+        for value in ("codex", "gemini=/x", "=/x", " codex=/x"):
+            with self.subTest(value), mock.patch("sys.stderr", new=io.StringIO()) as err, \
+                    self.assertRaises(SystemExit) as exit_:
+                usage.main(["--program", value])
+            self.assertEqual(exit_.exception.code, 2)
+            self.assertIn("expected <provider>=<path>", err.getvalue())
+
+
+REAL_FIND_CLI = usage.find_cli
 
 
 class ProviderChoice(Isolated):
