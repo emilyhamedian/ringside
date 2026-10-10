@@ -32,10 +32,8 @@ TestCase {
         compare(result.inner.id, "gpu0");
     }
 
-    // "none" on the outer choice must not strand the only visible GPU as an
-    // inner ring with nothing outside it.
     // Turning the outer ring off keeps the GPU that automatic would put
-    // inside, which then takes the only ring.
+    // inside, which then takes the only ring rather than sit inside nothing.
     function test_assignGpusNoneOnOuterKeepsTheInnerGpu() {
         var result = Hardware.assignGpus([gpu("gpu0", "discrete"), gpu("gpu1", "integrated")], "none", "");
         compare(result.outer.id, "gpu1");

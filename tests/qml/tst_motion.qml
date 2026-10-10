@@ -390,7 +390,7 @@ Item {
         }
 
         // At Plasma's Instant speed the arc, its colour and the number are
-        // in place in the same frame, as before the follower.
+        // in place in the same frame.
         function test_instant() {
             const header = createTemporaryObject(headerComponent, root);
             const gauge = root.all(header, i => i.drawnValue !== undefined)[0];
@@ -457,7 +457,6 @@ Item {
             verify(frames.length > 2, "frames sampled: " + frames.length);
             frames.forEach((f, i) => compare(f, after, "frame " + i));
         }
-
     }
 
     TestCase {
@@ -715,7 +714,9 @@ Item {
             compare(g.ghostOpacity, 0);
         }
 
-        // A graph closed mid-change leaves nothing to run.
+        // A graph closed mid-change leaves nothing to run. It asserts
+        // nothing itself: an animation left running would warn, which
+        // init()'s failOnWarning fails.
         function test_closedMidChange() {
             const g = make();
             poll(g);

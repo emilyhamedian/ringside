@@ -290,7 +290,7 @@ TestCase {
         compare(History.tops([1, 2], []), [1, 2]);
     }
 
-    // 10:00:00 local time on a day, in ms, so bucket numbers are easy to
+    // 10:00:00 UTC on a day, in ms, so bucket numbers are easy to
     // read: a 30 s bucket's starts on :00 or :30, a 10 min one on the tenth
     // minute.
     readonly property real t0: Date.UTC(2026, 9, 8, 10, 0, 0)

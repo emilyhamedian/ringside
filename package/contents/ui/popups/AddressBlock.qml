@@ -39,10 +39,8 @@ GridLayout {
     // the captions' column. Whether an interface fits beside its address is
     // decided against this, settled before the block lays out, rather than
     // against the line's own width, which arrives only as the popup lays the
-    // line out, and in a block shown afresh first at the block's implicit
-    // width: on Qt 6.6 an interface moving under its address part way
-    // through costs the popup more passes than the two it allows, and it
-    // gives up as a polish loop.
+    // line out: an interface moving under its address part way through
+    // makes a polish loop on Qt 6.6 (see CheckStatus).
     readonly property real lineWidth: (parent ? parent.width - Layout.leftMargin - Layout.rightMargin : 0)
         - Math.ceil(Math.max(localCaption.implicitWidth, publicCaption.implicitWidth)) - columnSpacing
     readonly property var places: {
@@ -276,9 +274,7 @@ GridLayout {
         // the block keeps its size when the next check replaces it. Placed by
         // hand rather than by a RowLayout, so the message wraps to the room
         // the column leaves it as soon as it shows, not when the popup lays
-        // it out: on Qt 6.6 a height that changes in the middle of laying out
-        // the popup costs it two more passes, and it gives up as a polish
-        // loop.
+        // it out (see CheckStatus).
         Item {
             id: failure
             readonly property real spacing: Kirigami.Units.largeSpacing
