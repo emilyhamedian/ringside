@@ -1,8 +1,5 @@
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/logo-dark.svg">
-    <img src="docs/logo.svg" alt="Ringside" width="300">
-  </picture>
+  <img src="docs/logo.svg" alt="Ringside" width="300">
 </p>
 
 <p align="center">
@@ -77,12 +74,12 @@ a per-model limit if your plan has one. If a check fails, the ring greys out,
 then is struck through, and the popup says why. If Plasma can't find `claude`
 or `codex`, set where it is under *AI Providers*.
 
-**Starting the next session.** A switch at the bottom of each popup, off by
-default, starts your next Claude five-hour session or Codex week as soon as
-the last one ends, by sending one tiny message ("Hi" on Claude's smallest
-model, or one read-only Codex turn). Each message counts toward your limits
-like any other. If you pay for usage beyond your plan, leave it off: Ringside
-doesn't check whether a message would be billed.
+**Starting the next session.** Claude's five-hour session and Codex's week
+only begin when you next send a message. Turn on the switch at the bottom of
+a popup, and Ringside starts the next one as soon as the last one ends, so its
+clock is already running when you get back. It does this by sending a short
+message, which counts toward your limits like any other; if you pay for usage
+beyond your plan, leave it off.
 
 ## Privacy
 
