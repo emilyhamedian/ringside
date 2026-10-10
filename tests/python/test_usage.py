@@ -256,11 +256,15 @@ class ClaudeParsing(Isolated):
 
 
 class Conversions(Isolated):
-    def test_percent_is_clamped_and_rounded(self):
-        self.assertEqual(usage.clamp_percent(101.2), 100)
-        self.assertEqual(usage.clamp_percent(-3), 0)
-        self.assertEqual(usage.clamp_percent(61.5), 62)
-        self.assertEqual(usage.clamp_percent(None), 0)
+    # Half rounds up, as the widget's Math.round does; JSON's Infinity and
+    # NaN count as no share.
+    def test_percent_is_clamped_and_rounded_half_up(self):
+        for value, percent in ((101.2, 100), (-3, 0), (62.5, 63), (61.5, 62), (0.5, 1), ("34.4", 34), (None, 0),
+                               ("soon", 0), (float("inf"), 0), (float("-inf"), 0), (float("nan"), 0)):
+            with self.subTest(value=value):
+                self.assertEqual(usage.clamp_percent(value), percent)
+        self.assertEqual(usage.parse_claude(json.loads('{"seven_day": {"utilization": Infinity}}'))["weekly"]["percent"],
+                         0)
 
     def test_epoch_accepts_seconds_and_iso(self):
         self.assertEqual(usage.epoch_seconds(1788926677), 1788926677)
@@ -419,6 +423,26 @@ class CredentialWriteBack(Isolated):
         stored = json.loads(self.path.read_text())
         self.assertEqual(stored["claudeAiOauth"]["refreshToken"], "r2")
         self.assertEqual(stored["mcpOAuth"], {"keep": "me"})
+        self.assertEqual(os.listdir(self.folder), [".credentials.json"])
+
+    # Once the replace has succeeded, a folder that can't be synced is no
+    # reason to rewrite the file in place.
+    def test_a_folder_that_cant_be_synced_after_the_replace_is_left_alone(self):
+        real_os_open, real_open = os.open, open
+
+        def no_folder_fd(path, flags, *args):
+            if flags & os.O_DIRECTORY:
+                raise PermissionError(13, "Permission denied")
+            return real_os_open(path, flags, *args)
+
+        def refuse_rewrite(file, mode="r", *args, **kwargs):
+            if mode == "r+b":
+                raise AssertionError("rewrote in place after a successful replace")
+            return real_open(file, mode, *args, **kwargs)
+
+        with mock.patch.object(usage.os, "open", no_folder_fd), mock.patch("builtins.open", refuse_rewrite):
+            usage.store_claude(self.path, "r1", self.fresh)
+        self.assertEqual(json.loads(self.path.read_text())["claudeAiOauth"]["refreshToken"], "r2")
         self.assertEqual(os.listdir(self.folder), [".credentials.json"])
 
     def test_when_nothing_can_be_written_the_new_pair_is_kept_beside_it(self):
@@ -634,6 +658,27 @@ for line in sys.stdin:
         with self.assertRaisesRegex(RuntimeError, "^app-server closed without answering$") as caught:
             usage.codex_rate_limits(binary)
         self.assertFalse(hasattr(caught.exception, "reason"))
+
+    # A program that can't start (a wrapper the kernel can't run) or that
+    # quits before reading its input (one that hands off to a container
+    # runtime and exits) is the program's fault: a chosen one's, else the
+    # installation's.
+    def test_a_program_that_cant_run_or_quits_at_once_is_the_programs_fault(self):
+        no_exec = self.server("not a program\n")
+        gone = mock.Mock()
+        gone.stdin.write.side_effect = BrokenPipeError(errno.EPIPE, "Broken pipe")
+        for chosen, reason in (("", "not-installed"), ("/opt/codex", "program")):
+            usage.PROGRAMS["codex"] = chosen
+            with self.subTest(chosen=chosen, fault="exec"), self.assertRaises(usage.CheckFailed) as caught:
+                usage.codex_rate_limits(no_exec)
+            self.assertEqual((caught.exception.reason, str(caught.exception)),
+                             (reason, "can't run the codex CLI: Exec format error"))
+            with self.subTest(chosen=chosen, fault="pipe"), \
+                    mock.patch.object(usage.subprocess, "Popen", return_value=gone), \
+                    mock.patch.object(usage, "stop_session"), self.assertRaises(usage.CheckFailed) as caught:
+                usage.codex_rate_limits("/opt/codex")
+            self.assertEqual((caught.exception.reason, str(caught.exception)),
+                             (reason, "the codex CLI quit before answering: Broken pipe"))
 
 
 class Polling(Isolated):

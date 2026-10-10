@@ -436,24 +436,34 @@ def codex_rate_limits(binary):
     session, such as one a wrapper hands to a container runtime, can keep
     stdout open after the kill, so reading stops at the deadline regardless.
     """
-    proc = subprocess.Popen(
-        [binary, "app-server", "--stdio"],
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
-        start_new_session=True,
-    )
+    # A program that can't start, or quits before reading its input, is a
+    # fault of the program, as for http_json's host.
+    reason = "program" if PROGRAMS.get("codex") else "not-installed"
+    try:
+        proc = subprocess.Popen(
+            [binary, "app-server", "--stdio"],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+    except OSError as err:
+        raise CheckFailed(f"can't run the codex CLI: {err.strerror or 'unknown error'}", reason) from err
     deadline = time.monotonic() + ANSWER_TIMEOUT
     try:
-        for message in (
-            {"id": 1, "method": "initialize",
-             "params": {"clientInfo": {"name": "ringside", "title": "Ringside",
-                                       "version": VERSION}}},
-            {"method": "initialized"},
-            {"id": 2, "method": "account/rateLimits/read"},
-        ):
-            proc.stdin.write((json.dumps(message) + "\n").encode())
-        proc.stdin.flush()
+        try:
+            for message in (
+                {"id": 1, "method": "initialize",
+                 "params": {"clientInfo": {"name": "ringside", "title": "Ringside",
+                                           "version": VERSION}}},
+                {"method": "initialized"},
+                {"id": 2, "method": "account/rateLimits/read"},
+            ):
+                proc.stdin.write((json.dumps(message) + "\n").encode())
+            proc.stdin.flush()
+        except OSError as err:
+            raise CheckFailed(f"the codex CLI quit before answering: {err.strerror or 'unknown error'}",
+                              reason) from err
         for line in lines_until(proc.stdout, deadline):
             try:
                 reply = json.loads(line)
@@ -787,14 +797,18 @@ def store_claude(path, spent, fresh):
                 continue
             try:
                 os.replace(tmp, path)
-                folder = os.open(path.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
-                try:
-                    os.fsync(folder)
-                finally:
-                    os.close(folder)
-                return
             except OSError:
                 pass
+            else:
+                # The file is in place; a folder that can't be synced only
+                # costs the crash guarantee, not the login.
+                with contextlib.suppress(OSError):
+                    folder = os.open(path.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+                    try:
+                        os.fsync(folder)
+                    finally:
+                        os.close(folder)
+                return
             try:
                 with open(path, "r+b") as fh:
                     if fh.read() != raw:
@@ -919,10 +933,15 @@ def claude_usage():
 
 
 def clamp_percent(value):
+    """A reply's share as a whole percent, 0 to 100, rounded half up as the
+    widget rounds; anything that isn't a finite number reads as 0."""
     try:
-        return max(0, min(100, round(float(value))))
+        number = float(value)
     except (TypeError, ValueError):
         return 0
+    if not math.isfinite(number):
+        return 0
+    return max(0, min(100, math.floor(number + 0.5)))
 
 
 def epoch_seconds(value):
