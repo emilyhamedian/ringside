@@ -83,25 +83,71 @@ function compact(v) {
     return text.endsWith(zero) ? text.slice(0, -zero.length) : text;
 }
 
-const BYTE_UNITS = ["B", "KiB", "MiB", "GiB", "TiB", "PiB"];
+// Sizes and byte rates are shown in the units KDE is set to, under Region &
+// Language → Data and storage units: KiB, MiB, GiB (1024s, the default), KB,
+// MB, GB (1024s) or kB, MB, GB (1000s), named as KDE names them in the
+// user's language. The widget learns them once as it starts (see
+// Monitor.byteUnits), so a change to the setting shows from the next
+// plasmashell start, as in KDE's own apps. Until then, and whenever they
+// can't be learnt, binary units in their IEC names.
+const IEC = ["B", "KiB", "MiB", "GiB", "TiB", "PiB"];
+let byteBase = 1024;
+let byteLabels = IEC;
+
+// The unit two sizes in it share, "KiB" from "1 KiB" and "2 KiB": what they
+// end with, or what they start with where the unit comes first, less the
+// spaces around it. Comparing two sizes, rather than reading past the
+// digits, works whatever digits the locale writes. Nothing if they read the
+// same.
+function unitLabel(one, two) {
+    if (one === two) {
+        return "";
+    }
+    let end = 0;
+    while (end < one.length && end < two.length && one[one.length - 1 - end] === two[two.length - 1 - end]) {
+        ++end;
+    }
+    let start = 0;
+    while (start < one.length && start < two.length && one[start] === two[start]) {
+        ++start;
+    }
+    return one.slice(one.length - end).trim() || one.slice(0, start).trim();
+}
+
+// The base and the six labels, from bytes to PB, of `size`, a function that
+// writes a size as KDE does to no decimals; null unless every label comes
+// out and each differs from the rest. KDE's 1000 bytes read "1 kB" only in
+// units of 1000s.
+function byteUnitsFrom(size) {
+    const text = n => String(size(n));
+    const base = text(1000) === text(1024) ? 1000 : 1024;
+    const labels = IEC.map((_, n) => unitLabel(text(base ** n), text(2 * base ** n)));
+    return labels.every(label => label !== "") && new Set(labels).size === labels.length
+        ? { base: base, labels: labels } : null;
+}
+
+function setByteUnits(base, labels) {
+    byteBase = base;
+    byteLabels = labels.slice();
+}
 
 function byteScale(bytes) {
     let i = 0;
-    while (i < BYTE_UNITS.length - 1 && Math.abs(bytes) >= 1024 ** (i + 1) * 0.9995) {
+    while (i < byteLabels.length - 1 && Math.abs(bytes) >= byteBase ** (i + 1) * 0.9995) {
         ++i;
     }
     return i;
 }
 
-// Bytes in binary units, the way Plasma's own System Monitor shows them.
+// Bytes in KDE's units, with their `scale`: 0 for bytes, 1 for K and so on.
 function bytes(v, trim) {
     if (!usable(v)) {
-        return { value: DASH, unit: "" };
+        return { value: DASH, unit: "", scale: 0 };
     }
     const i = byteScale(v);
-    const scaled = v / 1024 ** i;
+    const scaled = v / byteBase ** i;
     return { value: i === 0 ? whole(scaled) : trim ? compact(scaled) : number(scaled),
-             unit: BYTE_UNITS[i] };
+             unit: byteLabels[i], scale: i };
 }
 
 // "used / total" in the total's unit: { value: "0.2", total: "16", unit: "GiB" }.
@@ -110,18 +156,19 @@ function bytesOf(used, total) {
         return { value: DASH, total: DASH, unit: "" };
     }
     const i = byteScale(total);
-    const d = 1024 ** i;
-    return { value: usable(used) ? number(used / d) : DASH, total: compact(total / d), unit: BYTE_UNITS[i] };
+    const d = byteBase ** i;
+    return { value: usable(used) ? number(used / d) : DASH, total: compact(total / d), unit: byteLabels[i] };
 }
 
-// Network rates in decimal bits, as links are sold, or in binary bytes.
+// Network rates in decimal bits, as links are sold, or in bytes as bytes()
+// gives them, with the unit's `scale`.
 function rate(bytesPerSecond, bits) {
     if (!usable(bytesPerSecond)) {
-        return { value: DASH, unit: bits ? "b/s" : "B/s" };
+        return { value: DASH, unit: bits ? "b/s" : byteLabels[0] + "/s", scale: 0 };
     }
     if (!bits) {
         const b = bytes(bytesPerSecond, false);
-        return { value: b.value, unit: b.unit + "/s" };
+        return { value: b.value, unit: b.unit + "/s", scale: b.scale };
     }
     const units = ["b/s", "kb/s", "Mb/s", "Gb/s", "Tb/s"];
     let v = bytesPerSecond * 8;
@@ -130,7 +177,7 @@ function rate(bytesPerSecond, bits) {
         v /= 1000;
         ++i;
     }
-    return { value: i === 0 ? whole(v) : number(v), unit: units[i] };
+    return { value: i === 0 ? whole(v) : number(v), unit: units[i], scale: i };
 }
 
 // Three significant figures, "8.40", "62.1", "353": every value has three
@@ -143,19 +190,19 @@ function significant(v) {
 
 // The units panelRate() steps through.
 function panelRateUnits(bits) {
-    return bits ? ["kb/s", "Mb/s", "Gb/s", "Tb/s"] : ["KiB/s", "MiB/s", "GiB/s", "TiB/s", "PiB/s"];
+    return bits ? ["kb/s", "Mb/s", "Gb/s", "Tb/s"] : byteLabels.slice(1).map(label => label + "/s");
 }
 
 // A rate for the panel, in three significant figures from kb/s or KiB/s up:
 // "0.00 KiB/s" idle, "8.40 Mb/s", "353 KiB/s". The unit steps up at 999.5 of
-// the one shown, binary units too ("0.98 MiB/s" for 1000 KiB/s), so no value
-// takes a fourth digit.
+// the one shown, units of 1024 too ("0.98 MiB/s" for 1000 KiB/s), so no
+// value takes a fourth digit.
 function panelRate(bytesPerSecond, bits) {
     const units = panelRateUnits(bits);
     if (!usable(bytesPerSecond)) {
         return { value: DASH, unit: units[0] };
     }
-    const step = bits ? 1000 : 1024;
+    const step = bits ? 1000 : byteBase;
     let v = (bits ? bytesPerSecond * 8 : bytesPerSecond) / step;
     let i = 0;
     while (i < units.length - 1 && Math.abs(v) >= 999.5) {
@@ -167,7 +214,7 @@ function panelRate(bytesPerSecond, bits) {
 
 // The units panelBytes() steps through.
 function panelByteUnits() {
-    return BYTE_UNITS.slice();
+    return byteLabels.slice();
 }
 
 // Bytes for the panel to one decimal, "9.6 GiB", "512.0 MiB". The unit steps
@@ -179,11 +226,11 @@ function panelBytes(v) {
     }
     let i = 0;
     let scaled = v;
-    while (i < BYTE_UNITS.length - 1 && Math.abs(scaled) >= 999.95) {
-        scaled /= 1024;
+    while (i < byteLabels.length - 1 && Math.abs(scaled) >= 999.95) {
+        scaled /= byteBase;
         ++i;
     }
-    return { value: i === 0 ? whole(scaled) : decimal(scaled, 1), unit: BYTE_UNITS[i] };
+    return { value: i === 0 ? whole(scaled) : decimal(scaled, 1), unit: byteLabels[i] };
 }
 
 function frequency(megahertz) {
@@ -275,7 +322,7 @@ function memoryModules(memory) {
         layout = whole(sizes.length) + " × " + one.value + " " + one.unit;
     } else {
         const i = byteScale(Math.max(...sizes));
-        layout = sizes.map(s => compact(s / 1024 ** i)).join(" + ") + " " + BYTE_UNITS[i];
+        layout = sizes.map(s => compact(s / byteBase ** i)).join(" + ") + " " + byteLabels[i];
     }
     return kind ? kind + " · " + layout : layout;
 }

@@ -48,6 +48,36 @@ Item {
     // Plasmoid.configuration, or an object with the same keys.
     required property var config
 
+    // The units KDE shows sizes in, { base, labels } (see format.js), or
+    // null where they can't be learnt and binary units stay. They're handed
+    // to format.js, which every widget in plasmashell shares, as this
+    // binding first runs: before the panel's cells exist, since their
+    // Repeater makes them only once the bindings around it have run, and
+    // long before any popup opens. KDE's formatter is the only thing that
+    // knows the setting, and its module is loaded by name, so a system
+    // without it still gets the widget.
+    readonly property var byteUnits: {
+        let units = null;
+        let why = "its sizes don't name six different units";
+        let kde = null;
+        try {
+            kde = Qt.createQmlObject("import QtQml; import org.kde.coreaddons as KCoreAddons; QtObject { "
+                                     + "function size(n) { return KCoreAddons.Format.formatByteSize(n, 0); } }",
+                                     monitor, "ByteUnits");
+            units = Format.byteUnitsFrom(n => kde.size(n));
+        } catch (error) {
+            why = error.qmlErrors?.[0]?.message ?? String(error);
+        } finally {
+            kde?.destroy();
+        }
+        if (units) {
+            Format.setByteUnits(units.base, units.labels);
+        } else {
+            Log.write(journal, "warning", "sizes stay in KiB, MiB and GiB, as KDE's data units can't be read: " + why);
+        }
+        return units;
+    }
+
     readonly property int interval: config.updateInterval
     readonly property int sampleInterval: Math.min(interval, 1000)
     // ksystemstats sends a frame every 500 ms. A rate limit half a frame

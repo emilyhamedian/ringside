@@ -73,21 +73,22 @@ GridLayout {
         return vertical ? Format.rate(bytesPerSecond, bits) : Format.panelRate(bytesPerSecond, bits);
     }
 
-    // "25M" for "24.8M". A byte rate of 1000 to 1023 in one unit rounds to 1
-    // of the next, so it keeps to three digits.
+    // "25M" for "24.8M", in these letters whatever KDE calls the unit in the
+    // user's language. A byte rate of 1000 to 1023 in a unit of 1024 rounds
+    // to 1 of the next, so it keeps to three digits.
     function verticalText(reading) {
-        const prefixes = ["", "K", "M", "G", "T", "P"];
-        let prefix = reading.unit.charAt(0).replace(/[bB]/, "");
+        const prefixes = bits ? ["", "k", "M", "G", "T"] : ["", "K", "M", "G", "T", "P"];
+        let scale = reading.scale;
         if (!whole || reading.value === "–") {
-            return reading.value + prefix;
+            return reading.value + prefixes[scale];
         }
         // format.js writes decimals in the user's locale: "24,8" in German.
         let rounded = Math.round(Number.fromLocaleString(Qt.locale(), reading.value));
-        if (rounded >= 1000 && prefixes.includes(prefix)) {
+        if (rounded >= 1000 && scale < prefixes.length - 1) {
             rounded = 1;
-            prefix = prefixes[prefixes.indexOf(prefix) + 1];
+            ++scale;
         }
-        return Format.whole(rounded) + prefix;
+        return Format.whole(rounded) + prefixes[scale];
     }
 
     // The rates in words, for screen readers.

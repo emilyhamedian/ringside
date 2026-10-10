@@ -200,6 +200,8 @@ follows [Semantic Versioning](https://semver.org/).
   inner ring shows, moved from General and Sensors to a new AI Providers
   page in the settings, with a section for each provider. Existing settings
   carry over.
+- Sizes and byte rates follow *Region & Language → Data and storage units*:
+  KiB, MiB, GiB as before, or KB, MB, GB, or kB, MB, GB in 1000s.
 
 ### Removed
 

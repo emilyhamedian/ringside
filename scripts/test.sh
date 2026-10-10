@@ -140,6 +140,18 @@ else
                 -input "$f" || failed=1
         done
     done
+    # Sizes follow KDE's Region & Language → Data and storage units, which
+    # Monitor learns from KDE's own formatter: tst_units runs once for each
+    # of its three choices, in English, under a kdeglobals that makes it.
+    dialect=0
+    for units in iec jedec metric; do
+        echo "-- tests/qml/units/tst_units.qml ($units) --"
+        mkdir -p "$probe/$units"
+        printf '[Locale]\nBinaryUnitDialect=%s\n' "$dialect" > "$probe/$units/kdeglobals"
+        XDG_CONFIG_HOME=$probe/$units LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 LANGUAGE=en_US QT_QUICK_BACKEND=software \
+            "$QMLTESTRUNNER" -platform offscreen -input tests/qml/units/tst_units.qml "Units::test_$units" || failed=1
+        dialect=$((dialect + 1))
+    done
 fi
 
 echo

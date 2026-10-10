@@ -5,6 +5,7 @@ import QtQuick
 import QtTest
 import org.kde.kirigami as Kirigami
 import "../../package/contents/ui"
+import "../../package/contents/ui/code/format.js" as Format
 import "../../package/contents/ui/code/style.js" as Style
 
 // The panel's cells on their own, with FakeMonitor's readings: the
@@ -36,6 +37,16 @@ Item {
 
     readonly property real gib: 1073741824
     readonly property real mib: 1048576
+    // KDE's three choices of data units, as Monitor hands them to format.js.
+    readonly property var dialects: ({
+        iec: { base: 1024, labels: ["B", "KiB", "MiB", "GiB", "TiB", "PiB"] },
+        jedec: { base: 1024, labels: ["B", "KB", "MB", "GB", "TB", "PB"] },
+        metric: { base: 1000, labels: ["B", "kB", "MB", "GB", "TB", "PB"] }
+    })
+    function useUnits(dialect) {
+        Format.setByteUnits(dialects[dialect].base, dialects[dialect].labels);
+        return dialects[dialect];
+    }
     readonly property int day: 86400
     readonly property string fixedFamily: Kirigami.Theme.fixedWidthFont?.family ?? "monospace" // qmllint disable redundant-optional-chaining
 
@@ -311,6 +322,7 @@ Item {
             wait(0);
             monitor.destroy();
             root.translations = {};
+            root.useUnits("iec");
         }
 
         function keep(object) {
@@ -997,9 +1009,13 @@ Item {
             compare(root.findAll(readout, i => i.textFormat !== undefined).length, 3, "the two lines and the dot, nothing hidden to measure");
         }
 
-        // Readings at their extremes, item by item: { set, outer, inner,
-        // week (see apply), shows: texts drawn, in ASCII }.
-        function extremes() {
+        // Readings at their extremes, item by item, sizes in `units` (see
+        // root.dialects, binary ones in IEC names when not given): { set,
+        // outer, inner, week (see apply), shows: texts drawn, in ASCII }.
+        function extremes(units) {
+            const base = units?.base ?? 1024;
+            const unit = units?.labels ?? root.dialects.iec.labels;
+            const giga = base ** 3;
             return {
                 cpu: [{ set: { cpuUsage: 0, cpuTemperature: 9 }, shows: ["0%", "9°"] },
                       { set: { cpuUsage: 5, cpuTemperature: 105 }, shows: ["5%", "105°"] },
@@ -1007,11 +1023,11 @@ Item {
                       { set: { cpuUsage: NaN, cpuTemperature: NaN }, shows: ["–"] },
                       { set: { fahrenheit: true, cpuUsage: 100, cpuTemperature: 149 }, shows: ["100%", "300°"] },
                       { set: { fahrenheit: false, cpuUsage: 11, cpuTemperature: 48 }, shows: ["11%", "48°"] }],
-                // From 1 GiB to the fake's 31.9 GiB installed.
-                memory: [{ set: { memoryPercent: 3, memoryUsed: 1000 * mib }, shows: ["3%", "1.0 GiB"] },
-                         { set: { memoryPercent: 30, memoryUsed: 9.6 * gib }, shows: ["30%", "9.6 GiB"] },
-                         { set: { memoryPercent: 42, memoryUsed: 13.4 * gib }, shows: ["42%", "13.4 GiB"] },
-                         { set: { memoryPercent: 100, memoryUsed: 31.9 * gib }, shows: ["100%", "31.9 GiB"] },
+                // From 1 GiB (or 1 GB) to the fake's 31.9 GiB installed.
+                memory: [{ set: { memoryPercent: 3, memoryUsed: 1000 * base ** 2 }, shows: ["3%", "1.0 " + unit[3]] },
+                         { set: { memoryPercent: 30, memoryUsed: 9.6 * giga }, shows: ["30%", "9.6 " + unit[3]] },
+                         { set: { memoryPercent: 42, memoryUsed: 13.4 * giga }, shows: ["42%", "13.4 " + unit[3]] },
+                         { set: { memoryPercent: 100, memoryUsed: 31.9 * gib }, shows: ["100%", (31.9 * gib / giga).toFixed(1) + " " + unit[3]] },
                          { set: { memoryPercent: NaN, memoryUsed: NaN }, shows: ["–"] }],
                 gpu: [{ outer: { usage: 0, temperature: 9 }, shows: ["0%", "9°"] },
                       { outer: { usage: 100, temperature: 105 }, shows: ["100%", "105°"] },
@@ -1032,25 +1048,48 @@ Item {
                           { set: { networkDown: 999.4e3 / 8, networkUp: 999.5e3 / 8 }, shows: ["999", "1.00"] },
                           { set: { networkDown: 8.4e6 / 8, networkUp: 900e6 / 8 }, shows: ["8.40", "900"] },
                           { set: { networkDown: 1023 * 1024 ** 3, networkUp: NaN }, shows: ["–"] }],
-                disk: [{ set: { diskRead: 0, diskWrite: 0 }, shows: ["0.00", "KiB/s"] },
+                // Each unit from its smallest reading, three figures, to
+                // the last before the next.
+                disk: base === 1024
+                    ? [{ set: { diskRead: 0, diskWrite: 0 }, shows: ["0.00", unit[1] + "/s"] },
                        { set: { diskRead: 4.1 * 1024, diskWrite: 353 * 1024 }, shows: ["4.10", "353"] },
-                       { set: { diskRead: 1000 * 1024, diskWrite: 1023 * 1024 }, shows: ["0.98", "1.00", "MiB/s"] },
-                       { set: { diskRead: 412 * mib, diskWrite: 1023 * mib }, shows: ["412", "GiB/s"] },
-                       { set: { diskRead: 1023 * gib, diskWrite: NaN }, shows: ["TiB/s", "–"] }]
+                       { set: { diskRead: 1000 * 1024, diskWrite: 1023 * 1024 }, shows: ["0.98", "1.00", unit[2] + "/s"] },
+                       { set: { diskRead: 412 * mib, diskWrite: 1023 * mib }, shows: ["412", unit[3] + "/s"] },
+                       { set: { diskRead: 1023 * gib, diskWrite: NaN }, shows: [unit[4] + "/s", "–"] }]
+                    : [{ set: { diskRead: 0, diskWrite: 0 }, shows: ["0.00", unit[1] + "/s"] },
+                       { set: { diskRead: 4.1e3, diskWrite: 353e3 }, shows: ["4.10", "353"] },
+                       { set: { diskRead: 999.4e3, diskWrite: 999.5e3 }, shows: ["999", "1.00", unit[2] + "/s"] },
+                       { set: { diskRead: 412e6, diskWrite: 999.5e6 }, shows: ["412", unit[3] + "/s"] },
+                       { set: { diskRead: 999.5e9, diskWrite: NaN }, shows: [unit[4] + "/s", "–"] }]
             };
         }
 
-        // Memory keeps room for readings from 1 GiB up to the installed
-        // total, so a total just past a unit keeps three figures of the unit
-        // below; until the total is known, for every unit.
+        // Memory keeps room for readings from 1 GiB (or 1 GB) up to the
+        // installed total, so a total just past a unit keeps three figures
+        // of the unit below; until the total is known, for every unit. All
+        // in the units KDE is set to.
         function test_memoryRoom_data() {
-            return [{ tag: "31.9 GiB", total: 31.9 * gib, room: [root.decimal(31.9) + " GiB"] },
-                    { tag: "1.0 TiB", total: 1024 * gib, room: [root.decimal(1) + " TiB", root.decimal(100) + " GiB"] },
-                    { tag: "512 MiB", total: 512 * mib, room: [root.decimal(512) + " MiB"] },
-                    { tag: "unknown", total: NaN, room: ["B", "KiB", "MiB", "GiB", "TiB", "PiB"].map(unit => root.decimal(100) + " " + unit) }];
+            const room = (v, unit) => root.decimal(v) + " " + unit;
+            const iec = root.dialects.iec.labels;
+            const jedec = root.dialects.jedec.labels;
+            const metric = root.dialects.metric.labels;
+            return [{ tag: "31.9 GiB", dialect: "iec", total: 31.9 * gib, room: [room(31.9, "GiB")] },
+                    { tag: "1.0 TiB", dialect: "iec", total: 1024 * gib, room: [room(1, "TiB"), room(100, "GiB")] },
+                    { tag: "512 MiB", dialect: "iec", total: 512 * mib, room: [room(512, "MiB")] },
+                    { tag: "unknown", dialect: "iec", total: NaN, room: iec.map(unit => room(100, unit)) },
+                    { tag: "31.9 GiB in KB, MB, GB", dialect: "jedec", total: 31.9 * gib, room: [room(31.9, "GB")] },
+                    { tag: "1.0 TiB in KB, MB, GB", dialect: "jedec", total: 1024 * gib, room: [room(1, "TB"), room(100, "GB")] },
+                    { tag: "unknown in KB, MB, GB", dialect: "jedec", total: NaN, room: jedec.map(unit => room(100, unit)) },
+                    { tag: "31.9 GiB in kB, MB, GB", dialect: "metric", total: 31.9 * gib, room: [room(34.3, "GB")] },
+                    { tag: "1.0 TiB in kB, MB, GB", dialect: "metric", total: 1024 * gib, room: [room(1.1, "TB"), room(100, "GB")] },
+                    { tag: "1.0 TB in kB, MB, GB", dialect: "metric", total: 1e12, room: [room(1, "TB"), room(100, "GB")] },
+                    { tag: "999.9 GB in kB, MB, GB", dialect: "metric", total: 999.9e9, room: [room(999.9, "GB")] },
+                    { tag: "512 MiB in kB, MB, GB", dialect: "metric", total: 512 * mib, room: [room(536.9, "MB")] },
+                    { tag: "unknown in kB, MB, GB", dialect: "metric", total: NaN, room: metric.map(unit => room(100, unit)) }];
         }
 
         function test_memoryRoom(data) {
+            root.useUnits(data.dialect);
             const total = monitor.memoryTotal;
             monitor.memoryTotal = data.total;
             try {
@@ -1061,14 +1100,19 @@ Item {
             }
         }
 
+        // Memory and the disk also in each of KDE's other units.
         function test_widthIsFixed_data() {
             const rows = [];
-            const states = extremes();
             for (const item of ["cpu", "memory", "gpu", "claude", "codex", "network", "disk"]) {
-                for (const twoLines of [true, false]) {
-                    for (const mirrored of [false, true]) {
-                        rows.push({ tag: item + (twoLines ? " two lines" : " one line") + (mirrored ? " mirrored" : ""),
-                                    item: item, twoLines: twoLines, mirrored: mirrored, states: states[item === "codex" ? "claude" : item] });
+                for (const dialect of item === "memory" || item === "disk" ? ["iec", "jedec", "metric"] : ["iec"]) {
+                    const states = extremes(root.dialects[dialect]);
+                    for (const twoLines of [true, false]) {
+                        for (const mirrored of [false, true]) {
+                            rows.push({ tag: item + (twoLines ? " two lines" : " one line") + (mirrored ? " mirrored" : "")
+                                             + (dialect === "iec" ? "" : " in " + dialect),
+                                        item: item, dialect: dialect, twoLines: twoLines, mirrored: mirrored,
+                                        states: states[item === "codex" ? "claude" : item] });
+                        }
                     }
                 }
             }
@@ -1083,6 +1127,7 @@ Item {
         // to all the memory there is, an idle link to 1023 GiB/s, a
         // GPU asleep or handing over, or a countdown from 6d to its reset.
         function test_widthIsFixed(data) {
+            const units = root.useUnits(data.dialect);
             const rate = data.item === "network" || data.item === "disk";
             const holder = data.mirrored ? mirrorComponent.createObject(root) : root;
             const component = rate ? rateComponent : data.item === "claude" || data.item === "codex" ? usageComponent : ringComponent;
@@ -1102,7 +1147,7 @@ Item {
                 const percent = root.percent(100);
                 const firsts = data.item === "gpu" ? [percent, "off"] : [percent];
                 const seconds = data.item === "cpu" || data.item === "gpu" ? [root.degrees(100)]
-                              : data.item === "memory" ? [root.decimal(31.9) + " GiB"]
+                              : data.item === "memory" ? [root.localized((31.9 * gib / units.base ** 3).toFixed(1)) + " " + units.labels[3]]
                               : ["d", "h", "m"].map(unit => root.digits(10) + unit);
                 compare(readout.rooms[0], face.room(face.strong, firsts), "the first line keeps room for " + firsts.join(", "));
                 verify(readout.rooms[1] >= face.room(face.plain, seconds), "the second line keeps room for " + seconds.join(", "));
@@ -1160,14 +1205,17 @@ Item {
             verify(line(c, "first").contentWidth <= line(c, "first").width, "it fits");
         }
 
+        // Bytes also in each of KDE's other units.
         function test_ratesKeepFixedSlots_data() {
             const rows = [];
             for (const [item, bits] of [["network", true], ["network", false], ["disk", false]]) {
-                for (const singleRow of [false, true]) {
-                    for (const mirrored of [false, true]) {
-                        rows.push({ tag: item + (item === "network" ? (bits ? " bits" : " bytes") : "") + (singleRow ? " one row" : " two rows")
-                                         + (mirrored ? " mirrored" : ""),
-                                    item: item, bits: bits, singleRow: singleRow, mirrored: mirrored });
+                for (const dialect of bits ? ["iec"] : ["iec", "jedec", "metric"]) {
+                    for (const singleRow of [false, true]) {
+                        for (const mirrored of [false, true]) {
+                            rows.push({ tag: item + (item === "network" ? (bits ? " bits" : " bytes") : "") + (singleRow ? " one row" : " two rows")
+                                             + (mirrored ? " mirrored" : "") + (dialect === "iec" ? "" : " in " + dialect),
+                                        item: item, bits: bits, dialect: dialect, singleRow: singleRow, mirrored: mirrored });
+                        }
                     }
                 }
             }
@@ -1181,6 +1229,7 @@ Item {
         // stacked, both rows share them. Mirrored, the marker moves to the
         // other side and the value still comes before its unit.
         function test_ratesKeepFixedSlots(data) {
+            const dialect = root.useUnits(data.dialect);
             monitor.networkBits = data.bits;
             const holder = data.mirrored ? mirrorComponent.createObject(root) : root;
             const c = keep(rateComponent.createObject(holder, { monitor: monitor, item: data.item, singleRow: data.singleRow }));
@@ -1198,7 +1247,7 @@ Item {
             compare(c.unitGap, Math.round(Kirigami.Units.smallSpacing * 0.75), "the unit's gap");
             const face = keep(faceComponent.createObject(root));
             compare(c.valuesWidth, face.room(face.plain, [root.decimal(10), root.digits(100)]), "the values' slot");
-            compare(c.unitsWidth, face.room(face.plain, data.bits ? ["kb/s", "Mb/s", "Gb/s", "Tb/s"] : ["KiB/s", "MiB/s", "GiB/s", "TiB/s", "PiB/s"]),
+            compare(c.unitsWidth, face.room(face.plain, data.bits ? ["kb/s", "Mb/s", "Gb/s", "Tb/s"] : dialect.labels.slice(1).map(unit => unit + "/s")),
                     "the units' column");
             const x = i => i.mapToItem(c, Qt.point(0, 0)).x;
             const right = i => i.mapToItem(c, Qt.point(i.width, 0)).x;
@@ -1212,7 +1261,7 @@ Item {
             const width = c.implicitWidth;
             const shape = new RegExp("^([0-9]" + "\\" + Qt.locale().decimalPoint + "[0-9][0-9]|[0-9][0-9]" + "\\" + Qt.locale().decimalPoint
                                      + "[0-9]|[0-9][0-9][0-9]|–)$");
-            for (const state of extremes()[data.item]) {
+            for (const state of extremes(dialect)[data.item]) {
                 apply(data.item, state);
                 settle();
                 const what = "showing " + root.texts(c).join(" ");
