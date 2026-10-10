@@ -228,6 +228,19 @@ class CheckFailed(RuntimeError):
         self.status = status
 
 
+class AppServerError(RuntimeError):
+    """An error reply from codex app-server: its message, and code its
+    JSON-RPC error code, or None when the reply gives none."""
+
+    def __init__(self, message, code=None):
+        super().__init__(message)
+        self.code = code
+
+
+# How codex app-server words a missing login in its error reply.
+CODEX_SIGNED_OUT = re.compile(r"not logged in|logged out|unauthori[sz]ed|login required", re.IGNORECASE)
+
+
 # --- journal ---------------------------------------------------------------
 
 # The lines this run asks the widget to write to Plasma's journal, sent as
@@ -257,6 +270,7 @@ MESSAGES = {
     "wait-over": "{name}: the wait {who} asked for is over",
     "busy": "{name}: no check: another usage check held the lock for over {wait} s",
     "cli": "{name}: asking {cli} app-server",
+    "cli-error": "{name}: app-server answered with an error, code {code}",
     "renewed": "{name}: renewed the Claude Code login",
     "starter-on": "{name} session starter switched on",
     "starter-off": "{name} session starter switched off",
@@ -448,7 +462,9 @@ def codex_rate_limits(binary):
                 continue
             if isinstance(reply, dict) and reply.get("id") == 2:
                 if "error" in reply:
-                    raise RuntimeError(str((reply["error"] or {}).get("message") or "app-server error"))
+                    error = reply["error"] if isinstance(reply["error"], dict) else {}
+                    raise AppServerError(str(error.get("message") or "app-server error"),
+                                         error["code"] if type(error.get("code")) is int else None)
                 return reply["result"]
         if time.monotonic() >= deadline:
             raise CheckFailed(f"no answer from codex app-server in {ANSWER_TIMEOUT} s", "timeout")
@@ -546,8 +562,10 @@ def codex_usage():
     event("debug", "codex", "cli", cli=shown_path(binary))
     try:
         result = codex_rate_limits(binary)
-    except RuntimeError as err:
-        if re.search(r"auth|log ?in|logged", str(err), re.IGNORECASE):
+    except AppServerError as err:
+        # The code, never the message: the journal takes nothing a reply says.
+        event("debug", "codex", "cli-error", code="none" if err.code is None else err.code)
+        if CODEX_SIGNED_OUT.search(str(err)):
             raise SignedOut() from err
         raise
     return parse_codex(result)

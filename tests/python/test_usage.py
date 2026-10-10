@@ -596,6 +596,16 @@ for line in sys.stdin:
 """)
         self.assertEqual(usage.codex_rate_limits(binary), {"clientVersion": usage.VERSION})
 
+    def test_an_error_reply_carries_its_message_and_code(self):
+        for error, expected in (({"code": -32001, "message": "Not logged in"}, ("Not logged in", -32001)),
+                                ({"message": "no"}, ("no", None)), ({"code": "7"}, ("app-server error", None)),
+                                (None, ("app-server error", None))):
+            with self.subTest(error=error):
+                binary = self.server(f"#!/bin/sh\necho '{json.dumps({'id': 2, 'error': error})}'\n")
+                with self.assertRaises(usage.AppServerError) as caught:
+                    usage.codex_rate_limits(binary)
+                self.assertEqual((str(caught.exception), caught.exception.code), expected)
+
     def test_deadline_ends_what_the_server_started(self):
         # The child keeps stdout open, so the read only ends once it is killed too.
         binary = self.server("#!/bin/sh\nsleep 30 &\nwait\n")
@@ -647,12 +657,30 @@ class Polling(Isolated):
             self.assertEqual(usage.poll(usage.codex_usage),
                              {"status": "error", "message": "codex CLI not found", "reason": "not-installed", "host": ""})
 
-    def test_codex_login_errors_read_as_signed_out(self):
-        with mock.patch.object(usage, "CODEX_AUTH", Path(__file__)), \
-             mock.patch.object(usage, "find_cli", return_value=("codex", "")), \
-             mock.patch.object(usage, "codex_rate_limits",
-                               side_effect=RuntimeError("Not logged in")):
-            self.assertEqual(usage.poll(usage.codex_usage), {"status": "signed_out"})
+    # Only an app-server error that says the login is missing reads as a
+    # sign-out; one that merely mentions an authority, or any other
+    # failure, stays an error. The journal gets the error's code, never
+    # its message.
+    def test_only_a_missing_codex_login_reads_as_signed_out(self):
+        for error, report, code in (
+                (usage.AppServerError("Not logged in", -32001), {"status": "signed_out"}, -32001),
+                (usage.AppServerError("unauthorized"), {"status": "signed_out"}, "none"),
+                (usage.AppServerError("the authority service is unreachable", 7),
+                 {"status": "error", "message": "the authority service is unreachable", "reason": "other", "host": ""},
+                 7),
+                (RuntimeError("app-server closed without answering"),
+                 {"status": "error", "message": "app-server closed without answering", "reason": "other", "host": ""},
+                 None)):
+            with self.subTest(str(error)), \
+                    mock.patch.object(usage, "CODEX_AUTH", Path(__file__)), \
+                    mock.patch.object(usage, "find_cli", return_value=("codex", "")), \
+                    mock.patch.object(usage, "codex_rate_limits", side_effect=error):
+                usage.EVENTS.clear()
+                self.assertEqual(usage.poll(usage.codex_usage), report)
+                noted = [e for e in usage.EVENTS if e["kind"] == "cli-error"]
+                self.assertEqual([e["message"] for e in noted],
+                                 [] if code is None else [f"Codex: app-server answered with an error, code {code}"])
+                self.assertTrue(all(e["level"] == "debug" for e in noted))
 
 
 class ReadingCache(Isolated):
