@@ -384,25 +384,6 @@ Rectangle {
         }
     }
 
-    // Set once the window has drawn its first frame.
-    property bool drawn: false
-    Connections {
-        target: gallery.Window.window
-        enabled: !gallery.drawn
-        function onFrameSwapped() {
-            gallery.drawn = true;
-        }
-    }
-
-    // A popup built once the window has drawn, as the tests build them.
-    // Built before it, Qt 6.6 lays out a wrapping line in the network popup
-    // twice over and warns of a polish loop, though it ends up right.
-    component AfterFirstFrame: Loader {
-        default property Component popup
-        active: gallery.drawn
-        sourceComponent: popup
-    }
-
     // A popup on the theme's dialog background, sized to its implicit size
     // as AppletPopup sizes its main item.
     component PopupFrame: ColumnLayout {
@@ -742,44 +723,32 @@ Rectangle {
 
             PopupFrame {
                 label: "Network · public IPv4 and IPv6"
-                AfterFirstFrame {
-                    NetworkPopup { monitor: publicBoth }
-                }
+                NetworkPopup { monitor: publicBoth }
             }
 
             PopupFrame {
                 label: "Network · through a VPN, just turned on"
-                AfterFirstFrame {
-                    NetworkPopup { monitor: publicVpn }
-                }
+                NetworkPopup { monitor: publicVpn }
             }
 
             PopupFrame {
                 label: "Network · a long IPv6 through the VPN"
-                AfterFirstFrame {
-                    NetworkPopup { monitor: publicLongVpn }
-                }
+                NetworkPopup { monitor: publicLongVpn }
             }
 
             PopupFrame {
                 label: "Network · a long IPv6 going around the VPN"
-                AfterFirstFrame {
-                    NetworkPopup { monitor: publicLeak }
-                }
+                NetworkPopup { monitor: publicLeak }
             }
 
             PopupFrame {
                 label: "Network · a Custom service that names the city"
-                AfterFirstFrame {
-                    NetworkPopup { monitor: publicCity }
-                }
+                NetworkPopup { monitor: publicCity }
             }
 
             PopupFrame {
                 label: "Network · public address unreachable"
-                AfterFirstFrame {
-                    NetworkPopup { monitor: publicFailed }
-                }
+                NetworkPopup { monitor: publicFailed }
             }
         }
 

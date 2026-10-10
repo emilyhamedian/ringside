@@ -28,8 +28,8 @@ fi
 
 rm -f "$out"
 # The status is kept rather than tested by set -e, so a failed load still
-# prints its log. resizeToItem keeps the window the gallery's size as it
-# grows by the popups it builds after its first frame.
+# prints its log. resizeToItem keeps the window the gallery's size should it
+# grow after its first frame.
 rc=0
 log=$(QT_FORCE_STDERR_LOGGING=1 QT_QPA_PLATFORMTHEME=kde QT_QUICK_BACKEND=software \
     "$QML" -platform offscreen -c resizeToItem tests/qml/Gallery.qml -- --snapshot "$out" 2>&1) || rc=$?
