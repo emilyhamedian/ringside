@@ -5,10 +5,8 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
-import org.kde.ksvg as KSvg
 import "../../package/contents/ui"
 import "../../package/contents/ui/popups"
-import "../../package/contents/ui/code/style.js" as Style
 
 // The panel strip and the four popups with FakeMonitor's readings, then the
 // states they have to cope with, then the same under Breeze Light. The
@@ -281,51 +279,9 @@ TestRoot {
         }
     }
 
-    component Note: Text {
-        color: Style.dim(Kirigami.Theme.textColor)
-        font.pointSize: Kirigami.Theme.smallFont.pointSize
-        textFormat: Text.PlainText
-    }
-
-    // The strip centred on a stretch of panel, as main.qml places it. The
-    // outline marks the panel's thickness.
-    component Panel: ColumnLayout {
-        id: panel
-
-        required property string label
-        required property real thickness
-        property var monitor: normal
-        property var items: ["cpu", "gpu", "memory", "claude", "network", "disk"]
-        property var ringsOnly: []
-        // Right to left, as main.qml lays the strip out in such a locale.
-        property bool mirrored: false
-
-        spacing: Kirigami.Units.smallSpacing
-
-        Note {
-            text: panel.label
-        }
-
-        Rectangle {
-            color: "transparent"
-            border.color: Qt.alpha(Kirigami.Theme.textColor, 0.12)
-            Layout.preferredWidth: strip.implicitWidth + 4 * Kirigami.Units.gridUnit
-            Layout.preferredHeight: panel.thickness
-
-            // Breeze's panel keeps 4 px of margin either side of an applet.
-            Strip {
-                id: strip
-                anchors.centerIn: parent
-                height: panel.thickness - 8
-                monitor: panel.monitor
-                items: panel.items
-                vertical: false
-                thickness: panel.thickness - 8
-                ringsOnly: panel.ringsOnly
-                LayoutMirroring.enabled: panel.mirrored
-                LayoutMirroring.childrenInherit: true
-            }
-        }
+    component Panel: GalleryPanel {
+        monitor: normal
+        items: ["cpu", "gpu", "memory", "claude", "network", "disk"]
     }
 
     // A left or right panel. Breeze's panel keeps 4 px of margin either side
@@ -340,7 +296,7 @@ TestRoot {
         Layout.alignment: Qt.AlignTop
         spacing: Kirigami.Units.smallSpacing
 
-        Note {
+        GalleryNote {
             text: side.label
         }
 
@@ -360,58 +316,6 @@ TestRoot {
                 vertical: true
                 thickness: width
                 ringsOnly: []
-            }
-        }
-    }
-
-    // A popup on the theme's dialog background, sized to its implicit size
-    // as AppletPopup sizes its main item.
-    component PopupFrame: ColumnLayout {
-        id: popup
-
-        required property string label
-        // The dialog SVG follows the system colour scheme, not the colours
-        // set on the item, so an overridden section draws a flat background.
-        property bool flat: false
-        default property alias page: holder.data
-
-        Layout.alignment: Qt.AlignTop
-        spacing: Kirigami.Units.smallSpacing
-
-        Note {
-            text: popup.label
-        }
-
-        Item {
-            id: dialog
-
-            readonly property var margin: popup.flat
-                ? { left: Kirigami.Units.smallSpacing, top: Kirigami.Units.smallSpacing,
-                    right: Kirigami.Units.smallSpacing, bottom: Kirigami.Units.smallSpacing }
-                : frame.fixedMargins
-
-            Layout.preferredWidth: holder.childrenRect.width + margin.left + margin.right
-            Layout.preferredHeight: holder.childrenRect.height + margin.top + margin.bottom
-
-            KSvg.FrameSvgItem {
-                id: frame
-                anchors.fill: parent
-                visible: !popup.flat
-                imagePath: "dialogs/background"
-            }
-
-            Rectangle {
-                anchors.fill: parent
-                visible: popup.flat
-                color: Kirigami.Theme.backgroundColor
-                border.color: Qt.alpha(Kirigami.Theme.textColor, 0.2)
-                radius: Kirigami.Units.smallSpacing
-            }
-
-            Item {
-                id: holder
-                x: dialog.margin.left
-                y: dialog.margin.top
             }
         }
     }
@@ -527,27 +431,27 @@ TestRoot {
         RowLayout {
             spacing: 2 * Kirigami.Units.gridUnit
 
-            PopupFrame {
+            GalleryFrame {
                 label: "CPU"
                 CpuPopup { monitor: normal }
             }
 
-            PopupFrame {
+            GalleryFrame {
                 label: "GPU"
                 GpuPopup { monitor: normal }
             }
 
-            PopupFrame {
+            GalleryFrame {
                 label: "Memory"
                 MemoryPopup { monitor: normal }
             }
 
-            PopupFrame {
+            GalleryFrame {
                 label: "Network"
                 NetworkPopup { monitor: normal }
             }
 
-            PopupFrame {
+            GalleryFrame {
                 label: "Disk"
                 DiskPopup { monitor: normal }
             }
@@ -556,27 +460,27 @@ TestRoot {
         RowLayout {
             spacing: 2 * Kirigami.Units.gridUnit
 
-            PopupFrame {
+            GalleryFrame {
                 label: "CPU · 1 h"
                 CpuPopup { monitor: hour }
             }
 
-            PopupFrame {
+            GalleryFrame {
                 label: "GPU · 1 h"
                 GpuPopup { monitor: hour }
             }
 
-            PopupFrame {
+            GalleryFrame {
                 label: "Memory · 1 h"
                 MemoryPopup { monitor: hour }
             }
 
-            PopupFrame {
+            GalleryFrame {
                 label: "Network · 1 h"
                 NetworkPopup { monitor: hour }
             }
 
-            PopupFrame {
+            GalleryFrame {
                 label: "Disk · 1 h"
                 DiskPopup { monitor: hour }
             }
@@ -585,27 +489,27 @@ TestRoot {
         RowLayout {
             spacing: 2 * Kirigami.Units.gridUnit
 
-            PopupFrame {
+            GalleryFrame {
                 label: "CPU · 1 day"
                 CpuPopup { monitor: day }
             }
 
-            PopupFrame {
+            GalleryFrame {
                 label: "GPU · 1 day"
                 GpuPopup { monitor: day }
             }
 
-            PopupFrame {
+            GalleryFrame {
                 label: "Memory · 1 day"
                 MemoryPopup { monitor: day }
             }
 
-            PopupFrame {
+            GalleryFrame {
                 label: "Network · 1 day"
                 NetworkPopup { monitor: day }
             }
 
-            PopupFrame {
+            GalleryFrame {
                 label: "Disk · 1 day"
                 DiskPopup { monitor: day }
             }
@@ -614,27 +518,27 @@ TestRoot {
         RowLayout {
             spacing: 2 * Kirigami.Units.gridUnit
 
-            PopupFrame {
+            GalleryFrame {
                 label: "CPU · 92 °C · top processes loading"
                 CpuPopup { monitor: hot }
             }
 
-            PopupFrame {
+            GalleryFrame {
                 label: "GPU · discrete asleep"
                 GpuPopup { monitor: asleep }
             }
 
-            PopupFrame {
+            GalleryFrame {
                 label: "GPU · one integrated GPU"
                 GpuPopup { monitor: integrated }
             }
 
-            PopupFrame {
+            GalleryFrame {
                 label: "Memory · no PSI, no swap"
                 MemoryPopup { monitor: bare }
             }
 
-            PopupFrame {
+            GalleryFrame {
                 label: "Memory · every string a third longer"
                 LongMemoryPopup { monitor: normal }
             }
@@ -643,27 +547,27 @@ TestRoot {
         RowLayout {
             spacing: 2 * Kirigami.Units.gridUnit
 
-            PopupFrame {
+            GalleryFrame {
                 label: "GPU · iGPU outer, dGPU inner asleep"
                 GpuPopup { monitor: innerAsleep }
             }
 
-            PopupFrame {
+            GalleryFrame {
                 label: "GPU · NVIDIA and Intel"
                 GpuPopup { monitor: intel }
             }
 
-            PopupFrame {
+            GalleryFrame {
                 label: "GPU · the only GPU asleep"
                 GpuPopup { monitor: onlyAsleep }
             }
 
-            PopupFrame {
+            GalleryFrame {
                 label: "Disk · no temperature"
                 DiskPopup { monitor: diskUnheated }
             }
 
-            PopupFrame {
+            GalleryFrame {
                 label: "Disk · all disks, 78 °C"
                 DiskPopup { monitor: diskHot }
             }
@@ -672,27 +576,27 @@ TestRoot {
         RowLayout {
             spacing: 2 * Kirigami.Units.gridUnit
 
-            PopupFrame {
+            GalleryFrame {
                 label: "CPU · temperature climbing through 75 and 90 °C"
                 CpuPopup { monitor: heating }
             }
 
-            PopupFrame {
+            GalleryFrame {
                 label: "GPU · dGPU climbing through 75 and 90 °C"
                 GpuPopup { monitor: heating }
             }
 
-            PopupFrame {
+            GalleryFrame {
                 label: "GPU · dGPU awake for the last 35 s, °F"
                 GpuPopup { monitor: woken }
             }
 
-            PopupFrame {
+            GalleryFrame {
                 label: "Disk · climbing through 75 and 90 °C"
                 DiskPopup { monitor: heating }
             }
 
-            PopupFrame {
+            GalleryFrame {
                 label: "Disk · climbing, temperature colours off"
                 DiskPopup { monitor: plainHeat }
             }
@@ -701,32 +605,32 @@ TestRoot {
         RowLayout {
             spacing: 2 * Kirigami.Units.gridUnit
 
-            PopupFrame {
+            GalleryFrame {
                 label: "Network · public IPv4 and IPv6"
                 NetworkPopup { monitor: publicBoth }
             }
 
-            PopupFrame {
+            GalleryFrame {
                 label: "Network · through a VPN, just turned on"
                 NetworkPopup { monitor: publicVpn }
             }
 
-            PopupFrame {
+            GalleryFrame {
                 label: "Network · a long IPv6 through the VPN"
                 NetworkPopup { monitor: publicLongVpn }
             }
 
-            PopupFrame {
+            GalleryFrame {
                 label: "Network · a long IPv6 going around the VPN"
                 NetworkPopup { monitor: publicLeak }
             }
 
-            PopupFrame {
+            GalleryFrame {
                 label: "Network · a Custom service that names the city"
                 NetworkPopup { monitor: publicCity }
             }
 
-            PopupFrame {
+            GalleryFrame {
                 label: "Network · public address unreachable"
                 NetworkPopup { monitor: publicFailed }
             }
@@ -737,87 +641,60 @@ TestRoot {
             monitor: normal
         }
 
-        // Breeze Light's colours, for the contrast of dim text on a light scheme.
-        Rectangle {
-            Layout.fillWidth: true
-            implicitWidth: light.implicitWidth + 2 * light.x
-            implicitHeight: light.implicitHeight + 2 * light.y
-            color: Kirigami.Theme.backgroundColor
+        GalleryLight {
+            GalleryNote {
+                text: "Breeze Light colours are set on this section only; the popup footers keep the system's."
+            }
 
-            Kirigami.Theme.inherit: false
-            Kirigami.Theme.textColor: "#232629"
-            Kirigami.Theme.disabledTextColor: "#707d8a"
-            Kirigami.Theme.backgroundColor: "#eff0f1"
-            Kirigami.Theme.alternateBackgroundColor: "#e3e5e7"
-            Kirigami.Theme.highlightColor: "#3daee9"
-            Kirigami.Theme.highlightedTextColor: "#ffffff"
-            Kirigami.Theme.linkColor: "#2980b9"
-            Kirigami.Theme.visitedLinkColor: "#9b59b6"
-            Kirigami.Theme.negativeTextColor: "#da4453"
-            Kirigami.Theme.neutralTextColor: "#f67400"
-            Kirigami.Theme.positiveTextColor: "#27ae60"
+            Panel {
+                label: "Breeze Light · panel · 46 px"
+                thickness: 46
+            }
 
-            ColumnLayout {
-                id: light
+            Panel {
+                label: "Breeze Light · panel · 46 px · alerts"
+                thickness: 46
+                monitor: alert
+            }
 
-                x: 2 * Kirigami.Units.gridUnit
-                y: x
+            Panel {
+                label: "Breeze Light · panel · 46 px · rings only · CPU 92 °C"
+                thickness: 46
+                monitor: hot
+                ringsOnly: ["cpu", "gpu", "memory"]
+            }
+
+            RowLayout {
                 spacing: 2 * Kirigami.Units.gridUnit
 
-                Note {
-                    text: "Breeze Light colours are set on this section only; the popup footers keep the system's."
+                GalleryFrame {
+                    label: "Breeze Light · CPU"
+                    flat: true
+                    CpuPopup { monitor: normal }
                 }
 
-                Panel {
-                    label: "Breeze Light · panel · 46 px"
-                    thickness: 46
+                GalleryFrame {
+                    label: "Breeze Light · GPU"
+                    flat: true
+                    GpuPopup { monitor: normal }
                 }
 
-                Panel {
-                    label: "Breeze Light · panel · 46 px · alerts"
-                    thickness: 46
-                    monitor: alert
+                GalleryFrame {
+                    label: "Breeze Light · Memory"
+                    flat: true
+                    MemoryPopup { monitor: normal }
                 }
 
-                Panel {
-                    label: "Breeze Light · panel · 46 px · rings only · CPU 92 °C"
-                    thickness: 46
-                    monitor: hot
-                    ringsOnly: ["cpu", "gpu", "memory"]
+                GalleryFrame {
+                    label: "Breeze Light · Network"
+                    flat: true
+                    NetworkPopup { monitor: normal }
                 }
 
-                RowLayout {
-                    spacing: 2 * Kirigami.Units.gridUnit
-
-                    PopupFrame {
-                        label: "Breeze Light · CPU"
-                        flat: true
-                        CpuPopup { monitor: normal }
-                    }
-
-                    PopupFrame {
-                        label: "Breeze Light · GPU"
-                        flat: true
-                        GpuPopup { monitor: normal }
-                    }
-
-                    PopupFrame {
-                        label: "Breeze Light · Memory"
-                        flat: true
-                        MemoryPopup { monitor: normal }
-                    }
-
-                    PopupFrame {
-                        label: "Breeze Light · Network"
-                        flat: true
-                        NetworkPopup { monitor: normal }
-                    }
-
-                    PopupFrame {
-                        label: "Breeze Light · Disk"
-                        flat: true
-                        DiskPopup { monitor: normal }
-                    }
+                GalleryFrame {
+                    label: "Breeze Light · Disk"
+                    flat: true
+                    DiskPopup { monitor: normal }
                 }
             }
         }

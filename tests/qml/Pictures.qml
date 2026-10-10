@@ -87,21 +87,6 @@ TestRoot {
         })
     }
 
-    // A popup on the theme's dialog background, as AppletPopup draws it.
-    component Dialog: KSvg.FrameSvgItem {
-        default property alias page: holder.data
-
-        imagePath: "dialogs/background"
-        implicitWidth: holder.childrenRect.width + margins.left + margins.right
-        implicitHeight: holder.childrenRect.height + margins.top + margins.bottom
-
-        Item {
-            id: holder
-            x: parent.margins.left
-            y: parent.margins.top
-        }
-    }
-
     ColumnLayout {
         id: shots
         spacing: 40
@@ -143,30 +128,30 @@ TestRoot {
                 id: popupRow
                 spacing: 24
 
-                Dialog {
+                GalleryDialog {
                     Layout.alignment: Qt.AlignTop
                     CpuPopup { monitor: sample }
                 }
-                Dialog {
+                GalleryDialog {
                     Layout.alignment: Qt.AlignTop
                     GpuPopup { monitor: sample }
                 }
-                Dialog {
+                GalleryDialog {
                     Layout.alignment: Qt.AlignTop
                     MemoryPopup { monitor: sample }
                 }
-                Dialog {
+                GalleryDialog {
                     Layout.alignment: Qt.AlignTop
                     NetworkPopup { monitor: sample }
                 }
-                Dialog {
+                GalleryDialog {
                     Layout.alignment: Qt.AlignTop
                     DiskPopup { monitor: sample }
                 }
             }
         }
 
-        Dialog {
+        GalleryDialog {
             objectName: "usage"
             UsagePopup {
                 id: usagePopup
