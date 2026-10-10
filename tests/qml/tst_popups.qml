@@ -289,7 +289,7 @@ Item {
         when: windowShown
 
         function init() {
-            failOnWarning(/TypeError|ReferenceError|SyntaxError|is not a function|Unable to assign|Cannot assign|Binding loop/);
+            failOnWarning(/TypeError|ReferenceError|SyntaxError|is not a function|Unable to assign|Cannot assign|Binding loop|polish loop/);
         }
 
         function test_popup_data() {
