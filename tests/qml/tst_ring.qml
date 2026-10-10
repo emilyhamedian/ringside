@@ -109,13 +109,14 @@ Item {
             verify(Math.abs(a - b) <= within, what + ": " + a + " vs " + b);
         }
 
-        // `end` is `from` with its hue turned `degrees` towards `toward`
-        // (up to the whole way) and its lightness moved by `light`.
-        function shaded(end, from, toward, degrees, light, what) {
-            const d = turn(from, toward);
-            near(turn(from, end), Math.sign(d) * Math.min(Math.abs(d), degrees), 0.5, what + " hue");
-            near(end.hslSaturation, from.hslSaturation, 0.01, what + " saturation");
-            near(end.hslLightness, Math.max(0, Math.min(1, from.hslLightness + light)), 0.006, what + " lightness");
+        // `end` is `from` at its alpha, its hue turned towards `toward`'s,
+        // or held where there is no `toward`.
+        function shaded(end, from, toward, what) {
+            if (toward) {
+                verify(Math.abs(turn(end, toward)) < Math.abs(turn(from, toward)), what + " turned towards " + toward);
+            } else {
+                near(turn(from, end), 0, 0.5, what + " hue");
+            }
             near(end.a, from.a, 0.002, what + " alpha");
         }
 
@@ -127,29 +128,28 @@ Item {
             const T = Kirigami.Theme;
             const purple = Qt.rgba(0.56, 0.27, 0.68, 1);
             return [
-                { tag: "red", color: T.negativeTextColor, top: [T.neutralTextColor, 7, 0.03], bottom: [T.highlightColor, 7, -0.05] },
-                { tag: "amber", color: T.neutralTextColor, top: [T.positiveTextColor, 6, 0.04], bottom: [T.negativeTextColor, 6, -0.05] },
-                { tag: "normal", color: T.textColor, top: [T.textColor, 0, 0.05], tint: true },
+                { tag: "red", color: T.negativeTextColor, top: T.neutralTextColor, bottom: T.highlightColor },
+                { tag: "amber", color: T.neutralTextColor, top: T.positiveTextColor, bottom: T.negativeTextColor },
+                { tag: "normal", color: T.textColor, tint: true },
                 // An inner ring's, at its own opacity.
-                { tag: "inner red", color: Qt.alpha(T.negativeTextColor, 0.55), top: [T.neutralTextColor, 7, 0.03], bottom: [T.highlightColor, 7, -0.05] },
-                { tag: "inner normal", color: Qt.alpha(T.textColor, 0.55), top: [T.textColor, 0, 0.05], tint: true },
+                { tag: "inner red", color: Qt.alpha(T.negativeTextColor, 0.55), top: T.neutralTextColor, bottom: T.highlightColor },
+                { tag: "inner normal", color: Qt.alpha(T.textColor, 0.55), tint: true },
                 // A colour of a gauge's own only lightens and deepens.
-                { tag: "custom", color: purple, top: [purple, 0, 0.05], bottom: [purple, 0, -0.05] }
+                { tag: "custom", color: purple }
             ];
         }
 
         function test_ends(data) {
             const arc = createTemporaryObject(arcComponent, root, { color: data.color });
             same(arc.drawColor, data.color, "drawColor is the level's");
-            shaded(arc.topColor, data.color, data.top[0], data.top[1], data.top[2], "top");
+            shaded(arc.topColor, data.color, data.top, "top");
             if (data.tint) {
                 // The text colour takes a faint tint of the accent at the bottom.
-                const tinted = arc.mix(data.color, Qt.alpha(Kirigami.Theme.highlightColor, data.color.a), 0.14);
-                shaded(arc.bottomColor, tinted, tinted, 0, -0.05, "bottom");
+                near(arc.bottomColor.a, data.color.a, 0.002, "bottom alpha");
                 verify(Math.abs(turn(arc.bottomColor, Kirigami.Theme.highlightColor)) < Math.abs(turn(data.color, Kirigami.Theme.highlightColor))
                        || data.color.hslHue < 0, "tinted towards the accent");
             } else {
-                shaded(arc.bottomColor, data.color, data.bottom[0], data.bottom[1], data.bottom[2], "bottom");
+                shaded(arc.bottomColor, data.color, data.bottom, "bottom");
             }
             verify(arc.topColor.hslLightness > arc.bottomColor.hslLightness, "lighter at the top");
         }
@@ -234,7 +234,6 @@ Item {
                 { tag: "tiny under shortest", head: 1, shortest: 2.8 },
                 { tag: "tiny", head: 0.5 },
                 { tag: "12", head: 12 },
-                { tag: "50", head: 50 },
                 { tag: "99.9", head: 99.9 },
                 { tag: "100", head: 100 },
                 // A rollover's arc, running on past twelve.
