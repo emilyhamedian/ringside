@@ -7,7 +7,7 @@ import org.kde.kirigami as Kirigami
 // One item in the panel: a button that opens its popup, with the panel's
 // hover and pressed looks. Across a horizontal panel the wash leaves a sliver
 // of panel above and below, as Plasma's own panel buttons do; along a
-// vertical one, and in a Standalone dial, it spans the cell.
+// vertical one it spans the cell.
 MouseArea {
     id: cell
 
@@ -20,17 +20,19 @@ MouseArea {
     property string description: ""
     // Between the wash and the panel's edges, across a horizontal panel.
     readonly property real inset: vertical ? 0 : Math.round(Kirigami.Units.smallSpacing / 2)
-    readonly property string title: item === "cpu" ? i18nc("@info:tooltip", "Processor")
-                                  : item === "gpu" ? i18nc("@info:tooltip", "Graphics")
-                                  : item === "memory" ? i18nc("@info:tooltip", "Memory")
-                                  : item === "network" ? i18nc("@info:tooltip", "Network")
-                                  : item === "disk" ? i18nc("@info:tooltip", "Disk activity")
-                                  : item === "claude" ? i18nc("@info:tooltip the Claude Code weekly limits", "Claude")
-                                  : i18nc("@info:tooltip the Codex weekly limits", "Codex")
+    // Between the content and the cell's ends. Along a horizontal panel two
+    // cells' padding makes the gap between items, half as much again as the
+    // gap between a ring and its readings, so readings read as the ring's
+    // beside them and not the next one's.
+    readonly property real padding: vertical ? Kirigami.Units.smallSpacing : Math.round(Kirigami.Units.smallSpacing * 1.5)
+    // Its name for the tooltip and screen readers (see Words.title()).
+    property string title: ""
 
     signal activated()
 
-    implicitWidth: (contentItem ? contentItem.implicitWidth : 0) + 2 * Kirigami.Units.smallSpacing
+    // As wide as its content, which keeps the room of its widest readings,
+    // in whole pixels.
+    implicitWidth: (contentItem ? (vertical ? contentItem.implicitWidth : Math.ceil(contentItem.implicitWidth)) : 0) + 2 * padding
     implicitHeight: (contentItem ? contentItem.implicitHeight : 0) + 2 * (vertical ? Kirigami.Units.smallSpacing : inset)
     hoverEnabled: true
     activeFocusOnTab: true
@@ -50,12 +52,17 @@ MouseArea {
         }
     }
 
+    // Keyboard focus also draws a line round the wash in the theme's focus
+    // colour, so the focused item stands apart from one under a resting
+    // pointer.
     Rectangle {
         anchors.fill: parent
         anchors.topMargin: cell.inset
         anchors.bottomMargin: anchors.topMargin
         radius: Kirigami.Units.smallSpacing
         color: Qt.alpha(Kirigami.Theme.textColor, cell.open ? 0.14 : 0.1)
+        border.width: cell.activeFocus ? 1 : 0
+        border.color: Kirigami.Theme.focusColor
         visible: cell.open || cell.containsMouse || cell.activeFocus
     }
 }

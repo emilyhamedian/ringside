@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Emily Hamedian <me@emily.dev>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
@@ -16,18 +17,56 @@ RowLayout {
 
     property bool ringShown: true
     property real ringValue: NaN
+    // See RingGauge: no reading to show, or the last one kept in grey.
+    property bool ringCancelled: false
+    property bool ringStale: false
+    // Waiting for its first reading: see RingGauge.
+    property bool ringLoading: false
+    // How often a system reading updates, for the ring: see RingGauge.
+    property int interval: 0
     property string title: ""
     property string subtitle: ""
+    // A second line under the subtitle, in its style, for what would be lost
+    // at the end of a long one.
+    property string detail: ""
     property string value: ""
     property string unit: ""
-    property bool degree: false
-    // "C" or "F": popups spell the temperature unit out.
+    // "C" or "F" for a temperature.
     property string degreeUnit: ""
     property color valueColor: Kirigami.Theme.textColor
+    // Its line stays under the headline even when empty (a CPU or NVIDIA GPU
+    // that names no sensor, the dash after a weekly reset), so every
+    // header's digits sit level with the title at the same height.
     property string caption: ""
+    // In place of value and unit, a row of number and unit pairs set like
+    // any other reading: the usage popups' "5d 18h". accessibleValue speaks
+    // for the row and its caption together.
+    property var parts: []
+    property string accessibleValue: ""
+    readonly property bool partsShown: parts.length > 0
+    readonly property real ringSize: Math.round(Kirigami.Units.gridUnit * 2.9)
+    // Every header lays out its parts as if it had a ring, a title and
+    // subtitle, and a reading over a caption. Each part is centred on the
+    // tallest of those three, whether or not this header shows it. So the
+    // titles and digits of every popup sit at one height, nothing moves when
+    // a reading or caption comes and goes, and a detail line hangs below the
+    // subtitle instead of lifting the title.
+    readonly property real nameHeight: titleText.implicitHeight + subtitleText.implicitHeight
+    readonly property real valueHeight: (partsShown ? partsRow.implicitHeight : headline.implicitHeight)
+                                        + valueColumn.spacing + captionText.implicitHeight
+    readonly property real bandHeight: Math.max(ringSize, nameHeight, valueHeight)
+    readonly property real nameTop: Math.round((bandHeight - nameHeight) / 2)
+    readonly property real valueTop: Math.round((bandHeight - valueHeight) / 2)
+    // How far the caption moves to sit on the subtitle's baseline, as the
+    // two columns' second lines miss by a few pixels; the digits stay level
+    // with the title. Applied as a transform, so moving the caption never
+    // lays the row out again.
+    readonly property real captionShift: Math.round(nameTop + titleText.implicitHeight + subtitleText.baselineOffset
+                                                    - (valueTop + valueHeight - captionText.implicitHeight + captionText.baselineOffset))
     default property alias trailing: trailingSlot.data
 
     Layout.fillWidth: true
+    Layout.minimumHeight: bandHeight
     Layout.leftMargin: Math.round(Kirigami.Units.largeSpacing * 2)
     Layout.rightMargin: Math.round(Kirigami.Units.largeSpacing * 2)
     Layout.topMargin: Math.round(Kirigami.Units.largeSpacing * 1.75)
@@ -35,22 +74,33 @@ RowLayout {
     spacing: Math.round(Kirigami.Units.largeSpacing * 1.75)
 
     RingGauge {
+        id: ring
         visible: header.ringShown
         Accessible.name: header.title
-        Layout.preferredWidth: Math.round(Kirigami.Units.gridUnit * 2.9)
-        Layout.preferredHeight: Layout.preferredWidth
+        Layout.alignment: Qt.AlignTop
+        Layout.topMargin: Math.round((header.bandHeight - header.ringSize) / 2)
+        Layout.preferredWidth: header.ringSize
+        Layout.preferredHeight: header.ringSize
         strokeWidth: 4
         value: header.ringValue
-        text: Number.isFinite(header.ringValue) ? Format.percent(header.ringValue) + "%" : "–"
+        cancelled: header.ringCancelled
+        stale: header.ringStale
+        loading: header.ringLoading
+        interval: header.interval
+        // Counts with the arc, as the screen reader's value doesn't.
+        text: header.ringCancelled || header.ringLoading ? "" : Number.isFinite(header.ringValue) ? i18nc("@info a percentage", "%1%", Format.percent(ring.drawnValue)) : "–"
         // "100%" needs a little more room than "62%".
         textScale: text.length > 3 ? 0.25 : 0.29
     }
 
     ColumnLayout {
         Layout.fillWidth: true
+        Layout.alignment: Qt.AlignTop
+        Layout.topMargin: header.nameTop
         spacing: 0
 
         Kirigami.Heading {
+            id: titleText
             Layout.fillWidth: true
             text: header.title
             level: 3
@@ -61,6 +111,7 @@ RowLayout {
         }
 
         Text {
+            id: subtitleText
             Layout.fillWidth: true
             visible: text !== ""
             text: header.subtitle
@@ -70,38 +121,87 @@ RowLayout {
             textFormat: Text.PlainText
             horizontalAlignment: Text.AlignLeft
         }
+
+        Text {
+            id: detailText
+            Layout.fillWidth: true
+            visible: text !== ""
+            text: header.detail
+            color: subtitleText.color
+            font: subtitleText.font
+            elide: Text.ElideRight
+            textFormat: Text.PlainText
+            horizontalAlignment: Text.AlignLeft
+        }
     }
 
     ColumnLayout {
-        visible: header.value !== ""
+        id: valueColumn
+        visible: header.value !== "" || header.partsShown
+        Layout.alignment: Qt.AlignTop
+        Layout.topMargin: header.valueTop
         spacing: Math.round(Kirigami.Units.smallSpacing * 0.75)
 
         Reading {
             id: headline
+            visible: !header.partsShown
             Layout.alignment: Qt.AlignRight
             value: header.value
             unit: header.unit
-            degree: header.degree
             degreeUnit: header.degreeUnit
             color: header.valueColor
             pointSize: Kirigami.Theme.defaultFont.pointSize * 1.7
         }
 
-        Text {
+        // Follows the popup's mirroring, so under RTL the largest unit sits
+        // rightmost and is read first; each pair stays left to right. The
+        // model is a count, so a countdown that steps keeps its Readings.
+        Row {
+            id: partsRow
+            visible: header.partsShown
             Layout.alignment: Qt.AlignRight
-            // Line the caption up with the digits; the degree sign hangs past them.
-            Layout.rightMargin: headline.implicitWidth - headline.numberWidth
-            visible: text !== ""
+            spacing: Math.round(Kirigami.Theme.defaultFont.pointSize * 1.7 * 0.45)
+            Accessible.role: Accessible.StaticText
+            Accessible.name: header.accessibleValue
+
+            Repeater {
+                model: header.parts.length
+
+                delegate: Reading {
+                    required property int index
+                    value: header.parts[index]?.value ?? ""
+                    unit: header.parts[index]?.unit ?? ""
+                    color: header.valueColor
+                    pointSize: Kirigami.Theme.defaultFont.pointSize * 1.7
+                    // A letter right after its number: "5d", not "5 d".
+                    unitSpacing: Math.round(pointSize * 0.08)
+                    accessibleIgnored: true
+                }
+            }
+        }
+
+        Text {
+            id: captionText
+            Layout.alignment: Qt.AlignRight
+            // Line the caption up with the digits; the unit hangs past them.
+            // The reading stays left to right under RTL, so there the digits
+            // already start at the caption's edge.
+            Layout.rightMargin: header.partsShown || header.LayoutMirroring.enabled
+                ? 0 : headline.implicitWidth - headline.numberWidth
+            Accessible.ignored: header.partsShown || text === ""
             text: header.caption
             color: Style.dim(Kirigami.Theme.textColor)
             font.pointSize: Kirigami.Theme.smallFont.pointSize * 0.98
             font.letterSpacing: Kirigami.Theme.smallFont.pointSize * 0.08
             textFormat: Text.PlainText
+            transform: Translate { y: header.captionShift }
         }
     }
 
     ColumnLayout {
         id: trailingSlot
         visible: children.length > 0
+        Layout.alignment: Qt.AlignTop
+        Layout.topMargin: Math.round(Math.max(0, header.bandHeight - implicitHeight) / 2)
     }
 }

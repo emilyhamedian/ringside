@@ -9,6 +9,8 @@ import "code/format.js" as Format
 import "code/hardware.js" as Hardware
 import "code/history.js" as History
 import "code/items.js" as Items
+import "code/log.js" as Log
+import "code/publicaddress.js" as Lookup
 
 // Every reading the panel and the popups show, and the only place the widget
 // subscribes to ksystemstats. Each sensor id has exactly one Sensor here:
@@ -18,15 +20,106 @@ import "code/items.js" as Items
 //
 // Numbers are NaN until a reading arrives. Bytes are bytes, rates are bytes
 // per second, temperatures are °C, clocks MHz, power W, percentages 0–100.
+//
+// Readings arrive, and the graphs take them, every sampleInterval: a second,
+// or the update interval when that is shorter, so a graph catches a short
+// burst whatever the panel's pace. The popups show these live readings, so a
+// header agrees with the graph under it. The panel shows `panel` and the GPU
+// readers' panel readings, which move to the latest readings once per update
+// interval.
+//
+// Every graph records three spans whether a popup is open or not: the last
+// minute reading by reading, and the last hour and day in wall-clock
+// buckets of their average and highest reading (see code/history.js). Its
+// *History and *Highs properties hold the span shown; *Highs is empty at a
+// minute, where each point is a reading.
+//
+// What keeps a reading or the saved history from working goes to the
+// journal under ringside.setup.
 Item {
     id: monitor
+
+    LoggingCategory {
+        id: journal
+        name: "ringside.setup"
+        defaultLogLevel: LoggingCategory.Info
+    }
 
     // Plasmoid.configuration, or an object with the same keys.
     required property var config
 
+    // The units KDE shows sizes in, { base, labels } (see format.js), or
+    // null where they can't be learnt and binary units stay. They're handed
+    // to format.js, which every widget in plasmashell shares, as this
+    // binding first runs: before the panel's cells exist, since their
+    // Repeater makes them only once the bindings around it have run, and
+    // long before any popup opens. KDE's formatter is the only thing that
+    // knows the setting, and its module is loaded by name, so a system
+    // without it still gets the widget.
+    readonly property var byteUnits: {
+        let units = null;
+        let why = "its sizes don't name six different units";
+        let kde = null;
+        try {
+            kde = Qt.createQmlObject("import QtQml; import org.kde.coreaddons as KCoreAddons; QtObject { "
+                                     + "function size(n) { return KCoreAddons.Format.formatByteSize(n, 0); } }",
+                                     monitor, "ByteUnits");
+            units = Format.byteUnitsFrom(n => kde.size(n));
+        } catch (error) {
+            why = error.qmlErrors?.[0]?.message ?? String(error);
+        } finally {
+            kde?.destroy();
+        }
+        if (units) {
+            Format.setByteUnits(units.base, units.labels);
+        } else {
+            Log.write(journal, "warning", "sizes stay in KiB, MiB and GiB, as KDE's data units can't be read: " + why);
+        }
+        return units;
+    }
+
     readonly property int interval: config.updateInterval
-    readonly property int historySeconds: config.historySeconds
-    readonly property int historyLength: Math.max(2, Math.round(historySeconds * 1000 / interval))
+    readonly property int sampleInterval: Math.min(interval, 1000)
+    // ksystemstats sends a frame every 500 ms. A rate limit half a frame
+    // short of the sampling period lets one reading through per period even
+    // when a frame comes a little early.
+    readonly property int readInterval: sampleInterval - 250
+    // The span the popups' graphs show, one for all of them; any graph's
+    // caption changes it (see chooseSpan()).
+    readonly property string graphSpan: History.SPANS.includes(config.graphSpan) ? config.graphSpan : "minute"
+    // The minute's readings, a sampleInterval apart.
+    readonly property int minuteLength: Math.max(2, Math.round(60000 / sampleInterval))
+    // The points across a graph of the span shown.
+    readonly property int historyLength: graphSpan === "minute" ? minuteLength : History.TIERS[graphSpan].length
+    // Every graph's record by its key (see readings()): History.series().
+    // Changed in place, and shown through the properties below.
+    property var series: ({})
+
+    // With "Keep graph history" on, the hour's and the day's buckets are
+    // saved and restored when the widget starts (see HistoryStore.qml),
+    // keyed by widgetId, Plasma's id for this widget. Each save is a
+    // synchronous commit on Plasma's main thread, so closed hour buckets
+    // wait in `unsaved` for the next day bucket, one save every 10 minutes,
+    // and for the widget stopping.
+    readonly property bool keepHistory: config.keepGraphHistory === true
+    property string widgetId: ""
+    // Loaded only while the setting is on, and only by URL, so a missing
+    // LocalStorage module costs the setting rather than the widget. The
+    // tests point it elsewhere.
+    property url storeUrl: Qt.resolvedUrl("HistoryStore.qml")
+    property QtObject store: null
+    // The store couldn't load, so the history stays in memory.
+    property bool storeMissing: false
+    // Whether anything has been sampled yet: a store loaded before then
+    // restores what it kept, and one loaded after saves what is held.
+    property bool sampled: false
+    property var unsaved: []
+
+    // The readings the panel shows, as of the last update interval. A
+    // reading that appears or goes away is taken at the next sample, so the
+    // panel doesn't wait an interval to show one or keep one that has gone.
+    property var panel: ({ cpuUsage: NaN, cpuTemperature: NaN, memoryPercent: NaN, memoryUsed: NaN,
+                           networkDown: NaN, networkUp: NaN, diskRead: NaN, diskWrite: NaN })
 
     // The helper's report (see code/ringside-info.sh), {} until it answers.
     property var hardware: ({})
@@ -37,12 +130,16 @@ Item {
                                                    .replace(/^file:\/\//, ""))
 
     // The items switched on, and whether any of them reads ksystemstats: a
-    // widget showing only Claude and Codex subscribes nothing.
+    // widget showing only Claude and Codex subscribes nothing. While any
+    // system item is shown every system sensor is read, a hidden item's
+    // too, except a GPU's (see gpuShown).
     readonly property var enabledItems: Items.enabled(config.itemOrder, config.hiddenItems)
     readonly property bool systemShown: enabledItems.some(k => Items.SYSTEM.includes(k))
 
     // Claude and Codex readings; see UsageData.qml.
     readonly property alias usage: usageData
+    // The mark in the Codex ring: "codex", or "openai" for the OpenAI logo.
+    readonly property string codexMark: config.codexMark === "openai" ? "openai" : "codex"
     // The Claude and Codex helper; the tests swap in a stub.
     property alias usageHelperPath: usageData.helperPath
 
@@ -52,6 +149,7 @@ Item {
 
     // CPU
     readonly property real cpuUsage: value(cpuUsageSensor)
+    readonly property string cpuTemperatureSensorId: config.cpuTemperatureSensor || "cpu/all/maximumTemperature"
     readonly property real cpuTemperature: {
         const t = value(member(cpuTemperatureReaders, 0));
         return Format.temperatureValid(t) ? t : NaN;
@@ -71,6 +169,12 @@ Item {
     readonly property var cpuIds: hardware.cpu && Array.isArray(hardware.cpu.ids) ? hardware.cpu.ids
                                 : Array.from({ length: cpuThreads }, (_, i) => i)
     property var cpuHistory: []
+    property var cpuHighs: []
+    // °C, NaN while there is no reading.
+    property var cpuTemperatureHistory: []
+    property var cpuTemperatureHighs: []
+    // [coolest, hottest] across the three spans, [] with no reading.
+    property var cpuTemperatureExtent: []
 
     // Memory. ksystemstats' "used" is the total minus MemAvailable, and its
     // "cache" (Cached plus Slab) also counts shared memory and unreclaimable
@@ -92,6 +196,7 @@ Item {
     // Plasma 6.2 and later; NaN before.
     readonly property real memoryPressure: value(pressureSensor)
     property var memoryHistory: []
+    property var memoryHighs: []
 
     // GPUs: one reader per GPU (see GpuReader.qml); the rings point at two.
     // A hidden GPU item has no readers, so hiding it leaves the GPU alone.
@@ -118,7 +223,19 @@ Item {
     readonly property string networkConnection: groupText(networkInfoReaders, 0)
     readonly property string networkAddress: groupText(networkInfoReaders, 1)
     property var networkDownHistory: []
+    property var networkDownHighs: []
     property var networkUpHistory: []
+    property var networkUpHighs: []
+    // The address websites see; see PublicAddress.qml.
+    readonly property alias publicAddress: publicChecker
+    // The widget's version from its metadata, for that check's User-Agent.
+    property string version: ""
+    // The interface each address family leaves through, read while the
+    // network popup shows the public address: null until the helper answers
+    // after the popup opens, then { known, v4, v6 } (see code/publicaddress.js).
+    property var egress: null
+    readonly property bool egressShown: config.publicAddress === true && openPopup === "network"
+    onEgressShownChanged: if (!egressShown) egress = null
 
     // Disk: I/O of one device or of every whole disk, free space of one volume.
     // ksystemstats' disk/all counts a volume and the disk under it both, so
@@ -140,7 +257,13 @@ Item {
         return Format.temperatureValid(t) ? t : NaN;
     }
     property var diskReadHistory: []
+    property var diskReadHighs: []
     property var diskWriteHistory: []
+    property var diskWriteHighs: []
+    // °C, NaN while there is no reading.
+    property var diskTemperatureHistory: []
+    property var diskTemperatureHighs: []
+    property var diskTemperatureExtent: []
 
     // Settings the views need.
     readonly property bool fahrenheit: config.fahrenheit
@@ -232,39 +355,282 @@ Item {
         powerStates.connectSource(command);
     }
 
-    function sample() {
-        const n = historyLength;
-        cpuHistory = History.push(cpuHistory, cpuUsage, n);
-        memoryHistory = History.push(memoryHistory, memoryPercent, n);
+    // What each graph records: its series' key, where it is shown (this
+    // monitor or a GPU reader, under `prefix` + History, Highs and, for a
+    // temperature, Extent), the reading for the minute and for the hour and
+    // the day, and whether a missing reading is a gap in the minute too.
+    // A temperature's key names its sensor, so a saved history never goes
+    // on under another sensor's name.
+    function readings() {
+        const list = [
+            { key: "cpu", into: monitor, prefix: "cpu", minute: cpuUsage },
+            { key: "cpuTemperature:" + cpuTemperatureSensorId, into: monitor, prefix: "cpuTemperature",
+              minute: cpuTemperature, gaps: true },
+            { key: "memory", into: monitor, prefix: "memory", minute: memoryPercent },
+            { key: "networkDown", into: monitor, prefix: "networkDown", minute: networkDown },
+            { key: "networkUp", into: monitor, prefix: "networkUp", minute: networkUp },
+            { key: "diskRead", into: monitor, prefix: "diskRead", minute: diskRead },
+            { key: "diskWrite", into: monitor, prefix: "diskWrite", minute: diskWrite },
+            { key: "diskTemperature:" + diskTemperatureSensorId, into: monitor, prefix: "diskTemperature",
+              minute: diskTemperature, gaps: true }
+        ];
+        // A GPU's readings are its reader's own, or its leader's: taking
+        // them reads nothing more. The hour and the day take what is known
+        // rather than what is shown (see GpuReader.recordedUsage).
         for (const r of [gpuOuter, gpuInner]) {
             if (r.present) {
-                r.history = History.push(r.history, r.usage, n);
+                list.push({ key: "gpu:" + r.info.id, into: r, prefix: "", minute: r.usage, kept: r.recordedUsage },
+                          { key: "gpuTemperature:" + r.info.id, into: r, prefix: "temperature", minute: r.temperature,
+                            kept: r.recordedTemperature, gaps: true });
             }
         }
-        networkDownHistory = History.push(networkDownHistory, networkDown, n);
-        networkUpHistory = History.push(networkUpHistory, networkUp, n);
-        diskReadHistory = History.push(diskReadHistory, diskRead, n);
-        diskWriteHistory = History.push(diskWriteHistory, diskWrite, n);
+        return list;
     }
 
-    // A new interval or span would mix samples of different ages.
-    onHistoryLengthChanged: {
-        cpuHistory = [];
-        memoryHistory = [];
-        for (const r of readers()) {
-            r.history = [];
+    function sample(nowMs) {
+        const now = nowMs ?? Date.now();
+        sampled = true;
+        const closed = { hour: [], day: [] };
+        for (const entry of readings()) {
+            const s = seriesOf(entry.key);
+            s.minute = entry.gaps ? History.record(s.minute, entry.minute, minuteLength)
+                                  : History.push(s.minute, entry.minute, minuteLength);
+            const ended = {};
+            for (const name of ["hour", "day"]) {
+                const bucket = History.add(s[name], entry.kept ?? entry.minute, now);
+                if (bucket) {
+                    ended[name] = true;
+                    closed[name].push(Object.assign({ key: entry.key }, bucket));
+                }
+            }
+            // An hour or a day changes only as its bucket closes. A
+            // temperature's extent takes the new reading, and is worked
+            // out afresh from every span only as a bucket closes, when
+            // readings may have left the spans.
+            if (graphSpan === "minute" || ended[graphSpan]) {
+                show(entry, ended.hour || ended.day ? undefined : entry.minute);
+            }
         }
-        networkDownHistory = [];
-        networkUpHistory = [];
-        diskReadHistory = [];
-        diskWriteHistory = [];
+        save(rowsOf(closed), closed.day.length > 0);
+        latch(false);
     }
+
+    function seriesOf(key) {
+        if (!series[key]) {
+            series[key] = History.series();
+        }
+        return series[key];
+    }
+
+    // Puts a series' span on show where its graph reads it. Given the
+    // reading just taken, a temperature's extent only widens to take it in.
+    function show(entry, latest) {
+        const s = seriesOf(entry.key);
+        const name = suffix => entry.prefix ? entry.prefix + suffix : suffix.toLowerCase();
+        const minute = graphSpan === "minute";
+        entry.into[name("History")] = minute ? s.minute : s[graphSpan].means;
+        if (!minute || entry.into[name("Highs")].length > 0) {
+            entry.into[name("Highs")] = minute ? [] : s[graphSpan].highs;
+        }
+        if (entry.gaps) {
+            const was = entry.into[name("Extent")];
+            const next = latest === undefined ? History.extent(s) : History.widen(was, latest);
+            if (next.length !== was.length || next.some((v, i) => v !== was[i])) {
+                entry.into[name("Extent")] = next;
+            }
+        }
+    }
+
+    function showAll() {
+        for (const entry of readings()) {
+            show(entry);
+        }
+    }
+
+    // A temperature sensor's series goes with the sensor. By default the
+    // disk's sensor comes from the helper's report, so until that arrives a
+    // restored disk series stays for the sensor it may turn out to be.
+    function dropOtherSensors() {
+        const kept = ["cpuTemperature:" + cpuTemperatureSensorId, "diskTemperature:" + diskTemperatureSensorId];
+        const known = Object.keys(hardware).length > 0 || config.diskTemperatureSensor || config.diskDevice
+            ? /^(cpu|disk)Temperature:/ : /^cpuTemperature:/;
+        for (const key of Object.keys(series)) {
+            if (known.test(key) && !kept.includes(key)) {
+                delete series[key];
+            }
+        }
+    }
+
+    function chooseSpan(span) {
+        if (History.SPANS.includes(span) && config.graphSpan !== span) {
+            config.graphSpan = span;
+        }
+    }
+
+    // Closed buckets, { hour, day } of [{ key, at, mean, high }], as saved:
+    // a row per bucket, [{ tier, at, data }], data each series' average and
+    // highest to a tenth, leaving out a series with no reading in it and a
+    // bucket with none. A series that went unsampled for a while, a GPU off
+    // the rings say, closes its old bucket late, so each goes by its own
+    // number.
+    function rowsOf(closed) {
+        const rows = [];
+        const tenth = v => Math.round(v * 10) / 10;
+        for (const tier of ["hour", "day"]) {
+            const data = {};
+            for (const b of closed[tier]) {
+                if (Number.isFinite(b.mean)) {
+                    data[b.at] = data[b.at] || {};
+                    data[b.at][b.key] = [tenth(b.mean), tenth(b.high)];
+                }
+            }
+            for (const at of Object.keys(data)) {
+                rows.push({ tier: tier, at: Number(at), data: data[at] });
+            }
+        }
+        return rows;
+    }
+
+    function save(rows, writeNow) {
+        if (store && rows.length > 0) {
+            unsaved = unsaved.concat(rows);
+        }
+        if (writeNow) {
+            flush();
+        }
+    }
+
+    function flush() {
+        if (store && unsaved.length > 0) {
+            store.save(unsaved); // qmllint disable missing-property
+        }
+        unsaved = [];
+    }
+
+    // Every bucket held, for a store just switched on.
+    function saveAll() {
+        const held = { hour: [], day: [] };
+        for (const tier of ["hour", "day"]) {
+            for (const key of Object.keys(series)) {
+                const t = series[key][tier];
+                t.means.forEach((mean, i) => held[tier].push({ key: key, at: t.at - t.means.length + i, mean: mean, high: t.highs[i] }));
+            }
+        }
+        save(rowsOf(held), true);
+    }
+
+    function restore() {
+        const now = Date.now();
+        for (const tier of ["hour", "day"]) {
+            const byKey = {};
+            for (const row of store.load(tier)) { // qmllint disable missing-property
+                for (const key of Object.keys(row.data)) {
+                    const v = row.data[key];
+                    byKey[key] = byKey[key] || [];
+                    byKey[key].push({ at: row.at, mean: v[0], high: v[1] });
+                }
+            }
+            for (const key of Object.keys(byKey)) {
+                History.restore(seriesOf(key)[tier], byKey[key], now);
+            }
+        }
+        dropOtherSensors();
+        showAll();
+    }
+
+    // Loads the store and restores what it kept, as the widget starts, or
+    // saves what is held, when the setting is switched on later.
+    function startKeeping() {
+        if (store || storeMissing || widgetId === "") {
+            return;
+        }
+        const component = Qt.createComponent(storeUrl);
+        if (component.status !== Component.Ready) {
+            storeMissing = true;
+            Log.write(journal, "warning", "the graphs' history stays in memory, as the store can't load: "
+                      + component.errorString().trim());
+            return;
+        }
+        store = component.createObject(monitor, { widget: widgetId });
+        if (!sampled) {
+            restore();
+        } else {
+            saveAll();
+        }
+    }
+
+    // Switched off: what was saved goes.
+    function stopKeeping() {
+        if (store) {
+            store.clear(); // qmllint disable missing-property
+            store.destroy();
+            store = null;
+        }
+    }
+
+    // The settings and the widget's id may arrive in any order as it starts.
+    onKeepHistoryChanged: keepHistory ? startKeeping() : stopKeeping()
+    onWidgetIdChanged: if (keepHistory) startKeeping()
+    Component.onCompleted: if (keepHistory) startKeeping()
+    Component.onDestruction: flush()
+    onGraphSpanChanged: showAll()
+    // A ring's GPU, its history at once rather than at the next close.
+    onGpuOuterChanged: Qt.callLater(monitor.showAll)
+    onGpuInnerChanged: Qt.callLater(monitor.showAll)
+
+    // Moves the panel to the live readings: all of them, or only those that
+    // have appeared or gone away.
+    function latch(all) {
+        const next = {};
+        let changed = false;
+        for (const key of Object.keys(panel)) {
+            const live = monitor[key];
+            next[key] = all || Number.isFinite(live) !== Number.isFinite(panel[key]) ? live : panel[key];
+            changed = changed || !Object.is(next[key], panel[key]);
+        }
+        if (changed) {
+            panel = next;
+        }
+        for (const r of readers()) {
+            r.latch(all);
+        }
+    }
+
+    // A new interval would mix minute readings of different ages; the hour
+    // and the day go by the clock.
+    onMinuteLengthChanged: {
+        for (const key of Object.keys(series)) {
+            series[key].minute = [];
+        }
+        showAll();
+    }
+
+    // Another sensor's readings would go on under the new one's name.
+    onCpuTemperatureSensorIdChanged: {
+        dropOtherSensors();
+        showAll();
+    }
+    onDiskTemperatureSensorIdChanged: {
+        dropOtherSensors();
+        showAll();
+    }
+    // Once the bindings on the report have settled.
+    onHardwareChanged: Qt.callLater(monitor.dropOtherSensors)
 
     Timer {
-        interval: monitor.interval
+        objectName: "sample"
+        interval: monitor.sampleInterval
         running: monitor.systemShown
         repeat: true
         onTriggered: monitor.sample()
+    }
+
+    Timer {
+        objectName: "latch"
+        interval: monitor.interval
+        running: monitor.systemShown
+        repeat: true
+        onTriggered: monitor.latch(true)
     }
 
     // The clock: steps every GPU reader (leadership, interest, sleep gates)
@@ -284,8 +650,51 @@ Item {
         }
     }
 
+    // A sensor ksystemstats doesn't publish stays loading for good. Each
+    // minute while system items show, one enabled and loading at the check
+    // before too goes to the journal, once: a CPU without a temperature
+    // sensor, say, or Plasma before 6.2 without memory pressure. With none
+    // loaded at all, ksystemstats isn't answering.
+    property var sensorsLoading: ({})
+    property var sensorsNamed: ({})
+
+    function noteMissingSensors() {
+        const sensors = [cpuUsageSensor, coreCountSensor, memoryTotalSensor, memoryUsedSensor, memoryApplicationSensor,
+                         memoryCacheSensor, memoryBufferSensor, swapUsedSensor, swapTotalSensor, pressureSensor];
+        for (const group of [cpuTemperatureReaders, networkReaders, networkInfoReaders, diskReaders, volumeReaders,
+                             diskTemperatureReaders].concat(readers().map(r => r.sensors))) {
+            for (let i = 0; i < group.count; ++i) {
+                sensors.push(group.objectAt(i));
+            }
+        }
+        const shown = sensors.filter(s => s && s.enabled && s.sensorId !== "");
+        const loading = {};
+        for (const s of shown.filter(s => s.status === Sensors.Sensor.Loading)) {
+            loading[s.sensorId] = true;
+        }
+        const missing = Object.keys(loading).filter(id => sensorsLoading[id] && !sensorsNamed[id]);
+        sensorsLoading = loading;
+        if (missing.length > 0 && missing.length === shown.length) {
+            Log.write(journal, "warning", "no sensor has answered for a minute: is ksystemstats running?");
+        } else {
+            for (const id of missing) {
+                Log.write(journal, "info", "ksystemstats has no sensor " + id + ", so its reading stays empty");
+            }
+        }
+        for (const id of missing) {
+            sensorsNamed[id] = true;
+        }
+    }
+
+    Timer {
+        interval: 60000
+        running: monitor.systemShown
+        repeat: true
+        onTriggered: monitor.noteMissingSensors()
+    }
+
     component Reader: Sensors.Sensor {
-        updateRateLimit: monitor.interval
+        updateRateLimit: monitor.readInterval
         enabled: monitor.systemShown
     }
 
@@ -312,7 +721,7 @@ Item {
 
     ReaderSet {
         id: cpuTemperatureReaders
-        model: [monitor.config.cpuTemperatureSensor || "cpu/all/maximumTemperature"]
+        model: [monitor.cpuTemperatureSensorId]
     }
 
     ReaderSet {
@@ -351,7 +760,7 @@ Item {
         delegate: GpuReader {
             required property var modelData
             info: modelData
-            rateLimit: monitor.interval
+            rateLimit: monitor.readInterval
             timeMs: monitor.clockMs
             onRing: monitor.gpuShown
                     && [monitor.gpuChoice.outer, monitor.gpuChoice.inner].some(g => g !== null && g.id === modelData.id)
@@ -365,6 +774,15 @@ Item {
     // The empty ring.
     GpuReader {
         id: noGpu
+    }
+
+    PublicAddress {
+        id: publicChecker
+        config: monitor.config
+        open: monitor.openPopup === "network"
+        egress: monitor.egress
+        localAddress: monitor.networkAddress
+        version: monitor.version
     }
 
     UsageData {
@@ -388,15 +806,14 @@ Item {
         onNewData: (source, data) => {
             disconnectSource(source);
             if (data["exit code"] !== 0) {
-                console.warn("ringside: hardware helper exited with", data["exit code"], data.stderr);
-                retry.start();
+                const said = String(data.stderr ?? "").trim().split("\n").pop();
+                retry.failed("ringside-info.sh exited with code " + data["exit code"] + (said ? ": " + said : ""));
                 return;
             }
             try {
                 monitor.hardware = JSON.parse(data.stdout);
             } catch (err) {
-                console.warn("ringside: unreadable hardware report:", err);
-                retry.start();
+                retry.failed("ringside-info.sh gave a report that couldn't be read: " + err);
                 return;
             }
             monitor.routeInterface = monitor.hardware.defaultInterface || "";
@@ -413,6 +830,11 @@ Item {
         id: retry
         property int left: 3
         interval: 5000
+        function failed(why) {
+            Log.write(journal, "warning", why + (left > 0 ? "; trying again in 5 s"
+                                                          : "; the GPU item and the hardware details stay empty"));
+            start();
+        }
         onTriggered: {
             if (left-- > 0) {
                 helper.connectSource(helper.command("static"));
@@ -473,14 +895,30 @@ Item {
     P5Support.DataSource {
         engine: "executable"
         interval: 3000
-        connectedSources: monitor.openPopup === "network" || monitor.openPopup === "disk"
-                          ? [helper.command("route")] : []
+        connectedSources: monitor.openPopup === "network" ? [helper.command("route")] : []
         onNewData: (source, data) => {
             if (data["exit code"] === 0) {
                 const name = String(data.stdout || "").trim();
                 if (name !== monitor.routeInterface) {
                     monitor.routeInterface = name;
                 }
+            }
+        }
+    }
+
+    // The routes the public address takes, re-read as often, and only while
+    // the network popup shows it.
+    P5Support.DataSource {
+        engine: "executable"
+        interval: 3000
+        connectedSources: monitor.egressShown ? [helper.command("egress")] : []
+        onNewData: (source, data) => {
+            if (!monitor.egressShown) {
+                return;
+            }
+            const next = Lookup.egress(data["exit code"], data.stdout);
+            if (JSON.stringify(next) !== JSON.stringify(monitor.egress)) {
+                monitor.egress = next;
             }
         }
     }

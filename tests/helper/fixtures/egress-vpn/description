@@ -1,0 +1,2 @@
+IPv4 leaves through a WireGuard tunnel (type 65534) and IPv6 around it,
+through Ethernet.

@@ -23,6 +23,7 @@ PopupPage {
         readonly property var used: Format.bytes(popup.monitor.memoryUsed)
 
         ringValue: popup.monitor.memoryPercent
+        interval: popup.monitor.sampleInterval
         title: i18nc("@title", "Memory")
         subtitle: {
             const m = popup.monitor;
@@ -93,26 +94,31 @@ PopupPage {
                                           popup.size(popup.monitor.memoryCached), popup.size(popup.monitor.memoryFree))
         }
 
-        RowLayout {
+        // Spread across the bar while the entries fit on one line; a longer
+        // translation wraps rather than widening the popup. Asking for no
+        // width keeps the entries out of the page's width.
+        Flow {
+            readonly property real entriesWidth: used.implicitWidth + cached.implicitWidth + free.implicitWidth
+
             Layout.fillWidth: true
-            spacing: 0
+            Layout.preferredWidth: 0
+            spacing: Math.max(Kirigami.Units.largeSpacing, Math.floor((width - entriesWidth) / 2))
 
             LegendEntry {
+                id: used
                 swatch: bar.usedColor
                 text: i18nc("@info:legend used memory, e.g. Used 11.7 GiB", "Used %1", popup.size(popup.monitor.memoryUsed))
             }
 
-            Item { Layout.fillWidth: true; Layout.minimumWidth: Kirigami.Units.largeSpacing }
-
             LegendEntry {
+                id: cached
                 swatch: bar.cachedColor
                 text: i18nc("@info:legend memory holding the page cache, e.g. Cached 9.2 GiB", "Cached %1",
                             popup.size(popup.monitor.memoryCached))
             }
 
-            Item { Layout.fillWidth: true; Layout.minimumWidth: Kirigami.Units.largeSpacing }
-
             LegendEntry {
+                id: free
                 text: i18nc("@info:legend memory neither used nor cached, e.g. Free 7.6 GiB", "Free %1",
                             popup.size(popup.monitor.memoryFree))
             }
@@ -121,10 +127,10 @@ PopupPage {
 
     GridLayout {
         Layout.fillWidth: true
-        Layout.leftMargin: Math.round(Kirigami.Units.largeSpacing * 1.5)
+        Layout.leftMargin: Math.round(Kirigami.Units.largeSpacing * 2)
         Layout.rightMargin: Layout.leftMargin
         Layout.topMargin: Kirigami.Units.smallSpacing
-        Layout.bottomMargin: Layout.leftMargin
+        Layout.bottomMargin: Math.round(Kirigami.Units.largeSpacing * 1.5)
         columns: 2
         rowSpacing: Kirigami.Units.largeSpacing
         columnSpacing: Kirigami.Units.largeSpacing
@@ -133,11 +139,13 @@ PopupPage {
         Tile {
             Layout.columnSpan: 2
             caption: i18nc("@title:group memory in use", "Used")
-            graphSeconds: popup.monitor.historySeconds
+            spans: popup.monitor
+            graphTop: i18nc("@info a percentage", "%1%", Format.percent(100))
 
             Graph {
                 Layout.fillWidth: true
                 values: popup.monitor.memoryHistory
+                highs: popup.monitor.memoryHighs
                 length: popup.monitor.historyLength
             }
         }
@@ -146,15 +154,16 @@ PopupPage {
             Layout.columnSpan: pressure.visible ? 1 : 2
             caption: i18nc("@title:group", "Swap")
             detail: popup.monitor.swapLabel ? "(" + popup.monitor.swapLabel + ")" : ""
+            foot: swapReading
 
             Reading {
+                id: swapReading
                 // NaN before the first reading, 0 without swap.
                 readonly property bool none: !(popup.monitor.swapTotal > 0)
                 readonly property var swap: Format.bytesOf(popup.monitor.swapUsed, popup.monitor.swapTotal)
                 value: none ? i18nc("@info no swap space configured", "none") : swap.value
                 unit: none ? "" : "/ " + swap.total + " " + swap.unit
                 color: none ? Style.dim(Kirigami.Theme.textColor) : Kirigami.Theme.textColor
-                unitScale: 0.67
                 pointSize: Kirigami.Theme.defaultFont.pointSize * 1.38
             }
         }
@@ -165,19 +174,17 @@ PopupPage {
             visible: Number.isFinite(popup.monitor.memoryPressure)
             caption: i18nc("@title:group memory pressure", "Pressure")
             detail: i18nc("@title:group pressure stall information, averaged over 10 seconds", "(PSI 10 s)")
+            foot: pressureReading
 
             Reading {
+                id: pressureReading
                 value: Format.fixed(popup.monitor.memoryPressure, 2)
                 pointSize: Kirigami.Theme.defaultFont.pointSize * 1.38
             }
         }
     }
 
-    Rectangle {
-        Layout.fillWidth: true
-        Layout.preferredHeight: 1
-        color: Qt.alpha(Kirigami.Theme.textColor, 0.08)
-    }
+    Divider {}
 
     ProcessList {
         key: "memory"

@@ -7,6 +7,7 @@ import org.kde.ksysguard.sensors as Sensors
 import "code/format.js" as Format
 import "code/gpugate.js" as Gate
 import "code/gpushare.js" as GpuShare
+import "code/log.js" as Log
 
 // One GPU's readings. Monitor keeps one reader per GPU the helper found and
 // points the outer and inner rings at two of them. A reader's sensor ids
@@ -17,6 +18,10 @@ import "code/gpushare.js" as GpuShare
 // gpushare.js): it alone subscribes, and the others show its readings. The
 // leader reads a discrete GPU the kernel can power down only while
 // gpugate.js says so, from runtime PM states Monitor polls from sysfs.
+//
+// The leader writes to the journal, under ringside.gpu, when a discrete GPU
+// goes to sleep or wakes and when it subscribes to or releases one the
+// kernel can power down, and the gate's moves as debug.
 QtObject {
     id: reader
 
@@ -26,6 +31,10 @@ QtObject {
     // Its popup is open, so an awake GPU stays read while someone looks.
     property bool watched: false
     property int rateLimit: 1000
+    // How often the leader's Sensors take a reading: as often as the most
+    // frequent of the widgets showing this GPU, so none of them graphs one
+    // reading twice.
+    property int leadRateLimit: rateLimit
     // Monitor's monotonic clock in milliseconds; polls are stamped with it.
     property real timeMs: 0
 
@@ -35,6 +44,8 @@ QtObject {
     property string pmControl: ""
     property real pmReadAt: -1
     property var gate: Gate.initial()
+    // The gate as it was before its last change, for the journal.
+    property var gateWas: Gate.initial()
 
     // This GPU's leader, which is this reader when it leads.
     property QtObject leader: null
@@ -63,7 +74,9 @@ QtObject {
     // put on a ring: an older one may predate its going to sleep.
     readonly property bool subscribed: leading && wanted && ownPhase === "live" && (!gated || pmReadAt >= wantedSince)
     readonly property string name: present ? Format.gpuModel(info.name, nameSensor.value, info.pciName, info.vendor) : ""
-    readonly property string temperatureLabel: vendor === "1002" ? i18nc("@label amdgpu's edge temperature sensor", "edge") : ""
+    // amdgpu's hwmon label for the sensor ksystemstats reads; Words.sensorName()
+    // puts it in plain words.
+    readonly property string temperatureLabel: vendor === "1002" ? "edge" : ""
     // ksystemstats' Intel backend publishes no temperature and no VRAM.
     readonly property bool reportsTemperature: present && vendor !== "8086"
     readonly property bool reportsVram: present && vendor !== "8086"
@@ -87,8 +100,27 @@ QtObject {
         : subscribed ? read(4) : showsHeld ? held.clock ?? NaN : NaN
     readonly property real power: !leading ? (leader ? leader.power : NaN)
         : subscribed ? livePower : showsHeld ? held.power ?? NaN : NaN
+    // The latest power state polled, by this reader or its leader: the
+    // gate's "asleep" also stands for a GPU whose state isn't known yet.
+    readonly property bool knownAsleep: Gate.sleeping(leading ? pmStatus : leader ? leader.pmStatus : "")
     // qmllint enable missing-property
+    // What the hour's and the day's buckets take: suspended, the GPU's usage
+    // is truly 0, but awake and unread, resting say, or in a state not yet
+    // polled, nothing is known, so a gap rather than the 0 and the held
+    // readings shown meanwhile.
+    readonly property real recordedUsage: knownAsleep ? 0 : live ? usage : NaN
+    readonly property real recordedTemperature: live ? temperature : NaN
+    // The span Monitor shows, as its own *History, *Highs and *Extent.
     property var history: []
+    property var highs: []
+    // °C as `temperature` had it at each sample, so NaN while asleep.
+    property var temperatureHistory: []
+    property var temperatureHighs: []
+    property var temperatureExtent: []
+    // What the panel shows: usage and temperature as of Monitor's last
+    // update interval (see Monitor.latch()).
+    property real panelUsage: NaN
+    property real panelTemperature: NaN
 
     readonly property real liveTemperature: {
         const t = subscribed ? read(1) : NaN;
@@ -104,15 +136,72 @@ QtObject {
     function read(index) {
         // Qt 6.10 and older emit no countChanged when an Instantiator's
         // objects are recreated at the same count; modelChanged comes after.
-        sensors.model;
-        sensors.count;
+        void sensors.model;
+        void sensors.count;
         const sensor = sensors.objectAt(index) as Sensors.Sensor;
         return sensor && typeof sensor.value === "number" ? sensor.value : NaN;
     }
 
+    // Asleep, the GPU has no reading for the panel whatever its sensors last
+    // said, and it leaves the panel as it falls asleep, with the readout's
+    // "off", not at the next sample.
+    function latch(all) {
+        const awake = phase !== "asleep";
+        const u = awake ? usage : NaN;
+        const t = awake ? temperature : NaN;
+        if (all || Number.isFinite(u) !== Number.isFinite(panelUsage)) {
+            panelUsage = u;
+        }
+        if (all || Number.isFinite(t) !== Number.isFinite(panelTemperature)) {
+            panelTemperature = t;
+        }
+    }
+
+    onPhaseChanged: latch(false)
+
     function hold(key, value) {
         if (subscribed && Number.isFinite(value)) {
             held = Object.assign({}, held, { [key]: value });
+        }
+    }
+
+    property LoggingCategory journal: LoggingCategory {
+        name: "ringside.gpu"
+        defaultLogLevel: LoggingCategory.Info
+    }
+    readonly property string label: present ? kind + " GPU " + info.bdf : ""
+
+    // Once the gate has backed off as far as it goes, something else keeps
+    // the GPU awake, and its reads and releases every five minutes are
+    // debug, said once at info.
+    function noteGate() {
+        const was = gateWas;
+        gateWas = gate;
+        if (!leading || !gated || was.phase === gate.phase) {
+            return;
+        }
+        const seconds = gate.holdMs / 1000;
+        if (gate.phase === "live" && was.phase === "resting") {
+            Log.write(journal, "debug", label + ": still awake after Ringside let go, so reading it again; it lets go after "
+                      + seconds + " s idle next time");
+            if (gate.holdMs >= Gate.MAX_HOLD_MS && was.holdMs < Gate.MAX_HOLD_MS) {
+                Log.write(journal, "info", label + ": something else keeps it awake; Ringside lets go every "
+                          + seconds + " s to give it a chance to suspend");
+            }
+        } else if (gate.phase === "live") {
+            Log.write(journal, "debug", label + ": awake, so reading it");
+        } else if (gate.phase === "resting") {
+            Log.write(journal, "debug", label + ": idle for " + seconds + " s, so letting go for it to suspend");
+        } else {
+            Log.write(journal, "debug", label + ": suspended, so not reading it");
+        }
+    }
+
+    onGateChanged: noteGate()
+    onSubscribedChanged: {
+        if (present) {
+            Log.write(journal, gated && gate.holdMs < Gate.MAX_HOLD_MS ? "info" : "debug",
+                      (subscribed ? "subscribed to " : "released ") + label + "'s readings");
         }
     }
 
@@ -124,6 +213,13 @@ QtObject {
     // One poll runs at a time, so answers arrive in order.
     function takeStatus(status, control, readAt) {
         const wasGated = gated;
+        if (leading && kind === "discrete" && status !== ""
+            && (pmStatus === "" || Gate.sleeping(status) !== Gate.sleeping(pmStatus))) {
+            const asleep = Gate.sleeping(status);
+            Log.write(journal, pmStatus === "" ? "debug" : "info",
+                      label + (pmStatus === "" ? (asleep ? " is asleep" : " is awake")
+                                                : (asleep ? " went to sleep" : " woke up")));
+        }
         pmStatus = status;
         pmControl = control;
         pmReadAt = readAt;
@@ -154,6 +250,7 @@ QtObject {
         }
         wanted = want;
         anyWatched = GpuShare.watched(info.id);
+        leadRateLimit = GpuShare.rateLimit(info.id, rateLimit);
         if (gated) {
             gate = Gate.step(gate, gateInput(now, pmStatus, pmReadAt));
         }
@@ -205,7 +302,7 @@ QtObject {
             required property string modelData
             sensorId: modelData
             enabled: reader.subscribed
-            updateRateLimit: reader.rateLimit
+            updateRateLimit: reader.leadRateLimit
         }
     }
 }

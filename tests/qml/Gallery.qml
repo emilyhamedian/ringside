@@ -49,14 +49,69 @@ Rectangle {
         id: normal
     }
 
+    // The public address in the network popup, worked out by the real
+    // checker from canned replies.
+    PublicAddressStates {
+        id: publicStates
+        localInterface: normal.networkInterface
+    }
+
+    component PublicFake: FakeMonitor {
+        property string publicState
+        publicAddress: publicStates.all[publicState] ?? null
+    }
+
+    PublicFake {
+        id: publicBoth
+        publicState: "both"
+    }
+
+    PublicFake {
+        id: publicVpn
+        publicState: "vpn"
+    }
+
+    PublicFake {
+        id: publicLongVpn
+        publicState: "longvpn"
+    }
+
+    PublicFake {
+        id: publicLeak
+        publicState: "longleak"
+    }
+
+    PublicFake {
+        id: publicCity
+        publicState: "city"
+    }
+
+    PublicFake {
+        id: publicFailed
+        publicState: "failed"
+    }
+
+    // Hot, with its top processes still being read.
     FakeMonitor {
         id: hot
         cpuTemperature: 92
+        processSample: []
     }
 
     FakeMonitor {
         id: asleep
         gpuOuter.phase: "asleep"
+    }
+
+    // The last hour and the last day, with a stretch where the machine slept.
+    FakeMonitor {
+        id: hour
+        graphSpan: "hour"
+    }
+
+    FakeMonitor {
+        id: day
+        graphSpan: "day"
     }
 
     FakeMonitor {
@@ -124,6 +179,12 @@ Rectangle {
         gpuInner.clock: 1100
     }
 
+    // The Codex ring with the OpenAI logo.
+    FakeMonitor {
+        id: openaiMark
+        codexMark: "openai"
+    }
+
     // Every ring past a threshold: hot, warm, full, nearly out.
     FakeMonitor {
         id: alert
@@ -138,11 +199,106 @@ Rectangle {
         })
     }
 
+    // Claude's last day, which it lasts at this pace.
+    FakeMonitor {
+        id: lastDay
+        usage.entries: ({
+            claude: { status: "ok", weekly: lastDay.usage.window(70, 23 * 3600 + 5 * 60, []), scoped: [] }
+        })
+    }
+
+    // A drive that reports no temperature, warm or hot ones, and every disk.
+    FakeMonitor {
+        id: diskUnheated
+        diskTemperature: NaN
+    }
+
+    FakeMonitor {
+        id: diskHot
+        diskTemperature: 78
+        diskDevice: "all"
+    }
+
+    // Temperatures climbing through the warm and hot thresholds as a load
+    // starts 15 s in, and the same with the highlighting off.
+    component Heating: FakeMonitor {
+        id: fake
+
+        function climb(from, to) {
+            return Array.from({ length: fake.historyLength }, (_, i) =>
+                from + (to - from) * (1 - Math.pow(1 - Math.max(0, (i - 15) / (fake.historyLength - 16)), 2.2)) + 0.4 * Math.sin(i * 1.7));
+        }
+
+        cpuUsage: 97
+        cpuHistory: fake.climb(6, 97)
+        cpuTemperature: 93
+        cpuTemperatureHistory: fake.climb(52, 93)
+        gpuOuter.usage: 99
+        gpuOuter.history: fake.climb(3, 99)
+        gpuOuter.temperature: 91
+        gpuOuter.temperatureHistory: fake.climb(44, 91)
+        diskTemperature: 92
+        diskTemperatureHistory: fake.climb(41, 92)
+    }
+
+    Heating {
+        id: heating
+    }
+
+    Heating {
+        id: plainHeat
+        highlightTemperatures: false
+    }
+
+    // The discrete GPU alone, awake for the last 35 s, in °F. Asleep it had
+    // no temperature and, as Monitor records it, no usage.
+    FakeMonitor {
+        id: woken
+        fahrenheit: true
+        gpuOuter.history: Array.from({ length: woken.historyLength }, (_, i) => i < 25 ? 0 : 12 + 3 * Math.sin(i))
+        gpuOuter.temperatureHistory: Array.from({ length: woken.historyLength }, (_, i) =>
+            i < 25 ? NaN : 48 - 6 * Math.exp(-(i - 25) / 6))
+        gpuInner.present: false
+    }
+
     // The only GPU, asleep.
     FakeMonitor {
         id: onlyAsleep
         gpuOuter.phase: "asleep"
         gpuInner.present: false
+    }
+
+    // The Memory popup with every string about a third longer, as German and
+    // the Romance languages often run. Its views find these functions before
+    // the root's, as this component's root is the nearer context object.
+    component LongMemoryPopup: Item {
+        id: stretched
+
+        required property var monitor
+
+        function i18n(text, ...args) {
+            return stretch(gallery.i18n(text, ...args));
+        }
+        function i18nc(context, text, ...args) {
+            return stretch(gallery.i18nc(context, text, ...args));
+        }
+        function i18np(singular, plural, n, ...args) {
+            return stretch(gallery.i18np(singular, plural, n, ...args));
+        }
+        function i18ncp(context, singular, plural, n, ...args) {
+            return stretch(gallery.i18ncp(context, singular, plural, n, ...args));
+        }
+        function stretch(s) {
+            return s + "ß".repeat(Math.round(s.length * 0.35));
+        }
+
+        implicitWidth: popup.implicitWidth
+        implicitHeight: popup.implicitHeight
+
+        MemoryPopup {
+            id: popup
+            monitor: stretched.monitor
+        }
     }
 
     component Note: Text {
@@ -159,7 +315,10 @@ Rectangle {
         required property string label
         required property real thickness
         property var monitor: normal
+        property var items: ["cpu", "gpu", "memory", "claude", "network", "disk"]
         property var ringsOnly: []
+        // Right to left, as main.qml lays the strip out in such a locale.
+        property bool mirrored: false
 
         spacing: Kirigami.Units.smallSpacing
 
@@ -179,10 +338,12 @@ Rectangle {
                 anchors.centerIn: parent
                 height: panel.thickness - 8
                 monitor: panel.monitor
-                items: ["cpu", "gpu", "memory", "claude", "network", "disk"]
+                items: panel.items
                 vertical: false
                 thickness: panel.thickness - 8
                 ringsOnly: panel.ringsOnly
+                LayoutMirroring.enabled: panel.mirrored
+                LayoutMirroring.childrenInherit: true
             }
         }
     }
@@ -308,9 +469,29 @@ Rectangle {
         }
 
         Panel {
+            label: "Panel · 46 px · Claude and Codex"
+            thickness: 46
+            items: ["claude", "codex"]
+        }
+
+        Panel {
+            label: "Panel · 46 px · Codex with the OpenAI logo"
+            thickness: 46
+            monitor: openaiMark
+            items: ["claude", "codex"]
+        }
+
+        Panel {
             label: "Panel · 46 px · alerts"
             thickness: 46
             monitor: alert
+        }
+
+        Panel {
+            label: "Panel · 46 px · right to left · Claude's last day, 23h 5m left"
+            thickness: 46
+            monitor: lastDay
+            mirrored: true
         }
 
         Panel {
@@ -382,8 +563,13 @@ Rectangle {
             }
 
             PopupFrame {
-                label: "Network & Disk"
+                label: "Network"
                 NetworkPopup { monitor: normal }
+            }
+
+            PopupFrame {
+                label: "Disk"
+                DiskPopup { monitor: normal }
             }
         }
 
@@ -391,7 +577,65 @@ Rectangle {
             spacing: 2 * Kirigami.Units.gridUnit
 
             PopupFrame {
-                label: "CPU · 92 °C"
+                label: "CPU · 1 h"
+                CpuPopup { monitor: hour }
+            }
+
+            PopupFrame {
+                label: "GPU · 1 h"
+                GpuPopup { monitor: hour }
+            }
+
+            PopupFrame {
+                label: "Memory · 1 h"
+                MemoryPopup { monitor: hour }
+            }
+
+            PopupFrame {
+                label: "Network · 1 h"
+                NetworkPopup { monitor: hour }
+            }
+
+            PopupFrame {
+                label: "Disk · 1 h"
+                DiskPopup { monitor: hour }
+            }
+        }
+
+        RowLayout {
+            spacing: 2 * Kirigami.Units.gridUnit
+
+            PopupFrame {
+                label: "CPU · 1 day"
+                CpuPopup { monitor: day }
+            }
+
+            PopupFrame {
+                label: "GPU · 1 day"
+                GpuPopup { monitor: day }
+            }
+
+            PopupFrame {
+                label: "Memory · 1 day"
+                MemoryPopup { monitor: day }
+            }
+
+            PopupFrame {
+                label: "Network · 1 day"
+                NetworkPopup { monitor: day }
+            }
+
+            PopupFrame {
+                label: "Disk · 1 day"
+                DiskPopup { monitor: day }
+            }
+        }
+
+        RowLayout {
+            spacing: 2 * Kirigami.Units.gridUnit
+
+            PopupFrame {
+                label: "CPU · 92 °C · top processes loading"
                 CpuPopup { monitor: hot }
             }
 
@@ -409,6 +653,11 @@ Rectangle {
                 label: "Memory · no PSI, no swap"
                 MemoryPopup { monitor: bare }
             }
+
+            PopupFrame {
+                label: "Memory · every string a third longer"
+                LongMemoryPopup { monitor: normal }
+            }
         }
 
         RowLayout {
@@ -423,15 +672,88 @@ Rectangle {
                 label: "GPU · NVIDIA and Intel"
                 GpuPopup { monitor: intel }
             }
+
+            PopupFrame {
+                label: "GPU · the only GPU asleep"
+                GpuPopup { monitor: onlyAsleep }
+            }
+
+            PopupFrame {
+                label: "Disk · no temperature"
+                DiskPopup { monitor: diskUnheated }
+            }
+
+            PopupFrame {
+                label: "Disk · all disks, 78 °C"
+                DiskPopup { monitor: diskHot }
+            }
         }
 
-        // Claude and Codex, inline and in their popups.
+        RowLayout {
+            spacing: 2 * Kirigami.Units.gridUnit
+
+            PopupFrame {
+                label: "CPU · temperature climbing through 75 and 90 °C"
+                CpuPopup { monitor: heating }
+            }
+
+            PopupFrame {
+                label: "GPU · dGPU climbing through 75 and 90 °C"
+                GpuPopup { monitor: heating }
+            }
+
+            PopupFrame {
+                label: "GPU · dGPU awake for the last 35 s, °F"
+                GpuPopup { monitor: woken }
+            }
+
+            PopupFrame {
+                label: "Disk · climbing through 75 and 90 °C"
+                DiskPopup { monitor: heating }
+            }
+
+            PopupFrame {
+                label: "Disk · climbing, temperature colours off"
+                DiskPopup { monitor: plainHeat }
+            }
+        }
+
+        RowLayout {
+            spacing: 2 * Kirigami.Units.gridUnit
+
+            PopupFrame {
+                label: "Network · public IPv4 and IPv6"
+                NetworkPopup { monitor: publicBoth }
+            }
+
+            PopupFrame {
+                label: "Network · through a VPN, just turned on"
+                NetworkPopup { monitor: publicVpn }
+            }
+
+            PopupFrame {
+                label: "Network · a long IPv6 through the VPN"
+                NetworkPopup { monitor: publicLongVpn }
+            }
+
+            PopupFrame {
+                label: "Network · a long IPv6 going around the VPN"
+                NetworkPopup { monitor: publicLeak }
+            }
+
+            PopupFrame {
+                label: "Network · a Custom service that names the city"
+                NetworkPopup { monitor: publicCity }
+            }
+
+            PopupFrame {
+                label: "Network · public address unreachable"
+                NetworkPopup { monitor: publicFailed }
+            }
+        }
+
+        // Claude and Codex, in the panel and in their popups.
         UsageGallery {
-            monitor: normal
-        }
-
-        // The Standalone layout: dials on each edge, and folding.
-        StandaloneGallery {
             monitor: normal
         }
 
@@ -506,9 +828,15 @@ Rectangle {
                     }
 
                     PopupFrame {
-                        label: "Breeze Light · Network & Disk"
+                        label: "Breeze Light · Network"
                         flat: true
                         NetworkPopup { monitor: normal }
+                    }
+
+                    PopupFrame {
+                        label: "Breeze Light · Disk"
+                        flat: true
+                        DiskPopup { monitor: normal }
                     }
                 }
             }

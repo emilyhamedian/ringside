@@ -5,32 +5,48 @@ import QtQuick
 import QtTest
 import org.kde.kirigami as Kirigami
 import "../../package/contents/ui"
+import "../../package/contents/ui/code/format.js" as Format
 import "../../package/contents/ui/code/style.js" as Style
 
-// The inline panel's cells on their own, with FakeMonitor's readings: the
+// The panel's cells on their own, with FakeMonitor's readings: the
 // ring and its stroke, the name or mark inside it, the readings beside it in
-// every state, their faces and colours, the room each line keeps, and the
-// rates on the same lines. It names no Strip, popup or settings page, so it
+// every state, their faces and colours, the room each line keeps whatever it
+// reads, and the rates on the same lines in their fixed slots. It names no Strip, popup or settings page, so it
 // loads on Plasma 6.0, and it runs again in German and Egyptian Arabic.
 Item {
     id: root
     width: 800
     height: 600
 
-    // Source text to translated text, for a test that needs a long one.
+    // Source text to translated text, for a test that needs a long one, and
+    // source text to the context the views gave translators with it.
     property var translations: ({})
+    property var contexts: ({})
 
     // A bare qml runtime has no KI18n; the views find these on the root.
     function substitute(text, args) {
         return text.replace(/%(\d+)/g, (m, n) => n <= args.length ? String(args[n - 1]) : m);
     }
     function i18n(text, ...args) { return substitute(root.translations[text] ?? text, args); }
-    function i18nc(context, text, ...args) { return substitute(root.translations[text] ?? text, args); }
+    function i18nc(context, text, ...args) {
+        root.contexts[text] = context;
+        return substitute(root.translations[text] ?? text, args);
+    }
     function i18np(s, p, n, ...args) { return substitute(n === 1 ? s : p, [n].concat(args)); }
     function i18ncp(c, s, p, n, ...args) { return substitute(n === 1 ? s : p, [n].concat(args)); }
 
     readonly property real gib: 1073741824
     readonly property real mib: 1048576
+    // KDE's three choices of data units, as Monitor hands them to format.js.
+    readonly property var dialects: ({
+        iec: { base: 1024, labels: ["B", "KiB", "MiB", "GiB", "TiB", "PiB"] },
+        jedec: { base: 1024, labels: ["B", "KB", "MB", "GB", "TB", "PB"] },
+        metric: { base: 1000, labels: ["B", "kB", "MB", "GB", "TB", "PB"] }
+    })
+    function useUnits(dialect) {
+        Format.setByteUnits(dialects[dialect].base, dialects[dialect].labels);
+        return dialects[dialect];
+    }
     readonly property int day: 86400
     readonly property string fixedFamily: Kirigami.Theme.fixedWidthFont?.family ?? "monospace" // qmllint disable redundant-optional-chaining
 
@@ -40,6 +56,13 @@ Item {
     }
     function decimal(v) {
         return Number(v).toLocaleString(Qt.locale(), "f", 1);
+    }
+    function fixed(v, decimals) {
+        return Number(v).toLocaleString(Qt.locale(), "f", decimals);
+    }
+    // A C-locale text, "8.40 Mb/s", in the locale's digits and decimal mark.
+    function localized(text) {
+        return text.replace(/\d+(?:\.(\d+))?/g, (m, decimals) => fixed(Number(m), decimals ? decimals.length : 0));
     }
     function percent(v) {
         return digits(v) + "%";
@@ -86,6 +109,12 @@ Item {
         return findAll(item, test)[0] ?? null;
     }
 
+    // Texts with their digits, in any locale, as "0", so readings that
+    // differ only in their digits read the same.
+    function shape(texts) {
+        return texts.join(" ").replace(/[0-9\u0660-\u0669\u06f0-\u06f9]/g, "0");
+    }
+
     Component {
         id: monitorComponent
         FakeMonitor {}
@@ -107,6 +136,22 @@ Item {
             textShown: true
             twoLines: true
         }
+    }
+
+    Component {
+        id: mirrorComponent
+        Item {
+            LayoutMirroring.enabled: true
+            LayoutMirroring.childrenInherit: true
+            width: 400
+            height: 100
+        }
+    }
+
+    // A text of its own, to compare a drawn one with.
+    Component {
+        id: probeComponent
+        Text {}
     }
 
     Component {
@@ -165,6 +210,17 @@ Item {
         }
     }
 
+    // Kirigami's own theme has the highlight colour for focus; a colour of
+    // its own shows which one the cell draws.
+    Component {
+        id: focusCellComponent
+        PanelCell {
+            item: "cpu"
+            Kirigami.Theme.inherit: false
+            Kirigami.Theme.focusColor: "#ff00ff"
+        }
+    }
+
     Component {
         id: blockComponent
         Item {
@@ -176,6 +232,43 @@ Item {
     Component {
         id: faceComponent
         ReadoutFont {}
+    }
+
+    Component {
+        id: gaugeComponent
+        RingGauge {}
+    }
+
+    Component {
+        id: metricsComponent
+        FontMetrics {}
+    }
+
+    // A Claude mark in a middle `room` wide.
+    Component {
+        id: markComponent
+        Item {
+            id: holder
+
+            property real room: 0
+            readonly property alias name: inside
+
+            width: 34
+            height: 34
+
+            RingName {
+                id: inside
+                item: "claude"
+                room: holder.room
+            }
+        }
+    }
+
+    Component {
+        id: figureComponent
+        TextMetrics {
+            text: "0"
+        }
     }
 
     // Noto Sans has figures of both kinds, so the features show in its widths.
@@ -229,6 +322,7 @@ Item {
             wait(0);
             monitor.destroy();
             root.translations = {};
+            root.useUnits("iec");
         }
 
         function keep(object) {
@@ -261,8 +355,9 @@ Item {
             return root.find(name, i => i.fontSizeMode !== undefined);
         }
 
+        // The Claude or Codex mark, loaded for those items alone.
         function mark(name) {
-            return root.find(name, i => i.isMask !== undefined);
+            return root.find(name, i => i.markName !== undefined);
         }
 
         function line(c, which) {
@@ -273,6 +368,7 @@ Item {
         // one, too large to name a 34 px ring; Breeze has 8 pt beside 10.
         // The name's own scale stands in for Breeze's size.
         function breezeSized(c) {
+            nameIn(c).animated = false;
             nameIn(c).sizeFactor = 8 / Kirigami.Theme.smallFont.pointSize;
             settle();
             return c;
@@ -324,11 +420,11 @@ Item {
         }
 
         function centreY(item, c) {
-            return item.mapToItem(c, 0, item.height / 2).y;
+            return item.mapToItem(c, Qt.point(0, item.height / 2)).y;
         }
 
         function baselineIn(text, scene) {
-            return text.mapToItem(scene, 0, text.baselineOffset).y;
+            return text.mapToItem(scene, Qt.point(0, text.baselineOffset)).y;
         }
 
         function checkFace(text, weight, what) {
@@ -387,7 +483,7 @@ Item {
 
         function test_nameInsideTheRing_data() {
             const names = [{ item: "cpu", text: "CPU" }, { item: "memory", text: "MEM" }, { item: "gpu", text: "GPU" },
-                           { item: "claude", mark: "claude.svg" }, { item: "codex", mark: "openai.svg" }];
+                           { item: "claude", mark: "claude" }, { item: "codex", mark: "codex" }];
             const rows = [];
             for (const n of names) {
                 rows.push(Object.assign({ tag: n.item + " 34", ring: 34, textShown: true, twoLines: true, shown: true }, n));
@@ -415,26 +511,137 @@ Item {
                 compare(label(name).text, data.text);
                 compare(label(name).visible, data.shown);
                 compare(String(label(name).color), root.tone("dim"));
-                verify(!mark(name).visible);
+                verify(!mark(name), "a system ring loads no mark");
             } else {
-                verify(String(mark(name).source).endsWith(data.mark), String(mark(name).source));
-                verify(mark(name).isMask);
+                compare(mark(name).markName, data.mark);
                 compare(mark(name).visible, data.shown);
                 verify(!label(name).visible);
             }
             if (data.shown && data.text) {
-                // The label spans the ring and is padded in evenly to the
-                // round middle's chord, so its text centres on the ring.
-                compare(label(name).width, g.width);
-                compare(label(name).leftPadding, label(name).rightPadding);
-                verify(label(name).paintedWidth <= label(name).width - 2 * label(name).leftPadding + 0.5,
-                       "drawn within the chord");
+                // The label is laid out across the round middle's chord,
+                // its text centred in it.
+                compare(label(name).width, name.chord);
+                verify(label(name).paintedWidth <= label(name).width + 0.5, "drawn within the chord");
             }
             if (data.shown) {
-                const shownItem = data.text ? label(name) : mark(name);
-                const middle = shownItem.mapToItem(g, shownItem.width / 2, shownItem.height / 2);
+                // The label by its capitals' middle, without the letter
+                // space after its last glyph; the mark by its artwork's
+                // middle, through its scale.
+                // Mapped as a point: Qt 6.6 drops the fraction of an x and y
+                // given apart.
+                const middle = data.text
+                    ? label(name).mapToItem(g, Qt.point(label(name).width / 2 - label(name).font.letterSpacing / 2,
+                                                        label(name).baselineOffset - name.capHeight / 2))
+                    : mark(name).mapToItem(g, Qt.point(mark(name).art.box[0] + mark(name).art.box[2] / 2,
+                                                       mark(name).art.box[1] + mark(name).art.box[2] / 2));
                 verify(Math.abs(middle.x - g.width / 2) <= 0.5 && Math.abs(middle.y - g.height / 2) <= 0.5,
                        "centred: " + middle.x + ", " + middle.y);
+            }
+            if (data.shown && data.text) {
+                // Across, the drawn advance less its trailing letter space
+                // is held closer: half that space is about a third of a
+                // pixel, inside the half pixel above.
+                const l = label(name);
+                const left = (l.width - l.contentWidth) / 2;
+                const across = l.mapToItem(g, Qt.point(left + (l.contentWidth - l.font.letterSpacing) / 2, 0)).x;
+                verify(l.font.letterSpacing / 2 > 0.25, "a letter space worth checking: " + l.font.letterSpacing);
+                fuzzyCompare(across, g.width / 2, 0.05, "the advance's middle on the ring's");
+            }
+        }
+
+        // Where its ring has the room, the Codex cloud is drawn 1.15 times a
+        // name's line, larger than the Claude star, and hollow: its outline,
+        // filled by the nonzero rule, leaves the cloud's middle clear round
+        // the prompt. Under 16 device pixels, where its line breaks up, it is
+        // left out though the room would take it.
+        function test_codexMarkIsALargerOutline() {
+            const small = nameIn(breezeSized(cell("codex", { ring: 22, textShown: true, twoLines: true })));
+            verify(small.markSize >= Kirigami.Units.iconSizes.small / 2 && small.markSize <= small.room
+                   && small.markSize * root.Screen.devicePixelRatio < 16, "a mark the room would take: " + small.markSize);
+            verify(!small.visible, "too small to read");
+
+            const name = nameIn(breezeSized(cell("codex", { ring: 46, textShown: true, twoLines: true })));
+            const shape = mark(name);
+            verify(name.visible);
+            const metrics = createTemporaryObject(metricsComponent, root, { font: label(name).font });
+            const scaled = Math.round(metrics.height * 1.2 * 1.15);
+            verify(scaled < Math.floor(name.room) - 2, "room for the scale: " + scaled + " in " + name.room);
+            compare(name.markSize, scaled);
+            // Whether the mark draws at a point in its viewBox units: the
+            // ring with and without it differ there.
+            const drawn = grabImage(name);
+            shape.visible = false;
+            const bare = grabImage(name);
+            shape.visible = true;
+            const draws = (x, y) => {
+                const p = shape.mapToItem(name, Qt.point(x, y));
+                return !Qt.colorEqual(drawn.pixel(Math.floor(p.x), Math.floor(p.y)), bare.pixel(Math.floor(p.x), Math.floor(p.y)));
+            };
+            verify(draws(11.5, 0.05), "the cloud's line");
+            verify(!draws(12, 5), "the cloud's middle, clear");
+            verify(draws(15, 15.4), "the prompt");
+        }
+
+        // The setting swaps the Codex ring's mark for the OpenAI logo, centred
+        // as the others are, and leaves Claude's alone.
+        function test_codexRingShowsTheChosenLogo() {
+            const c = breezeSized(cell("codex", { ring: 46, textShown: true, twoLines: true }));
+            const codex = nameIn(c);
+            const claude = nameIn(breezeSized(cell("claude", { ring: 46, textShown: true, twoLines: true })));
+            compare(mark(codex).markName, "codex");
+            monitor.codexMark = "openai";
+            settle();
+            compare(mark(codex).markName, "openai");
+            compare(mark(codex).art.box, [178, 178, 360]);
+            compare(mark(claude).markName, "claude");
+            verify(codex.visible);
+            const g = gauge(c);
+            const art = mark(codex).art;
+            const middle = mark(codex).mapToItem(g, Qt.point(art.box[0] + art.box[2] / 2, art.box[1] + art.box[2] / 2));
+            verify(Math.abs(middle.x - g.width / 2) <= 0.5 && Math.abs(middle.y - g.height / 2) <= 0.5,
+                   "centred: " + middle.x + ", " + middle.y);
+            const drawn = grabImage(codex);
+            mark(codex).visible = false;
+            const bare = grabImage(codex);
+            mark(codex).visible = true;
+            let differ = false;
+            for (let x = 0; x < codex.width && !differ; ++x) {
+                for (let y = 0; y < codex.height && !differ; ++y) {
+                    differ = !Qt.colorEqual(drawn.pixel(x, y), bare.pixel(x, y));
+                }
+            }
+            verify(differ, "the logo draws");
+            monitor.codexMark = "codex";
+            settle();
+            compare(mark(codex).markName, "codex");
+        }
+
+        function test_openaiLogoAtItsOldSize_data() {
+            const rows = [];
+            for (let ring = 16; ring <= 52; ring += 2) {
+                rows.push({ tag: String(ring), ring: ring });
+            }
+            return rows;
+        }
+
+        // The OpenAI logo is drawn at the size it had before the Codex mark
+        // replaced it, 1.2 times a name's line, the Claude star's size, and
+        // wherever the ring has room for that, with no smallest size of its
+        // own: at 22 px the Codex cloud is left out but the logo shows.
+        function test_openaiLogoAtItsOldSize(data) {
+            monitor.codexMark = "openai";
+            const name = nameIn(breezeSized(cell("codex", { ring: data.ring, textShown: false })));
+            const star = nameIn(breezeSized(cell("claude", { ring: data.ring, textShown: false })));
+            const metrics = createTemporaryObject(metricsComponent, root, { font: label(name).font });
+            const size = Math.max(0, Math.min(Math.round(metrics.height * 1.2), Math.floor(name.room) - 2));
+            compare(mark(name).markName, "openai");
+            compare(name.markSize, size);
+            compare(name.visible, size >= Kirigami.Units.iconSizes.small / 2 && size <= name.room);
+            if (name.room === star.room) {
+                compare(name.markSize, star.markSize, "the Claude star's size");
+            }
+            if (data.ring === 22) {
+                verify(name.visible, "shown where the cloud is left out");
             }
         }
 
@@ -468,14 +675,16 @@ Item {
                 const c = cell(k.item, { ring: data.ring });
                 const g = gauge(c);
                 const name = nameIn(c);
+                name.animated = false;
                 compare(g.inner, k.inner === true, k.item + " inner ring");
                 for (const factor of [1, 8 / Kirigami.Theme.smallFont.pointSize]) {
                     name.sizeFactor = factor;
                     settle();
                     const what = k.item + (k.inner ? " with inner ring" : "") + " at " + factor.toFixed(2) + ": ";
                     if (name.usage) {
-                        const size = mark(name).width;
-                        const fits = size >= Kirigami.Units.iconSizes.small / 2 && size <= g.centreWidth;
+                        const size = name.markSize;
+                        const fits = size >= Kirigami.Units.iconSizes.small / 2 && size <= g.centreWidth
+                                     && size * root.Screen.devicePixelRatio >= (name.art.minimum ?? 0);
                         compare(name.visible, fits, what + "mark " + size + " in " + g.centreWidth);
                         continue;
                     }
@@ -497,6 +706,69 @@ Item {
             }
         }
 
+        function test_ringsShareTheCentre_data() {
+            const rows = [];
+            for (const size of [33, 34, 45, 52]) {
+                rows.push({ tag: size + " one ring", size: size, inner: false });
+                rows.push({ tag: size + " two rings", size: size, inner: true });
+            }
+            return rows;
+        }
+
+        // Each arc is drawn about the gauge's exact middle, an odd size's
+        // half pixel included, so the two rings sit in each other evenly.
+        function test_ringsShareTheCentre(data) {
+            const g = keep(gaugeComponent.createObject(root, { width: data.size, height: data.size, inner: data.inner,
+                                                               value: 40, innerValue: 20 }));
+            waitForRendering(g);
+            const arcs = root.findAll(g, i => i.animating !== undefined && i.visible);
+            compare(arcs.length, data.inner ? 2 : 1);
+            for (const arc of arcs) {
+                const middle = arc.mapToItem(g, Qt.point(arc.width / 2, arc.height / 2));
+                compare(middle.x, data.size / 2, "across");
+                compare(middle.y, data.size / 2, "down");
+                verify(arc.radius + arc.strokeWidth / 2 <= data.size / 2, "the ring stays in its square");
+            }
+        }
+
+        function test_centrePercentage_data() {
+            const rows = [];
+            for (const size of [33, 34, 50]) {
+                rows.push({ tag: size + " 62%", size: size, text: root.percent(62) });
+                rows.push({ tag: size + " 100%", size: size, text: root.percent(100) });
+            }
+            return rows;
+        }
+
+        // The popups' percentage in the middle of a ring is in the theme's
+        // sans with figures of one width, and its figures, not its line box
+        // or rounded width, sit on the ring's middle.
+        function test_centrePercentage(data) {
+            const g = keep(gaugeComponent.createObject(root, { width: data.size, height: data.size, value: 62,
+                                                               text: data.text, textScale: 0.29 }));
+            waitForRendering(g);
+            const t = root.find(g, i => i !== g && i.text === data.text);
+            verify(t && t.visible, "the percentage shows");
+            compare(t.font.family, Kirigami.Theme.defaultFont.family, "the theme's sans");
+            verify(t.font.family !== root.fixedFamily, "not monospace");
+            compare(t.font.features.tnum, 1, "figures of one width");
+            const figure = keep(figureComponent.createObject(root, { font: t.font }));
+            const middle = t.mapToItem(g, Qt.point(t.width / 2, t.baselineOffset - figure.tightBoundingRect.height / 2));
+            verify(Math.abs(middle.x - data.size / 2) <= 0.01 && Math.abs(middle.y - data.size / 2) <= 0.5,
+                   "centred: " + middle.x + ", " + middle.y + " in " + data.size);
+        }
+
+        // A middle too small for a mark leaves it out rather than sizing it
+        // below nothing.
+        function test_noRoomNoMark() {
+            for (const room of [0, 1, 2, 3]) {
+                const holder = keep(markComponent.createObject(root, { room: room }));
+                waitForRendering(holder);
+                verify(holder.name.markSize >= 0, room + ": " + holder.name.markSize);
+                verify(!holder.name.visible, room + " px holds no mark");
+            }
+        }
+
         function test_longTranslationHidesTheName() {
             root.translations = { "MEM": "ARBEITSSPEICHER" };
             const memory = breezeSized(cell("memory"));
@@ -506,6 +778,40 @@ Item {
             verify(!nameIn(memory).visible);
             verify(nameIn(cpu).visible);
             compare(label(nameIn(cpu)).text, "CPU");
+            cell("gpu");
+            for (const text of ["CPU", "GPU", "MEM"]) {
+                verify(root.contexts[text].includes("at most 3 characters"),
+                       text + " tells translators its limit: " + root.contexts[text]);
+            }
+        }
+
+        function test_systemRingsDontWait_data() {
+            return [{ tag: "cpu", item: "cpu", set: { cpuUsage: NaN, cpuTemperature: NaN } },
+                    { tag: "memory", item: "memory", set: { memoryPercent: NaN, memoryUsed: NaN } },
+                    { tag: "gpu", item: "gpu", outer: { usage: NaN, temperature: NaN }, inner: { present: false } }];
+        }
+
+        // CPU, GPU and memory keep today's look before their first reading,
+        // the whole track and a plain dash, even while Claude's first check
+        // runs beside them: no dots, and nothing moves.
+        function test_systemRingsDontWait(data) {
+            monitor.usage.entries = {};
+            monitor.usage.pending = ["claude"];
+            apply(data.item, data);
+            const c = cell(data.item);
+            const g = gauge(c);
+            const claude = gauge(cell("claude"));
+            verify(claude.loading);
+            verify(!g.loading);
+            compare([g.sweep, g.dotsShown], [1, 0]);
+            verify(!root.find(g, i => i.covered !== undefined).visible);
+            const arc = root.find(g, i => i.playReset !== undefined);
+            compare(arc.trackColor, Qt.alpha(Kirigami.Theme.textColor, 0.16 * Kirigami.Theme.textColor.a));
+            compare(arc.trackSweep, 1);
+            compare(line(c, "first").text, "–");
+            compare(line(c, "first").color, Kirigami.Theme.textColor);
+            tryCompare(claude, "moving", true, 3000);
+            verify(!g.moving && g.motion === 0);
         }
 
         function test_lines_data() {
@@ -521,9 +827,11 @@ Item {
                 { tag: "cpu no reading", item: "cpu", set: { cpuUsage: NaN, cpuTemperature: NaN }, lines: ["–", "–"], tones: ["text", "dim"] },
                 { tag: "fahrenheit", item: "cpu", set: { fahrenheit: true, cpuTemperature: 38 }, lines: [percent(23), degrees(100)], tones: ["text", "dim"] },
                 { tag: "fahrenheit hot", item: "cpu", set: { fahrenheit: true, cpuTemperature: 95 }, lines: [percent(23), degrees(203)], tones: ["text", "negative"] },
-                { tag: "memory", item: "memory", lines: [percent(42), decimal(13.4) + "G"], tones: ["text", "dim"] },
-                { tag: "memory 77 %", item: "memory", set: { memoryPercent: 77 }, lines: [percent(77), decimal(13.4) + "G"], tones: ["neutral", "dim"] },
-                { tag: "memory in MiB", item: "memory", set: { memoryUsed: 900 * mib, memoryPercent: 3 }, lines: [percent(3), digits(900) + "M"], tones: ["text", "dim"] },
+                { tag: "memory", item: "memory", lines: [percent(42), decimal(13.4) + " GiB"], tones: ["text", "dim"] },
+                { tag: "memory 77 %", item: "memory", set: { memoryPercent: 77 }, lines: [percent(77), decimal(13.4) + " GiB"], tones: ["neutral", "dim"] },
+                { tag: "memory in MiB", item: "memory", set: { memoryUsed: 900 * mib, memoryPercent: 3 }, lines: [percent(3), decimal(900) + " MiB"], tones: ["text", "dim"] },
+                { tag: "memory to one decimal", item: "memory", set: { memoryUsed: 9.64 * gib, memoryPercent: 60 }, lines: [percent(60), decimal(9.6) + " GiB"],
+                  tones: ["text", "dim"] },
                 { tag: "dual gpu", item: "gpu", lines: [percent(12), degrees(48)], tones: ["text", "dim"], absent: degrees(41) },
                 { tag: "dual gpu hot", item: "gpu", outer: { usage: 90, temperature: 92 }, lines: [percent(90), degrees(92)], tones: ["negative", "negative"] },
                 { tag: "dual gpu warm", item: "gpu", outer: { temperature: 80 }, lines: [percent(12), degrees(80)], tones: ["text", "neutral"] },
@@ -531,20 +839,27 @@ Item {
                 { tag: "only gpu asleep", item: "gpu", outer: asleep, inner: { present: false }, lines: ["off", ""], tones: ["dim", "dim"] },
                 { tag: "intel only", item: "gpu", outer: { reportsTemperature: false, kind: "integrated" }, inner: { present: false },
                   lines: [percent(12), ""], tones: ["text", "dim"] },
-                { tag: "claude", item: "claude", lines: [percent(62), digits(2) + "d " + digits(21) + "h"], tones: ["text", "dim"] },
-                { tag: "claude 81 %", item: "claude", week: [81, 2 * day + 21 * 3600], lines: [percent(81), digits(2) + "d " + digits(21) + "h"],
+                { tag: "claude", item: "claude", lines: [percent(52), digits(2) + "d"], tones: ["text", "dim"] },
+                { tag: "claude 81 %", item: "claude", week: [81, 5 * 3600 + 12 * 60], lines: [percent(81), digits(5) + "h"],
                   tones: ["neutral", "dim"] },
-                { tag: "claude 95 %", item: "claude", week: [95, 5 * 3600 + 12 * 60], lines: [percent(95), digits(5) + "h " + digits(12) + "m"],
+                // At this pace the week runs out before its reset, and its
+                // colour is still its reading's.
+                { tag: "claude 81 % runs out", item: "claude", week: [81, 2 * day + 21 * 3600], lines: [percent(81), digits(2) + "d"],
+                  tones: ["neutral", "dim"] },
+                { tag: "claude last day", item: "claude", week: [40, 23 * 3600 + 5 * 60], lines: [percent(40), digits(23) + "h"],
+                  tones: ["text", "dim"] },
+                { tag: "claude 95 %", item: "claude", week: [95, 5 * 3600 + 12 * 60], lines: [percent(95), digits(5) + "h"],
                   tones: ["negative", "dim"] },
                 { tag: "claude minutes", item: "claude", week: [40, 12 * 60], lines: [percent(40), digits(12) + "m"], tones: ["text", "dim"] },
                 { tag: "claude reset passed", item: "claude", week: [40, -600], lines: [percent(40), "–"], tones: ["text", "dim"] },
                 { tag: "claude no weekly", item: "claude", week: null, lines: ["–", "–"], tones: ["text", "dim"] },
-                { tag: "codex", item: "codex", lines: [percent(34), digits(5) + "d " + digits(4) + "h"], tones: ["text", "dim"] }
+                { tag: "codex", item: "codex", lines: [percent(24), digits(5) + "d"], tones: ["text", "dim"] }
             ];
         }
 
         // The ring's own reading, heavier and in the ring's colour, over a
-        // dimmer one in its own heat colour.
+        // dimmer one in its own heat colour. A countdown keeps to its largest
+        // unit, and memory to one decimal and its unit.
         function test_lines(data) {
             apply(data.item, data);
             const c = cell(data.item);
@@ -560,23 +875,65 @@ Item {
             }
         }
 
+        // The panel shows the readings Monitor holds for it, which move once
+        // per update interval, not the live ones the popups and graphs show:
+        // in its rings, its text and its words.
+        function test_panelShowsItsHeldReadings_data() {
+            return [
+                { tag: "cpu", item: "cpu", ring: 40, texts: [percent(40), degrees(70)], words: "Usage " + percent(40) },
+                { tag: "memory", item: "memory", ring: 60, texts: [percent(60), decimal(20.0) + " GiB"], words: percent(60) },
+                { tag: "gpu", item: "gpu", ring: 55, inner: 7, texts: [percent(55), degrees(66)], words: "Usage " + percent(55) },
+                { tag: "network", item: "network", texts: [decimal(64.0), decimal(16.0)], words: "Down " + decimal(64.0) + " Mb/s" },
+                { tag: "disk", item: "disk", texts: [decimal(50.0), fixed(1, 2)], words: "Read " + decimal(50.0) + " MiB/s" }
+            ];
+        }
+        function test_panelShowsItsHeldReadings(data) {
+            const gib = monitor.gib;
+            monitor.panel = { cpuUsage: 40, cpuTemperature: 70, memoryPercent: 60, memoryUsed: 20 * gib,
+                              networkDown: 8e6, networkUp: 2e6, diskRead: 50 * 1048576, diskWrite: 1048576 };
+            monitor.gpuOuter.panelUsage = 55;
+            monitor.gpuOuter.panelTemperature = 66;
+            monitor.gpuInner.panelUsage = 7;
+            const c = cell(data.item);
+            const shown = root.texts(c);
+            for (const text of data.texts) {
+                verify(shown.includes(text), text + " in " + JSON.stringify(shown));
+            }
+            if (data.ring !== undefined) {
+                compare(gauge(c).value, data.ring);
+            }
+            if (data.inner !== undefined) {
+                compare(gauge(c).innerValue, data.inner);
+            }
+            verify(c.accessibleDescription.includes(data.words), c.accessibleDescription);
+        }
+
         function test_line2KeepsItsSpace_data() {
             return [{ tag: "two lines", twoLines: true }, { tag: "one line", twoLines: false }];
         }
 
         // An asleep GPU or an Intel one has no second reading; the cell
-        // keeps its size and its first line stays put.
+        // keeps its size and its first line stays put. The blank second line
+        // keeps its room, and on one line its dot goes.
         function test_line2KeepsItsSpace(data) {
             const c = cell("gpu", { twoLines: data.twoLines, ring: data.twoLines ? 34 : 26 });
-            const measure = () => ({ width: c.implicitWidth, height: c.implicitHeight,
-                                     first: line(c, "first").mapToItem(c, 0, 0).y,
-                                     second: line(c, "second").mapToItem(c, 0, 0).y });
+            const measure = () => {
+                const first = line(c, "first");
+                const second = line(c, "second");
+                const at = first.mapToItem(c, Qt.point(0, 0));
+                const secondAt = second.mapToItem(c, Qt.point(0, 0));
+                return { width: c.implicitWidth, height: c.implicitHeight, firstX: at.x, firstY: at.y, firstHeight: first.height,
+                         second: [second.visible, secondAt.x, secondAt.y, second.width, second.height] };
+            };
             const awake = measure();
             compare(line(c, "second").text, degrees(48));
+            // Layout only: the readings change at once (see tst_motion).
+            c.animated = false;
             monitor.gpuInner.present = false;
             monitor.gpuOuter.phase = "asleep";
             settle();
             compare([line(c, "first").text, line(c, "second").text], ["off", ""]);
+            compare(readingsIn(c).map(t => t.text), ["off"], "no dot beside nothing");
             compare(measure(), awake, "asleep");
             monitor.gpuOuter.phase = "live";
             monitor.gpuOuter.reportsTemperature = false;
@@ -588,8 +945,9 @@ Item {
         function test_thinPanelIsOneLine_data() {
             return [
                 { tag: "cpu", item: "cpu", texts: [percent(23), "·", degrees(61)] },
-                { tag: "memory", item: "memory", texts: [percent(42), "·", decimal(13.4) + "G"] },
-                { tag: "claude", item: "claude", texts: [percent(62), "·", digits(2) + "d " + digits(21) + "h"] },
+                { tag: "memory", item: "memory", texts: [percent(42), "·", decimal(13.4) + " GiB"] },
+                { tag: "claude", item: "claude", texts: [percent(52), "·", digits(2) + "d"] },
+                { tag: "claude last day", item: "claude", week: [52, 5 * 3600 + 12 * 60], texts: [percent(52), "·", digits(5) + "h"] },
                 { tag: "gpu asleep", item: "gpu", asleep: true, texts: ["off"] }
             ];
         }
@@ -597,13 +955,13 @@ Item {
         // On a thin panel the readings share one line, centred on the ring,
         // and the ring goes unnamed.
         function test_thinPanelIsOneLine(data) {
+            apply(data.item, data);
             const c = breezeSized(cell(data.item, { ring: 26, twoLines: false }));
-            const awakeWidth = c.implicitWidth;
             if (data.asleep) {
+                c.animated = false;
                 monitor.gpuInner.present = false;
                 monitor.gpuOuter.phase = "asleep";
                 settle();
-                compare(c.implicitWidth, awakeWidth, "the line keeps its width asleep");
             }
             compare(root.texts(c), data.texts);
             verify(!nameIn(c).visible);
@@ -616,57 +974,320 @@ Item {
             }
         }
 
-        function test_widthHolds_data() {
-            const asleep = { outer: { phase: "asleep" }, inner: { present: false } };
-            const awake = { outer: { phase: "live", usage: 100, temperature: 149 }, inner: { present: true } };
-            const states = {
-                cpu: [{ set: { cpuUsage: 5 } }, { set: { cpuUsage: 100 } }, { set: { cpuUsage: 11, cpuTemperature: 11 } },
-                      { set: { cpuUsage: 88, cpuTemperature: 88 } }, { set: { cpuUsage: 100, cpuTemperature: 1 } },
-                      { set: { cpuUsage: NaN, cpuTemperature: NaN } }, { set: { fahrenheit: true, cpuUsage: 1, cpuTemperature: 44 } },
-                      { set: { fahrenheit: true, cpuUsage: 100, cpuTemperature: 149 } }],
-                memory: [{ set: { memoryPercent: 5 } }, { set: { memoryPercent: 100 } },
-                         { set: { memoryPercent: 11, memoryUsed: 1.11 * gib } }, { set: { memoryPercent: 88, memoryUsed: 88.8 * gib } },
-                         { set: { memoryUsed: 111 * mib } }, { set: { memoryUsed: 888 * mib } }, { set: { memoryUsed: 1023 * mib } },
-                         { set: { memoryUsed: 888 * gib } }, { set: { memoryUsed: 1023 } }, { set: { memoryUsed: 1023 * 1024 } },
-                         { set: { memoryPercent: NaN, memoryUsed: NaN } }],
-                gpu: [{ outer: { usage: 5 } }, { outer: { usage: 100 } }, { outer: { usage: 11, temperature: 11 } },
-                      { outer: { usage: 88, temperature: 88 } }, { outer: { usage: NaN, temperature: NaN } },
-                      asleep, awake, { outer: { phase: "asleep" } }, { outer: { phase: "live", reportsTemperature: false } }],
-                claude: [{ week: [5, 2 * day] }, { week: [100, 2 * day] }, { week: [11, 6 * day + 23 * 3600] },
-                         { week: [88, day + 3600] }, { week: [88, 23 * 3600 + 59 * 60] }, { week: [11, 10 * 3600 + 10 * 60] },
-                         { week: [100, 3600 + 60] }, { week: [100, 59 * 60] }, { week: [11, 60] }, { week: [88, -600] },
-                         { week: [NaN, 2 * day] }, { week: null }],
-                network: [{ set: { networkDown: 111e3 / 8, networkUp: 888e3 / 8 } }, { set: { networkDown: 888e3 / 8, networkUp: 111e3 / 8 } },
-                          { set: { networkDown: 11.1e6 / 8, networkUp: 88.8e6 / 8 } }, { set: { networkDown: 999 / 8, networkUp: 1 / 8 } },
-                          { set: { networkDown: 0, networkUp: NaN } }, { set: { networkDown: 888e9 / 8, networkUp: 1.1e12 / 8 } }],
-                disk: [{ set: { diskRead: 11.1 * mib, diskWrite: 88.8 * mib } }, { set: { diskRead: 1023, diskWrite: 1023 * 1024 } },
-                       { set: { diskRead: 111 * mib, diskWrite: 888 * mib } }, { set: { diskRead: 1023 * mib, diskWrite: 1 } },
-                       { set: { diskRead: 0, diskWrite: NaN } }, { set: { diskRead: 99.9 * gib, diskWrite: 1023 * 1024 ** 4 } }]
-            };
+        function test_countdownText_data() {
             const rows = [];
-            for (const item in states) {
-                rows.push({ tag: item + " two lines", item: item, twoLines: true, states: states[item] });
-                rows.push({ tag: item + " one line", item: item, twoLines: false, states: states[item] });
+            for (const [what, left, text] of [["days", 6 * day + 23 * 3600, [6, "d"]],
+                                              ["last day", 23 * 3600 + 5 * 60, [23, "h"]],
+                                              ["minutes", 12 * 60, [12, "m"]]]) {
+                for (const mirrored of [false, true]) {
+                    rows.push({ tag: what + (mirrored ? " mirrored" : ""), left: left, text: text, mirrored: mirrored });
+                }
             }
             return rows;
         }
 
-        // Every reading a cell can show fits the room it keeps, so the
-        // panel never shifts as readings change.
-        function test_widthHolds(data) {
+        // A countdown is plain text in the face of the other second lines,
+        // its largest unit alone, as large as its digits, as in "11.2 GiB" or
+        // "61°", mirrored or not. Its room is that of two of the widest
+        // digits and the widest unit, whatever it reads.
+        function test_countdownText(data) {
+            setWeek("claude", [52, data.left]);
+            const holder = data.mirrored ? keep(mirrorComponent.createObject(root)) : root;
+            const c = keep(usageComponent.createObject(holder, { monitor: monitor, item: "claude" }));
+            waitForRendering(c);
+            const second = line(c, "second");
+            compare(second.textFormat, Text.PlainText);
+            compare(second.text, root.digits(data.text[0]) + data.text[1]);
+            verify(second.contentWidth <= second.width, second.contentWidth + " in " + second.width);
+
+            const readout = root.find(c, i => i.textWidth !== undefined);
+            const face = readout.face.plain.font;
+            compare([second.font.family, second.font.pointSize, second.font.weight], [face.family, face.pointSize, face.weight],
+                    "the face of a temperature or memory line");
+            compare(readout.rooms[1], readout.face.room(readout.face.plain, ["d", "h", "m"].map(unit => root.digits(10) + unit)),
+                    "the room of two figures and a unit");
+            compare(root.findAll(readout, i => i.textFormat !== undefined).length, 3, "the two lines and the dot, nothing hidden to measure");
+        }
+
+        // Readings at their extremes, item by item, sizes in `units` (see
+        // root.dialects, binary ones in IEC names when not given): { set,
+        // outer, inner, week (see apply), shows: texts drawn, in ASCII }.
+        function extremes(units) {
+            const base = units?.base ?? 1024;
+            const unit = units?.labels ?? root.dialects.iec.labels;
+            const giga = base ** 3;
+            return {
+                cpu: [{ set: { cpuUsage: 0, cpuTemperature: 9 }, shows: ["0%", "9°"] },
+                      { set: { cpuUsage: 5, cpuTemperature: 105 }, shows: ["5%", "105°"] },
+                      { set: { cpuUsage: 100, cpuTemperature: 1 }, shows: ["100%", "1°"] },
+                      { set: { cpuUsage: NaN, cpuTemperature: NaN }, shows: ["–"] },
+                      { set: { fahrenheit: true, cpuUsage: 100, cpuTemperature: 149 }, shows: ["100%", "300°"] },
+                      { set: { fahrenheit: false, cpuUsage: 11, cpuTemperature: 48 }, shows: ["11%", "48°"] }],
+                // From 1 GiB (or 1 GB) to the fake's 31.9 GiB installed.
+                memory: [{ set: { memoryPercent: 3, memoryUsed: 1000 * base ** 2 }, shows: ["3%", "1.0 " + unit[3]] },
+                         { set: { memoryPercent: 30, memoryUsed: 9.6 * giga }, shows: ["30%", "9.6 " + unit[3]] },
+                         { set: { memoryPercent: 42, memoryUsed: 13.4 * giga }, shows: ["42%", "13.4 " + unit[3]] },
+                         { set: { memoryPercent: 100, memoryUsed: 31.9 * gib }, shows: ["100%", (31.9 * gib / giga).toFixed(1) + " " + unit[3]] },
+                         { set: { memoryPercent: NaN, memoryUsed: NaN }, shows: ["–"] }],
+                gpu: [{ outer: { usage: 0, temperature: 9 }, shows: ["0%", "9°"] },
+                      { outer: { usage: 100, temperature: 105 }, shows: ["100%", "105°"] },
+                      { outer: { phase: "asleep" }, shows: ["3%", "41°"] },
+                      { inner: { phase: "asleep" }, shows: ["off"] },
+                      { outer: { phase: "live", usage: 7 }, inner: { phase: "live" }, shows: ["7%"] },
+                      { outer: { reportsTemperature: false }, inner: { present: false }, shows: ["7%"] }],
+                claude: [{ week: [0, 6 * day + 23 * 3600], shows: ["0%", "6d"] },
+                         { week: [5, day + 11 * 3600], shows: ["5%", "1d"] },
+                         { week: [88, 23 * 3600 + 59 * 60], shows: ["88%", "23h"] },
+                         { week: [100, 59 * 60], shows: ["100%", "59m"] },
+                         { week: [100, 5 * 60], shows: ["100%", "5m"] },
+                         { week: [40, -600], shows: ["40%", "–"] },
+                         { week: [NaN, 2 * day], shows: ["–", "2d"] },
+                         { week: null, shows: ["–"] }],
+                network: [{ set: { networkDown: 0, networkUp: 0 }, shows: ["0.00"] },
+                          { set: { networkDown: 999 / 8, networkUp: 62.1e3 / 8 }, shows: ["1.00", "62.1"] },
+                          { set: { networkDown: 999.4e3 / 8, networkUp: 999.5e3 / 8 }, shows: ["999", "1.00"] },
+                          { set: { networkDown: 8.4e6 / 8, networkUp: 900e6 / 8 }, shows: ["8.40", "900"] },
+                          { set: { networkDown: 1023 * 1024 ** 3, networkUp: NaN }, shows: ["–"] }],
+                // Each unit from its smallest reading, three figures, to
+                // the last before the next.
+                disk: base === 1024
+                    ? [{ set: { diskRead: 0, diskWrite: 0 }, shows: ["0.00", unit[1] + "/s"] },
+                       { set: { diskRead: 4.1 * 1024, diskWrite: 353 * 1024 }, shows: ["4.10", "353"] },
+                       { set: { diskRead: 1000 * 1024, diskWrite: 1023 * 1024 }, shows: ["0.98", "1.00", unit[2] + "/s"] },
+                       { set: { diskRead: 412 * mib, diskWrite: 1023 * mib }, shows: ["412", unit[3] + "/s"] },
+                       { set: { diskRead: 1023 * gib, diskWrite: NaN }, shows: [unit[4] + "/s", "–"] }]
+                    : [{ set: { diskRead: 0, diskWrite: 0 }, shows: ["0.00", unit[1] + "/s"] },
+                       { set: { diskRead: 4.1e3, diskWrite: 353e3 }, shows: ["4.10", "353"] },
+                       { set: { diskRead: 999.4e3, diskWrite: 999.5e3 }, shows: ["999", "1.00", unit[2] + "/s"] },
+                       { set: { diskRead: 412e6, diskWrite: 999.5e6 }, shows: ["412", unit[3] + "/s"] },
+                       { set: { diskRead: 999.5e9, diskWrite: NaN }, shows: [unit[4] + "/s", "–"] }]
+            };
+        }
+
+        // Memory keeps room for readings from 1 GiB (or 1 GB) up to the
+        // installed total, so a total just past a unit keeps three figures
+        // of the unit below; until the total is known, for every unit. All
+        // in the units KDE is set to.
+        function test_memoryRoom_data() {
+            const room = (v, unit) => root.decimal(v) + " " + unit;
+            const iec = root.dialects.iec.labels;
+            const jedec = root.dialects.jedec.labels;
+            const metric = root.dialects.metric.labels;
+            return [{ tag: "31.9 GiB", dialect: "iec", total: 31.9 * gib, room: [room(31.9, "GiB")] },
+                    { tag: "1.0 TiB", dialect: "iec", total: 1024 * gib, room: [room(1, "TiB"), room(100, "GiB")] },
+                    { tag: "512 MiB", dialect: "iec", total: 512 * mib, room: [room(512, "MiB")] },
+                    { tag: "unknown", dialect: "iec", total: NaN, room: iec.map(unit => room(100, unit)) },
+                    { tag: "31.9 GiB in KB, MB, GB", dialect: "jedec", total: 31.9 * gib, room: [room(31.9, "GB")] },
+                    { tag: "1.0 TiB in KB, MB, GB", dialect: "jedec", total: 1024 * gib, room: [room(1, "TB"), room(100, "GB")] },
+                    { tag: "unknown in KB, MB, GB", dialect: "jedec", total: NaN, room: jedec.map(unit => room(100, unit)) },
+                    { tag: "31.9 GiB in kB, MB, GB", dialect: "metric", total: 31.9 * gib, room: [room(34.3, "GB")] },
+                    { tag: "1.0 TiB in kB, MB, GB", dialect: "metric", total: 1024 * gib, room: [room(1.1, "TB"), room(100, "GB")] },
+                    { tag: "1.0 TB in kB, MB, GB", dialect: "metric", total: 1e12, room: [room(1, "TB"), room(100, "GB")] },
+                    { tag: "999.9 GB in kB, MB, GB", dialect: "metric", total: 999.9e9, room: [room(999.9, "GB")] },
+                    { tag: "512 MiB in kB, MB, GB", dialect: "metric", total: 512 * mib, room: [room(536.9, "MB")] },
+                    { tag: "unknown in kB, MB, GB", dialect: "metric", total: NaN, room: metric.map(unit => room(100, unit)) }];
+        }
+
+        function test_memoryRoom(data) {
+            root.useUnits(data.dialect);
+            const total = monitor.memoryTotal;
+            monitor.memoryTotal = data.total;
+            try {
+                const c = keep(ringComponent.createObject(root, { monitor: monitor, item: "memory", twoLines: true, ring: 34 }));
+                compare(root.find(c, i => i.textWidth !== undefined).widest.second, data.room);
+            } finally {
+                monitor.memoryTotal = total;
+            }
+        }
+
+        // Memory and the disk also in each of KDE's other units.
+        function test_widthIsFixed_data() {
+            const rows = [];
+            for (const item of ["cpu", "memory", "gpu", "claude", "codex", "network", "disk"]) {
+                for (const dialect of item === "memory" || item === "disk" ? ["iec", "jedec", "metric"] : ["iec"]) {
+                    const states = extremes(root.dialects[dialect]);
+                    for (const twoLines of [true, false]) {
+                        for (const mirrored of [false, true]) {
+                            rows.push({ tag: item + (twoLines ? " two lines" : " one line") + (mirrored ? " mirrored" : "")
+                                             + (dialect === "iec" ? "" : " in " + dialect),
+                                        item: item, dialect: dialect, twoLines: twoLines, mirrored: mirrored,
+                                        states: states[item === "codex" ? "claude" : item] });
+                        }
+                    }
+                }
+            }
+            return rows;
+        }
+
+        // A cell keeps one width whatever its readings: each line takes the
+        // room of the widest text it can show, "100%" for every ring and
+        // "off" too for the GPU, memory as the installed total reads, three
+        // figures for the rates, and two for a countdown, so no text in it
+        // moves or overruns its box from 0 to 100 %, 9 to 105 degrees, 1 GiB
+        // to all the memory there is, an idle link to 1023 GiB/s, a
+        // GPU asleep or handing over, or a countdown from 6d to its reset.
+        function test_widthIsFixed(data) {
+            const units = root.useUnits(data.dialect);
             const rate = data.item === "network" || data.item === "disk";
-            const c = cell(data.item, rate ? { singleRow: !data.twoLines } : { twoLines: data.twoLines, ring: data.twoLines ? 34 : 26 });
-            const size = [c.implicitWidth, c.implicitHeight];
-            const shown = [];
+            const holder = data.mirrored ? mirrorComponent.createObject(root) : root;
+            const component = rate ? rateComponent : data.item === "claude" || data.item === "codex" ? usageComponent : ringComponent;
+            const c = keep(component.createObject(holder, Object.assign({ monitor: monitor, item: data.item },
+                rate ? { singleRow: !data.twoLines } : { twoLines: data.twoLines, ring: data.twoLines ? 34 : 26 })));
+            if (data.mirrored) {
+                keep(holder);
+            }
+            waitForRendering(c);
+            if (data.item === "cpu" || data.item === "memory" || data.item === "gpu") {
+                // Layout only: the GPU's readings change at once (see tst_motion).
+                c.animated = false;
+            }
+            const readout = root.find(c, i => i.textWidth !== undefined);
+            if (readout) {
+                const face = readout.face;
+                const percent = root.percent(100);
+                const firsts = data.item === "gpu" ? [percent, "off"] : [percent];
+                const seconds = data.item === "cpu" || data.item === "gpu" ? [root.degrees(100)]
+                              : data.item === "memory" ? [root.localized((31.9 * gib / units.base ** 3).toFixed(1)) + " " + units.labels[3]]
+                              : ["d", "h", "m"].map(unit => root.digits(10) + unit);
+                compare(readout.rooms[0], face.room(face.strong, firsts), "the first line keeps room for " + firsts.join(", "));
+                verify(readout.rooms[1] >= face.room(face.plain, seconds), "the second line keeps room for " + seconds.join(", "));
+                compare(c.implicitWidth, gauge(c).width + Kirigami.Units.largeSpacing + readout.textWidth, "the ring, its gap and the readings' room");
+            }
+            // Where each reading is anchored: a text's start, end or middle,
+            // as it is aligned, and its row.
+            const texts = readingsIn(c);
+            const place = t => {
+                const align = t.effectiveHorizontalAlignment;
+                const p = t.mapToItem(c, Qt.point(align === Text.AlignRight ? t.width : align === Text.AlignHCenter ? t.width / 2 : 0, 0));
+                return [p.x, p.y, t.height].join(",");
+            };
+            const places = texts.map(place);
+            const width = c.implicitWidth;
+            const height = c.implicitHeight;
+            const seen = [];
             for (const state of data.states) {
                 apply(data.item, state);
                 settle();
-                const now = readingsIn(c);
-                shown.push(now.map(t => t.text).join(" "));
-                compare([c.implicitWidth, c.implicitHeight], size, "showing " + shown[shown.length - 1]);
-                now.forEach(t => verify(t.implicitWidth <= t.width + 0.5, t.text + " is " + t.implicitWidth + " wide in " + t.width));
+                const shown = readingsIn(c);
+                const what = "showing " + shown.map(t => t.text).join(" ");
+                seen.push(...shown.map(t => t.text));
+                compare(c.implicitWidth, width, what + ": the width");
+                compare(c.implicitHeight, height, what + ": the height");
+                texts.forEach((t, i) => compare(place(t), places[i], what + ": " + (t.objectName || t.text) + " stays put"));
+                shown.forEach(t => verify(texts.includes(t), what + ": " + t.text + " was there from the start"));
+                shown.forEach(t => verify(t.contentWidth <= t.width, what + ": " + t.text + " is " + t.contentWidth + " wide in " + t.width));
+                // Stacked, a ring's readings keep to the ring, so a short
+                // one leaves its room after it.
+                if (readout && data.twoLines) {
+                    const first = line(c, "first");
+                    compare(first.effectiveHorizontalAlignment, data.mirrored ? Text.AlignRight : Text.AlignLeft, what);
+                }
             }
-            compare(new Set(shown).size, shown.length, "every state shows something new: " + JSON.stringify(shown));
+            for (const text of data.states.reduce((all, state) => all.concat(state.shows), [])) {
+                verify(seen.includes(root.localized(text)), root.localized(text) + " was drawn: " + JSON.stringify(seen));
+            }
+        }
+
+        // The GPU keeps room for "off" as translated, however long, so a
+        // sleeping GPU moves nothing either.
+        function test_longOffKeepsItsRoom() {
+            root.translations = { "off": "ausgeschaltet" };
+            monitor.gpuInner.present = false;
+            const c = cell("gpu");
+            c.animated = false;
+            const readout = root.find(c, i => i.textWidth !== undefined);
+            const width = c.implicitWidth;
+            verify(readout.rooms[0] >= readout.face.room(readout.face.strong, ["ausgeschaltet"]), "room for the translation");
+            monitor.gpuOuter.phase = "asleep";
+            settle();
+            compare(line(c, "first").text, "ausgeschaltet");
+            compare(c.implicitWidth, width, "asleep, as wide as awake");
+            verify(line(c, "first").contentWidth <= line(c, "first").width, "it fits");
+        }
+
+        // Bytes also in each of KDE's other units.
+        function test_ratesKeepFixedSlots_data() {
+            const rows = [];
+            for (const [item, bits] of [["network", true], ["network", false], ["disk", false]]) {
+                for (const dialect of bits ? ["iec"] : ["iec", "jedec", "metric"]) {
+                    for (const singleRow of [false, true]) {
+                        for (const mirrored of [false, true]) {
+                            rows.push({ tag: item + (item === "network" ? (bits ? " bits" : " bytes") : "") + (singleRow ? " one row" : " two rows")
+                                             + (mirrored ? " mirrored" : "") + (dialect === "iec" ? "" : " in " + dialect),
+                                        item: item, bits: bits, dialect: dialect, singleRow: singleRow, mirrored: mirrored });
+                        }
+                    }
+                }
+            }
+            return rows;
+        }
+
+        // Each rate is its arrow or letter, 6 px (one and a half small
+        // spacings) from a slot that fits any value in three figures, then
+        // its unit in a column that fits the widest. Values end at the
+        // slot's end and units start at the column's, whatever they read;
+        // stacked, both rows share them. Mirrored, the marker moves to the
+        // other side and the value still comes before its unit.
+        function test_ratesKeepFixedSlots(data) {
+            const dialect = root.useUnits(data.dialect);
+            monitor.networkBits = data.bits;
+            const holder = data.mirrored ? mirrorComponent.createObject(root) : root;
+            const c = keep(rateComponent.createObject(holder, { monitor: monitor, item: data.item, singleRow: data.singleRow }));
+            // The rates go before their holder, so they never see its
+            // mirroring go.
+            if (data.mirrored) {
+                keep(holder);
+            }
+            waitForRendering(c);
+            const gap = Math.round(Kirigami.Units.smallSpacing * 1.5);
+            if (Kirigami.Units.smallSpacing === 4) {
+                compare(gap, 6, "6 px at the usual spacing");
+            }
+            compare(c.markerGap, gap, "the marker's gap");
+            compare(c.unitGap, Math.round(Kirigami.Units.smallSpacing * 0.75), "the unit's gap");
+            const face = keep(faceComponent.createObject(root));
+            compare(c.valuesWidth, face.room(face.plain, [root.decimal(10), root.digits(100)]), "the values' slot");
+            compare(c.unitsWidth, face.room(face.plain, data.bits ? ["kb/s", "Mb/s", "Gb/s", "Tb/s"] : dialect.labels.slice(1).map(unit => unit + "/s")),
+                    "the units' column");
+            const x = i => i.mapToItem(c, Qt.point(0, 0)).x;
+            const right = i => i.mapToItem(c, Qt.point(i.width, 0)).x;
+            const rates = root.findAll(c, i => i.index !== undefined && i.reading !== undefined).sort((a, b) => a.index - b.index);
+            compare(rates.length, 2);
+            const values = rates.map(r => root.find(r, i => i.horizontalAlignment === Text.AlignRight && i.text !== undefined));
+            const units = rates.map(r => root.find(r, i => i.text !== undefined && i !== values[rates.indexOf(r)] && i.visible
+                                                     && i.parent === values[rates.indexOf(r)].parent));
+            const ends = values.map(right);
+            const starts = units.map(x);
+            const width = c.implicitWidth;
+            const shape = new RegExp("^([0-9]" + "\\" + Qt.locale().decimalPoint + "[0-9][0-9]|[0-9][0-9]" + "\\" + Qt.locale().decimalPoint
+                                     + "[0-9]|[0-9][0-9][0-9]|–)$");
+            for (const state of extremes(dialect)[data.item]) {
+                apply(data.item, state);
+                settle();
+                const what = "showing " + root.texts(c).join(" ");
+                compare(c.implicitWidth, width, what + ": the width");
+                for (let row = 0; row < 2; ++row) {
+                    const value = values[row];
+                    const unit = units[row];
+                    const marker = rates[row].children[0];
+                    compare([value.text, unit.text], [c.lines[row].value, c.lines[row].unit], what);
+                    verify(shape.test(value.text.replace(/[٠-٩]/g, d => String(d.charCodeAt(0) - 0x660))),
+                           what + ": " + value.text + " in three figures");
+                    verify(value.contentWidth <= value.width && unit.contentWidth <= c.unitsWidth, what + ": row " + row + " fits");
+                    compare(right(value), ends[row], what + ": row " + row + "'s value ends where it did");
+                    compare(x(unit), starts[row], what + ": row " + row + "'s unit starts where it did");
+                    compare(x(unit) - right(value), c.unitGap, what + ": the unit's gap");
+                    if (data.mirrored) {
+                        compare(x(marker) - (x(value) + value.width + c.unitGap + c.unitsWidth), gap, what + ": row " + row + "'s marker to the right");
+                    } else {
+                        compare(x(value) - right(marker), gap, what + ": row " + row + "'s marker to the left");
+                    }
+                }
+                if (!data.singleRow) {
+                    compare(ends[0], ends[1], what + ": the values end at one edge");
+                    compare(starts[0], starts[1], what + ": the units line up");
+                }
+            }
         }
 
         function test_ratesShareTheGrid_data() {
@@ -683,7 +1304,7 @@ Item {
             waitForRendering(pair);
             const rates = pair.rates;
             // Row by row, then left to right: down before up.
-            const inOrder = (a, b) => baselineIn(a, pair) - baselineIn(b, pair) || a.mapToItem(pair, 0, 0).x - b.mapToItem(pair, 0, 0).x;
+            const inOrder = (a, b) => baselineIn(a, pair) - baselineIn(b, pair) || a.mapToItem(pair, Qt.point(0, 0)).x - b.mapToItem(pair, Qt.point(0, 0)).x;
             const shown = root.findAll(rates, i => i.visible && typeof i.text === "string" && i.text !== "");
             const values = shown.filter(t => t.horizontalAlignment === Text.AlignRight).sort(inOrder);
             const units = shown.filter(t => t.horizontalAlignment !== Text.AlignRight).sort(inOrder);
@@ -712,22 +1333,84 @@ Item {
 
         function test_hoverInset_data() {
             return [{ tag: "horizontal", vertical: false, inset: Math.round(Kirigami.Units.smallSpacing / 2),
-                      padding: 2 * Math.round(Kirigami.Units.smallSpacing / 2) },
-                    { tag: "vertical", vertical: true, inset: 0, padding: 2 * Kirigami.Units.smallSpacing }];
+                      across: 2 * Math.round(Kirigami.Units.smallSpacing / 2), along: 2 * Math.round(Kirigami.Units.smallSpacing * 1.5) },
+                    { tag: "vertical", vertical: true, inset: 0, across: 2 * Kirigami.Units.smallSpacing,
+                      along: 2 * Kirigami.Units.smallSpacing }];
         }
 
         // Across a horizontal panel the wash leaves a sliver of panel above
-        // and below; along a vertical one it spans the cell.
+        // and below; along a vertical one it spans the cell. Along a
+        // horizontal panel a large spacing either side of the content makes
+        // the gap between items.
         function test_hoverInset(data) {
             const block = keep(blockComponent.createObject(root));
             const c = keep(panelCellComponent.createObject(root, { vertical: data.vertical, contentItem: block, width: 60, height: 50 }));
             waitForRendering(c);
             compare(c.inset, data.inset);
-            compare(c.implicitHeight, 34 + data.padding);
-            compare(c.implicitWidth, 50 + 2 * Kirigami.Units.smallSpacing);
+            compare(c.implicitHeight, 34 + data.across);
+            compare(c.implicitWidth, 50 + data.along);
             const wash = root.find(c, i => i !== c && i.radius !== undefined);
             verify(wash.visible, "open shows the wash");
             compare([wash.x, wash.y, wash.width, wash.height], [0, data.inset, 60, 50 - 2 * data.inset]);
+        }
+
+        // Keyboard focus draws a line round the wash in the theme's focus
+        // colour, and Tab moves it from item to item. The pointer and an open
+        // popup show the wash alone, so the focused item stands apart.
+        function test_focusShowsARing() {
+            const cells = [];
+            for (let i = 0; i < 2; ++i) {
+                const block = keep(blockComponent.createObject(root));
+                cells.push(keep(focusCellComponent.createObject(root, { contentItem: block, x: 400 + 100 * i, y: 400 })));
+            }
+            const washes = cells.map(c => root.find(c, i => i !== c && i.radius !== undefined));
+            waitForRendering(cells[1]);
+            verify(!washes[0].visible, "no wash at rest");
+
+            cells[0].forceActiveFocus(Qt.TabFocusReason);
+            verify(cells[0].activeFocus);
+            verify(washes[0].visible, "focus shows the wash");
+            compare(washes[0].border.width, 1);
+            compare(String(washes[0].border.color), "#ff00ff");
+
+            keyClick(Qt.Key_Tab);
+            verify(cells[1].activeFocus, "Tab moves to the next item");
+            compare(washes[1].border.width, 1);
+            compare(washes[0].border.width, 0, "the line goes with focus");
+            verify(!washes[0].visible);
+
+            cells[1].open = true;
+            compare(washes[1].border.width, 1, "an open item keeps its line while focused");
+            cells[0].open = true;
+            verify(washes[0].visible);
+            compare(washes[0].border.width, 0, "open without focus: the wash alone");
+            cells[0].open = false;
+            mouseMove(cells[0]);
+            tryVerify(() => cells[0].containsMouse);
+            verify(washes[0].visible);
+            compare(washes[0].border.width, 0, "under the pointer: the wash alone");
+            mouseMove(root, 10, 10);
+
+            cells[1].focus = false;
+            verify(!cells[1].activeFocus);
+            compare(washes[1].border.width, 0, "the line goes with focus");
+        }
+
+        // A cell is as wide as its content and its padding, rounded up to a
+        // whole pixel across a horizontal panel, and follows it at once
+        // either way: the readings' rooms are what keep it still.
+        function test_cellFollowsItsContent() {
+            const block = keep(blockComponent.createObject(root));
+            const c = keep(panelCellComponent.createObject(root, { contentItem: block }));
+            const outside = 2 * Math.round(Kirigami.Units.smallSpacing * 1.5);
+            compare(c.implicitWidth, 50 + outside, "as wide as its content");
+            block.implicitWidth = 60.2;
+            compare(c.implicitWidth, 61 + outside, "wider, to a whole pixel");
+            block.implicitWidth = 40;
+            compare(c.implicitWidth, 40 + outside, "narrower, at once");
+            c.vertical = true;
+            block.implicitWidth = 40.5;
+            compare(c.implicitWidth, 40.5 + 2 * Kirigami.Units.smallSpacing, "along a vertical panel, as it is");
         }
 
         // Font features have to reach both what measures and what draws, or
@@ -752,6 +1435,43 @@ Item {
 
         // A room counts every digit, ASCII or the locale's, as the widest of
         // the locale's, so "1%" keeps the room "8%" needs in any font.
+        // A room is the width a Text takes for its widest digits, rounded up
+        // to a whole pixel. Never less, or the text would overrun the room;
+        // and where the last glyph's ink reaches less than half a pixel past
+        // its advance, as an "s", a "%" or most digits do, no more, since a
+        // Text adds nothing for that and the cell would end in a gap of its
+        // own. A text ending in a digit keeps room for whichever digit
+        // reaches furthest.
+        function test_roomIsTheTextsWidth() {
+            const face = keep(faceComponent.createObject(root));
+            const probe = keep(probeComponent.createObject(root, { textFormat: Text.PlainText }));
+            const texts = ["b/s", "Mb/s", "kb/s", "KiB/s", "MiB/s", "B/s", root.decimal(99.9), root.digits(1000),
+                           root.digits(27) + "%", root.digits(100) + "%", root.digits(61) + "°", "R", "W", "off", "f", "–"];
+            let exact = 0;
+            for (const [what, metrics] of [["strong", face.strong], ["plain", face.plain]]) {
+                probe.font = metrics.font;
+                const reach = glyph => {
+                    const ink = metrics.boundingRect(glyph);
+                    return ink.x + ink.width - metrics.advanceWidth(glyph);
+                };
+                for (const text of texts) {
+                    const widest = face.widestDigits(metrics, text);
+                    const lasts = face.digits.includes(text.slice(-1)) ? face.digits : [text.slice(-1)];
+                    const drawn = Math.max(...lasts.map(last => {
+                        probe.text = widest.slice(0, -1) + last;
+                        return Math.ceil(probe.implicitWidth);
+                    }));
+                    const room = face.room(metrics, [text]);
+                    verify(room >= drawn, what + " " + text + ": " + room + " holds " + drawn);
+                    if (Math.max(...lasts.map(reach)) < 0.5) {
+                        compare(room, drawn, what + " " + text + " ends no further than its text");
+                        ++exact;
+                    }
+                }
+            }
+            verify(exact > 0, "some texts tell");
+        }
+
         function test_roomCountsWidestDigit() {
             const face = keep(faceComponent.createObject(root));
             const proportional = keep(proportionalComponent.createObject(root));

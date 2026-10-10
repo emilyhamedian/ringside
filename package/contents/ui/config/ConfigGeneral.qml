@@ -6,24 +6,141 @@ import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls as QQC2
 import org.kde.kirigami as Kirigami
-import org.kde.kcmutils as KCM
-import "../code/style.js" as Style
+import "../code/format.js" as Format
+import "../code/publicaddress.js" as Lookup
 
-KCM.SimpleKCM {
+ConfigPage {
     id: page
 
-    property int cfg_updateInterval
-    property int cfg_historySeconds
-    property bool cfg_fahrenheit
-    property bool cfg_networkBits
-    property bool cfg_highlightTemperatures
-    property real cfg_warmCelsius
-    property real cfg_hotCelsius
-    property int cfg_usageRefreshMinutes
-
-    readonly property var historyChoices: [30, 60, 120, 300, 600]
+    // The graphs' history is kept with Qt's LocalStorage module, which
+    // Debian and Ubuntu package on their own; without it the box is greyed
+    // out and says why. The tests point this elsewhere.
+    property url storeUrl: Qt.resolvedUrl("../HistoryStore.qml")
+    readonly property bool storeAvailable: Qt.createComponent(storeUrl).status === Component.Ready
+    readonly property string historyLine: storeAvailable
+        ? i18nc("@info under Keep graph history", "Saved on this computer only. Turning this off deletes it.")
+        : i18nc("@info under Keep graph history, which is greyed out; the package name is Debian's and Ubuntu's",
+                "Needs Qt's LocalStorage module (qml6-module-qtquick-localstorage).")
     readonly property string unit: cfg_fahrenheit ? i18nc("@label temperature unit", "°F")
                                                    : i18nc("@label temperature unit", "°C")
+    readonly property var service: Lookup.service(cfg_publicAddressUrl4, cfg_publicAddressUrl6)
+    // Custom is shown while URLs other than Mullvad's are set, or once
+    // picked or typed in, so the fields stay open while both are empty.
+    property bool customPicked: false
+    readonly property bool custom: customPicked || service.custom
+    property var keptUrls: ["", ""]
+
+    // Whom Ringside asks and what they learn, under the box whether it's
+    // ticked or not. "Until you enter a URL" only while the fields show.
+    readonly property string line: {
+        if (cfg_publicAddress && custom && !service.custom) {
+            return i18nc("@info Custom picked, both URLs still empty; %1 is ipify.org",
+                         "Asks %1, which sees your address, until you enter a URL.", Lookup.IPIFY.name);
+        }
+        if (!service.valid) {
+            return i18nc("@info", "Asks nothing while a URL isn't valid.");
+        }
+        const n = service.hosts.length;
+        const who = n === 2 ? i18nc("@info two host names", "%1 and %2", service.hosts[0], service.hosts[1]) : service.hosts[0];
+        return i18ncp("@info %2 names the service", "Asks %2, which sees your address, when the popup opens.",
+                      "Asks %2, which see your address, when the popup opens.", n, who);
+    }
+    // How far the box's text sits from its edge. FormLayout ignores layout
+    // margins, so the line under the box takes this as padding.
+    readonly property real boxIndent: (publicAddress.mirrored ? publicAddress.rightPadding : publicAddress.leftPadding)
+                                      + publicAddress.indicator.width + publicAddress.spacing
+
+    // The Service list's rows: ipify.org, Mullvad, Custom.
+    readonly property int picked: custom ? 2 : service.preset === "mullvad" ? 1 : 0
+
+    // Picking a service writes the URLs that select it: none for ipify.org,
+    // Mullvad's pair for Mullvad, and for Custom what Custom held before
+    // another service was picked.
+    function pick(row) {
+        if (row === picked) {
+            return;
+        }
+        // Custom is flagged only after the URLs are back, so settle() can't
+        // take it for Defaults when a stored blank URL turns empty.
+        if (row === 2) {
+            cfg_publicAddressUrl4 = keptUrls[0];
+            cfg_publicAddressUrl6 = keptUrls[1];
+            customPicked = true;
+            return;
+        }
+        if (custom) {
+            keptUrls = [cfg_publicAddressUrl4, cfg_publicAddressUrl6];
+        }
+        customPicked = false;
+        cfg_publicAddressUrl4 = row === 1 ? Lookup.MULLVAD.v4 : "";
+        cfg_publicAddressUrl6 = row === 1 ? Lookup.MULLVAD.v6 : "";
+    }
+    // Both URLs emptied from outside the fields, as Defaults does, means
+    // ipify.org again, so Custom closes with them.
+    function settle() {
+        if (customPicked && cfg_publicAddressUrl4 === "" && cfg_publicAddressUrl6 === ""
+                && !url4.input.activeFocus && !url6.input.activeFocus) {
+            customPicked = false;
+        }
+    }
+    onCfg_publicAddressUrl4Changed: settle()
+    onCfg_publicAddressUrl6Changed: settle()
+
+    // What's wrong with a service URL, in a few words, or "".
+    function urlProblem(url) {
+        const u = String(url).trim();
+        if (u === "" || Lookup.host(u) !== "") {
+            return "";
+        }
+        if (!/^https:\/\//i.test(u)) {
+            return i18nc("@info under a URL field", "Only https:// addresses work.");
+        }
+        if (/^https:\/\/[^\/?#]*@/i.test(u)) {
+            return i18nc("@info under a URL field", "Leave out the user name and password.");
+        }
+        return i18nc("@info under a URL field", "Check the host name.");
+    }
+
+    // A public address service's URL, and what's wrong with it, if anything.
+    component UrlField: ColumnLayout {
+        id: field
+
+        property string url
+        property string name
+        readonly property alias input: textField
+        readonly property string problem: page.urlProblem(url)
+
+        signal edited(string text)
+
+        Kirigami.FormData.buddyFor: textField
+        Layout.fillWidth: false
+        Layout.preferredWidth: Kirigami.Units.gridUnit * 16
+        spacing: Kirigami.Units.smallSpacing
+
+        QQC2.TextField {
+            id: textField
+            Layout.fillWidth: true
+            // A URL reads left to right in any language.
+            LayoutMirroring.enabled: false
+            horizontalAlignment: TextInput.AlignLeft
+            text: field.url
+            inputMethodHints: Qt.ImhUrlCharactersOnly | Qt.ImhNoAutoUppercase | Qt.ImhNoPredictiveText
+            Accessible.name: field.name
+            Accessible.description: field.problem
+            onTextEdited: {
+                page.customPicked = true;
+                field.edited(text);
+            }
+            // A stored URL opens at its start, not scrolled to its end.
+            onTextChanged: if (!activeFocus) cursorPosition = 0
+        }
+        Note {
+            visible: field.problem !== ""
+            color: Kirigami.Theme.negativeTextColor
+            horizontalAlignment: Text.AlignLeft
+            text: field.problem
+        }
+    }
 
     Kirigami.FormLayout {
         id: form
@@ -37,24 +154,34 @@ KCM.SimpleKCM {
             // Stepped only: the desktop style rewrites the text on every
             // keystroke, which fights the unit suffix.
             editable: false
-            textFromValue: (value, locale) => i18nc("@item:valuesuffix seconds between readings", "%1 s",
+            textFromValue: (value, locale) => i18nc("@item:valuesuffix seconds between panel updates", "%1 s",
                                                     Number(value / 1000).toLocaleString(locale, "f", 1))
             Accessible.name: i18nc("@label:spinbox", "Update interval")
             onValueModified: page.cfg_updateInterval = value
         }
 
-        QQC2.ComboBox {
-            Kirigami.FormData.label: i18nc("@label:listbox", "Graph history:")
-            model: page.historyChoices.map(s => s < 60
-                ? i18ncp("@item:inlistbox how far back the graphs reach", "%1 second", "%1 seconds", s)
-                : i18ncp("@item:inlistbox how far back the graphs reach", "%1 minute", "%1 minutes", s / 60))
-            // The nearest choice, should the stored value be one the list doesn't offer.
-            currentIndex: {
-                const d = page.historyChoices.map(s => Math.abs(s - page.cfg_historySeconds));
-                return d.indexOf(Math.min(...d));
-            }
-            Accessible.name: i18nc("@label:listbox", "Graph history")
-            onActivated: index => page.cfg_historySeconds = page.historyChoices[index]
+        QQC2.CheckBox {
+            id: keepHistory
+            Kirigami.FormData.label: i18nc("@label", "Graph history:")
+            text: i18nc("@option:check", "Keep the last hour and day across restarts")
+            // A setting left on where the module has since gone stays
+            // ticked, so it can be switched off.
+            enabled: page.storeAvailable || page.cfg_keepGraphHistory
+            checked: page.cfg_keepGraphHistory
+            Accessible.description: page.historyLine
+            onToggled: page.cfg_keepGraphHistory = checked
+        }
+
+        Note {
+            Layout.maximumWidth: Kirigami.Units.gridUnit * 30
+            // Measured from its own box: one further down the form would
+            // feed the form's width back into this line's.
+            readonly property real indent: (keepHistory.mirrored ? keepHistory.rightPadding : keepHistory.leftPadding)
+                                           + keepHistory.indicator.width + keepHistory.spacing
+            leftPadding: keepHistory.mirrored ? 0 : indent
+            rightPadding: keepHistory.mirrored ? indent : 0
+            horizontalAlignment: Text.AlignLeft
+            text: page.historyLine
         }
 
         Item {
@@ -150,7 +277,7 @@ KCM.SimpleKCM {
                 onToggled: page.cfg_networkBits = checked
             }
             QQC2.RadioButton {
-                text: i18nc("@option:radio", "Bytes per second (MiB/s)")
+                text: i18nc("@option:radio %1 is a unit, e.g. MiB/s", "Bytes per second (%1)", Format.panelRateUnits(false)[1])
                 checked: !page.cfg_networkBits
                 onToggled: page.cfg_networkBits = !checked
             }
@@ -160,29 +287,68 @@ KCM.SimpleKCM {
             Kirigami.FormData.isSection: true
         }
 
-        Kirigami.Separator {
-            Kirigami.FormData.label: i18nc("@title:group", "Claude and Codex")
-            Kirigami.FormData.isSection: true
+        QQC2.CheckBox {
+            id: publicAddress
+            Kirigami.FormData.label: i18nc("@label", "Public address:")
+            text: i18nc("@option:check", "Show in the Network popup")
+            checked: page.cfg_publicAddress
+            Accessible.description: page.line
+            onToggled: page.cfg_publicAddress = checked
         }
 
-        QQC2.SpinBox {
-            Kirigami.FormData.label: i18nc("@label:spinbox", "Check every:")
-            from: 5
-            to: 60
-            stepSize: 5
-            // Stepped only, for the same reason as Update interval above.
-            editable: false
-            value: page.cfg_usageRefreshMinutes
-            textFromValue: (value, locale) => i18ncp("@item:valuesuffix minutes between usage checks", "%1 minute", "%1 minutes", value)
-            Accessible.name: i18nc("@label:spinbox", "Check every")
-            onValueModified: page.cfg_usageRefreshMinutes = value
+        Note {
+            Layout.maximumWidth: Kirigami.Units.gridUnit * 30
+            leftPadding: publicAddress.mirrored ? 0 : page.boxIndent
+            rightPadding: publicAddress.mirrored ? page.boxIndent : 0
+            // Mirrored with the page, whatever the text's own direction.
+            horizontalAlignment: Text.AlignLeft
+            text: page.line
         }
-        QQC2.Label {
-            text: i18nc("@info", "Applies while the Claude or Codex item is on.")
-            textFormat: Text.PlainText
-            wrapMode: Text.Wrap
-            color: Style.dim(Kirigami.Theme.textColor)
-            font.pointSize: Kirigami.Theme.defaultFont.pointSize * 11.5 / 13
+
+        QQC2.ComboBox {
+            id: serviceChoice
+            Kirigami.FormData.label: i18nc("@label:listbox", "Service:")
+            visible: page.cfg_publicAddress
+            model: [Lookup.IPIFY.name, Lookup.MULLVAD.name, i18nc("@item:inlistbox a public address service", "Custom")]
+            currentIndex: page.picked
+            Accessible.name: i18nc("@label:listbox", "Service")
+            Accessible.description: page.line
+            // Picking ipify.org empties the URLs, so a stray scroll mustn't.
+            wheelEnabled: false
+            onActivated: index => {
+                page.pick(index);
+                // From the open list only: arrow keys on the closed one
+                // leave the focus where it is, so they can step back.
+                if (index === 2 && popup.visible) {
+                    url4.input.forceActiveFocus();
+                }
+            }
+        }
+
+        UrlField {
+            id: url4
+            Kirigami.FormData.label: i18nc("@label:textbox", "IPv4 URL:")
+            visible: page.cfg_publicAddress && page.custom
+            name: i18nc("@label:textbox", "IPv4 URL")
+            url: page.cfg_publicAddressUrl4
+            onEdited: text => page.cfg_publicAddressUrl4 = text
+        }
+
+        UrlField {
+            id: url6
+            Kirigami.FormData.label: i18nc("@label:textbox", "IPv6 URL:")
+            visible: page.cfg_publicAddress && page.custom
+            name: i18nc("@label:textbox", "IPv6 URL")
+            url: page.cfg_publicAddressUrl6
+            onEdited: text => page.cfg_publicAddressUrl6 = text
+        }
+
+        Note {
+            visible: page.cfg_publicAddress && page.custom
+            Layout.maximumWidth: url6.Layout.preferredWidth
+            horizontalAlignment: Text.AlignLeft
+            text: i18nc("@info under the custom service URLs; ip and city are JSON keys, not to be translated",
+                        "Each answers with the address, or JSON with ip and city.")
         }
     }
 }

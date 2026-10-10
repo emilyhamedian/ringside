@@ -1,39 +1,102 @@
 // SPDX-FileCopyrightText: 2026 Emily Hamedian <me@emily.dev>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+pragma ComponentBehavior: Bound
 import QtQuick
+import QtQuick.Shapes
+import QtQuick.Window
 import org.kde.kirigami as Kirigami
 import "code/items.js" as Items
+import "code/marks.js" as Marks
 import "code/style.js" as Style
 
-// An item's name inside its ring: CPU, GPU or MEM, or the Claude or Codex
-// mark. It sits in the clear middle, inside the inner ring when one is drawn,
+// An item's name inside its ring: CPU, GPU or MEM, or the Claude, Codex or
+// OpenAI mark. It sits in the clear middle, inside the inner ring when one is drawn,
 // the name shrinking to fit. Where even its smallest readable size would not
 // fit, or the caller turns it off, it is left out; the tooltip and the popup
-// still name the item.
+// still name the item. As an inner ring comes or goes, the name eases from
+// its old size to its new one, and fades out or in where it stops or starts
+// fitting.
 Item {
     id: name
 
     required property string item
+    // The mark a Claude or Codex ring draws: "claude", "codex", or "openai"
+    // for the Codex ring with the OpenAI logo.
+    property string mark: item
     // RingGauge.centreWidth: the clear width inside the innermost ring.
     required property real room
+    // Scales the name's font. The package never sets it: the tests do, to
+    // stand in for Breeze's 8 pt small font with their own theme's larger one.
     property real sizeFactor: 1
     property bool active: true
+    // Off draws a new size, and a name that comes or goes, at once, as at
+    // Plasma's Instant speed. The tests turn it off to check layouts.
+    property bool animated: Kirigami.Units.longDuration > 1
+    // The size laid out, a name's pixel size or a mark's, and the one
+    // drawn, eased from the last: the name is laid out once at its new
+    // size and scaled from the old one.
+    readonly property real size: usage ? markSize : label.fontInfo.pixelSize
+    property real shownSize: size
+    // A change that comes with a resize of the ring, in the same event, as
+    // the panel's thickness changes, is drawn at once, so the name keeps up
+    // with its ring. Its anchors resize the name before its room changes.
+    readonly property bool easing: animated && !resized.running
+
+    onWidthChanged: resized.restart()
+    onHeightChanged: resized.restart()
+
+    Timer {
+        id: resized
+        interval: 0
+    }
+
+    Behavior on shownSize {
+        enabled: name.easing && name.shownSize > 0
+        NumberAnimation { duration: Kirigami.Units.longDuration; easing.type: Easing.InOutCubic }
+    }
+
+    Behavior on opacity {
+        enabled: name.easing
+        NumberAnimation { duration: Kirigami.Units.shortDuration }
+    }
 
     readonly property bool usage: Items.isUsage(item)
     readonly property real minimumPointSize: Kirigami.Theme.smallFont.pointSize * 0.7 * sizeFactor
     // The middle is round, so a name's ink has less room than the middle's
     // width: only the chord at its cap height.
     readonly property real chord: 2 * Math.sqrt(Math.max(0, room * room / 4 - smallest.tightBoundingRect.height ** 2 / 4))
-    // The Standalone dial's proportion: a 15 px mark in a 52 px ring.
-    readonly property real markSize: Math.round(width * 15 / 52)
+    readonly property var art: mark === "claude" ? Marks.CLAUDE : mark === "openai" ? Marks.OPENAI : Marks.CODEX
+    // A little taller than a name's line, so a mark fills its ring about as
+    // much as CPU or MEM fill theirs, by the mark's own scale, kept a pixel
+    // clear of the innermost ring, and none at all where there is no room.
+    readonly property real markSize: Math.max(0, Math.min(Math.round(nameFont.height * 1.2 * (art.scale ?? 1)), Math.floor(room) - 2))
     readonly property bool fits: usage ? markSize >= Kirigami.Units.iconSizes.small / 2 && markSize <= room
+                                         && markSize * Screen.devicePixelRatio >= (art.minimum ?? 0)
                                        : smallest.advanceWidth <= chord
 
     anchors.fill: parent
-    visible: active && fits
+    opacity: active && fits ? 1 : 0
+    visible: opacity > 0
+    // About the ring's centre, where the label's capitals and the mark sit.
+    transform: Scale {
+        origin.x: name.width / 2
+        origin.y: name.height / 2
+        xScale: name.size > 0 ? name.shownSize / name.size : 1
+        yScale: xScale
+    }
+    // While it scales, the name is drawn once into a texture and the
+    // texture scaled, so thin strokes soften rather than drop out.
+    layer.enabled: animated && shownSize !== size
+    layer.smooth: true
+    layer.mipmap: true
     // The cell's description names the item.
     Accessible.ignored: true
+
+    FontMetrics {
+        id: nameFont
+        font: label.font
+    }
 
     TextMetrics {
         id: smallest
@@ -42,30 +105,73 @@ Item {
         text: label.text
     }
 
-    Kirigami.Icon {
-        anchors.centerIn: parent
-        visible: name.usage
-        width: name.markSize
-        height: width
-        source: name.item === "claude" ? Qt.resolvedUrl("../icons/claude.svg") : Qt.resolvedUrl("../icons/openai.svg")
-        isMask: true
-        color: Kirigami.Theme.textColor
+    // The mark, drawn as a path like the rings, so it sits on their centre
+    // whatever the device pixel grid: an icon texture is snapped to whole
+    // device pixels, up to half a pixel away. Only Claude and Codex load it;
+    // a system ring has no mark to parse. The Loader is left unsized, since a
+    // sized one resizes what it loads to itself.
+    Loader {
+        active: name.usage
+
+        sourceComponent: Shape {
+            id: mark
+
+            // Names the mark for the tests, which can't read a path.
+            readonly property string markName: name.mark
+            readonly property var art: name.art
+            // Scene pixels per viewBox unit.
+            readonly property real unit: name.markSize / art.box[2]
+
+            // The viewBox's middle lands on the ring's.
+            x: name.width / 2 - (art.box[0] + art.box[2] / 2) * unit
+            y: name.height / 2 - (art.box[1] + art.box[2] / 2) * unit
+            width: name.markSize
+            height: name.markSize
+            preferredRendererType: Shape.CurveRenderer
+            transform: Scale { xScale: mark.unit; yScale: mark.unit }
+
+            ShapePath {
+                // The names' tone, so the mark reads as one of them.
+                fillColor: Style.dim(Kirigami.Theme.textColor)
+                strokeColor: "transparent"
+                fillRule: ShapePath.WindingFill
+                PathSvg { path: mark.art.path }
+            }
+        }
     }
 
-    // Spans the ring, padded in to the chord, and centred by its own
-    // alignment: positioning a narrower label left it a pixel off centre on
-    // Qt 6.6.
+    // The size HorizontalFit settles on, to set the name by its capitals.
+    FontMetrics {
+        id: fitted
+        font.family: label.font.family
+        font.pixelSize: Math.max(1, label.fontInfo.pixelSize)
+    }
+
+    TextMetrics {
+        id: capSample
+        font: fitted.font
+        text: "H"
+    }
+
+    // capitalHeight needs Qt 6.9; the ink of "H" stands in before that.
+    readonly property real capHeight: fitted.capitalHeight ?? capSample.tightBoundingRect.height // qmllint disable missing-property
+
+    // Laid out across the chord, so it shrinks to fit, and set so that the
+    // capitals' middle sits at the centre, not the line box's, which is
+    // taller below the baseline than above the capitals, and without the
+    // letter space after the last glyph, which centring the advance counts.
+    // Placed by x and y, not anchors, which round an odd width to a whole
+    // pixel.
     Text {
         id: label
-        anchors.fill: parent
-        leftPadding: (name.width - name.chord) / 2
-        rightPadding: leftPadding
         visible: !name.usage
+        width: name.chord
+        x: (name.width - width) / 2 + font.letterSpacing / 2
+        y: name.height / 2 + name.capHeight / 2 - baselineOffset
         horizontalAlignment: Text.AlignHCenter
-        verticalAlignment: Text.AlignVCenter
-        text: name.item === "cpu" ? i18nc("@label short for processor", "CPU")
-            : name.item === "gpu" ? i18nc("@label short for graphics card", "GPU")
-            : i18nc("@label short for memory", "MEM")
+        text: name.item === "cpu" ? i18nc("@label ring name, at most 3 characters, short for processor", "CPU")
+            : name.item === "gpu" ? i18nc("@label ring name, at most 3 characters, short for graphics card", "GPU")
+            : i18nc("@label ring name, at most 3 characters, short for memory", "MEM")
         color: Style.dim(Kirigami.Theme.textColor)
         font.pointSize: Kirigami.Theme.smallFont.pointSize * 0.95 * name.sizeFactor
         font.letterSpacing: Kirigami.Theme.smallFont.pointSize * 0.08 * name.sizeFactor

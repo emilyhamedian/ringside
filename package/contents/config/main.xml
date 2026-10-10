@@ -12,16 +12,18 @@
 
   <group name="General">
     <entry name="updateInterval" type="Int">
-      <label>Milliseconds between readings</label>
+      <label>Milliseconds between panel updates</label>
       <default>1000</default>
       <min>500</min>
       <max>10000</max>
     </entry>
-    <entry name="historySeconds" type="Int">
-      <label>How far back the popup graphs reach, in seconds</label>
-      <default>60</default>
-      <min>30</min>
-      <max>600</max>
+    <entry name="graphSpan" type="String">
+      <label>How far back the popup graphs reach: minute, hour or day, chosen on a graph's caption</label>
+      <default>minute</default>
+    </entry>
+    <entry name="keepGraphHistory" type="Bool">
+      <label>Keep the graphs' hour and day across Plasma restarts, in Qt's LocalStorage</label>
+      <default>false</default>
     </entry>
     <entry name="fahrenheit" type="Bool">
       <default>false</default>
@@ -39,6 +41,17 @@
     <entry name="hotCelsius" type="Double">
       <default>90</default>
     </entry>
+    <entry name="publicAddress" type="Bool">
+      <label>Show the public address in the network popup</label>
+      <default>false</default>
+    </entry>
+    <entry name="publicAddressUrl4" type="String">
+      <label>An https URL that answers with the IPv4 address, alone or as JSON with ip, city and country; with this or the IPv6 one set, only these are asked; Mullvad's pair is the am.i.mullvad.net choice</label>
+      <default></default>
+    </entry>
+    <entry name="publicAddressUrl6" type="String">
+      <default></default>
+    </entry>
     <entry name="usageRefreshMinutes" type="Int">
       <label>Minutes between Claude and Codex usage checks</label>
       <default>5</default>
@@ -54,23 +67,6 @@
     </entry>
     <entry name="hiddenItems" type="StringList">
       <default>disk</default>
-    </entry>
-    <entry name="layout" type="Int">
-      <label>0 inline strip, 1 standalone dials</label>
-      <default>0</default>
-      <min>0</min>
-      <max>1</max>
-    </entry>
-    <entry name="visibilityMode" type="Int">
-      <label>Standalone: 0 fold behind maximized windows, 1 always open, 2 always folded</label>
-      <default>0</default>
-      <min>0</min>
-      <max>2</max>
-    </entry>
-    <entry name="panelThickness" type="Int">
-      <label>Standalone: the open thickness of a panel Ringside has to itself</label>
-      <default>0</default>
-      <min>0</min>
     </entry>
     <entry name="ringsOnly" type="StringList">
       <label>Ring items drawn without their text</label>
@@ -111,6 +107,18 @@
       <default></default>
     </entry>
     <entry name="codexInnerLimit" type="String">
+      <default></default>
+    </entry>
+    <entry name="codexMark" type="String">
+      <label>The logo in the Codex ring: codex, or openai for the OpenAI logo</label>
+      <default>codex</default>
+    </entry>
+    <entry name="claudeProgram" type="String">
+      <label>Where the claude program is, for the session starter, as shown with ~; empty finds it automatically</label>
+      <default></default>
+    </entry>
+    <entry name="codexProgram" type="String">
+      <label>Where the codex program is, as shown with ~; empty finds it automatically</label>
       <default></default>
     </entry>
     <entry name="knownLimits" type="String">

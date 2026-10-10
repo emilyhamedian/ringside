@@ -1,7 +1,11 @@
-package/contents/icons/openai.svg is the OpenAI logo as a single-colour mask,
-which Plasma tints to match the theme.
+package/contents/icons/codex.svg is the Codex logo in a single colour, its
+cloud drawn as an outline, and package/contents/icons/openai.svg is the OpenAI
+logo as a single-colour mask. The CODEX and OPENAI entries in
+package/contents/ui/code/marks.js hold the same outlines as path data, which
+Ringside draws in the theme's colours.
 
-OpenAI and the OpenAI logo are trademarks of OpenAI OpCo, LLC. Ringside is not
-affiliated with or endorsed by OpenAI and includes the logo only to label its
-Codex item. The file is not covered by Ringside's GPL-3.0-or-later licence,
-and its inclusion grants no rights to use the mark.
+OpenAI, Codex, the Codex logo and the OpenAI logo are trademarks of OpenAI
+OpCo, LLC. Ringside is not affiliated with or endorsed by OpenAI and includes
+the logos only to label its Codex item. None of these copies is covered by
+Ringside's GPL-3.0-or-later licence, and including them grants no rights to
+use the marks.

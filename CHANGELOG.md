@@ -13,6 +13,241 @@ follows [Semantic Versioning](https://semver.org/).
   docs-only changes; subsequent ready updates and base changes run them again.
   Main, release and tag checks retain full coverage.
 
+## [0.3.0] - 2026-10-05
+
+### Added
+
+- The popups' graphs show the last minute, hour or day. The span at the end
+  of each graph's caption, "USAGE · 1 min", opens a menu of the three, from
+  the pointer or the keyboard, and the choice applies to every graph in
+  every popup and is remembered. The hour is drawn in 30-second steps and
+  the day in 10-minute ones: each step's average as the line, with a faint
+  band up to its highest reading, which a rate graph's caption names as its
+  peak. Time the computer slept or Plasma wasn't running is left empty, and
+  a step alone between gaps is drawn as a short mark. The graphs record
+  whether a popup is open or not, and read nothing more to do it: a
+  discrete GPU's hour and day are 0 while it sleeps and empty while it is
+  awake but unread.
+- *Keep the last hour and day across restarts* on General, off by default,
+  saves each graph's steps with Qt's LocalStorage every 10 minutes and as
+  the widget stops, and brings them back when the widget starts. Turning it
+  off deletes them.
+  Debian and Ubuntu package the module on its own
+  (`qml6-module-qtquick-localstorage`); without it the box is greyed out
+  and the history stays in memory. See SECURITY.md for what is kept and
+  where.
+- The CPU, GPU and disk popups graph their temperature over the span shown,
+  under the usage graph (after the write rate for a disk). Its scale runs
+  from a round ten at least 5 °C below the coolest reading of the last day
+  to your hot threshold, or to the day's hottest rounded up to a five when
+  that is hotter, so it stays put when the span changes. The end of the
+  caption line names the span's peak, such as "peak 62 °C", and a faint line
+  marks your hot threshold. The line turns amber and red where it passes
+  your thresholds,
+  and leaves a gap while a GPU sleeps. A GPU or drive with no temperature
+  reading has no graph, nor has an integrated GPU beside a discrete one.
+- The network popup can show the public address websites see under the
+  local one, with the interface each address family leaves through when
+  that isn't the local one, a shield for a tunnel, and a warning when IPv6
+  goes around a VPN that IPv4 uses, or the other way round. It is off until
+  you turn it on under General, and the popup shows nothing of it before
+  then. Ringside asks ipify.org when the popup opens, at most once a
+  minute, and again when the route changes while it is open. General also
+  offers am.i.mullvad.net, which names a city, and a Custom service that
+  takes the https addresses of another; a reply that names a city, from
+  Mullvad or a Custom service such as a self-hosted echoip, has the popup
+  say roughly where it places each address. A change
+  of address since the last check, or the last address seen when the
+  service can't be reached, shows under the addresses, and after a failed
+  check *Try again* beside the message asks at once.
+- The Claude and Codex popup says where the week is heading in one
+  sentence, at the rate it has been used so far, such as "On pace to use
+  80% by the reset", "Fable is on pace to run out Tue 3:30 AM" or "Limit
+  reached Sun 3:00 PM". It appears from a day into the week, or at once for
+  a limit that is running out. Colours still follow the reading alone:
+  amber from 75% and red from 90%.
+- The week graph in the Claude and Codex popup has a line at 100%, a floor
+  with a tick at each midnight, and an edge at the reset. For the limit the
+  pace sentence says runs out, a dashed line in that limit's colour marks
+  the moment, with the time under the floor. A single reading shows as a
+  dot, and the marker for now appears only when the last reading is over
+  two hours old.
+- A failed Claude or Codex check keeps the last reading in grey, the ring
+  broken into eight segments, with no amber, red or breathing, until it is
+  two check intervals old. Then, or
+  once the week has reset, the arcs unwind, the ring is struck through in
+  the grey of its track, and the numbers read "––%" over "–d" until a check
+  succeeds. The tooltip, which screen readers also read, says when and why
+  the check failed, the last reading and its time, and when the next check
+  runs, even with the ring's text shown. While the ring is grey the popup
+  keeps the last reading in grey under the same status and hatches the week
+  graph from it to now. Once the ring is struck the popup strikes its own
+  and shows only the status, with no numbers, bars, pace or graph, and the
+  session starter's switch keeps its place but can't be turned until a
+  check succeeds. *Try again* appears only when a check would really ask.
+  This replaces the fade, which looked like a sleeping GPU.
+- Claude and Codex show from the moment the widget starts. While their
+  first check runs, the ring is a circle of still dots with the mark dimmed
+  and a dim dash over a dash beside it; after a second a lit dot travels
+  round it, at a fixed pace, until the check ends, 30 s have passed or the
+  panel is hidden, and never at Plasma's Instant speed. A reply within the
+  second only fills the ring in. The first reading fills the track in over
+  the dots from twelve as the arc draws in and the numbers fade in. A first
+  check that fails strikes the ring, with the tooltip and popup saying why,
+  where the item used to stay hidden; a Codex whose CLI isn't installed
+  says so, with no *Try again*. The popup says "Checking your usage…"
+  meanwhile. A tool last seen signed out stays hidden, as before.
+- A panel item with keyboard focus has a line around it in the theme's
+  focus colour.
+- A switch in the Claude and Codex popups, off by default, starts the next
+  Claude session or Codex week as soon as the last one ends, by sending one
+  word through the Claude Code or Codex CLI, so a window is always running
+  instead of waiting for your next message. The line under the switch says
+  when the next one starts, or why it can't. While failed checks have the
+  ring struck through, the switch can't be turned. See "Starting the next
+  session" in the README.
+- Readings move into place instead of jumping. A ring sweeps to each new
+  reading and turns amber or red as it passes 75% or 90%, and the number in
+  a popup's ring counts along with it; the Claude and Codex bars do the
+  same. The week graph draws each new stretch of line and fades in its
+  run-out, and a second GPU's ring and its popup section fade in and out.
+  The motion follows Plasma's animation
+  speed, and with animations set to Instant readings change at once, as
+  before.
+- A logo: the gauge ring over the name, at the top of the README and as the
+  widget's icon in Add Widgets and the panel. The About page shows it from
+  Plasma 6.7; earlier Plasma shows nothing there. `scripts/logo.py` draws
+  the files.
+- Ringside writes what goes wrong to Plasma's journal, under
+  `ringside.usage`, `ringside.network`, `ringside.gpu` and
+  `ringside.setup`: failed Claude and Codex checks and why, a wait the
+  provider asked for ending, the session starter's messages and pauses, a
+  discrete GPU going to sleep or waking and Ringside reading it or letting
+  go, and sensors, the hardware helper or saved history that don't work. A
+  failure that repeats is written once, and once more when it ends.
+  `ringside.*.debug=true` adds every check and public address request with
+  its timing. No tokens, addresses, places, account names or file contents
+  are written. See "When something looks wrong" in the README.
+- *AI Providers* can say where the `claude` and `codex` programs are, for
+  when Plasma's PATH doesn't reach them, as with an npm, bun or nvm install.
+  A *Program* field shows under OpenAI when Codex can't be found, and under
+  Claude when the session starter is on and can't find `claude`, or wherever
+  a path is set. A note under it says when a path can't be run, and the
+  popup says so too. An empty field finds the program as before.
+
+### Changed
+
+- Rings are shaded, lighter at the top and deeper at the bottom, in the
+  theme's colours.
+- A Claude check waits up to 20 seconds for Anthropic, as a Codex check
+  always has for Codex, so a slow or lossy connection greys the ring less
+  often.
+- Across a horizontal panel, rates always show three figures, from kb/s or
+  KiB/s up, such as "8.40 Mb/s", "62.1 kb/s", or "0.00 KiB/s" when idle,
+  and move to the next unit before a fourth: 1023 KiB/s reads "1.00 MiB/s".
+  A rate's unit sits closer to its number. Memory in use shows one decimal
+  and its unit, such as "9.6 GiB" or "512.0 MiB", where it showed "9.60G".
+  Tooltips and popups keep their own formats.
+- Panel items sit a little further apart, half as much again as the gap
+  between a ring and its readings, so each item's readings read as its own
+  ring's.
+- The panel countdown shows only its largest unit: "6d", "23h" or "59m";
+  the popup and the tooltip keep the full time. It turns red at 100%, where
+  it says how long the limit stays reached.
+- Top processes show a busy indicator until they are read, in the popup's
+  dim text colour like its captions rather than the theme's accent. The CPU
+  list, which needs two scans, fills in about two seconds after its popup
+  opens, where it could take four.
+- Popup numbers and the ring's centre percentage use the theme's font with
+  figures of even width instead of a monospace font, which left gaps around
+  the decimal point. Units are smaller. °C and °F sit close to the digits,
+  raised level with their top in the CPU, GPU and disk headers. Process
+  names stay monospace.
+- Graphs lose their grid lines. Percentage graphs have a line at 100%,
+  named at the end of the caption line above the graph, where no line can
+  cross it; rate graphs reach up to their peak, named in the same place when
+  it fits, or to 1 Mb/s (1 MiB/s for a disk) when the peak is lower.
+- The popups' graphs take a reading every second, or at the update interval
+  when that is shorter, so they catch short bursts: 60 points a minute at
+  the default interval and up. Each new reading moves the line a step to
+  the left at once. The panel still changes once per update interval, and
+  a popup's readings follow each one, so its numbers agree with the graph
+  under them.
+- A CPU or GPU temperature names its sensor in plain words only when it
+  isn't the whole chip's: chiplet, hotspot and memory instead of Tccd,
+  junction and mem, and nothing for Tctl, Tdie, Package id or edge.
+- The Claude and Codex popup sets its countdown's units smaller than its
+  digits; the panel's stay the size of its digits. With one limit it shows
+  no bars, since the ring gives the number, and reads "Weekly limit". The
+  week graph loses its day lines, half line and even-pace diagonal;
+  midnights are short ticks on its floor.
+- Popups line up their content on one edge, and every header sets its
+  title and reading at the same height whether or not it has a ring, with
+  even padding in tiles and matching dividers. The load
+  average shows its three numbers evenly spaced, the network header's
+  rates are larger, and "Since boot" puts each arrow before its total. The
+  footer's link and settings button line up with the edges of the readings
+  above them. The network header gives the connection's name and its
+  address a line each, so a long name no longer hides the address.
+- Network and disk each have a popup of their own, where they shared one.
+  The disk popup's header gives the device, its size and the volume's free
+  space, with the drive's temperature where the CPU and GPU headers have
+  theirs. Its read and write graphs span the popup, with their time span
+  and peak on the caption line, as the other popups' graphs do.
+- The network graph draws upload as strongly as download, told apart by
+  longer dashes, and its legend shows a sample of each line.
+- Each GPU in the GPU popup opens with the header the CPU and Claude popups
+  use: its usage ring, its name, its kind and memory, and its temperature.
+  A second GPU follows after a rule with a header of its own, and a
+  sleeping GPU stays one line. The integrated GPU always comes first, so a
+  discrete GPU that wakes opens below it instead of pushing it down.
+- Translators are told that CPU, GPU and MEM sit inside a ring in at most
+  three characters.
+- The Codex ring shows the Codex mark, its cloud drawn as an outline, or the
+  OpenAI logo it showed before, at its old size: choose which on AI
+  Providers, where the choice appears once Codex is on or has reported.
+  With the OpenAI logo, its popup and tooltip call it ChatGPT. The settings
+  call the provider OpenAI.
+- How often Claude and Codex are checked, and which per-model limit each
+  inner ring shows, moved from General and Sensors to a new AI Providers
+  page in the settings, with a section for each provider. Existing settings
+  carry over.
+- Sizes and byte rates follow *Region & Language → Data and storage units*:
+  KiB, MiB, GiB as before, or KB, MB, GB, or kB, MB, GB in 1000s.
+
+### Removed
+
+- The Graph history setting on General, which set every graph to 30
+  seconds up to 10 minutes. The span on each graph's caption replaces it;
+  its minute is the old default of 60 seconds.
+- The Standalone layout, with its Layout and Fold settings and
+  `scripts/add-panel.sh`. A panel set up for it now shows the strip; remove
+  that panel and add Ringside to another one if you'd rather.
+- The Claude helper's fallback that took a Fable limit from a separate
+  field of Anthropic's reply. Model limits now come only from the reply's
+  list of limits, under the names it gives them.
+
+### Fixed
+
+- Ring names and the Claude and Codex marks sit at the ring's centre. At
+  scales such as 125% they could be up to a pixel off: a ring of an odd
+  size was rounded to a whole pixel, the marks were snapped to the
+  screen's pixels, and names were centred with the space below their
+  letters and after the last one.
+- With a right-to-left language, panel rates keep each number before its
+  unit, and the load average no longer has a dot that reads as an Arabic
+  zero.
+- A longer translation of the Memory popup's legend wraps instead of
+  widening the popup past its frame.
+- Screen readers say "unavailable" for a missing rate or load average
+  instead of reading out a dash and a stray unit.
+- Claude and Codex times, such as when the week resets or when a check
+  failed, no longer show seconds in the C locale on Qt 6.6.
+- A top process that runs several times shows its count in the locale's
+  digits, and popup percentages follow the translation's percent format.
+- Opening the settings no longer logs a warning to the system journal for
+  every setting each page doesn't show.
+
 ## [0.2.2] - 2026-10-04
 
 ### Changed
@@ -111,7 +346,8 @@ follows [Semantic Versioning](https://semver.org/).
   and one reader per GPU is shared across widgets so a second Ringside
   doesn't keep it awake.
 
-[Unreleased]: https://github.com/emilyhamedian/ringside/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/emilyhamedian/ringside/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/emilyhamedian/ringside/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/emilyhamedian/ringside/compare/v0.2.0...v0.2.2
 [0.2.0]: https://github.com/emilyhamedian/ringside/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/emilyhamedian/ringside/releases/tag/v0.1.0

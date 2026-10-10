@@ -8,11 +8,6 @@ SPDX-FileCopyrightText = "2026 Emily Hamedian <me@emily.dev>"
 SPDX-License-Identifier = "GPL-3.0-or-later"
 
 [[annotations]]
-path = "docs/*.gif"
-SPDX-FileCopyrightText = "2026 Emily Hamedian <me@emily.dev>"
-SPDX-License-Identifier = "GPL-3.0-or-later"
-
-[[annotations]]
 path = ["*.md", ".gitignore", ".editorconfig"]
 SPDX-FileCopyrightText = "2026 Emily Hamedian <me@emily.dev>"
 SPDX-License-Identifier = "GPL-3.0-or-later"
@@ -38,9 +33,11 @@ path = ".github/**"
 SPDX-FileCopyrightText = "2026 Emily Hamedian <me@emily.dev>"
 SPDX-License-Identifier = "GPL-3.0-or-later"
 
-# The Claude and OpenAI marks identify the services Ringside's optional usage
-# items poll; Ringside doesn't hold rights to either and isn't endorsed by
+# The Claude, Codex and OpenAI marks identify the services Ringside's optional
+# usage items poll; Ringside doesn't hold rights to them and isn't endorsed by
 # Anthropic or OpenAI. See LICENSES/LicenseRef-*-Trademark.txt.
+# package/contents/ui/code/marks.js copies their outlines and names the same
+# licences in its own header.
 
 [[annotations]]
 path = "package/contents/icons/claude.svg"
@@ -48,6 +45,6 @@ SPDX-FileCopyrightText = "Anthropic, PBC"
 SPDX-License-Identifier = "LicenseRef-Anthropic-Trademark"
 
 [[annotations]]
-path = "package/contents/icons/openai.svg"
+path = ["package/contents/icons/codex.svg", "package/contents/icons/openai.svg"]
 SPDX-FileCopyrightText = "OpenAI OpCo, LLC"
 SPDX-License-Identifier = "LicenseRef-OpenAI-Trademark"

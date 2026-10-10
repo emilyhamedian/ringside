@@ -4,7 +4,6 @@
 import QtQuick
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
-import "../code/format.js" as Format
 
 // A captioned reading on a faint rounded panel.
 Rectangle {
@@ -12,19 +11,61 @@ Rectangle {
 
     property string caption: ""
     property string detail: ""
-    // The time the tile's graph spans, shown after the caption in place of
-    // the detail: "USAGE · 60 s", "USAGE · 2 min".
-    property int graphSeconds: 0
+    // For a tile with a graph, the Monitor: the span its graphs show
+    // follows the caption in place of the detail, "USAGE · 1 min", as the
+    // control that changes it (SpanButton).
+    property var spans: null
+    // What the top of the tile's graph stands for, at the far end of the
+    // caption line over the top's end, outside the graph so that no line
+    // runs through it: "100%", "peak 24.8 Mb/s".
+    property string graphTop: ""
+    // The text the content ends on, such as a reading, if it doesn't end on
+    // a graph: its line has room for descenders below its ink.
+    property Item foot: null
     default property alias content: body.data
 
     readonly property real horizontalPadding: Math.round(Kirigami.Units.largeSpacing * 1.5)
     readonly property real verticalPadding: Math.round(Kirigami.Units.largeSpacing * 1.25)
+    // The caption's line box has room for accents over its capitals. Half
+    // of that comes off the top padding; the ink at the foot, a graph's
+    // floor or a text's baseline, sits as far from the bottom as the
+    // capitals then sit from the top. Worked out from the fonts, never from
+    // the content's layout, so the tile's height can't feed back into it.
+    readonly property real topTrim: captionText.visible ? Math.round((captionMetrics.ascent - capHeight) / 2) : 0
+    readonly property real inkInset: verticalPadding + (captionText.visible ? captionMetrics.ascent - capHeight - topTrim : 0)
+    readonly property real bottomPadding: Math.max(0, Math.round(inkInset - (foot ? foot.implicitHeight - foot.baselineOffset : 0)))
+    // capitalHeight needs Qt 6.9; the ink of "H" stands in before that.
+    readonly property real capHeight: captionMetrics.capitalHeight ?? capSample.tightBoundingRect.height // qmllint disable missing-property
 
     Layout.fillWidth: true
     implicitWidth: column.implicitWidth + 2 * horizontalPadding
-    implicitHeight: column.implicitHeight + 2 * verticalPadding
+    implicitHeight: column.implicitHeight + verticalPadding - topTrim + bottomPadding
     radius: Kirigami.Units.smallSpacing
     color: Qt.alpha(Kirigami.Theme.textColor, 0.05)
+
+    FontMetrics {
+        id: captionMetrics
+        font: captionText.font
+    }
+
+    TextMetrics {
+        id: capSample
+        font: captionText.font
+        text: "H"
+    }
+
+    // The caption's label, and an ellipsis when its detail is cut off.
+    TextMetrics {
+        id: labelRoom
+        font: captionText.font
+        text: captionText.label.toLocaleUpperCase() + (captionText.detail !== "" ? "…" : "")
+    }
+
+    TextMetrics {
+        id: space
+        font: captionText.font
+        text: " "
+    }
 
     ColumnLayout {
         id: column
@@ -38,22 +79,73 @@ Rectangle {
         anchors.top: parent.top
         anchors.leftMargin: tile.horizontalPadding
         anchors.rightMargin: tile.horizontalPadding
-        anchors.topMargin: tile.verticalPadding
+        anchors.topMargin: tile.verticalPadding - tile.topTrim
         spacing: Math.round(Kirigami.Units.smallSpacing / 2)
 
-        Caption {
-            visible: text !== ""
-            label: tile.caption
-            detail: {
-                if (tile.graphSeconds <= 0) {
-                    return tile.detail;
-                }
-                const minutes = Format.spanMinutes(tile.graphSeconds);
-                return "· " + (minutes > 0
-                    ? i18nc("@title:group time a graph spans, as in USAGE · 2 min", "%1 min", minutes)
-                    : i18nc("@title:group time a graph spans, as in USAGE · 60 s", "%1 s", tile.graphSeconds));
-            }
+        // Placed by hand rather than by a RowLayout: the room left for the
+        // graph's top depends on the line's width, which a layout would feed
+        // back into the tile's.
+        Item {
+            id: captionLine
+            readonly property real spacing: Kirigami.Units.largeSpacing
+            // The dot and the span after the caption, each a space apart.
+            readonly property real spanWidth: span.visible ? Math.ceil(2 * space.advanceWidth + dot.implicitWidth + span.implicitWidth) : 0
+            visible: captionText.text !== ""
             Layout.fillWidth: true
+            implicitWidth: captionText.implicitWidth + spanWidth + (topText.text !== "" ? spacing + topText.implicitWidth : 0)
+            implicitHeight: captionText.implicitHeight
+
+            Caption {
+                id: captionText
+                anchors.left: parent.left
+                // With a span, as wide as its text, so the span follows it.
+                // The dot is a text of its own rather than the caption's,
+                // so it stays between the two in either direction.
+                width: span.visible
+                    ? Math.min(implicitWidth, parent.width - captionLine.spanWidth - (topText.visible ? topText.width + captionLine.spacing : 0))
+                    : parent.width - (topText.visible ? topText.width + captionLine.spacing : 0)
+                visible: text !== ""
+                label: tile.caption
+                detail: tile.spans !== null ? "" : tile.detail
+            }
+
+            Text {
+                id: dot
+                anchors.left: captionText.right
+                anchors.leftMargin: space.advanceWidth
+                anchors.baseline: captionText.baseline
+                visible: span.visible
+                text: "·"
+                color: captionText.color
+                font: captionText.font
+                textFormat: Text.PlainText
+            }
+
+            SpanButton {
+                id: span
+                anchors.left: dot.right
+                anchors.leftMargin: space.advanceWidth
+                anchors.baseline: captionText.baseline
+                visible: tile.spans !== null
+                monitor: tile.spans ?? ({ graphSpan: "minute" })
+            }
+
+            // With tabular digits, so a changing peak doesn't jostle the
+            // caption beside it. The caption's detail gives way first, then
+            // this, so the caption's label and its span stay whole. It shows
+            // whole or not at all: a stub of a peak says nothing, and the
+            // reading over the graph still gives the rate.
+            Caption {
+                id: topText
+                anchors.right: parent.right
+                width: Math.max(0, Math.min(Math.ceil(implicitWidth),
+                                            captionLine.width - captionLine.spacing - Math.ceil(labelRoom.advanceWidth)
+                                            - captionLine.spanWidth))
+                visible: text !== "" && width >= Math.ceil(implicitWidth)
+                text: tile.graphTop
+                font.features: ({ "tnum": 1 })
+                horizontalAlignment: Text.AlignRight
+            }
         }
 
         ColumnLayout {

@@ -7,6 +7,7 @@ import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
 import org.kde.ksysguard.sensors as Sensors
 import "../code/format.js" as Format
+import "../code/style.js" as Style
 import ".."
 
 PopupPage {
@@ -18,14 +19,24 @@ PopupPage {
         return sensor && typeof sensor.value === "number" ? sensor.value : NaN;
     }
 
+    // The load averages spoken as one, a missing one as a word rather than
+    // the dash shown on screen.
+    function loadAverageName(one, five, fifteen) {
+        const spoken = v => Format.usable(v) ? Format.load(v) : i18nc("@info:tooltip no reading", "unavailable");
+        return i18nc("@info accessible name of the load averages", "%1 over 1 minute, %2 over 5 minutes, %3 over 15 minutes",
+                     spoken(one), spoken(five), spoken(fifteen));
+    }
+
     // Readings only this popup shows; the Monitor never subscribes these ids.
-    Sensors.Sensor { id: frequency; sensorId: "cpu/all/averageFrequency"; updateRateLimit: popup.monitor.interval }
+    // They're read as often as the graph, so the whole popup moves together.
+    Sensors.Sensor { id: frequency; sensorId: "cpu/all/averageFrequency"; updateRateLimit: popup.monitor.readInterval }
     Sensors.Sensor { id: load1; sensorId: "cpu/loadaverages/loadaverage1" }
     Sensors.Sensor { id: load5; sensorId: "cpu/loadaverages/loadaverage5" }
     Sensors.Sensor { id: load15; sensorId: "cpu/loadaverages/loadaverage15" }
 
     PopupHeader {
         ringValue: popup.monitor.cpuUsage
+        interval: popup.monitor.sampleInterval
         title: i18nc("@title", "CPU")
         subtitle: {
             const m = popup.monitor;
@@ -34,22 +45,26 @@ PopupPage {
             return [m.cpuModel, count].filter(s => s !== "").join(" · ");
         }
         value: Format.temperature(popup.monitor.cpuTemperature, popup.monitor.fahrenheit)
-        degree: true
         degreeUnit: popup.monitor.fahrenheit ? "F" : "C"
         valueColor: {
             const level = popup.monitor.heat(popup.monitor.cpuTemperature);
             return level === 2 ? Kirigami.Theme.negativeTextColor
                  : level === 1 ? Kirigami.Theme.neutralTextColor : Kirigami.Theme.textColor;
         }
-        caption: popup.monitor.cpuTemperatureLabel
+        caption: words.sensorName(popup.monitor.cpuTemperatureLabel)
+    }
+
+    Words {
+        id: words
+        monitor: popup.monitor
     }
 
     GridLayout {
         Layout.fillWidth: true
-        Layout.leftMargin: Math.round(Kirigami.Units.largeSpacing * 1.5)
+        Layout.leftMargin: Math.round(Kirigami.Units.largeSpacing * 2)
         Layout.rightMargin: Layout.leftMargin
         Layout.topMargin: Math.round(Kirigami.Units.smallSpacing * 1.5)
-        Layout.bottomMargin: Layout.leftMargin
+        Layout.bottomMargin: Math.round(Kirigami.Units.largeSpacing * 1.5)
         columns: 2
         rowSpacing: Kirigami.Units.largeSpacing
         columnSpacing: Kirigami.Units.largeSpacing
@@ -58,35 +73,82 @@ PopupPage {
         Tile {
             Layout.columnSpan: 2
             caption: i18nc("@title:group", "Usage")
-            graphSeconds: popup.monitor.historySeconds
+            spans: popup.monitor
+            graphTop: i18nc("@info a percentage", "%1%", Format.percent(100))
 
             Graph {
                 Layout.fillWidth: true
                 values: popup.monitor.cpuHistory
+                highs: popup.monitor.cpuHighs
                 length: popup.monitor.historyLength
             }
         }
 
+        // Under the usage it follows, on the same span and width, so a
+        // burst of load lines up with the rise it causes.
+        TemperatureTile {
+            Layout.columnSpan: 2
+            monitor: popup.monitor
+            history: popup.monitor.cpuTemperatureHistory
+            highs: popup.monitor.cpuTemperatureHighs
+            extent: popup.monitor.cpuTemperatureExtent
+        }
+
         Tile {
             caption: i18nc("@title:group", "Frequency")
+            foot: frequencyReading
 
             Reading {
+                id: frequencyReading
                 readonly property var f: Format.frequency(popup.sensorValue(frequency))
                 value: f.value
                 unit: f.unit
-                unitScale: 0.67
                 pointSize: Kirigami.Theme.defaultFont.pointSize * 1.38
             }
         }
 
         Tile {
             caption: i18nc("@title:group", "Load average")
+            foot: lastMinute
 
-            Reading {
-                value: Format.load(popup.sensorValue(load1))
-                unit: Format.load(popup.sensorValue(load5)) + " · " + Format.load(popup.sensorValue(load15))
-                unitScale: 0.67
-                pointSize: Kirigami.Theme.defaultFont.pointSize * 1.38
+            // The last minute large, then the 5 and 15 minute averages dimmer,
+            // evenly spaced and in reading order under mirroring too. The
+            // spans don't fit beside the caption in a half-width tile, so
+            // only the spoken name carries them. A Row rather than a
+            // RowLayout: the tile's layout sits inside a Rectangle, out of
+            // the popup's reach, and on Qt 6.6 a nested layout there only
+            // reports its new width when the popup next lays out, so the
+            // first readings arriving set off a layout polish loop.
+            Row {
+                id: load
+                readonly property real pointSize: Kirigami.Theme.defaultFont.pointSize * 1.38
+                spacing: Kirigami.Units.largeSpacing
+                Accessible.role: Accessible.StaticText
+                Accessible.name: popup.loadAverageName(popup.sensorValue(load1), popup.sensorValue(load5),
+                                                       popup.sensorValue(load15))
+
+                Reading {
+                    id: lastMinute
+                    value: Format.load(popup.sensorValue(load1))
+                    pointSize: load.pointSize
+                    accessibleIgnored: true
+                }
+
+                Repeater {
+                    model: [load5, load15]
+
+                    delegate: Text {
+                        required property var modelData
+                        anchors.baseline: lastMinute.baseline
+                        text: Format.load(popup.sensorValue(modelData))
+                        color: Style.dim(Kirigami.Theme.textColor)
+                        font.family: Kirigami.Theme.defaultFont.family
+                        font.features: ({ "tnum": 1 })
+                        font.pointSize: Style.unitPointSize(load.pointSize, Kirigami.Theme.smallFont.pointSize)
+                        textFormat: Text.PlainText
+                        Accessible.ignored: true
+                    }
+                }
             }
         }
 
@@ -105,7 +167,11 @@ PopupPage {
                 readonly property int gap: count > 32 ? 1 : 3
                 // From the tile rather than this layout's own width, which it
                 // only learns mid-layout: changing columns then makes the
-                // layout rearrange itself recursively.
+                // layout rearrange itself recursively. The rows' height still
+                // follows the width, so on Qt 6.6 a host that sized the popup
+                // straight from the Loader's preferred size, rather than a
+                // resize later as AppletPopup does, reports a binding loop on
+                // preferredHeight with more than 32 threads.
                 readonly property real available: perThread.width - 2 * perThread.horizontalPadding
                 readonly property int maxColumns: Math.max(1, Math.floor((available + gap) / (2 + gap)))
                 // One row until the tile has a width to fit, and while no thread is known.
@@ -143,12 +209,12 @@ PopupPage {
 
                         Accessible.role: Accessible.ProgressBar
                         Accessible.name: i18nc("@info accessible name of a thread's usage bar", "Thread %1", modelData + 1)
-                        Accessible.description: Format.percent(usage) + "%"
+                        Accessible.description: i18nc("@info a percentage", "%1%", Format.percent(usage))
 
                         Sensors.Sensor {
                             id: sensor
                             sensorId: "cpu/cpu" + bar.modelData + "/usage"
-                            updateRateLimit: popup.monitor.interval
+                            updateRateLimit: popup.monitor.readInterval
                         }
 
                         Rectangle {
@@ -167,11 +233,7 @@ PopupPage {
         }
     }
 
-    Rectangle {
-        Layout.fillWidth: true
-        Layout.preferredHeight: 1
-        color: Qt.alpha(Kirigami.Theme.textColor, 0.08)
-    }
+    Divider {}
 
     ProcessList {
         key: "usage"

@@ -25,8 +25,16 @@ GridLayout {
     property string openItem: ""
     // Plasmoid.location, for the tooltips.
     property int location: PlasmaCore.Types.Floating
+    // The hidden animation the rings play (Egg.qml).
+    property Egg egg: null
 
     signal activated(string item, Item cell)
+
+    // The cells' names for their tooltips.
+    Words {
+        id: words
+        monitor: strip.monitor
+    }
 
     // Rings fill the panel inside the cell's hover wash (PanelCell.inset
     // across a horizontal panel, a margin either side across a vertical one),
@@ -59,15 +67,19 @@ GridLayout {
     component Entry: PlasmaCore.ToolTipArea {
         id: entry
 
-        required property string modelData
+        required property string item
         readonly property alias cell: cell
-        readonly property bool textShown: !strip.isRing(modelData) || !strip.vertical && !strip.ringsOnly.includes(modelData)
+        readonly property bool textShown: !strip.isRing(item) || !strip.vertical && !strip.ringsOnly.includes(item)
 
         Layout.fillWidth: strip.vertical
         Layout.fillHeight: !strip.vertical
         implicitWidth: cell.implicitWidth
         implicitHeight: cell.implicitHeight
-        active: !entry.textShown && !cell.open
+        // Where the readings are hidden, or a Claude or Codex check failed,
+        // whose cause and times only the words give, or is still running.
+        active: (!entry.textShown || Items.isUsage(entry.item) && (strip.monitor.usage.degraded(entry.item)
+                                                                    || strip.monitor.usage.loading(entry.item)))
+            && !cell.open
         mainText: cell.title
         subText: cell.description
         textFormat: Text.PlainText
@@ -76,18 +88,23 @@ GridLayout {
         PanelCell {
             id: cell
             anchors.fill: parent
-            item: entry.modelData
-            open: strip.openItem === entry.modelData
+            item: entry.item
+            open: strip.openItem === entry.item
             vertical: strip.vertical
-            onActivated: strip.activated(entry.modelData, cell)
+            title: words.title(entry.item)
+            onActivated: strip.activated(entry.item, cell)
 
-            // Centred to whole pixels, rounding as the ring cells' own layout
+            // Along a horizontal panel the content keeps to the cell's start,
+            // so the cell's rounding up to a whole pixel falls after it.
+            // Along a vertical panel the content is centred.
+            // Both in whole pixels, rounding as the ring cells' own layout
             // does, so a ring's readings and the rates land on the same rows.
             Loader {
-                x: Math.round((parent.width - width) / 2)
+                x: strip.vertical ? Math.round((parent.width - width) / 2)
+                 : LayoutMirroring.enabled ? Math.round(parent.width - cell.padding - width) : cell.padding
                 y: Math.round((parent.height - height) / 2)
-                sourceComponent: Items.isUsage(entry.modelData) ? usageContent
-                               : strip.isRing(entry.modelData) ? ringContent : rateContent
+                sourceComponent: Items.isUsage(entry.item) ? usageContent
+                               : strip.isRing(entry.item) ? ringContent : rateContent
                 onLoaded: cell.contentItem = item
             }
 
@@ -96,10 +113,11 @@ GridLayout {
                 RingCellContent {
                     id: rings
                     monitor: strip.monitor
-                    item: entry.modelData
+                    item: entry.item
                     ring: strip.ring
                     textShown: entry.textShown
                     twoLines: strip.twoLines
+                    egg: strip.egg
 
                     Binding {
                         target: cell
@@ -114,10 +132,11 @@ GridLayout {
                 UsageCellContent {
                     id: usage
                     monitor: strip.monitor
-                    item: entry.modelData
+                    item: entry.item
                     ring: strip.ring
                     textShown: entry.textShown
                     twoLines: strip.twoLines
+                    egg: strip.egg
 
                     Binding {
                         target: cell
@@ -132,7 +151,7 @@ GridLayout {
                 RateCellContent {
                     id: rates
                     monitor: strip.monitor
-                    item: entry.modelData
+                    item: entry.item
                     vertical: strip.vertical
                     singleRow: !strip.vertical && !strip.twoLines
                     availableWidth: strip.vertical ? cell.width - 2 * Kirigami.Units.smallSpacing : Infinity
@@ -147,9 +166,39 @@ GridLayout {
         }
     }
 
+    // The items as a model the strip keeps in step with `items`, so a cell
+    // stays while others come and go. Handed a new array, the Repeater
+    // would make every cell again, cutting short whatever its ring was
+    // doing, such as a first reading filling it in.
+    ListModel {
+        id: shown
+    }
+
+    function follow() {
+        for (let i = shown.count - 1; i >= 0; --i) {
+            if (!items.includes(shown.get(i).item)) {
+                shown.remove(i);
+            }
+        }
+        items.forEach((item, i) => {
+            let at = i;
+            while (at < shown.count && shown.get(at).item !== item) {
+                ++at;
+            }
+            if (at === shown.count) {
+                shown.insert(i, { item: item });
+            } else if (at !== i) {
+                shown.move(at, i, 1);
+            }
+        });
+    }
+
+    onItemsChanged: follow()
+    Component.onCompleted: follow()
+
     Repeater {
         id: cells
-        model: strip.items
+        model: shown
         delegate: Entry {}
     }
 }

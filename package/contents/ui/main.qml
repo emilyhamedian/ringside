@@ -12,21 +12,18 @@ import "code/items.js" as Items
 
 // The items sit straight in the panel (there is no full representation to
 // expand), and each opens its own popup. One AppletPopup serves them all,
-// moved to whichever item was clicked. Two layouts: Inline, a strip that fits
-// any panel, and Standalone, large dials in a panel of their own.
+// moved to whichever item was clicked.
 PlasmoidItem {
     id: root
 
     readonly property bool vertical: Plasmoid.formFactor === PlasmaCore.Types.Vertical
     readonly property real thickness: Plasmoid.formFactor === PlasmaCore.Types.Horizontal ? height
                                     : vertical ? width : Kirigami.Units.gridUnit * 2.5
-    readonly property bool standalone: Plasmoid.configuration.layout === 1
     // The items switched on that have something to show: a GPU, a signed-in CLI.
-    readonly property var items: monitor.enabledItems.filter(k => k === "gpu" ? monitor.gpuOuter.present
-                                                               : k === "claude" ? monitor.usage.claudePresent
-                                                               : k === "codex" ? monitor.usage.codexPresent
+    readonly property var items: readings.enabledItems.filter(k => k === "gpu" ? readings.gpuOuter.present
+                                                               : k === "claude" ? readings.usage.claudePresent
+                                                               : k === "codex" ? readings.usage.codexPresent
                                                                : true)
-    readonly property var view: standalone ? standaloneView.item : strip
 
     // The clicked item's name and cell; the popup follows the cell.
     property string openItem: ""
@@ -35,15 +32,15 @@ PlasmoidItem {
     property Item openCell: null
     onOpenCellChanged: if (!openCell && popup.visible) Qt.callLater(reattach)
 
-    // A cell goes when its item does, and also when another item comes or
-    // goes, since the strip rebuilds every cell then. The popup moves to the
-    // new cell for its item, or closes if there is none.
+    // A cell goes only when its item does; other items coming and going
+    // leave it be (see Strip). The popup closes with it, or moves to the
+    // item's new cell should the item be back by then.
     function reattach() {
         if (openCell || !popup.visible) {
             return;
         }
         const index = items.indexOf(openItem);
-        const cell = index >= 0 && !(view?.collapsed ?? false) ? view?.cellAt(index) ?? null : null;
+        const cell = index >= 0 ? strip.cellAt(index) : null;
         if (cell) {
             openCell = cell;
         } else {
@@ -59,9 +56,9 @@ PlasmoidItem {
         openItem = item;
         openCell = cell;
         popupContent.setSource(Qt.resolvedUrl("popups/" + ({ cpu: "CpuPopup", gpu: "GpuPopup", memory: "MemoryPopup",
-                                                             network: "NetworkPopup", disk: "NetworkPopup",
+                                                             network: "NetworkPopup", disk: "DiskPopup",
                                                              claude: "UsagePopup", codex: "UsagePopup" })[item] + ".qml"),
-                               Items.isUsage(item) ? { monitor: monitor, item: item } : { monitor: monitor });
+                               Items.isUsage(item) ? { monitor: readings, item: item } : { monitor: readings });
         popup.visible = true;
     }
 
@@ -71,32 +68,38 @@ PlasmoidItem {
     }
 
     preferredRepresentation: fullRepresentation
+    // Keys a focused item in the strip leaves go to the hidden animation,
+    // which only looks at them.
+    Keys.onPressed: event => eggClock.watch(event)
 
-    // Inline, with every item hidden the applet keeps a square the panel's
-    // thickness, for the icon below. Standalone sizes itself.
-    Layout.minimumWidth: standalone ? (view?.layoutMinimumWidth ?? 0)
-                       : vertical ? 0 : items.length > 0 ? strip.implicitWidth : thickness
+    // With every item hidden the applet keeps a square the panel's
+    // thickness, for the icon below.
+    Layout.minimumWidth: vertical ? 0 : items.length > 0 ? strip.implicitWidth : thickness
     Layout.preferredWidth: Layout.minimumWidth
-    Layout.maximumWidth: standalone || vertical ? Infinity : Layout.minimumWidth
-    Layout.minimumHeight: standalone ? (view?.layoutMinimumHeight ?? 0)
-                        : vertical ? (items.length > 0 ? strip.implicitHeight : thickness) : 0
+    Layout.maximumWidth: vertical ? Infinity : Layout.minimumWidth
+    Layout.minimumHeight: vertical ? (items.length > 0 ? strip.implicitHeight : thickness) : 0
     Layout.preferredHeight: Layout.minimumHeight
-    Layout.maximumHeight: standalone || !vertical ? Infinity : Layout.minimumHeight
-    Layout.fillWidth: standalone ? (view?.layoutFillWidth ?? false) : vertical
-    Layout.fillHeight: standalone ? (view?.layoutFillHeight ?? false) : !vertical
+    Layout.maximumHeight: vertical ? Layout.minimumHeight : Infinity
+    Layout.fillWidth: vertical
+    Layout.fillHeight: !vertical
 
     Plasmoid.contextualActions: [
         PlasmaCore.Action {
             text: i18nc("@action", "Open System Monitor…")
             icon.name: "utilities-system-monitor"
-            visible: monitor.systemShown
+            visible: readings.systemShown
             onTriggered: root.openSystemMonitor()
         }
     ]
 
     Monitor {
-        id: monitor
+        id: readings
         config: Plasmoid.configuration
+        // Keys the graphs' saved history to this widget.
+        widgetId: String(Plasmoid.id)
+        // KPluginMetaData's version, there since Plasma 6.0; qmllint has no
+        // type information for KPluginMetaData.
+        version: Plasmoid.metaData?.version ?? "" // qmllint disable unresolved-type
         openPopup: popup.visible ? root.openItem : ""
         onSystemMonitorRequested: root.openSystemMonitor()
         onConfigureRequested: {
@@ -108,41 +111,32 @@ PlasmoidItem {
     Strip {
         id: strip
         anchors.centerIn: parent
-        enabled: !root.standalone
         // Cells take the panel's full thickness, so their hover and pressed
         // backgrounds line up with the rest of the panel.
         width: root.vertical ? parent.width : implicitWidth
         height: Plasmoid.formFactor === PlasmaCore.Types.Horizontal ? parent.height : implicitHeight
-        visible: !root.standalone && root.items.length > 0
-        monitor: monitor
+        visible: root.items.length > 0
+        monitor: readings
         items: root.items
         vertical: root.vertical
         thickness: root.thickness
         ringsOnly: Plasmoid.configuration.ringsOnly
         location: Plasmoid.location
         openItem: popup.visible ? root.openItem : ""
+        egg: eggClock
         onActivated: (item, cell) => root.toggle(item, cell)
     }
 
-    Loader {
-        id: standaloneView
-        anchors.fill: parent
-        active: root.standalone
-        sourceComponent: Standalone {
-            monitor: monitor
-            items: root.items
-            enabledItems: monitor.enabledItems
-            openItem: popup.visible ? root.openItem : ""
-            onActivated: (item, cell) => root.toggle(item, cell)
-            // The popup's item is about to fold away.
-            onCollapsedChanged: if (collapsed) popup.visible = false
-        }
+    Egg {
+        id: eggClock
+        stage: strip
+        vertical: root.vertical
     }
 
     // With every item hidden, something still has to be there to right-click.
     Kirigami.Icon {
         anchors.fill: parent
-        visible: !root.standalone && root.items.length === 0
+        visible: root.items.length === 0
         source: Plasmoid.icon
         active: mouse.containsMouse
         MouseArea {
@@ -213,6 +207,8 @@ PlasmoidItem {
             LayoutMirroring.childrenInherit: true
             focus: true
             Keys.onEscapePressed: popup.visible = false
+            // As the applet's own, for any popup.
+            Keys.onPressed: event => eggClock.watch(event)
         }
     }
 
@@ -239,8 +235,7 @@ PlasmoidItem {
         target: Plasmoid
 
         function onActivated() {
-            // A folded strip has nothing on screen to open a popup on.
-            const cell = root.view?.collapsed ? null : root.view?.cellAt(0) ?? null;
+            const cell = strip.cellAt(0);
             if (cell) {
                 root.toggle(root.items[0], cell);
             }

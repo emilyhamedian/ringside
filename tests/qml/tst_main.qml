@@ -1,0 +1,421 @@
+// SPDX-FileCopyrightText: 2026 Emily Hamedian <me@emily.dev>
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+pragma ComponentBehavior: Bound
+import QtQuick
+import QtQuick.Layouts
+import QtTest
+import org.kde.plasma.core as PlasmaCore
+import "fakeplasmoid"
+
+// main.qml in a panel: the applet's size along and across it in either
+// orientation, the icon that stands in with every item hidden, the popup
+// following its item's cell, and the global shortcut. Plasma gives
+// org.kde.plasma.plasmoid only to an applet it runs, so main.qml is loaded
+// from its source with that import pointed at fakeplasmoid/, its contextual
+// actions left out (they are an attached property, which a fake can't
+// take) and FakeMonitor for Monitor. Reading the source needs
+// QML_XHR_ALLOW_FILE_READ=1, which scripts/test.sh sets.
+Item {
+    id: root
+    width: 1800
+    height: 1000
+
+    function substitute(text, args) {
+        return text.replace(/%(\d+)/g, (m, n) => n <= args.length ? String(args[n - 1]) : m);
+    }
+    function i18n(text, ...args) { return substitute(text, args); }
+    function i18nc(context, text, ...args) { return substitute(text, args); }
+    function i18np(s, p, n, ...args) { return substitute(n === 1 ? s : p, [n].concat(args)); }
+    function i18ncp(c, s, p, n, ...args) { return substitute(n === 1 ? s : p, [n].concat(args)); }
+
+    // A panel as Plasma lays one out: a GridLayout whose flow follows the
+    // form factor, with something before the applet and room after it.
+    Component {
+        id: panelComponent
+        GridLayout {
+            readonly property bool horizontal: Plasmoid.formFactor !== PlasmaCore.Types.Vertical
+            rowSpacing: 0
+            columnSpacing: 0
+            rows: horizontal ? 1 : -1
+            columns: horizontal ? -1 : 1
+            flow: horizontal ? GridLayout.LeftToRight : GridLayout.TopToBottom
+
+            Item {
+                Layout.preferredWidth: parent.horizontal ? 100 : -1
+                Layout.preferredHeight: parent.horizontal ? -1 : 100
+                Layout.fillWidth: !parent.horizontal
+                Layout.fillHeight: parent.horizontal
+            }
+        }
+    }
+
+    TestCase {
+        id: testCase
+        name: "Main"
+        when: windowShown
+
+        property string source: ""
+        // The applet the test made, if any.
+        property Item applet: null
+
+        // main.qml's source with `from` replaced, which has to be there.
+        function swap(text, from, to) {
+            verify(from.test(text), "main.qml no longer matches " + from);
+            return text.replace(from, to);
+        }
+
+        function initTestCase() {
+            const request = new XMLHttpRequest();
+            request.open("GET", Qt.resolvedUrl("../../package/contents/ui/main.qml"), false);
+            request.send();
+            verify(request.responseText !== "", "main.qml read; set QML_XHR_ALLOW_FILE_READ=1");
+            let text = swap(request.responseText, /^import org\.kde\.plasma\.plasmoid$/m,
+                            'import "' + Qt.resolvedUrl("fakeplasmoid") + '"\nimport "' + Qt.resolvedUrl(".") + '"');
+            text = swap(text, /^    Plasmoid\.contextualActions: \[\n[\s\S]*?^    \]\n/m, "");
+            source = swap(text, /^    Monitor \{$/m, "    FakeMonitor {");
+        }
+
+        function init() {
+            failOnWarning(/TypeError|ReferenceError|SyntaxError|is not a function|Unable to assign|Cannot assign|Binding loop|recursive rearrange/);
+            Plasmoid.configuration = { ringsOnly: [] };
+            Plasmoid.status = PlasmaCore.Types.PassiveStatus;
+        }
+
+        // The applet goes with its panel after the test, deleting its
+        // monitor before the strip, whose cells would then read from null,
+        // and on Qt 6.6 deleting the CPU popup's page in an order that has
+        // its load averages read from null. So every item is hidden first,
+        // and the popup's page left to unload as it does a moment after the
+        // popup closes.
+        function cleanup() {
+            if (applet) {
+                const p = popup(applet);
+                p.visible = false;
+                strip(applet).monitor.enabledItems = [];
+                tryVerify(() => p.mainItem.item === null, 2000, "the popup's page unloaded");
+                settle();
+                applet = null;
+            }
+        }
+
+        // A panel `thickness` across, `vertical` or not, holding the applet
+        // after its first item.
+        function panel(vertical, thickness) {
+            Plasmoid.formFactor = vertical ? PlasmaCore.Types.Vertical : PlasmaCore.Types.Horizontal;
+            Plasmoid.location = vertical ? PlasmaCore.Types.RightEdge : PlasmaCore.Types.BottomEdge;
+            const p = createTemporaryObject(panelComponent, root,
+                                            vertical ? { width: thickness, height: 900 } : { width: 1700, height: thickness });
+            applet = Qt.createQmlObject(source, p, Qt.resolvedUrl("../../package/contents/ui/main.qml"));
+            verify(applet, "main.qml loads");
+            settle();
+            return applet;
+        }
+
+        // Layouts settle on their next polish; nothing need be drawn.
+        function settle() {
+            wait(50);
+            for (const item of root.children) {
+                verify(waitForPolish(item), "laid out");
+            }
+        }
+
+        function find(item, test) {
+            if (test(item)) {
+                return item;
+            }
+            for (const child of item.children) {
+                const found = find(child, test);
+                if (found) {
+                    return found;
+                }
+            }
+            return null;
+        }
+
+        function strip(applet) {
+            return find(applet, i => i.cellAt !== undefined && i.ringsOnly !== undefined);
+        }
+
+        function popup(applet) {
+            return Array.from(applet.data).find(o => o && o.popupDirection !== undefined);
+        }
+
+        // Each cell spans the panel's thickness inside the applet, after
+        // the one before it.
+        function checkCells(applet, vertical, thickness) {
+            const s = strip(applet);
+            let end = 0;
+            for (let i = 0; i < applet.items.length; ++i) {
+                const c = s.cellAt(i);
+                verify(c, applet.items[i]);
+                const box = c.mapToItem(applet, Qt.rect(0, 0, c.width, c.height));
+                const [start, length, across] = vertical ? [box.y, box.height, box.width] : [box.x, box.width, box.height];
+                verify(start >= end - 0.5, applet.items[i] + " follows");
+                verify(start + length <= (vertical ? applet.height : applet.width) + 0.5, applet.items[i] + " inside the applet");
+                compare(across, thickness, applet.items[i] + " spans the panel");
+                end = start + length;
+            }
+        }
+
+        function test_horizontal_data() {
+            // A thick panel's rings stop growing, so there the strip still
+            // has to stretch across it.
+            return [{ tag: "26", thickness: 26 }, { tag: "44", thickness: 44 }, { tag: "72", thickness: 72 }];
+        }
+
+        // Along a horizontal panel the applet is as wide as the strip and as
+        // tall as the panel, the strip at its start.
+        function test_horizontal(data) {
+            const applet = panel(false, data.thickness);
+            const s = strip(applet);
+            verify(s.visible);
+            compare(applet.vertical, false);
+            compare(applet.thickness, data.thickness);
+            compare(applet.height, data.thickness, "as tall as the panel");
+            fuzzyCompare(applet.width, s.implicitWidth, 0.001, "as wide as the strip");
+            compare(applet.Layout.maximumWidth, applet.Layout.minimumWidth, "no wider");
+            compare(s.height, data.thickness);
+            fuzzyCompare(s.x, 0, 0.5);
+            checkCells(applet, false, data.thickness);
+        }
+
+        // Down a vertical panel the applet is as tall as the strip and as
+        // wide as the panel; switching the panel between the two follows.
+        function test_verticalAndBack() {
+            const applet = panel(true, 44);
+            const s = strip(applet);
+            compare(applet.vertical, true);
+            compare(applet.width, 44, "as wide as the panel");
+            fuzzyCompare(applet.height, s.implicitHeight, 0.001, "as tall as the strip");
+            compare(applet.Layout.maximumHeight, applet.Layout.minimumHeight, "no taller");
+            compare(s.width, 44);
+            checkCells(applet, true, 44);
+
+            const p = applet.parent;
+            Plasmoid.formFactor = PlasmaCore.Types.Horizontal;
+            Plasmoid.location = PlasmaCore.Types.BottomEdge;
+            p.width = 1700;
+            p.height = 44;
+            settle();
+            compare(applet.height, 44);
+            fuzzyCompare(applet.width, s.implicitWidth, 0.001);
+            checkCells(applet, false, 44);
+
+            Plasmoid.formFactor = PlasmaCore.Types.Vertical;
+            Plasmoid.location = PlasmaCore.Types.LeftEdge;
+            p.width = 44;
+            p.height = 900;
+            settle();
+            compare(applet.width, 44);
+            fuzzyCompare(applet.height, s.implicitHeight, 0.001);
+            checkCells(applet, true, 44);
+        }
+
+        function test_emptyKeepsASquare_data() {
+            return [{ tag: "horizontal", vertical: false }, { tag: "vertical", vertical: true }];
+        }
+
+        // With every item hidden the applet is a square the panel's
+        // thickness, with the icon that opens the settings.
+        function test_emptyKeepsASquare(data) {
+            const applet = panel(data.vertical, 44);
+            strip(applet).monitor.enabledItems = [];
+            settle();
+            compare(applet.items.length, 0);
+            verify(!strip(applet).visible);
+            compare([applet.width, applet.height], [44, 44]);
+            const icon = find(applet, i => i.source !== undefined && i.active !== undefined && i.isMask !== undefined);
+            verify(icon && icon.visible, "the icon stands in");
+            const configured = Plasmoid.configured;
+            mouseClick(icon);
+            compare(Plasmoid.configured, configured + 1, "a click opens the settings");
+        }
+
+        // Claude and Codex show from the start while their first check
+        // runs, and stay when it fails; signed out hides them.
+        function test_usageItemsWhileLoading() {
+            const applet = panel(false, 44);
+            const usage = strip(applet).monitor.usage;
+            strip(applet).monitor.enabledItems = ["cpu", "claude", "codex"];
+            usage.entries = {};
+            usage.pending = ["claude", "codex"];
+            compare(applet.items, ["cpu", "claude", "codex"]);
+            const now = Math.floor(Date.now() / 1000);
+            usage.entries = { claude: { status: "error", lastError: "down", lastErrorAt: now, reason: "other", host: "", retryAt: now + 300 },
+                              codex: { status: "signed_out" } };
+            compare(applet.items, ["cpu", "claude"]);
+            settle();
+            checkCells(applet, false, 44);
+        }
+
+        // A cell stays while others come and go, so Claude's first reading
+        // fills its ring in though Codex, signed out, goes on the same
+        // report, and keeps it when the items are put in another order.
+        function test_cellsStayWhileOthersGo() {
+            const applet = panel(false, 44);
+            const s = strip(applet);
+            const usage = s.monitor.usage;
+            s.monitor.enabledItems = ["cpu", "claude", "codex"];
+            usage.entries = {};
+            usage.pending = ["claude", "codex"];
+            settle();
+            const claude = s.cellAt(1);
+            compare(claude.item, "claude");
+            const gauge = find(claude, i => i.dotsShown !== undefined);
+            tryCompare(gauge, "dotsShown", 1, 1000, "waiting");
+            const sweeps = [];
+            const record = () => sweeps.push(gauge.sweep);
+            gauge.sweepChanged.connect(record);
+            usage.entries = { claude: { status: "ok", fetchedAt: usage.createdAt, weekly: usage.window(52, 2 * usage.day, []), scoped: [] },
+                              codex: { status: "signed_out" } };
+            compare(applet.items, ["cpu", "claude"]);
+            verify(s.cellAt(1) === claude, "the same cell");
+            tryCompare(gauge, "dotsShown", 0, 3000);
+            gauge.sweepChanged.disconnect(record);
+            verify(sweeps.some(v => v > 0 && v < 1), "the track fills in: " + JSON.stringify(sweeps));
+
+            s.monitor.enabledItems = ["claude", "cpu"];
+            settle();
+            compare(applet.items, ["claude", "cpu"]);
+            verify(s.cellAt(0) === claude, "moved, not made again");
+            compare(s.cellAt(1).item, "cpu");
+            checkCells(applet, false, 44);
+        }
+
+        // An open popup stays on its item's cell as other items go, and
+        // closes when its item goes.
+        function test_popupFollowsItsCell() {
+            const applet = panel(false, 44);
+            const s = strip(applet);
+            const memory = s.cellAt(2);
+            compare(memory.item, "memory");
+            applet.toggle("memory", memory);
+            settle();
+            verify(popup(applet).visible);
+            compare(applet.openCell, memory);
+            s.monitor.enabledItems = ["cpu", "memory", "network"];
+            settle();
+            compare(applet.openCell, memory, "on the same cell");
+            compare(s.cellAt(1), memory);
+            verify(popup(applet).visible, "still open");
+            s.monitor.enabledItems = ["cpu", "network"];
+            tryCompare(popup(applet), "visible", false, 2000, "closed with its item");
+        }
+
+        // Each system item opens its own popup: network and disk one each.
+        function test_itemsOpenTheirOwnPopup() {
+            const applet = panel(false, 44);
+            const s = strip(applet);
+            const loader = popup(applet).mainItem;
+            const expected = { cpu: "CpuPopup", gpu: "GpuPopup", memory: "MemoryPopup", network: "NetworkPopup", disk: "DiskPopup" };
+            compare(applet.items, Object.keys(expected));
+            applet.items.forEach((item, n) => {
+                applet.toggle(item, s.cellAt(n));
+                settle();
+                verify(popup(applet).visible, item);
+                verify(String(loader.source).endsWith("/popups/" + expected[item] + ".qml"), item + " loads " + loader.source);
+                compare(loader.status, Loader.Ready, item);
+            });
+            const title = () => find(loader.item, i => i.partsShown !== undefined).title;
+            applet.toggle("network", s.cellAt(3));
+            settle();
+            compare(title(), "Network");
+            applet.toggle("disk", s.cellAt(4));
+            settle();
+            compare(title(), "Disk");
+        }
+
+        // The global shortcut opens the first item's popup, and closes it.
+        function test_shortcutOpensTheFirstItem() {
+            const applet = panel(false, 44);
+            Plasmoid.activated();
+            settle();
+            compare(applet.openItem, "cpu");
+            compare(applet.openCell, strip(applet).cellAt(0));
+            verify(popup(applet).visible);
+            Plasmoid.activated();
+            tryCompare(popup(applet), "visible", false, 2000);
+        }
+
+        // The hidden animation (Egg.qml) and the keys main.qml hands it.
+        function egg(applet) {
+            return find(applet, i => i.watch !== undefined && i.code !== undefined);
+        }
+
+        function typeCode() {
+            for (const key of [Qt.Key_Up, Qt.Key_Up, Qt.Key_Down, Qt.Key_Down, Qt.Key_Left, Qt.Key_Right,
+                               Qt.Key_Left, Qt.Key_Right, Qt.Key_B, Qt.Key_A]) {
+                keyClick(key);
+            }
+        }
+
+        function test_codeOnAFocusedItem_data() {
+            return [{ tag: "horizontal", vertical: false }, { tag: "vertical", vertical: true }];
+        }
+
+        // Typed on an item in the strip, the code plays along it.
+        function test_codeOnAFocusedItem(data) {
+            const applet = panel(data.vertical, 44);
+            const e = egg(applet);
+            const cell = strip(applet).cellAt(2);
+            cell.forceActiveFocus(Qt.TabFocusReason);
+            verify(cell.activeFocus);
+            typeCode();
+            verify(e.playing);
+            compare(e.vertical, data.vertical);
+            const rings = find(applet, i => i.innerRing !== undefined && i.index === 2);
+            verify(rings, "the rings are numbered along the strip");
+            verify(!popup(applet).visible, "no popup opened");
+            tryCompare(e, "playing", false, 3000);
+        }
+
+        // In any open popup the code plays too, while the popup's controls
+        // keep their keys: Down on the span opens its menu, and an arrow it
+        // leaves still counts.
+        function test_codeInAPopup() {
+            const applet = panel(false, 44);
+            const e = egg(applet);
+            applet.toggle("cpu", strip(applet).cellAt(0));
+            settle();
+            const loader = popup(applet).mainItem;
+            tryVerify(() => loader.activeFocus, 2000, "the popup has the focus");
+            typeCode();
+            verify(e.playing, "played from the popup");
+            tryCompare(e, "playing", false, 3000);
+
+            const span = find(loader.item, i => i.objectName === "span");
+            span.forceActiveFocus(Qt.TabFocusReason);
+            verify(span.activeFocus);
+            keyClick(Qt.Key_Up);
+            compare(e.typed, 1, "an arrow the span leaves reaches the egg");
+            keyClick(Qt.Key_Down);
+            tryVerify(() => span.menu.visible, 1000, "Down still opens the span's menu");
+            compare(e.typed, 1, "and stays the span's");
+            keyClick(Qt.Key_Escape);
+            tryVerify(() => !span.menu.visible, 1000);
+            verify(popup(applet).visible, "Escape closed the menu alone");
+        }
+
+        // The monitor keys the graphs' saved history to this widget.
+        function test_widgetIdReachesTheMonitor() {
+            compare(strip(panel(false, 44)).monitor.widgetId, String(Plasmoid.id));
+        }
+
+        // The monitor learns the widget's version for the public address
+        // check's User-Agent, and does without when there is none to read.
+        function test_versionReachesTheMonitor_data() {
+            return [{ tag: "metadata", metaData: { version: "0.3.0" }, version: "0.3.0" },
+                    { tag: "none", metaData: undefined, version: "" }];
+        }
+        function test_versionReachesTheMonitor(data) {
+            const saved = Plasmoid.metaData;
+            Plasmoid.metaData = data.metaData;
+            try {
+                compare(strip(panel(false, 44)).monitor.version, data.version);
+            } finally {
+                Plasmoid.metaData = saved;
+            }
+        }
+    }
+}

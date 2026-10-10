@@ -30,15 +30,6 @@ body:
       label: Qt version
     validations:
       required: true
-  - type: dropdown
-    id: layout
-    attributes:
-      label: Layout
-      options:
-        - Inline
-        - Standalone
-    validations:
-      required: true
   - type: textarea
     id: items
     attributes:
@@ -53,6 +44,19 @@ body:
       description: What you expected instead, and the steps to see it again.
     validations:
       required: true
+  - type: textarea
+    id: journal
+    attributes:
+      label: Ringside's journal lines
+      description: >-
+        For a ring that greys out, a check that fails or anything that stops
+        working, paste what Ringside wrote to the journal around then:
+        `journalctl --user --since today QT_CATEGORY=ringside.usage QT_CATEGORY=ringside.network QT_CATEGORY=ringside.gpu QT_CATEGORY=ringside.setup`
+        They hold no tokens, addresses or account names, but can name local
+        file paths; check before pasting.
+      render: text
+    validations:
+      required: false
   - type: textarea
     id: static-report
     attributes:

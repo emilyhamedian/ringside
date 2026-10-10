@@ -9,10 +9,14 @@ import org.kde.ksvg as KSvg
 import "../../package/contents/ui"
 import "../../package/contents/ui/popups"
 import "../../package/contents/ui/code/style.js" as Style
+import "starterstates.js" as StarterStates
 
 // A section of Gallery.qml: Claude and Codex in the panel beside two system
-// items, then their popups in each state, then a panel and a popup under
-// Breeze Light. The readings are FakeUsage's, with made-up weeks of use.
+// items, loading, failed and signed out among them, then their popups in
+// each state, the session starter's footer in
+// each of its states, then panels and popups under Breeze Light. The
+// monitor's readings are FakeUsage's; the section's own come with made-up
+// weeks of use.
 ColumnLayout {
     id: section
 
@@ -35,7 +39,8 @@ ColumnLayout {
 
     spacing: 2 * Kirigami.Units.gridUnit
 
-    // Claude amber with Opus red inside it, Codex at its limit.
+    // Claude at 81 % is amber, and runs out before its reset at this pace;
+    // Fable over 90 % and Codex at its limit are red.
     FakeMonitor {
         id: hot
         usage: FakeUsage {
@@ -45,7 +50,7 @@ ColumnLayout {
                     status: "ok",
                     fetchedAt: hotUsage.createdAt,
                     weekly: hotUsage.window(81, 2 * hotUsage.day + 21 * 3600, section.history(4.1, 81)),
-                    scoped: [Object.assign({ id: "Opus", label: "Opus" },
+                    scoped: [Object.assign({ id: "Fable", label: "Fable" },
                                            hotUsage.window(93, 2 * hotUsage.day + 21 * 3600, section.history(4.1, 93)))]
                 },
                 codex: {
@@ -59,6 +64,7 @@ ColumnLayout {
     }
 
     // Two model limits and no choice between them: no inner ring, a row each.
+    // A day before the reset, Claude and Fable are amber and last to it.
     FakeMonitor {
         id: several
         usage: FakeUsage {
@@ -67,9 +73,9 @@ ColumnLayout {
                 claude: {
                     status: "ok",
                     fetchedAt: severalUsage.createdAt,
-                    weekly: severalUsage.window(77, 2 * severalUsage.day + 21 * 3600, section.history(4.1, 77)),
-                    scoped: [Object.assign({ id: "Opus", label: "Opus" },
-                                           severalUsage.window(84, 2 * severalUsage.day + 21 * 3600, section.history(4.1, 84))),
+                    weekly: severalUsage.window(77, severalUsage.day, section.history(6, 77)),
+                    scoped: [Object.assign({ id: "Fable", label: "Fable" },
+                                           severalUsage.window(82, severalUsage.day, section.history(6, 82))),
                              Object.assign({ id: "Sonnet", label: "Sonnet" },
                                            severalUsage.window(12, 4 * severalUsage.day + 2 * 3600, section.history(3, 12)))]
                 }
@@ -93,21 +99,134 @@ ColumnLayout {
         }
     }
 
-    // The last check failed: the readings stay, dimmed.
+    // Checks have failed for an hour since the one that worked: the panel
+    // strikes the ring, and the popup shows the status alone, its starter
+    // switch held. The checks run every 15 minutes and the helper's hold is
+    // over, so the popup offers to try again.
     FakeMonitor {
-        id: failed
+        id: failedMonitor
         usage: FakeUsage {
             id: failedUsage
+            refreshMinutes: 15
+            lastRun: createdAt - 400
             entries: ({
                 claude: {
                     status: "ok",
                     fetchedAt: failedUsage.createdAt - 3600,
-                    weekly: failedUsage.window(58, 2 * failedUsage.day + 22 * 3600, section.history(4, 58)),
-                    scoped: [Object.assign({ id: "Opus", label: "Opus" },
-                                           failedUsage.window(71, 2 * failedUsage.day + 22 * 3600, section.history(4, 71)))],
-                    lastError: "HTTP Error 500: Internal Server Error",
-                    lastErrorAt: failedUsage.createdAt
+                    weekly: failedUsage.window(48, 2 * failedUsage.day + 22 * 3600, section.history(4, 48)),
+                    scoped: [Object.assign({ id: "Fable", label: "Fable" },
+                                           failedUsage.window(52, 2 * failedUsage.day + 22 * 3600, section.history(4, 52)))],
+                    lastError: "can't reach api.anthropic.com: Name or service not known",
+                    lastErrorAt: failedUsage.createdAt - 400,
+                    reason: "offline",
+                    host: "api.anthropic.com",
+                    retryAt: failedUsage.createdAt - 100
                 }
+            })
+        }
+    }
+
+    // The first failed check, four minutes after one that found Claude
+    // near its limit: grey, with no red and no breathing, until the reading
+    // is two checks old.
+    FakeMonitor {
+        id: justFailed
+        usage: FakeUsage {
+            id: justFailedUsage
+            entries: ({
+                claude: {
+                    status: "ok",
+                    fetchedAt: justFailedUsage.createdAt - 240,
+                    weekly: justFailedUsage.window(93, justFailedUsage.day + 6 * 3600, section.history(5.7, 93)),
+                    scoped: [Object.assign({ id: "Fable", label: "Fable" },
+                                           justFailedUsage.window(97, justFailedUsage.day + 6 * 3600, section.history(5.7, 97)))],
+                    lastError: "rate limited, retrying in 3120 s",
+                    lastErrorAt: justFailedUsage.createdAt - 60,
+                    reason: "rate-limited",
+                    host: "api.anthropic.com",
+                    retryAt: justFailedUsage.createdAt + 3060
+                }
+            })
+        }
+    }
+
+    // Checks failed through the week's reset: nothing is left of this week.
+    FakeMonitor {
+        id: failedPastReset
+        usage: FakeUsage {
+            id: failedPastResetUsage
+            entries: ({
+                claude: {
+                    status: "ok",
+                    fetchedAt: failedPastResetUsage.createdAt - 8 * 3600,
+                    weekly: failedPastResetUsage.window(71, -2 * 3600, section.history(6.6, 71).map(p => [p[0] + 8 * 3600 / failedPastResetUsage.day, p[1]])),
+                    scoped: [],
+                    lastError: "The usage helper exited with code 1: KeyError: 'weekly'",
+                    lastErrorAt: failedPastResetUsage.createdAt - 60,
+                    reason: "helper",
+                    host: "",
+                    retryAt: failedPastResetUsage.createdAt + 240
+                }
+            })
+        }
+    }
+
+    // Two days into the week, Claude at 25 % lasts it, while Fable at 55 %
+    // runs out before the reset at this pace. The pace sentence says so;
+    // neither is coloured, as a colour comes from the reading alone.
+    FakeMonitor {
+        id: fablePace
+        usage: FakeUsage {
+            id: fablePaceUsage
+            entries: ({
+                claude: {
+                    status: "ok",
+                    fetchedAt: fablePaceUsage.createdAt,
+                    weekly: fablePaceUsage.window(25, 5 * fablePaceUsage.day, section.history(2, 25)),
+                    scoped: [Object.assign({ id: "Fable", label: "Fable" },
+                                           fablePaceUsage.window(55, 5 * fablePaceUsage.day, section.history(2, 55)))]
+                }
+            })
+        }
+    }
+
+    // Codex's one limit at 40 % two days in, on pace to run out.
+    FakeMonitor {
+        id: codexPace
+        usage: FakeUsage {
+            id: codexPaceUsage
+            entries: ({
+                codex: {
+                    status: "ok",
+                    fetchedAt: codexPaceUsage.createdAt,
+                    weekly: codexPaceUsage.window(40, 5 * codexPaceUsage.day, section.history(2, 40)),
+                    scoped: []
+                }
+            })
+        }
+    }
+
+    // The first check since the widget started, still running.
+    FakeMonitor {
+        id: loadingMonitor
+        usage: FakeUsage {
+            entries: ({})
+            pending: ["claude", "codex"]
+        }
+    }
+
+    // The first check since the widget started failed: offline for Claude,
+    // no codex CLI for Codex. There is no reading to keep.
+    FakeMonitor {
+        id: firstFailed
+        usage: FakeUsage {
+            id: firstFailedUsage
+            entries: ({
+                claude: { status: "error", lastError: "can't reach api.anthropic.com: Name or service not known",
+                          lastErrorAt: firstFailedUsage.createdAt - 30, reason: "offline", host: "api.anthropic.com",
+                          retryAt: firstFailedUsage.createdAt + 270 },
+                codex: { status: "error", lastError: "codex CLI not found", lastErrorAt: firstFailedUsage.createdAt - 30,
+                         reason: "not-installed", host: "", retryAt: firstFailedUsage.createdAt + 270 }
             })
         }
     }
@@ -117,6 +236,31 @@ ColumnLayout {
         usage: FakeUsage {
             entries: ({ codex: { status: "signed_out" } })
         }
+    }
+
+    // The session starter on, waiting for Claude's session to end, and
+    // unable to start Codex's week while the CLI is signed out.
+    FakeMonitor {
+        id: starting
+        usage: FakeUsage {
+            id: startingUsage
+            starters: ({
+                claude: { enabled: true, state: "waiting", at: null, next: startingUsage.createdAt + 2 * 3600 + 13 * 60, reason: null },
+                codex: { enabled: true, state: "failed", at: null, next: null, reason: "signed-out" }
+            })
+        }
+    }
+
+    // Each of the starter's states for Claude and for Codex, but those for
+    // one of them only.
+    readonly property var starterFooters: {
+        const footers = [];
+        StarterStates.ROWS.forEach(row => ["claude", "codex"].forEach(item => {
+            if ((row.only ?? item) === item) {
+                footers.push({ item: item, row: row });
+            }
+        }));
+        return footers;
     }
 
     component Note: Text {
@@ -211,8 +355,15 @@ ColumnLayout {
     }
 
     Panel {
-        label: "Claude & Codex · panel · 46 px · Claude 62 % with Opus 78 % inside, Codex 34 %"
+        label: "Claude & Codex · panel · 46 px · Claude 52 % with Fable 78 % inside (amber), Codex 24 %"
         thickness: 46
+    }
+
+    Panel {
+        label: "Claude & Codex · panel · 46 px · Claude 25 %, Fable 55 % (on pace to run out, not coloured)"
+        thickness: 46
+        monitor: fablePace
+        items: ["cpu", "memory", "claude"]
     }
 
     Panel {
@@ -221,38 +372,70 @@ ColumnLayout {
     }
 
     Panel {
-        label: "Claude & Codex · panel · 46 px · Claude 81 % (amber) with Opus 93 % (red), Codex 100 % (red)"
+        label: "Claude & Codex · panel · 46 px · Claude 81 % (amber) with Fable 93 % (red), Codex 100 % (red)"
         thickness: 46
         monitor: hot
     }
 
     Panel {
-        label: "Claude & Codex · panel · 46 px · Claude's last check failed, Codex signed out (hidden)"
+        label: "Claude & Codex · panel · 46 px · Claude's checks failing for an hour (struck), Codex signed out (hidden)"
         thickness: 46
-        monitor: failed
+        monitor: failedMonitor
         items: ["cpu", "memory", "claude"]
+    }
+
+    Panel {
+        label: "Claude & Codex · panel · 30 px · Claude's checks failing for an hour (struck)"
+        thickness: 30
+        monitor: failedMonitor
+        items: ["cpu", "memory", "claude"]
+    }
+
+    Panel {
+        label: "Claude · panel · 46 px · Claude's first failed check at 93 % (grey)"
+        thickness: 46
+        monitor: justFailed
+        items: ["cpu", "memory", "claude"]
+    }
+
+    Panel {
+        label: "Claude & Codex · panel · 46 px · the first check running (still dots; a lit dot travels after 1 s)"
+        thickness: 46
+        monitor: loadingMonitor
+    }
+
+    Panel {
+        label: "Claude & Codex · panel · 30 px · the first check running"
+        thickness: 30
+        monitor: loadingMonitor
+    }
+
+    Panel {
+        label: "Claude & Codex · panel · 46 px · the first check failed (struck, no reading)"
+        thickness: 46
+        monitor: firstFailed
     }
 
     RowLayout {
         spacing: 2 * Kirigami.Units.gridUnit
 
         Frame {
-            label: "Claude · Opus on the inner ring"
+            label: "Claude · Fable on the inner ring, on pace to run out"
             UsagePopup { monitor: section.monitor; item: "claude" }
         }
 
         Frame {
-            label: "Codex"
+            label: "Codex · one limit, lasts to the reset"
             UsagePopup { monitor: section.monitor; item: "codex" }
         }
 
         Frame {
-            label: "Claude · two model limits, none picked"
+            label: "Claude · two model limits, none picked, amber, both last"
             UsagePopup { monitor: several; item: "claude" }
         }
 
         Frame {
-            label: "Claude · full week, an hour left"
+            label: "Claude · 91 % (red), an hour left"
             UsagePopup { monitor: fullWeek; item: "claude" }
         }
     }
@@ -261,7 +444,7 @@ ColumnLayout {
         spacing: 2 * Kirigami.Units.gridUnit
 
         Frame {
-            label: "Claude · 81 % (amber), Opus 93 % (red)"
+            label: "Claude · 81 % (amber, on pace to run out), Fable 93 % (red)"
             UsagePopup { monitor: hot; item: "claude" }
         }
 
@@ -271,13 +454,97 @@ ColumnLayout {
         }
 
         Frame {
-            label: "Claude · last check failed"
-            UsagePopup { monitor: failed; item: "claude" }
+            label: "Claude · checks failing for an hour (struck), try again"
+            UsagePopup { monitor: failedMonitor; item: "claude" }
         }
 
         Frame {
             label: "Codex · signed out"
             UsagePopup { monitor: signedOut; item: "codex" }
+        }
+    }
+
+    RowLayout {
+        spacing: 2 * Kirigami.Units.gridUnit
+
+        Frame {
+            label: "Claude · first failed check, rate limited, the reading in grey"
+            UsagePopup { monitor: justFailed; item: "claude" }
+        }
+
+        Frame {
+            label: "Claude · the helper failed through the week's reset"
+            UsagePopup { monitor: failedPastReset; item: "claude" }
+        }
+
+        Frame {
+            label: "Claude · the first check running"
+            UsagePopup { monitor: loadingMonitor; item: "claude" }
+        }
+
+        Frame {
+            label: "Codex · the first check failed, no CLI"
+            UsagePopup { monitor: firstFailed; item: "codex" }
+        }
+    }
+
+    RowLayout {
+        spacing: 2 * Kirigami.Units.gridUnit
+
+        Frame {
+            label: "Claude · 25 %, Fable 55 % (on pace to run out, not coloured)"
+            UsagePopup { monitor: fablePace; item: "claude" }
+        }
+
+        Frame {
+            label: "Codex · one limit at 40 %, on pace to run out"
+            UsagePopup { monitor: codexPace; item: "codex" }
+        }
+
+        Frame {
+            label: "Claude · session starter on, waiting"
+            UsagePopup { monitor: starting; item: "claude" }
+        }
+
+        Frame {
+            label: "Codex · week starter can't run: signed out (full text)"
+            UsagePopup { monitor: starting; item: "codex" }
+        }
+    }
+
+    // The footer alone, Claude's beside Codex's, in each starter state.
+    GridLayout {
+        columns: 4
+        columnSpacing: 2 * Kirigami.Units.gridUnit
+        rowSpacing: Kirigami.Units.gridUnit
+
+        Repeater {
+            model: section.starterFooters
+
+            delegate: Frame {
+                id: starterFrame
+
+                required property var modelData
+                readonly property string item: modelData.item
+                readonly property FakeUsage fake: FakeUsage {
+                    id: fake
+                    starters: ({ [starterFrame.item]: StarterStates.starter(starterFrame.modelData.row, fake.createdAt) })
+                }
+
+                label: (item === "claude" ? "Claude" : "Codex") + " · starter " + modelData.row.label
+
+                PopupFooter {
+                    width: Kirigami.Units.gridUnit * 20
+                    monitor: section.monitor
+                    systemMonitorShown: false
+                    leading: StarterSwitch {
+                        item: starterFrame.item
+                        usage: starterFrame.fake
+                        nowMs: starterFrame.fake.createdAt * 1000
+                        texts: Words { monitor: section.monitor }
+                    }
+                }
+            }
         }
     }
 
@@ -310,15 +577,56 @@ ColumnLayout {
             spacing: 2 * Kirigami.Units.gridUnit
 
             Panel {
-                label: "Breeze Light · Claude & Codex · panel · 46 px · amber and red"
+                label: "Breeze Light · Claude & Codex · panel · 46 px · Claude 81 % (amber), Codex 100 % (red)"
                 thickness: 46
                 monitor: hot
             }
 
-            Frame {
-                label: "Breeze Light · Claude"
-                flat: true
-                UsagePopup { monitor: section.monitor; item: "claude" }
+            Panel {
+                label: "Breeze Light · Claude · panel · 46 px · Claude 77 % (amber), lasts to the reset"
+                thickness: 46
+                monitor: several
+                items: ["cpu", "memory", "claude"]
+            }
+
+            Panel {
+                label: "Breeze Light · Claude & Codex · panel · 46 px · the first check running"
+                thickness: 46
+                monitor: loadingMonitor
+            }
+
+            Panel {
+                label: "Breeze Light · Claude & Codex · panel · 46 px · the first check failed (struck)"
+                thickness: 46
+                monitor: firstFailed
+            }
+
+            RowLayout {
+                spacing: 2 * Kirigami.Units.gridUnit
+
+                Frame {
+                    label: "Breeze Light · Claude · the pace sentence on Fable"
+                    flat: true
+                    UsagePopup { monitor: section.monitor; item: "claude" }
+                }
+
+                Frame {
+                    label: "Breeze Light · Codex · one limit, the pace sentence"
+                    flat: true
+                    UsagePopup { monitor: codexPace; item: "codex" }
+                }
+
+                Frame {
+                    label: "Breeze Light · Claude · session starter on, waiting (dim)"
+                    flat: true
+                    UsagePopup { monitor: starting; item: "claude" }
+                }
+
+                Frame {
+                    label: "Breeze Light · Codex · week starter signed out (full)"
+                    flat: true
+                    UsagePopup { monitor: starting; item: "codex" }
+                }
             }
         }
     }

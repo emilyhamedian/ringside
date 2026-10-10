@@ -10,9 +10,14 @@ import "code/style.js" as Style
 
 // Two transfer rates in the panel: down and up for the network, read and
 // write for the disk. Stacked on the rows a ring's two readings use, so they
-// line up across the panel, or side by side on a thin panel. The columns
-// keep the room for their widest text, and only that, so the panel doesn't
-// shift as rates change, even where a digit's ink overhangs its advance.
+// line up across the panel, or side by side on a thin panel. Across the panel
+// each rate is its arrow or letter, then its value and unit, each in a slot
+// that fits any reading: values come in three figures (format.js panelRate),
+// so they all take the room of "99.9" but those from 100, a point narrower,
+// and the units the room of the widest. Values end at their slot's end, so
+// the units line up after them; a shorter unit leaves its room after it. The
+// value and its unit read in that order either way, as a number keeps its
+// sign; only the marker moves to the other side.
 GridLayout {
     id: rates
 
@@ -26,8 +31,8 @@ GridLayout {
     readonly property bool network: item === "network"
     readonly property bool bits: network && monitor.networkBits
     readonly property var lines: network
-        ? [Format.rate(monitor.networkDown, bits), Format.rate(monitor.networkUp, bits)]
-        : [Format.rate(monitor.diskRead, false), Format.rate(monitor.diskWrite, false)]
+        ? [reading(monitor.panel.networkDown, bits), reading(monitor.panel.networkUp, bits)]
+        : [reading(monitor.panel.diskRead, false), reading(monitor.panel.diskWrite, false)]
     readonly property color markColor: Qt.alpha(Kirigami.Theme.textColor, 0.75)
     readonly property string readLetter: i18nc("@label short for disk reads", "R")
     readonly property string writeLetter: i18nc("@label short for disk writes", "W")
@@ -40,10 +45,8 @@ GridLayout {
     // rounded up per column as the layout does.
     readonly property real looseSpacing: Math.round(Kirigami.Units.smallSpacing * 1.5)
     readonly property real tightSpacing: Math.round(Kirigami.Units.smallSpacing / 2)
-    readonly property real markerWidth: network ? Math.round(base.plain.height * 0.62) * 0.8
-                                                : base.room(base.plain, [readLetter, writeLetter])
-    readonly property real decimalWidth: Math.ceil(markerWidth) + base.room(base.plain, [Format.whole(1000) + "M"])
-    readonly property real wholeWidth: Math.ceil(markerWidth) + base.room(base.plain, [Format.whole(100) + "M"])
+    readonly property real decimalWidth: Math.ceil(markerRoom(base)) + base.room(base.plain, [Format.whole(1000) + "M"])
+    readonly property real wholeWidth: Math.ceil(markerRoom(base)) + base.room(base.plain, [Format.whole(100) + "M"])
     // Text draws a pixel or two wider than its advance (bearings, rounding).
     readonly property real room: availableWidth - 2
     readonly property bool tight: vertical && decimalWidth + looseSpacing > room
@@ -55,38 +58,61 @@ GridLayout {
                    Math.floor(Math.min(1, (room - tightSpacing - 2) / (wholeWidth - 2)) * base.drawnSize * 2) / 2)
         : base.drawnSize
 
-    // "25M" for "24.8M". A byte rate of 1000 to 1023 in one unit rounds to 1
-    // of the next, so it keeps to three digits.
+    // An arrow's height, and the room the arrows or the wider of the letters
+    // take, in `face`: the one measure both fitting and drawing use.
+    function arrowHeight(face) {
+        return Math.round(face.lineHeight * 0.62);
+    }
+    function markerRoom(face) {
+        return network ? arrowHeight(face) * 0.8 : face.room(face.plain, [readLetter, writeLetter]);
+    }
+
+    // Across the panel in three figures, for the fixed slots; along a
+    // vertical panel as verticalText() fits it.
+    function reading(bytesPerSecond, bits) {
+        return vertical ? Format.rate(bytesPerSecond, bits) : Format.panelRate(bytesPerSecond, bits);
+    }
+
+    // "25M" for "24.8M", in these letters whatever KDE calls the unit in the
+    // user's language. A byte rate of 1000 to 1023 in a unit of 1024 rounds
+    // to 1 of the next, so it keeps to three digits.
     function verticalText(reading) {
-        const prefixes = ["", "K", "M", "G", "T", "P"];
-        let prefix = reading.unit.charAt(0).replace(/[bB]/, "");
+        const prefixes = bits ? ["", "k", "M", "G", "T"] : ["", "K", "M", "G", "T", "P"];
+        let scale = reading.scale;
         if (!whole || reading.value === "–") {
-            return reading.value + prefix;
+            return reading.value + prefixes[scale];
         }
         // format.js writes decimals in the user's locale: "24,8" in German.
         let rounded = Math.round(Number.fromLocaleString(Qt.locale(), reading.value));
-        if (rounded >= 1000 && prefixes.includes(prefix)) {
+        if (rounded >= 1000 && scale < prefixes.length - 1) {
             rounded = 1;
-            prefix = prefixes[prefixes.indexOf(prefix) + 1];
+            ++scale;
         }
-        return Format.whole(rounded) + prefix;
+        return Format.whole(rounded) + prefixes[scale];
     }
 
     // The rates in words, for screen readers.
     readonly property string accessibleDescription: words.describe(item)
 
-    // Room for the widest value and unit at the size drawn.
-    readonly property real valueRoom: drawn.room(drawn.plain, [!vertical ? Format.whole(1000)
-                                                              : whole ? Format.whole(100) + "M" : Format.whole(1000) + "M"])
-    // Units differ in length: b/s and Mb/s, B/s and MiB/s.
-    readonly property real unitRoom: drawn.room(drawn.plain, bits ? ["b/s", "kb/s", "Mb/s", "Gb/s", "Tb/s"]
-                                                                  : ["B/s", "KiB/s", "MiB/s", "GiB/s", "TiB/s", "PiB/s"])
+    // Between a marker and its value: across the panel twice the gap before
+    // the unit, so the unit reads as the value's and the marker stands apart;
+    // along a vertical panel, what fits.
+    readonly property real markerGap: tight ? tightSpacing : looseSpacing
+    // Between a value and its unit, close enough that they read as one.
+    readonly property real unitGap: Math.round(Kirigami.Units.smallSpacing * 0.75)
+    readonly property real markerWidth: markerRoom(drawn)
+    // Along a vertical panel, room for the widest value at the size drawn.
+    readonly property real valueRoom: drawn.room(drawn.plain, [whole ? Format.whole(100) + "M" : Format.whole(1000) + "M"])
+    // Across the panel, room for any value and any unit.
+    readonly property real valuesWidth: drawn.room(drawn.plain, [Format.decimal(10, 1), Format.whole(100)])
+    readonly property real unitsWidth: drawn.room(drawn.plain, Format.panelRateUnits(bits))
     // Horizontally each row is a ring's line; a vertical panel spaces its own.
     readonly property real rowHeight: vertical ? -1 : drawn.lineHeight
 
-    columns: vertical ? 2 : singleRow ? 6 : 3
+    columns: singleRow ? 2 : 1
     rowSpacing: vertical ? Math.round(Kirigami.Units.smallSpacing * 0.75) : 0
-    columnSpacing: tight ? tightSpacing : looseSpacing
+    // Between the two rates side by side.
+    columnSpacing: looseSpacing + Kirigami.Units.smallSpacing
 
     Words {
         id: words
@@ -107,69 +133,85 @@ GridLayout {
         model: 2
 
         delegate: Item {
-            id: marker
+            id: rate
 
             required property int index
+            readonly property var reading: rates.lines[index]
+            // Side by side, a letter's marker is as wide as the letter, so the
+            // first rate starts at the cell's padding; stacked, both take the
+            // wider one, so the values line up.
+            readonly property real markerWidth: rates.singleRow && !rates.network
+                ? drawn.room(drawn.plain, [index === 1 ? rates.writeLetter : rates.readLetter]) : rates.markerWidth
+            readonly property real valueWidth: rates.vertical ? rates.valueRoom : rates.valuesWidth
+            readonly property real unitWidth: rates.vertical ? 0 : rates.unitsWidth
 
             Layout.row: rates.singleRow ? 0 : index
-            Layout.column: rates.singleRow ? index * 3 : 0
-            Layout.leftMargin: rates.singleRow && index === 1 ? Kirigami.Units.smallSpacing : 0
-            implicitWidth: rates.network ? arrow.width : letter.implicitWidth
-            implicitHeight: rates.vertical ? letter.implicitHeight : rates.rowHeight
+            Layout.column: rates.singleRow ? index : 0
+            implicitWidth: markerWidth + rates.markerGap + valueWidth + (rates.vertical ? 0 : rates.unitGap + unitWidth)
+            implicitHeight: rates.vertical ? value.implicitHeight : rates.rowHeight
 
-            Arrow {
-                id: arrow
-                visible: rates.network
-                anchors.centerIn: parent
-                height: Math.round(letter.implicitHeight * 0.62)
-                up: marker.index === 1
-                color: rates.markColor
+            Item {
+                anchors.left: parent.left
+                width: rate.markerWidth
+                height: parent.height
+
+                Arrow {
+                    visible: rates.network
+                    anchors.centerIn: parent
+                    height: rates.arrowHeight(drawn)
+                    up: rate.index === 1
+                    color: rates.markColor
+                }
+
+                // Toward the value across the panel; along a vertical one
+                // the letters line up at the start.
+                Text {
+                    anchors.left: rates.vertical ? parent.left : undefined
+                    anchors.right: rates.vertical ? undefined : parent.right
+                    visible: !rates.network
+                    text: rate.index === 1 ? rates.writeLetter : rates.readLetter
+                    color: rates.markColor
+                    font: drawn.plain.font
+                    textFormat: Text.PlainText
+                }
             }
 
-            Text {
-                id: letter
-                visible: !rates.network
-                text: marker.index === 1 ? rates.writeLetter : rates.readLetter
-                color: rates.markColor
-                font: drawn.plain.font
-                textFormat: Text.PlainText
+            // The value and its unit, never mirrored, after the marker,
+            // wherever that sits; the layout's rounding up to a whole pixel
+            // falls after them. Placed by x, since with mirroring off its own
+            // anchors would read left to right.
+            Item {
+                x: rate.LayoutMirroring.enabled ? parent.width - rate.markerWidth - rates.markerGap - width
+                                                : rate.markerWidth + rates.markerGap
+                width: rate.valueWidth + (unit.visible ? rates.unitGap + rate.unitWidth : 0)
+                height: parent.height
+                LayoutMirroring.enabled: false
+                LayoutMirroring.childrenInherit: true
+
+                Text {
+                    id: value
+                    width: rate.valueWidth
+                    height: parent.height
+                    // Along a vertical panel the values line up at the end.
+                    horizontalAlignment: rates.vertical && rate.LayoutMirroring.enabled ? Text.AlignLeft : Text.AlignRight
+                    text: rates.vertical ? rates.verticalText(rate.reading) : rate.reading.value
+                    color: Kirigami.Theme.textColor
+                    font: drawn.plain.font
+                    textFormat: Text.PlainText
+                }
+
+                Text {
+                    id: unit
+                    visible: !rates.vertical
+                    anchors.left: value.right
+                    anchors.leftMargin: rates.unitGap
+                    height: parent.height
+                    text: rate.reading.unit
+                    color: Style.dim(Kirigami.Theme.textColor)
+                    font: drawn.plain.font
+                    textFormat: Text.PlainText
+                }
             }
-        }
-    }
-
-    Repeater {
-        model: 2
-
-        delegate: Text {
-            required property int index
-
-            Layout.row: rates.singleRow ? 0 : index
-            Layout.column: rates.singleRow ? index * 3 + 1 : 1
-            Layout.alignment: Qt.AlignRight
-            Layout.preferredWidth: rates.valueRoom
-            Layout.preferredHeight: rates.rowHeight
-            horizontalAlignment: Text.AlignRight
-            text: rates.vertical ? rates.verticalText(rates.lines[index]) : rates.lines[index].value
-            color: Kirigami.Theme.textColor
-            font: drawn.plain.font
-            textFormat: Text.PlainText
-        }
-    }
-
-    Repeater {
-        model: rates.vertical ? 0 : 2
-
-        delegate: Text {
-            required property int index
-
-            Layout.row: rates.singleRow ? 0 : index
-            Layout.column: rates.singleRow ? index * 3 + 2 : 2
-            Layout.preferredWidth: rates.unitRoom
-            Layout.preferredHeight: rates.rowHeight
-            text: rates.lines[index].unit
-            color: Style.dim(Kirigami.Theme.textColor)
-            font: drawn.plain.font
-            textFormat: Text.PlainText
         }
     }
 }

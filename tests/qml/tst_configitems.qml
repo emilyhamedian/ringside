@@ -95,10 +95,10 @@ Item {
             const page = make().page;
             verify(!button(page, "Move CPU up").enabled);
             verify(button(page, "Move CPU down").enabled);
-            // Claude and Codex trail the list by default, so Codex is now
+            // Claude and OpenAI trail the list by default, so OpenAI is now
             // the last row rather than Disk.
-            verify(button(page, "Move Codex up").enabled);
-            verify(!button(page, "Move Codex down").enabled);
+            verify(button(page, "Move OpenAI up").enabled);
+            verify(!button(page, "Move OpenAI down").enabled);
             const up = button(page, "Move GPU up");
             compare(up.QQC2.ToolTip.text, "Move GPU up");
             compare(up.icon.name, "go-up");
@@ -110,12 +110,12 @@ Item {
             const up = button(page, "Move GPU up");
             const down = button(page, "Move GPU down");
             up.forceActiveFocus(Qt.TabFocusReason);
-            verify(up.visualFocus);
+            tryVerify(() => up.visualFocus);
             keyClick(Qt.Key_Space);
             compare(page.cfg_itemOrder, ["gpu", "cpu", "memory", "network", "disk", "claude", "codex"]);
             tryVerify(() => !up.enabled);
-            verify(down.activeFocus, "focus moved to Move GPU down");
-            verify(down.visualFocus, "keyboard focus stays visible");
+            tryVerify(() => down.activeFocus, 5000, "focus moved to Move GPU down");
+            tryVerify(() => down.visualFocus, 5000, "keyboard focus stays visible");
             keyClick(Qt.Key_Space);
             compare(page.cfg_itemOrder, ["cpu", "gpu", "memory", "network", "disk", "claude", "codex"]);
             verify(down.activeFocus, "focus stays on the pressed button");
@@ -141,7 +141,7 @@ Item {
         function test_mouse() {
             const page = make().page;
             const up = button(page, "Move Memory up");
-            const pt = up.mapToItem(null, up.width / 2, up.height / 2);
+            const pt = up.mapToItem(null, Qt.point(up.width / 2, up.height / 2));
             mouseClick(up);
             compare(page.cfg_itemOrder, ["cpu", "memory", "gpu", "network", "disk", "claude", "codex"]);
             mouseClick(button(page, "Move Memory up"));
@@ -179,7 +179,7 @@ Item {
         function test_aiRowsUnchecked(data) {
             const page = openPage({ cfg_itemOrder: data.order, cfg_hiddenItems: data.hidden });
             verify(!checkbox(page, "Claude").checked, "Claude starts unchecked");
-            verify(!checkbox(page, "Codex").checked, "Codex starts unchecked");
+            verify(!checkbox(page, "OpenAI").checked, "OpenAI starts unchecked");
             compare(page.cfg_itemOrder, data.order, "loading writes nothing back");
             compare(page.cfg_hiddenItems, data.hidden, "loading writes nothing back");
         }
@@ -187,7 +187,7 @@ Item {
         function test_aiRowOnWhenOrderListsIt() {
             const page = openPage({ cfg_itemOrder: ["cpu", "claude", "gpu", "memory", "network", "disk"], cfg_hiddenItems: [] });
             verify(checkbox(page, "Claude").checked, "the stored order lists Claude");
-            verify(!checkbox(page, "Codex").checked, "the stored order doesn't list Codex");
+            verify(!checkbox(page, "OpenAI").checked, "the stored order doesn't list OpenAI");
         }
 
         // Whichever list the page writes, it writes both together: the order
@@ -207,8 +207,9 @@ Item {
             compare(page.cfg_hiddenItems, ["claude", "codex"], "moving never switches an opted-out AI item on");
         }
 
-        // The hint column reads Plasmoid.configuration.usageStatus; tests
-        // substitute it directly, since there's no live Plasmoid to fake.
+        // The hint column reads usageStatus from the page; these rows set that
+        // property directly, and tst_config's test_pagesFollowTheReports
+        // covers the live path.
         function test_hints_data() {
             return [
                 { tag: "helperError", status: { helperError: "python3 not found" },
@@ -231,45 +232,18 @@ Item {
             compare(page.hints.codex, data.codex);
         }
 
-        function test_layoutAndVisibilityCombosEnableDisable_data() {
-            return [
-                { tag: "inline", layout: 0, enabled: false },
-                { tag: "standalone", layout: 1, enabled: true }
-            ];
-        }
-        function test_layoutAndVisibilityCombosEnableDisable(data) {
-            const page = openPage({ cfg_layout: data.layout });
-            compare(accessible(page, "Fold").enabled, data.enabled);
-        }
-
-        function test_ringControlsDisabledInStandalone_data() {
-            return [
-                { tag: "inline", layout: 0, enabled: true },
-                { tag: "standalone", layout: 1, enabled: false }
-            ];
-        }
-        function test_ringControlsDisabledInStandalone(data) {
-            const page = openPage({ cfg_itemOrder: ["cpu", "gpu", "memory", "network", "disk"], cfg_layout: data.layout });
-            compare(accessible(page, "What CPU shows").enabled, data.enabled);
-        }
-
-        // Rings follow the panel's thickness, so the page offers no ring size
-        // and the Standalone note names Ring only alone.
-        function test_noRingSizeSetting_data() {
-            return [
-                { tag: "inline", layout: 0, note: false },
-                { tag: "standalone", layout: 1, note: true }
-            ];
-        }
-        function test_noRingSizeSetting(data) {
-            const page = openPage({ cfg_itemOrder: ["cpu", "gpu", "memory", "network", "disk"], cfg_layout: data.layout });
+        // Rings follow the panel's thickness, so the page offers no ring size,
+        // and with one layout there is none to pick.
+        function test_noRingSizeSetting() {
+            const page = openPage({ cfg_itemOrder: ["cpu", "gpu", "memory", "network", "disk"] });
             compare(page.cfg_ringSize, undefined);
             compare(accessible(page, "Ring size"), null);
             compare(find(page, i => i.value !== undefined && i.stepSize !== undefined), null, "no slider or spin box");
             compare(find(page, i => typeof i.text === "string" && i.text.indexOf("Ring size") >= 0), null);
-            const note = find(page, i => i.text === "Ring only applies to the Inline layout.");
-            verify(note, "the Standalone note");
-            compare(note.visible, data.note);
+            compare(page.cfg_layout, undefined);
+            compare(accessible(page, "Layout"), null);
+            compare(accessible(page, "Fold"), null);
+            verify(accessible(page, "What CPU shows").enabled, "a horizontal panel offers Ring only");
         }
     }
 }

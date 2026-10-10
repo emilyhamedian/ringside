@@ -6,21 +6,15 @@ import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls as QQC2
 import org.kde.kirigami as Kirigami
-import org.kde.kcmutils as KCM
 import org.kde.plasma.core as PlasmaCore
 import org.kde.plasma.plasmoid
 import "../code/format.js" as Format
 import "../code/style.js" as Style
 import "../code/items.js" as Items
+import "../code/providers.js" as Providers
 
-KCM.SimpleKCM {
+ConfigPage {
     id: page
-
-    property var cfg_itemOrder: []
-    property var cfg_hiddenItems: []
-    property var cfg_ringsOnly: []
-    property int cfg_layout
-    property int cfg_visibilityMode
 
     readonly property var names: ({
         cpu: i18nc("@item panel item", "CPU"),
@@ -29,34 +23,15 @@ KCM.SimpleKCM {
         network: i18nc("@item panel item", "Network"),
         disk: i18nc("@item panel item", "Disk"),
         claude: i18nc("@item panel item", "Claude"),
-        codex: i18nc("@item panel item", "Codex")
+        codex: i18nc("@item panel item: the OpenAI weekly limits, read through Codex", "OpenAI")
     })
     // A vertical panel shows rings without their readings, whatever the setting.
     readonly property bool vertical: Plasmoid.formFactor === PlasmaCore.Types.Vertical
 
-    // What the widget found on this machine, for the hints. Read from the live
-    // configuration rather than a cfg_ property: Apply writes back every cfg_
-    // property a page declares, which would undo a report the widget saved
-    // while this page was open.
-    readonly property var hardware: {
-        try {
-            const report = JSON.parse(Plasmoid.configuration.detectedHardware);
-            return report && typeof report === "object" ? report : {};
-        } catch (err) {
-            return {};
-        }
-    }
-    // Same idea as hardware above, but not readonly: there is no live
-    // Plasmoid to fake outside a real applet, so tests substitute a fixed
-    // value here instead.
-    property var usageStatus: {
-        try {
-            const report = JSON.parse(Plasmoid.configuration.usageStatus || "{}");
-            return report && typeof report === "object" ? report : {};
-        } catch (err) {
-            return {};
-        }
-    }
+    // What the widget found on this machine, for the hints.
+    readonly property var hardware: page.report("detectedHardware")
+    // Not readonly: tests substitute a fixed status here.
+    property var usageStatus: page.report("usageStatus")
     readonly property var hints: ({
         cpu: hardware.cpu ? Format.cpuModel(hardware.cpu.model) : "",
         gpu: (Array.isArray(hardware.gpus) ? hardware.gpus : []).filter(g => g)
@@ -74,17 +49,15 @@ KCM.SimpleKCM {
         }
         const entry = usageStatus[id];
         if (!entry || !entry.status) {
-            return id === "claude"
-                ? i18nc("@info:usagetip shown before Claude Code has been checked", "Shows while Claude Code is signed in")
-                : i18nc("@info:usagetip shown before Codex has been checked", "Shows while Codex is signed in");
+            return i18nc("@info:usagetip shown before it has been checked; %1 is a program, such as Claude Code",
+                         "Shows while %1 is signed in", Providers.facts(id).product);
         }
         switch (entry.status) {
         case "ok":
             return i18nc("@info:usagetip", "Signed in");
         case "signed_out":
-            return id === "claude"
-                ? i18nc("@info:usagetip", "Not signed in: run claude in a terminal")
-                : i18nc("@info:usagetip", "Not signed in: run codex in a terminal");
+            return i18nc("@info:usagetip %1 is a command, such as claude", "Not signed in: run %1 in a terminal",
+                         Providers.facts(id).command);
         case "error":
         case "rate_limited":
             return String(entry.message || "");
@@ -138,39 +111,6 @@ KCM.SimpleKCM {
 
     ColumnLayout {
         spacing: Kirigami.Units.smallSpacing
-
-        Kirigami.FormLayout {
-            Layout.fillWidth: true
-
-            QQC2.ComboBox {
-                Kirigami.FormData.label: i18nc("@label:listbox", "Layout:")
-                model: [i18nc("@item:inlistbox items in a row, in any panel", "Inline"),
-                        i18nc("@item:inlistbox large dials in a panel of their own", "Standalone")]
-                currentIndex: page.cfg_layout
-                Accessible.name: i18nc("@label:listbox", "Layout")
-                onActivated: index => page.cfg_layout = index
-            }
-            QQC2.Label {
-                text: page.cfg_layout === 1
-                    ? i18nc("@info", "Large dials in a panel of their own, which folds away behind maximized windows.")
-                    : i18nc("@info", "Items in a row, in any panel.")
-                textFormat: Text.PlainText
-                wrapMode: Text.Wrap
-                color: Style.dim(Kirigami.Theme.textColor)
-                font.pointSize: Kirigami.Theme.defaultFont.pointSize * 11.5 / 13
-            }
-
-            QQC2.ComboBox {
-                Kirigami.FormData.label: i18nc("@label:listbox when the standalone panel folds into its tab", "Fold:")
-                enabled: page.cfg_layout === 1
-                model: [i18nc("@item:inlistbox the standalone panel folds while a maximized window is shown", "Behind maximized windows"),
-                        i18nc("@item:inlistbox the standalone panel never folds by itself", "Never"),
-                        i18nc("@item:inlistbox the standalone panel stays folded", "Always")]
-                currentIndex: page.cfg_visibilityMode
-                Accessible.name: i18nc("@label:listbox when the standalone panel folds into its tab", "Fold")
-                onActivated: index => page.cfg_visibilityMode = index
-            }
-        }
 
         QQC2.Label {
             Layout.fillWidth: true
@@ -278,7 +218,7 @@ KCM.SimpleKCM {
                             QQC2.ComboBox {
                                 id: mode
                                 visible: entry.ring
-                                enabled: !page.vertical && page.cfg_layout === 0
+                                enabled: !page.vertical
                                 model: [i18nc("@item:inlistbox what a ring item shows", "Ring and text"),
                                         i18nc("@item:inlistbox what a ring item shows", "Ring only")]
                                 currentIndex: page.cfg_ringsOnly.includes(entry.key) ? 1 : 0
@@ -287,7 +227,7 @@ KCM.SimpleKCM {
                                 onActivated: index => page.cfg_ringsOnly = page.including(page.cfg_ringsOnly, entry.key, index === 1)
                             }
                             QQC2.ToolButton {
-                                id: up
+                                id: upButton
                                 icon.name: "go-up"
                                 display: QQC2.AbstractButton.IconOnly
                                 text: i18nc("@action:button %1 is a panel item", "Move %1 up", page.names[entry.key])
@@ -295,10 +235,10 @@ KCM.SimpleKCM {
                                 QQC2.ToolTip.text: text
                                 QQC2.ToolTip.visible: hovered
                                 QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
-                                onClicked: entry.step(-1, up, down)
+                                onClicked: entry.step(-1, upButton, downButton)
                             }
                             QQC2.ToolButton {
-                                id: down
+                                id: downButton
                                 icon.name: "go-down"
                                 display: QQC2.AbstractButton.IconOnly
                                 text: i18nc("@action:button %1 is a panel item", "Move %1 down", page.names[entry.key])
@@ -306,7 +246,7 @@ KCM.SimpleKCM {
                                 QQC2.ToolTip.text: text
                                 QQC2.ToolTip.visible: hovered
                                 QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
-                                onClicked: entry.step(1, down, up)
+                                onClicked: entry.step(1, downButton, upButton)
                             }
                         }
                     }
@@ -318,16 +258,6 @@ KCM.SimpleKCM {
             Layout.fillWidth: true
             visible: page.vertical
             text: i18nc("@info", "This panel is vertical, so the rings show without their readings.")
-            textFormat: Text.PlainText
-            wrapMode: Text.Wrap
-            color: Style.dim(Kirigami.Theme.textColor)
-            font.pointSize: Kirigami.Theme.defaultFont.pointSize * 11.5 / 13
-        }
-
-        QQC2.Label {
-            Layout.fillWidth: true
-            visible: page.cfg_layout === 1
-            text: i18nc("@info", "Ring only applies to the Inline layout.")
             textFormat: Text.PlainText
             wrapMode: Text.Wrap
             color: Style.dim(Kirigami.Theme.textColor)

@@ -17,8 +17,9 @@ set -u
 
 cd "$(dirname "$0")/.." || exit 1
 
-# Without a terminal, Qt sends its log output to the journal.
-export QT_FORCE_STDERR_LOGGING=1
+# Without a terminal, Qt sends its log output to the journal. tst_main
+# reads main.qml's source, which Qt allows only when asked.
+export QT_FORCE_STDERR_LOGGING=1 QML_XHR_ALLOW_FILE_READ=1
 
 find_tool() {
     for tool in /usr/lib/qt6/bin/"$1" /usr/lib64/qt6/bin/"$1"; do
@@ -40,7 +41,9 @@ version=$("$QMLLINT" --version 2>&1)
 if ! printf '%s\n' "$version" | grep -q '^qmllint 6\.'; then
     fail "need the Qt 6 qmllint, but $QMLLINT --version says: ${version:-nothing}. Set QMLLINT to it."
 else
-    qml_files=$(find package/contents/ui tests/qml -name '*.qml' | sort)
+    # fakeplasmoid stands in for Plasma's own module, and qmllint 6.12 says
+    # its singleton is undeclared even though its qmldir declares it.
+    qml_files=$(find package/contents/ui tests/qml -path tests/qml/fakeplasmoid -prune -o -name '*.qml' -print | sort)
     # shellcheck disable=SC2086
     lint_out=$("$QMLLINT" $qml_files 2>&1)
     lint_rc=$?
@@ -89,8 +92,8 @@ fi
 
 echo
 echo "== APIs newer than Plasma 6.0, Qt 6.6 and KF 6.0 =="
-# CI's floor job runs only the tests that load on Plasma 6.0, and only the
-# paths they reach, so this check stands in for the rest.
+# CI's floor job runs the tests on Plasma 6.0, but only the paths they
+# reach, so this check stands in for the rest.
 # Kirigami.Theme.fixedWidthFont arrived in KF 6.14 and FontMetrics'
 # capitalHeight in Qt 6.9, and before then each reads as undefined, so each
 # needs its fallback straight after it on the same line:
@@ -117,22 +120,37 @@ probe_out=$(QT_QUICK_BACKEND=software "$QMLTESTRUNNER" -platform offscreen -inpu
 if ! printf '%s\n' "$probe_out" | grep -q '^Config: Using QtTest library 6\.'; then
     fail "need the Qt 6 qmltestrunner, but $QMLTESTRUNNER ran a probe test with: ${probe_out:-no output}. Set QMLTESTRUNNER to it."
 else
+    # The graph history tests' database goes in the probe's folder rather
+    # than the user's data folder.
     for f in tests/qml/tst_*.qml; do
         echo "-- $f --"
-        QT_QUICK_BACKEND=software "$QMLTESTRUNNER" -platform offscreen -input "$f" || failed=1
+        XDG_DATA_HOME=$probe QT_QUICK_BACKEND=software "$QMLTESTRUNNER" -platform offscreen -input "$f" || failed=1
     done
     # Numbers follow the locale. A German run catches a slide back to
     # toFixed(), an Egyptian Arabic one ASCII digits among the locale's own,
-    # in the formatting and in the room the panel's readings keep.
+    # in the formatting, in the room the panel's readings keep, and in the
+    # Claude and Codex cells, popups and pace sentences.
     # Qt reads LANG and LC_ALL with its own locale data, so the glibc locales
     # aren't needed; without them Qt warns that it switched to C.UTF-8, which
     # is harmless.
     for lang in de_DE ar_EG; do
-        for f in tests/qml/tst_format.qml tests/qml/tst_cells.qml; do
+        for f in tests/qml/tst_format.qml tests/qml/tst_cells.qml tests/qml/tst_usage.qml; do
             echo "-- $f ($lang) --"
             LANG=$lang.UTF-8 LC_ALL=$lang.UTF-8 QT_QUICK_BACKEND=software "$QMLTESTRUNNER" -platform offscreen \
                 -input "$f" || failed=1
         done
+    done
+    # Sizes follow KDE's Region & Language → Data and storage units, which
+    # Monitor learns from KDE's own formatter: tst_units runs once for each
+    # of its three choices, in English, under a kdeglobals that makes it.
+    dialect=0
+    for units in iec jedec metric; do
+        echo "-- tests/qml/units/tst_units.qml ($units) --"
+        mkdir -p "$probe/$units"
+        printf '[Locale]\nBinaryUnitDialect=%s\n' "$dialect" > "$probe/$units/kdeglobals"
+        XDG_CONFIG_HOME=$probe/$units LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 LANGUAGE=en_US QT_QUICK_BACKEND=software \
+            "$QMLTESTRUNNER" -platform offscreen -input tests/qml/units/tst_units.qml "Units::test_$units" || failed=1
+        dialect=$((dialect + 1))
     done
 fi
 
@@ -142,9 +160,8 @@ sh tests/helper/test-info.sh || failed=1
 
 echo
 echo "== tests/python (Python helper) =="
-# The helper has to run on Python 3.11, whatever this machine has.
-PYTHONDONTWRITEBYTECODE=1 python3 -c 'import ast, sys; ast.parse(open(sys.argv[1]).read(), feature_version=(3, 11))' \
-    package/contents/code/usage.py || fail "usage.py needs a newer Python than 3.11"
+# test_python311 checks the helper's syntax against Python 3.11, whatever
+# this machine has.
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests/python || failed=1
 
 echo

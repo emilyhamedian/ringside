@@ -5,12 +5,14 @@ import QtQuick
 import QtTest
 import org.kde.kirigami as Kirigami
 import "../../package/contents/ui"
+import "../../package/contents/ui/code/format.js" as Format
 
 // The panel strip with FakeMonitor's readings: rings follow the panel's
 // thickness inside the hover wash, with the item's name inside them and their
-// readings on the rows the rates use; its width holds while values change, a
-// thin vertical panel's rates fit, mirrored layouts read right to left, and
-// every cell describes its readings in words.
+// readings on the rows the rates use; no item moves as readings change, while
+// settings and the font take effect at once; a thin vertical panel's rates
+// fit, mirrored layouts read right to left, and every cell describes its
+// readings in words.
 Item {
     id: root
     width: 1200
@@ -140,7 +142,7 @@ Item {
 
         // An item's box in the strip's coordinates.
         function box(item) {
-            const p = item.mapToItem(strip, 0, 0);
+            const p = item.mapToItem(strip, Qt.point(0, 0));
             return { x: p.x, y: p.y, width: item.width, height: item.height,
                      right: p.x + item.width, bottom: p.y + item.height,
                      centreX: p.x + item.width / 2, centreY: p.y + item.height / 2 };
@@ -207,8 +209,8 @@ Item {
                        item + " holds " + JSON.stringify(inside));
                 let shown;
                 if (item === "claude" || item === "codex") {
-                    shown = find(name, m => m.isMask !== undefined);
-                    verify(String(shown.source).endsWith(item === "claude" ? "claude.svg" : "openai.svg"), shown.source);
+                    shown = find(name, m => m.markName !== undefined);
+                    compare(shown.markName, item);
                     compare(shown.visible, active, item + "'s mark");
                     compare(name.visible, active, item + "'s mark");
                 } else {
@@ -222,59 +224,191 @@ Item {
                     verify(shown, item + "'s name");
                 }
                 if (shown.visible) {
-                    const drawn = box(shown);
                     verify((shown.contentWidth ?? shown.width) <= hole, item + " " + shown.width + " in " + hole);
-                    verify(Math.abs(drawn.centreX - centre.centreX) <= 0.5 && Math.abs(drawn.centreY - centre.centreY) <= 0.5,
+                    // The mark by its artwork's middle, through its scale;
+                    // the label by its capitals' middle, without the letter
+                    // space after its last glyph.
+                    // Mapped as a point: Qt 6.6 drops the fraction of an x and y
+                    // given apart.
+                    const drawn = shown.markName !== undefined
+                        ? shown.mapToItem(strip, Qt.point(shown.art.box[0] + shown.art.box[2] / 2,
+                                                          shown.art.box[1] + shown.art.box[2] / 2))
+                        : shown.mapToItem(strip, Qt.point(shown.width / 2 - shown.font.letterSpacing / 2,
+                                                          shown.baselineOffset - name.capHeight / 2));
+                    verify(Math.abs(drawn.x - centre.centreX) <= 0.5 && Math.abs(drawn.y - centre.centreY) <= 0.5,
                            item + " centred: " + JSON.stringify(drawn) + " in " + JSON.stringify(centre));
                 }
             }
         }
 
-        function test_widthHoldsAsReadingsChange_data() {
-            return [{ tag: "bits", bits: true, thickness: 46 }, { tag: "bytes", bits: false, thickness: 46 },
-                    { tag: "thin bits", bits: true, thickness: 30 }, { tag: "thin bytes", bits: false, thickness: 30 }];
+        // The cells' widths, added up.
+        function cellsWidth() {
+            let sum = 0;
+            for (let i = 0; i < strip.items.length; ++i) {
+                sum += strip.cellAt(i).implicitWidth;
+            }
+            return sum;
         }
 
-        // Each change is checked to show the reading it sets, so the widest
-        // ones are really drawn (100%, 302°, 1023M, "off"), and to fit.
-        function test_widthHoldsAsReadingsChange(data) {
-            monitor.networkBits = data.bits;
-            const strip = makeStrip({ thickness: data.thickness });
-            compare(strip.twoLines, data.thickness >= 46);
-            const size = { width: strip.implicitWidth, height: strip.implicitHeight };
-            checkFits("at first");
-            const changes = [
-                { what: "no traffic", change: () => { monitor.networkDown = 0; monitor.networkUp = 0; } },
-                { what: "slow traffic", change: () => { monitor.networkDown = 60; monitor.networkUp = 20; } },
-                { what: "three digits", change: () => { monitor.networkDown = 130; monitor.networkUp = 300; } },
-                { what: "fast traffic", change: () => { monitor.networkDown = 1.3e7; monitor.networkUp = 1023; } },
-                { what: "no network", change: () => { monitor.networkDown = NaN; monitor.networkUp = NaN; } },
-                { what: "disk", change: () => { monitor.diskRead = 0; monitor.diskWrite = 1e9; } },
-                { what: "memory 9.6 GiB", change: () => { monitor.memoryUsed = 9.6 * monitor.gib; }, shows: "9.6G" },
-                { what: "memory 1023 MiB", change: () => { monitor.memoryUsed = 1023 * 1048576; }, shows: "1023M" },
-                { what: "no memory", change: () => { monitor.memoryUsed = NaN; } },
-                { what: "CPU 5%", change: () => { monitor.cpuUsage = 5; }, shows: "5%" },
-                { what: "CPU 11%", change: () => { monitor.cpuUsage = 11; }, shows: "11%" },
-                { what: "CPU 88%", change: () => { monitor.cpuUsage = 88; }, shows: "88%" },
-                { what: "CPU 100%", change: () => { monitor.cpuUsage = 100; }, shows: "100%" },
-                { what: "no CPU usage", change: () => { monitor.cpuUsage = NaN; } },
-                { what: "11 °C", change: () => { monitor.cpuTemperature = 11; }, shows: "11°" },
-                { what: "88 °C", change: () => { monitor.cpuTemperature = 88; }, shows: "88°" },
-                { what: "no temperature", change: () => { monitor.cpuTemperature = NaN; } },
-                { what: "100 °F", change: () => { monitor.fahrenheit = true; monitor.cpuTemperature = 38; }, shows: "100°" },
-                { what: "302 °F", change: () => { monitor.cpuTemperature = 149.9; }, shows: "302°" },
-                { what: "GPU 100%", change: () => { monitor.gpuOuter.usage = 100; }, shows: "100%" },
-                { what: "discrete GPU asleep", change: () => { monitor.gpuOuter.phase = "asleep"; }, shows: "3%" },
-                { what: "the only GPU asleep", change: () => { monitor.gpuInner.present = false; }, shows: "off" },
-                { what: "GPU awake", change: () => { monitor.gpuOuter.phase = "live"; }, shows: "100%" },
+        // The cells sit side by side from the strip's start, with nothing
+        // after the last of them.
+        function checkRow(what) {
+            compare(strip.implicitWidth, cellsWidth(), what + ": the cells and nothing more");
+            for (let i = 1; i < strip.items.length; ++i) {
+                compare(box(strip.cellAt(i)).x, box(strip.cellAt(i - 1)).right, what + ": " + strip.items[i] + " follows " + strip.items[i - 1]);
+            }
+        }
+
+        // Claude and Codex at [percent, seconds left] each, or not yet
+        // checked for null.
+        function setWeeks(claude, codex) {
+            const usage = monitor.usage;
+            const entry = week => ({ status: "ok", fetchedAt: usage.createdAt, weekly: usage.window(week[0], week[1], []), scoped: [] });
+            usage.entries = claude ? { claude: entry(claude), codex: entry(codex) } : {};
+        }
+
+        // Every item's box, and the strip's width.
+        function geometry() {
+            return { width: strip.implicitWidth,
+                     cells: strip.items.map((item, i) => { const b = box(strip.cellAt(i)); return item + " " + b.x + "+" + b.width; }) };
+        }
+
+        // Readings at their extremes across the strip, each with texts it
+        // draws.
+        function extremeSteps() {
+            const gib = monitor.gib;
+            const mib = 1048576;
+            return [
+                { what: "all at zero", change: () => {
+                    monitor.cpuUsage = 0; monitor.cpuTemperature = 9; monitor.memoryUsed = 0; monitor.memoryPercent = 0;
+                    monitor.gpuOuter.usage = 0; monitor.gpuOuter.temperature = 9;
+                    monitor.networkDown = 0; monitor.networkUp = 0; monitor.diskRead = 0; monitor.diskWrite = 0;
+                    setWeeks([0, 6 * 86400 + 23 * 3600], [0, 6 * 86400 + 20 * 3600]);
+                }, shows: ["0%", "9°", "0 B", "0.00", "6d"] },
+                { what: "all at their most", change: () => {
+                    monitor.cpuUsage = 100; monitor.cpuTemperature = 105; monitor.memoryUsed = 1023 * gib; monitor.memoryPercent = 100;
+                    monitor.gpuOuter.usage = 100; monitor.gpuOuter.temperature = 105;
+                    monitor.networkDown = 1023 * gib; monitor.networkUp = 1023 * gib; monitor.diskRead = 1023 * gib; monitor.diskWrite = 1023 * gib;
+                    setWeeks([100, 59 * 60], [100, 5 * 60]);
+                }, shows: ["100%", "105°", "1.0 TiB", "TiB/s", "59m", "5m"] },
+                { what: "302 °F", change: () => { monitor.fahrenheit = true; monitor.cpuTemperature = 149.9; }, shows: ["302°"] },
+                { what: "unit edges", change: () => {
+                    monitor.fahrenheit = false; monitor.cpuTemperature = 61; monitor.memoryUsed = 1000 * mib; monitor.memoryPercent = 6;
+                    monitor.networkDown = 999.4e3 / 8; monitor.networkUp = 999.5e3 / 8; monitor.diskRead = 999.4 * 1024; monitor.diskWrite = 1023 * 1024;
+                    setWeeks([88, 23 * 3600 + 59 * 60], [41, 86400 + 7 * 3600]);
+                }, shows: ["1.0 GiB", "999", "1.00", "23h", "1d"] },
+                { what: "usual", change: () => {
+                    monitor.cpuUsage = 12; monitor.memoryUsed = 9.6 * gib; monitor.memoryPercent = 60;
+                    monitor.gpuOuter.usage = 4; monitor.gpuOuter.temperature = 46;
+                    monitor.networkDown = 8.4e6 / 8; monitor.networkUp = 100e3 / 8; monitor.diskRead = 4.1 * 1024; monitor.diskWrite = 353 * 1024;
+                }, shows: ["12%", "9.6 GiB", "4%", "4.10", "353"] },
+                { what: "the discrete GPU asleep", change: () => { monitor.gpuOuter.phase = "asleep"; }, shows: ["3%", "41°"] },
+                { what: "both GPUs asleep", change: () => { monitor.gpuInner.phase = "asleep"; }, shows: ["off"] },
+                { what: "the GPUs awake", change: () => { monitor.gpuOuter.phase = "live"; monitor.gpuInner.phase = "live"; }, shows: ["4%", "46°"] },
+                { what: "Claude and Codex reached and reset", change: () => setWeeks([100, -600], [100, 10 * 60]), shows: ["100%", "–", "10m"] },
+                { what: "no readings", change: () => {
+                    monitor.cpuUsage = NaN; monitor.cpuTemperature = NaN; monitor.memoryUsed = NaN; monitor.memoryPercent = NaN;
+                    monitor.gpuOuter.usage = NaN; monitor.gpuOuter.temperature = NaN;
+                    monitor.networkDown = NaN; monitor.networkUp = NaN; monitor.diskRead = NaN; monitor.diskWrite = NaN;
+                    setWeeks(null);
+                }, shows: ["–"] }
             ];
-            for (const step of changes) {
-                compare(sizeAfter(strip, step.change), size, step.what);
-                checkFits(step.what);
-                if (step.shows) {
-                    verify(visibleTexts(strip).includes(step.shows), step.what + ": " + JSON.stringify(visibleTexts(strip)));
+        }
+
+        function test_nothingMoves_data() {
+            const rows = [];
+            for (const mirrored of [false, true]) {
+                for (const thickness of [46, 30]) {
+                    for (const bits of [true, false]) {
+                        rows.push({ tag: (mirrored ? "mirrored " : "") + (thickness === 46 ? "two lines" : "thin") + (bits ? " bits" : " bytes"),
+                                    mirrored: mirrored, thickness: thickness, bits: bits });
+                    }
                 }
             }
+            return rows;
+        }
+
+        // Across a horizontal panel every item keeps its place and width
+        // whatever its readings, from left to right or right to left, on two
+        // lines or one: the panel's size holds still. Each extreme is really
+        // drawn, and fits.
+        function test_nothingMoves(data) {
+            monitor.networkBits = data.bits;
+            const strip = makeStrip({ items: ["cpu", "memory", "gpu", "claude", "codex", "network", "disk"],
+                                      thickness: data.thickness, height: data.thickness },
+                                    data.mirrored ? mirroredComponent : stripComponent);
+            compare(strip.twoLines, data.thickness === 46);
+            // Layout only: the GPU's readings change at once (see tst_motion).
+            strip.cellAt(2).contentItem.animated = false;
+            const at = geometry();
+            const adjacent = what => {
+                for (let i = 1; i < strip.items.length; ++i) {
+                    const before = box(strip.cellAt(i - 1));
+                    const cell = box(strip.cellAt(i));
+                    compare(data.mirrored ? cell.right : cell.x, data.mirrored ? before.x : before.right, what + ": " + strip.items[i] + " beside " + strip.items[i - 1]);
+                }
+            };
+            adjacent("at first");
+            for (const step of extremeSteps()) {
+                sizeAfter(strip, step.change);
+                checkFits(step.what);
+                const texts = visibleTexts(strip);
+                for (const text of step.shows) {
+                    verify(texts.includes(text), step.what + " shows " + text + ": " + JSON.stringify(texts));
+                }
+                compare(geometry(), at, step.what + ": every item where it was");
+                adjacent(step.what);
+            }
+        }
+
+        // The objects that measure a rate cell's text, at the panel's size.
+        function rateFaces(index) {
+            return Array.from(strip.cellAt(index).contentItem.resources).filter(o => o.drawnSize !== undefined);
+        }
+
+        // Settings and the font are what may resize an item, and they do so
+        // at once, moving the items after it by as much: bits or bytes sets
+        // the rates' unit column, a thinner panel puts readings on one line,
+        // a ring without its text is the ring alone, and a larger font widens
+        // every reading's room. Kirigami's theme font can't change in a test,
+        // so the cells' own measures stand in for it.
+        function test_settingsAndFontRemeasure() {
+            const strip = makePanel(46, { items: ["cpu", "network", "claude", "disk"] });
+            const widths = () => strip.items.map((item, i) => strip.cellAt(i).implicitWidth);
+            const check = (what, change, grows) => {
+                const before = widths();
+                const at = geometry();
+                change();
+                waitForRendering(strip);
+                verify(waitForPolish(strip), "laid out");
+                const now = widths();
+                checkRow(what);
+                grows.forEach(i => verify(now[i] !== before[i], what + ": " + strip.items[i] + " " + before[i] + " to " + now[i] + " at once"));
+                now.forEach((w, i) => {
+                    if (!grows.includes(i)) {
+                        compare(w, before[i], what + ": " + strip.items[i] + " keeps its width");
+                    }
+                });
+                return { before: before, now: now, at: at };
+            };
+            const network = strip.cellAt(1).contentItem;
+            const bitsUnits = network.unitsWidth;
+            check("bytes", () => { monitor.networkBits = false; }, [1]);
+            verify(network.unitsWidth !== bitsUnits, "the unit column follows: " + bitsUnits + " to " + network.unitsWidth);
+            check("one line", () => { strip.thickness = 30; strip.height = 30; }, [0, 1, 2, 3]);
+            check("two lines", () => { strip.thickness = 46; strip.height = 46; }, [0, 1, 2, 3]);
+            check("Claude's ring alone", () => { strip.ringsOnly = ["claude"]; }, [2]);
+            compare(strip.cellAt(2).implicitWidth, strip.ring + 2 * strip.cellAt(2).padding, "the ring and its padding");
+            check("Claude's text back", () => { strip.ringsOnly = []; }, [2]);
+
+            const readout = find(strip.cellAt(0).contentItem, r => r.textWidth !== undefined);
+            const cpu = check("a larger font for the CPU", () => { readout.face.pointSize = readout.face.panelPointSize * 1.5; }, [0]);
+            verify(cpu.now[0] > cpu.before[0], "wider");
+            const faces = rateFaces(3);
+            compare(faces.length, 2, "the disk measures at its base size and as drawn");
+            const disk = check("a larger font for the disk", () => faces.forEach(f => { f.pointSize = f.panelPointSize * 1.5; }), [3]);
+            verify(disk.now[3] > disk.before[3], "wider");
+            checkFits("larger fonts");
         }
 
         function test_verticalRatesFit_data() {
@@ -455,7 +589,26 @@ Item {
             const network = strip.cellAt(5).contentItem;
             const disk = strip.cellAt(6).contentItem;
             compare(visibleTexts(network), network.whole ? ["25M", "1M"] : ["24.8M", "1.2M"]);
-            compare(visibleTexts(disk), disk.whole ? ["R", "W", "12M", "3M"] : ["R", "W", "12.0M", "3.4M"]);
+            compare(visibleTexts(disk), disk.whole ? ["R", "12M", "W", "3M"] : ["R", "12.0M", "W", "3.4M"]);
+        }
+
+        // The prefixes are the same letters whatever KDE calls the units in
+        // the user's language, as French does (o, Kio, Mio), and bytes have
+        // none.
+        function test_verticalPrefixesInAnyLanguage() {
+            Format.setByteUnits(1024, ["o", "Kio", "Mio", "Gio", "Tio", "Pio"]);
+            try {
+                monitor.networkBits = false;
+                monitor.networkDown = 500;
+                monitor.networkUp = 1023 * 1024;
+                const strip = makeStrip({ items: ["network", "disk"], vertical: true, width: 46, thickness: 46 });
+                const network = strip.cellAt(0).contentItem;
+                const disk = strip.cellAt(1).contentItem;
+                compare(visibleTexts(network), network.whole ? ["500", "1M"] : ["500", "1023K"]);
+                compare(visibleTexts(disk), disk.whole ? ["R", "12M", "W", "3M"] : ["R", "12.0M", "W", "3.4M"]);
+            } finally {
+                Format.setByteUnits(1024, ["B", "KiB", "MiB", "GiB", "TiB", "PiB"]);
+            }
         }
 
         // Names sit inside the rings beside two lines of readings, and where
@@ -565,17 +718,19 @@ Item {
             compare(strip.cellAt(0).description.split("\n")[1], "AMD Radeon 780M Graphics: Usage 3%");
 
             // Alone in the panel it shows its usage over a blank line, which
-            // keeps its row.
-            const first = box(line(0, "first"));
-            const second = box(line(0, "second"));
+            // keeps its row. The width follows the text.
+            const place = text => { const b = box(text); return [b.x, b.y, b.height]; };
+            const first = place(line(0, "first"));
+            const second = place(line(0, "second"));
+            strip.cellAt(0).contentItem.animated = false;
             monitor.gpuOuter.phase = "asleep";
             waitForRendering(strip);
             compare(strip.cellAt(0).contentItem.primary.name, "AMD Radeon 780M Graphics");
             compare(line(0, "first").text, "3%");
             compare(line(0, "second").text, "");
             verify(line(0, "second").visible);
-            compare(box(line(0, "first")), first);
-            compare(box(line(0, "second")), second);
+            compare(place(line(0, "first")), first);
+            compare(place(line(0, "second")), second);
             compare(strip.cellAt(0).description, "Usage 3%");
         }
 
@@ -596,30 +751,60 @@ Item {
             const strip = makeStrip({ items: ["cpu", "claude", "codex", "network"] });
             const claude = strip.cellAt(1);
             compare(claude.Accessible.name, "Claude");
-            verify(/^62% used, Opus 78%, resets in 2 days 2\d hours$/.test(claude.Accessible.description),
+            verify(/^52% used, Fable 78%, resets in 2 days 2\d hours$/.test(claude.Accessible.description),
                    claude.Accessible.description);
             compare(strip.cellAt(2).Accessible.name, "Codex");
-            verify(/^34% used, resets in 5 days [34] hours$/.test(strip.cellAt(2).Accessible.description),
+            strip.monitor.codexMark = "openai";
+            compare(strip.cellAt(2).Accessible.name, "ChatGPT", "named for the OpenAI logo");
+            strip.monitor.codexMark = "codex";
+            verify(/^24% used, resets in 5 days [34] hours$/.test(strip.cellAt(2).Accessible.description),
                    strip.cellAt(2).Accessible.description);
-            const mark = find(gaugeAt(1), i => i.isMask !== undefined);
-            verify(String(mark.source).endsWith("claude.svg"), mark.source);
+            const mark = find(gaugeAt(1), i => i.markName !== undefined);
+            compare(mark.markName, "claude");
             verify(mark.visible, "the Claude mark");
             verify(!visibleTexts(strip).includes("CLAUDE"), JSON.stringify(visibleTexts(strip)));
-            compare([line(1, "first").text, line(1, "second").text], ["62%", "2d 21h"]);
-            compare([line(2, "first").text, line(2, "second").text], ["34%", "5d 4h"]);
+            compare([line(1, "first").text, line(1, "second").text], ["52%", "2d"]);
+            compare([line(2, "first").text, line(2, "second").text], ["24%", "5d"]);
 
-            const width = strip.implicitWidth;
+            // At the limit both readings turn red, and nothing moves.
+            const at = geometry();
             const entries = JSON.parse(JSON.stringify(monitor.usage.entries));
             entries.claude.weekly.percent = 100;
             entries.claude.weekly.resetsAt = monitor.usage.createdAt + 600;
-            compare(sizeAfter(strip, () => monitor.usage.entries = entries).width, width);
+            sizeAfter(strip, () => monitor.usage.entries = entries);
             compare([line(1, "first").text, line(1, "second").text], ["100%", "10m"]);
+            compare([line(1, "first").color, line(1, "second").color], [root.hotColor, root.hotColor]);
+            checkFits("at the limit");
+            checkRow("at the limit");
+            compare(geometry(), at, "at the limit");
         }
 
-        // Right to left the strip runs from the right edge, each reading on
-        // the ring's left, hugging it; on one line the ring's own reading
-        // comes first, nearest the ring. A reading is one text, so a number
-        // never parts from its sign.
+        // A ring's readings are drawn for the eye alone: screen readers hear
+        // the cell, a button named for the item whose description says the
+        // readings in words, the countdown in full.
+        function test_readoutIsSpokenByTheCell() {
+            const strip = makeStrip({ items: ["cpu", "gpu", "memory", "claude", "codex", "network"] });
+            for (let i = 0; i < 5; ++i) {
+                const cell = strip.cellAt(i);
+                const readout = find(cell.contentItem, r => r.textWidth !== undefined);
+                const texts = all(readout, t => t.textFormat !== undefined);
+                compare(texts.length, 3, strip.items[i] + ": two lines and the dot");
+                texts.forEach(t => verify(t.Accessible.ignored, strip.items[i] + ": " + t.text + " is left to the cell"));
+                compare(cell.Accessible.role, Accessible.Button);
+                verify(cell.Accessible.description !== "", strip.items[i]);
+                compare(cell.Accessible.description, cell.contentItem.accessibleDescription);
+            }
+            compare(strip.cellAt(0).Accessible.description, "Usage 23%, temperature 61 °C");
+            verify(/resets in 2 days 2\d hours$/.test(strip.cellAt(3).Accessible.description), strip.cellAt(3).Accessible.description);
+            compare(line(3, "second").text, "2d", "where the panel shows the days alone");
+        }
+
+        // Right to left the strip runs from the right edge to the left one;
+        // each item's content keeps to the cell's start, each reading on the
+        // ring's left, hugging it; on one line the ring's own reading comes
+        // first, nearest the ring. A reading is one text, so a number never
+        // parts from its sign. A rate's arrow or letter moves to its right,
+        // and the number still comes before its unit.
         function test_mirrored_data() {
             return [{ tag: "two lines", thickness: 38 }, { tag: "thin", thickness: 30 }];
         }
@@ -629,8 +814,12 @@ Item {
             for (let i = 1; i < strip.items.length; ++i) {
                 compare(box(strip.cellAt(i)).right, box(strip.cellAt(i - 1)).x, strip.items[i] + " left of " + strip.items[i - 1]);
             }
+            compare(box(strip.cellAt(0)).right, strip.width, "from the right edge");
+            compare(box(strip.cellAt(strip.items.length - 1)).x, 0, "to the left edge");
             for (let i = 0; i < 4; ++i) {
+                const cell = strip.cellAt(i);
                 const gauge = box(gaugeAt(i));
+                compare(gauge.right, box(cell).right - cell.padding, strip.items[i] + "'s ring at the cell's start");
                 const first = line(i, "first");
                 const second = line(i, "second");
                 verify(box(first).right <= gauge.x && box(second).right <= gauge.x, strip.items[i] + "'s readings left of its ring");
@@ -642,8 +831,22 @@ Item {
                     verify(box(second).right <= box(first).x, strip.items[i] + ": " + second.text + " left of " + first.text);
                 }
             }
+            for (const index of [4, 5]) {
+                const cell = strip.cellAt(index);
+                const rates = cell.contentItem;
+                compare(box(rates).right, box(cell).right - cell.padding, rates.item + " at the cell's start");
+                rateRows(index).forEach((value, row) => {
+                    const pair = value.parent;
+                    const unit = all(pair, i => i !== value && i.text === rates.lines[row].unit)[0];
+                    const marker = box(pair.parent.children[0]);
+                    const what = rates.item + " row " + row + ": ";
+                    compare(value.effectiveHorizontalAlignment, Text.AlignRight, what + "the value isn't mirrored");
+                    verify(box(value).right <= box(unit).x, what + "the number before its unit");
+                    compare(marker.x - box(pair).right, Math.round(Kirigami.Units.smallSpacing * 1.5), what + "the marker 6 px to the right");
+                });
+            }
             compare([line(0, "first").text, line(0, "second").text], ["23%", "61°"]);
-            compare([line(2, "first").text, line(2, "second").text], ["42%", "13.4G"]);
+            compare([line(2, "first").text, line(2, "second").text], ["42%", "13.4 GiB"]);
             const texts = visibleTexts(strip);
             verify(!texts.includes("%") && !texts.includes("°"), JSON.stringify(texts));
         }
@@ -665,6 +868,52 @@ Item {
             verify(cell.containsMouse && area.containsMouse, "hover reaches the cell and the tooltip");
             strip.openItem = "cpu";
             verify(!area.active, "no tooltip over an open popup");
+        }
+
+        // A failed Claude or Codex check greys or strikes its ring, so its
+        // item keeps a tooltip, readings shown or not, to say when and why
+        // it failed, what the last reading was and when the next check runs.
+        function test_failedCheckHasATooltip() {
+            const strip = makeStrip({ items: ["cpu", "claude", "codex", "network"] });
+            const areas = [0, 1, 2, 3].map(i => strip.cellAt(i).parent);
+            verify(line(1, "first").visible, "Claude's readings show");
+            compare(areas.map(a => a.active), [false, false, false, false], "every item shows its readings");
+
+            const entries = monitor.usage.entries;
+            monitor.usage.entries = Object.assign({}, entries, {
+                claude: Object.assign({}, entries.claude, { lastError: "HTTP 500 from api.anthropic.com", lastErrorAt: monitor.usage.createdAt,
+                                                            reason: "server", host: "api.anthropic.com",
+                                                            retryAt: monitor.usage.createdAt + 300 })
+            });
+            compare(areas.map(a => a.active), [false, true, false, false], "Claude's check failed");
+            compare(areas[1].mainText, "Claude");
+            verify(/^Last check failed at .+\. api\.anthropic\.com answered with an error\.\nLast reading at .+: 52% used, Fable 78%, resets in 2 days 2\d hours\.\nNext check at .+\.$/
+                   .test(areas[1].subText), areas[1].subText);
+            compare(areas[1].subText, strip.cellAt(1).Accessible.description);
+            verify(line(1, "first").visible, "the readings stay");
+            strip.openItem = "claude";
+            verify(!areas[1].active, "no tooltip over an open popup");
+            strip.openItem = "";
+            verify(areas[1].active);
+            monitor.usage.entries = entries;
+            verify(!areas[1].active, "gone with the next good check");
+        }
+
+        // While a first check runs, the readings are dashes, so the item
+        // keeps a tooltip saying it is checking; the report ends it.
+        function test_loadingHasATooltip() {
+            const entries = monitor.usage.entries;
+            monitor.usage.entries = { codex: entries.codex };
+            monitor.usage.pending = ["claude"];
+            const strip = makeStrip({ items: ["cpu", "claude", "codex", "network"] });
+            const areas = [0, 1, 2, 3].map(i => strip.cellAt(i).parent);
+            compare(areas.map(a => a.active), [false, true, false, false]);
+            compare([areas[1].mainText, areas[1].subText], ["Claude", "Checking your usage…"]);
+            compare(strip.cellAt(1).Accessible.description, "Checking your usage…");
+            compare([line(1, "first").text, line(1, "second").text], ["–", "–"]);
+            monitor.usage.entries = entries;
+            verify(!areas[1].active, "gone with the first report");
+            verify(/^52% used/.test(strip.cellAt(1).Accessible.description), strip.cellAt(1).Accessible.description);
         }
     }
 }

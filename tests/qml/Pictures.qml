@@ -6,15 +6,16 @@ import QtQuick
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
 import org.kde.ksvg as KSvg
-import org.kde.plasma.core as PlasmaCore
 import "../../package/contents/ui"
 import "../../package/contents/ui/popups"
 
 // The README's pictures, from fixed sample readings: scripts/pictures.sh
-// runs this, which saves each shot and the fold's frames to the folder given
-// after --out and quits. In the popups the week resets at 7:00 AM EDT, far
-// enough ahead that most of it has been used; the panel and Standalone
-// pictures count down a fixed time, so they come out the same on every run.
+// runs this, which saves each shot to the folder given after --out and
+// quits. The Claude popup is seen at a fixed time, with the week resetting
+// at 7:00 AM EDT far enough ahead that most of it has been used, and the
+// panel picture counts down a fixed time, so usage.png and panel.png come
+// out the same on every run. The CPU popup's frequency, load and threads
+// are read live, so popups.png shows the machine that renders it.
 Rectangle {
     id: pictures
 
@@ -41,13 +42,11 @@ Rectangle {
     height: shots.implicitHeight
     color: Kirigami.Theme.backgroundColor
 
-    // Behind the panel pictures, a stand-in for the wallpaper.
-    readonly property color desktop: "#3b4a57"
-
-    // The first 11:00 UTC at least two and a half days away, and the week's
-    // use until now: working hours in New York, nothing overnight.
+    // Now is 9:30 AM on Tuesday 6 October 2026 in New York; the reset the
+    // first 11:00 UTC at least two and a half days away, and the week's use
+    // until now working hours in New York, nothing overnight.
     readonly property int week: 7 * 86400
-    readonly property real now: Math.floor(Date.now() / 1000)
+    readonly property real now: Date.UTC(2026, 9, 6, 13, 30) / 1000
     readonly property real resetsAt: {
         const earliest = now + 2.5 * 86400;
         const d = new Date(earliest * 1000);
@@ -79,26 +78,28 @@ Rectangle {
                  clockZone: { offset: -4 * 3600, abbreviation: "EDT" }, history: history(percent) };
     }
 
+    // Wherever the reset falls, Claude's week and Codex's last to it at
+    // these rates and the Fable limit runs out before it.
     FakeMonitor {
         id: sample
         memoryUsed: 24.6 * gib
         usage.entries: ({
-            claude: { status: "ok", fetchedAt: pictures.now, weekly: pictures.window(62),
-                      scoped: [Object.assign({ id: "Opus", label: "Opus" }, pictures.window(78))] },
+            claude: { status: "ok", fetchedAt: pictures.now, weekly: pictures.window(45),
+                      scoped: [Object.assign({ id: "Fable", label: "Fable" }, pictures.window(78))] },
             codex: { status: "ok", fetchedAt: pictures.now, weekly: pictures.window(34), scoped: [] }
         })
     }
 
-    // The sample for the panel, Standalone and fold pictures, whose countdowns
-    // would otherwise change with the time of day they are rendered: the
-    // weeks reset 2 days 21 hours and a half from now, which reads "2d 21h".
+    // The sample for the panel picture, whose countdown would otherwise
+    // change with the time of day it is rendered: the weeks reset 2 days 21
+    // hours and a half from now, which the panel shows as "2d".
     FakeMonitor {
         id: shown
         readonly property int left: 2 * 86400 + 21 * 3600 + 30 * 60
         memoryUsed: 24.6 * gib
         usage.entries: ({
-            claude: { status: "ok", fetchedAt: shown.usage.createdAt, weekly: shown.usage.window(62, shown.left, []),
-                      scoped: [Object.assign({ id: "Opus", label: "Opus" }, shown.usage.window(78, shown.left, []))] },
+            claude: { status: "ok", fetchedAt: shown.usage.createdAt, weekly: shown.usage.window(45, shown.left, []),
+                      scoped: [Object.assign({ id: "Fable", label: "Fable" }, shown.usage.window(78, shown.left, []))] },
             codex: { status: "ok", fetchedAt: shown.usage.createdAt, weekly: shown.usage.window(34, shown.left, []), scoped: [] }
         })
     }
@@ -115,56 +116,6 @@ Rectangle {
             id: holder
             x: parent.margins.left
             y: parent.margins.top
-        }
-    }
-
-    // One point of the fold on a strip of desktop at the right screen edge:
-    // the panel keeps its thickness while the dials shrink toward the tab,
-    // then snaps to the 44 px tab.
-    component FoldFrame: Rectangle {
-        id: frame
-
-        required property real progress
-        readonly property real open: strip.minimumThickness + 8
-
-        width: open + 48
-        height: fold.implicitHeight + 40
-        color: pictures.desktop
-
-        KSvg.FrameSvgItem {
-            id: fold
-            imagePath: "widgets/panel-background"
-            anchors.right: parent.right
-            anchors.rightMargin: 8
-            anchors.verticalCenter: parent.verticalCenter
-            width: frame.progress === 0 ? 44 : frame.open
-            height: strip.implicitHeight + 8
-            implicitHeight: openStrip.implicitHeight + 8
-
-            StandaloneStrip {
-                id: strip
-                anchors.fill: parent
-                anchors.margins: 4
-                monitor: shown
-                items: ["cpu", "claude", "codex"]
-                enabledItems: items
-                vertical: true
-                location: PlasmaCore.Types.RightEdge
-                expandedThickness: minimumThickness
-                visibilityMode: frame.progress === 0 ? 2 : 1
-                expansionProgress: frame.progress
-                handleProgress: 1
-            }
-        }
-
-        // The open strip's length, so every frame has the same height.
-        StandaloneStrip {
-            id: openStrip
-            visible: false
-            monitor: shown
-            items: strip.items
-            enabledItems: items
-            width: strip.minimumThickness
         }
     }
 
@@ -191,77 +142,53 @@ Rectangle {
             }
         }
 
-        RowLayout {
+        // Shot twice, over black and over white, so pictures.sh can work out
+        // each pixel's transparency: Qt saves this shot without an alpha
+        // channel once ksysguard's process module is loaded.
+        Item {
             objectName: "popups"
-            spacing: 24
+            implicitWidth: popupRow.implicitWidth
+            implicitHeight: popupRow.implicitHeight
 
-            Dialog {
-                Layout.alignment: Qt.AlignTop
-                CpuPopup { monitor: sample }
+            Rectangle {
+                id: backdrop
+                anchors.fill: parent
+                color: "black"
             }
-            Dialog {
-                Layout.alignment: Qt.AlignTop
-                GpuPopup { monitor: sample }
-            }
-            Dialog {
-                Layout.alignment: Qt.AlignTop
-                MemoryPopup { monitor: sample }
-            }
-            Dialog {
-                Layout.alignment: Qt.AlignTop
-                NetworkPopup { monitor: sample }
+
+            RowLayout {
+                id: popupRow
+                spacing: 24
+
+                Dialog {
+                    Layout.alignment: Qt.AlignTop
+                    CpuPopup { monitor: sample }
+                }
+                Dialog {
+                    Layout.alignment: Qt.AlignTop
+                    GpuPopup { monitor: sample }
+                }
+                Dialog {
+                    Layout.alignment: Qt.AlignTop
+                    MemoryPopup { monitor: sample }
+                }
+                Dialog {
+                    Layout.alignment: Qt.AlignTop
+                    NetworkPopup { monitor: sample }
+                }
+                Dialog {
+                    Layout.alignment: Qt.AlignTop
+                    DiskPopup { monitor: sample }
+                }
             }
         }
 
         Dialog {
             objectName: "usage"
             UsagePopup {
+                id: usagePopup
                 monitor: sample
                 item: "claude"
-            }
-        }
-
-        Rectangle {
-            objectName: "standalone"
-            implicitWidth: side.implicitWidth + 48
-            implicitHeight: side.implicitHeight + 40
-            color: pictures.desktop
-
-            KSvg.FrameSvgItem {
-                id: side
-                imagePath: "widgets/panel-background"
-                anchors.right: parent.right
-                anchors.rightMargin: 8
-                anchors.verticalCenter: parent.verticalCenter
-                implicitWidth: dials.minimumThickness + 8
-                implicitHeight: dials.implicitHeight + 8
-
-                StandaloneStrip {
-                    id: dials
-                    anchors.fill: parent
-                    anchors.margins: 4
-                    monitor: shown
-                    items: ["cpu", "gpu", "claude", "codex"]
-                    enabledItems: items
-                    vertical: true
-                    location: PlasmaCore.Types.RightEdge
-                    visibilityMode: 1
-                }
-            }
-        }
-
-        // Folding, eased as the strip eases it, then the tab held.
-        Row {
-            id: frames
-            spacing: 8
-            Repeater {
-                model: [1, 0.97, 0.9, 0.78, 0.62, 0.45, 0.28, 0.14, 0.05, 0]
-                delegate: FoldFrame {
-                    required property real modelData
-                    required property int index
-                    objectName: "fold-" + index
-                    progress: modelData
-                }
             }
         }
     }
@@ -271,8 +198,10 @@ Rectangle {
             done();
             return;
         }
-        const item = find(shots, names[0]);
-        item.grabToImage(result => {
+        // "popups-black" and "popups-white" are the popups over each backdrop.
+        const [name, colour] = names[0].split("-");
+        backdrop.color = colour ?? "black";
+        find(shots, name).grabToImage(result => {
             result.saveToFile(outDir + "/" + names[0] + ".png");
             save(names.slice(1), done);
         });
@@ -291,11 +220,14 @@ Rectangle {
         return null;
     }
 
-    // Long enough for the process lists' first scan.
+    // Long enough for the process lists' first scan. The usage popup steps
+    // its clock with each report, so its fixed time is set last.
     Timer {
         interval: 5000
         running: pictures.outDir !== ""
-        onTriggered: pictures.save(["panel", "popups", "usage", "standalone"]
-                                   .concat(Array.from({ length: 10 }, (_, i) => "fold-" + i)), Qt.quit)
+        onTriggered: {
+            usagePopup.nowMs = pictures.now * 1000;
+            pictures.save(["panel", "popups-black", "popups-white", "usage"], Qt.quit);
+        }
     }
 }

@@ -26,6 +26,10 @@ ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 HELPER = ROOT / "package" / "contents" / "code" / "usage.py"
 WEEK = 7 * 24 * 3600
+# What every entry says of its session starter while it is switched off.
+OFF = {"enabled": False, "state": "off", "at": None, "next": None, "reason": None}
+# What every entry says of its program when none is chosen or found.
+NOT_FOUND = {"path": "", "chosen": False, "problem": ""}
 
 
 def load_helper():
@@ -57,7 +61,8 @@ def reading(percent, resets_at, **scoped):
 
 class Isolated(unittest.TestCase):
     """Points every path the helper uses into a temporary folder and fails any
-    network call, so no test reaches the real ~/.claude, ~/.codex, cache or API."""
+    network call or CLI run, so no test reaches the real ~/.claude, ~/.codex,
+    cache, config, state, API or CLIs."""
 
     def setUp(self):
         folder = tempfile.TemporaryDirectory()
@@ -68,6 +73,7 @@ class Isolated(unittest.TestCase):
             "HOME": str(self.tmp / "home"),
             "XDG_CACHE_HOME": str(self.tmp / "cache"),
             "XDG_CONFIG_HOME": str(self.tmp / "config"),
+            "XDG_STATE_HOME": str(self.tmp / "state"),
             "CLAUDE_CONFIG_DIR": str(self.tmp / "claude"),
             "CODEX_HOME": str(self.tmp / "codex"),
             "RINGSIDE_USAGE_FAKE": "",
@@ -75,9 +81,13 @@ class Isolated(unittest.TestCase):
         paths = load_helper()
         self.enterContext(mock.patch.multiple(usage, **{name: getattr(paths, name) for name in (
             "CLAUDE_CREDENTIALS", "CODEX_AUTH", "CACHE_DIR", "CACHE_FILE", "HISTORY_FILE",
-            "LOCK_FILE", "APPLETSRC")}))
+            "LOCK_FILE", "APPLETSRC", "STARTER_FILE", "STATE_DIR", "STARTER_STATE", "SWITCH_LOCK",
+            "WORK_DIR", "CODEX_MODEL_CACHE")}))
         self.enterContext(mock.patch.object(usage.urllib.request, "urlopen",
                                             side_effect=AssertionError("a test reached the network")))
+        self.enterContext(mock.patch.object(usage, "run_cli", side_effect=AssertionError("a test ran a CLI")))
+        self.enterContext(mock.patch.object(usage, "find_cli", return_value=("", "")))
+        self.enterContext(mock.patch.dict(usage.PROGRAMS, clear=True))
 
     def write_cache(self, data):
         usage.CACHE_DIR.mkdir(parents=True, exist_ok=True)
@@ -144,6 +154,18 @@ class CodexParsing(Isolated):
         with self.assertRaises(RuntimeError):
             usage.parse_codex({"rateLimits": {"primary": None, "secondary": None}})
 
+    def test_a_week_without_its_share_is_an_error(self):
+        for used in (None, "soon", "absent"):
+            with self.subTest(used=used):
+                result = fixture("codex_rate_limits.json")
+                week = result["rateLimitsByLimitId"]["codex"]["primary"]
+                if used == "absent":
+                    del week["usedPercent"]
+                else:
+                    week["usedPercent"] = used
+                with self.assertRaises(RuntimeError):
+                    usage.parse_codex(result)
+
     def test_window_length_is_the_picked_windows(self):
         result = fixture("codex_rate_limits.json")
         result["rateLimitsByLimitId"]["codex"]["primary"]["windowDurationMins"] = 1440
@@ -171,23 +193,59 @@ class ClaudeParsing(Isolated):
         scoped = usage.parse_claude(usage_body)["scoped"]
         self.assertEqual([(s["id"], s["percent"]) for s in scoped], [("Fable", 78), ("Opus", 9)])
 
-    def test_fable_falls_back_to_cinder_cove(self):
+    def test_only_weekly_scoped_entries_count(self):
         usage_body = fixture("claude_usage.json")
-        usage_body["limits"] = []
-        usage_body["cinder_cove"] = {"utilization": 55.6, "resets_at": "2026-09-04T16:00:00Z"}
-        self.assertEqual(usage.parse_claude(usage_body)["scoped"],
-                         [{"id": "Fable", "label": "Fable", "percent": 56, "resetsAt": 1788537600,
-                           "windowSeconds": WEEK}])
+        fable = usage_body["limits"][2]
+        opus = {"model": {"id": None, "display_name": "Opus"}, "surface": None}
+        usage_body["limits"] = [dict(fable, kind=kind, scope=opus, percent=40)
+                                for kind in ("session", "weekly_all", "weekly", "five_hour", None)] + [fable]
+        scoped = usage.parse_claude(usage_body)["scoped"]
+        self.assertEqual([(s["id"], s["percent"]) for s in scoped], [("Fable", 78)])
 
-    def test_cinder_cove_does_not_duplicate_a_listed_fable(self):
+    def test_scoped_is_keyed_by_display_name_even_with_a_model_id(self):
         usage_body = fixture("claude_usage.json")
-        usage_body["cinder_cove"] = {"utilization": 55.6, "resets_at": "2026-09-04T16:00:00Z"}
-        self.assertEqual([s["id"] for s in usage.parse_claude(usage_body)["scoped"]], ["Fable", "Opus"])
+        usage_body["limits"][2]["scope"]["model"]["id"] = "claude-fable-5"
+        scoped = usage.parse_claude(usage_body)["scoped"]
+        self.assertEqual([(s["id"], s["label"]) for s in scoped], [("Fable", "Fable"), ("Opus", "Opus")])
+
+    def test_model_limits_come_only_from_the_limits_list(self):
+        # Every top-level key the endpoint sends today, each other than the
+        # list and seven_day given a window a fallback could read.
+        live_keys = ("amber_cistern", "amber_gauge", "amber_ladder", "brass_thimble", "cedar_ember", "cinder_cove",
+                     "copper_kite", "extra_usage", "five_hour", "harbor_lantern", "iguana_necktie", "juniper_tide",
+                     "limits", "member_dashboard_available", "nimbus_quill", "omelette_promotional", "seven_day",
+                     "seven_day_breakdown", "seven_day_cowork", "seven_day_oauth_apps", "seven_day_omelette",
+                     "seven_day_opus", "seven_day_sonnet", "spend", "tangelo", "wattle_ember")
+        listed = fixture("claude_usage.json")
+        # No list at all, an empty one, and today's.
+        for limits, expected in ((None, []), ([], []), (listed["limits"], [("Fable", 78), ("Opus", 9)])):
+            with self.subTest(limits=limits and len(limits)):
+                usage_body = {key: {"utilization": 55.6, "resets_at": "2026-09-04T16:00:00Z"} for key in live_keys}
+                usage_body["seven_day"] = listed["seven_day"]
+                if limits is None:
+                    del usage_body["limits"]
+                else:
+                    usage_body["limits"] = limits
+                report = usage.parse_claude(usage_body)
+                self.assertEqual(report["weekly"]["percent"], 62)
+                self.assertEqual([(s["id"], s["percent"]) for s in report["scoped"]], expected)
 
     def test_scoped_is_empty_when_not_reported(self):
         usage_body = fixture("claude_usage.json")
         usage_body["limits"] = []
         self.assertEqual(usage.parse_claude(usage_body)["scoped"], [])
+
+    # Read as 0%, it would let the starter send past a reached weekly limit.
+    def test_a_weekly_window_without_its_share_is_an_error(self):
+        for utilization in (None, "soon", "absent"):
+            with self.subTest(utilization=utilization):
+                usage_body = fixture("claude_usage.json")
+                if utilization == "absent":
+                    del usage_body["seven_day"]["utilization"]
+                else:
+                    usage_body["seven_day"]["utilization"] = utilization
+                with self.assertRaises(RuntimeError):
+                    usage.parse_claude(usage_body)
 
     def test_missing_weekly_is_an_error(self):
         with self.assertRaises(RuntimeError):
@@ -434,12 +492,30 @@ class Http(Isolated):
             return usage.poll(lambda: usage.http_json("https://example.test/x", {}))
 
     def test_unreachable_host_is_named_without_errno(self):
-        for reason, words in ((socket.gaierror(-2, "Name or service not known"), "Name or service not known"),
-                              (ConnectionRefusedError(111, "Connection refused"), "Connection refused"),
-                              (TimeoutError("timed out"), "timed out")):
+        for reason, words, kind in ((socket.gaierror(-2, "Name or service not known"), "Name or service not known", "offline"),
+                                    (ConnectionRefusedError(111, "Connection refused"), "Connection refused", "offline"),
+                                    (TimeoutError("timed out"), "timed out", "timeout")):
             with self.subTest(words):
                 self.assertEqual(self.poll_raising(urllib.error.URLError(reason)),
-                                 {"status": "error", "message": f"can't reach example.test: {words}"})
+                                 {"status": "error", "message": f"can't reach example.test: {words}",
+                                  "reason": kind, "host": "example.test"})
+
+    # A reply that stalls part-way, or a connection dropped in the middle.
+    def test_a_failure_while_reading_names_its_host(self):
+        for error, words, kind in ((TimeoutError(), "timed out", "timeout"),
+                                   (ConnectionResetError(104, "Connection reset by peer"), "Connection reset by peer",
+                                    "offline")):
+            with self.subTest(kind):
+                self.assertEqual(self.poll_raising(error),
+                                 {"status": "error", "message": f"can't reach example.test: {words}",
+                                  "reason": kind, "host": "example.test"})
+
+    def test_an_unreadable_reply_is_the_servers(self):
+        with mock.patch.object(usage.urllib.request, "urlopen") as urlopen:
+            urlopen.return_value.__enter__.return_value.read.return_value = b"<html>"
+            self.assertEqual(usage.poll(lambda: usage.http_json("https://example.test/x", {})),
+                             {"status": "error", "message": "unreadable reply from example.test",
+                              "reason": "server", "host": "example.test"})
 
     def test_http_errors_are_not_mistaken_for_unreachable_hosts(self):
         busy, down = http_error(429, "120"), http_error(503)
@@ -447,8 +523,10 @@ class Http(Isolated):
         self.addCleanup(down.close)
         self.assertEqual(self.poll_raising(busy),
                          {"status": "rate_limited", "retryAfter": 120,
-                          "message": "rate limited, retrying in 120 s"})
-        self.assertEqual(self.poll_raising(down), {"status": "error", "message": "HTTP 503 from example.test"})
+                          "message": "rate limited, retrying in 120 s", "reason": "rate-limited", "host": "example.test"})
+        self.assertEqual(self.poll_raising(down), {"status": "error", "message": "HTTP 503 from example.test",
+                                                   "reason": "server", "host": "example.test",
+                                                   "httpStatus": 503})
 
     def test_retry_after_may_be_an_http_date(self):
         busy = http_error(429, email.utils.formatdate(time.time() + 90, usegmt=True))
@@ -522,25 +600,27 @@ for line in sys.stdin:
         # The child keeps stdout open, so the read only ends once it is killed too.
         binary = self.server("#!/bin/sh\nsleep 30 &\nwait\n")
         start = time.monotonic()
-        with mock.patch.object(usage, "CODEX_TIMEOUT", 0.5), \
-                self.assertRaisesRegex(RuntimeError, r"^no answer from codex app-server in 0\.5 s$"):
+        with mock.patch.object(usage, "ANSWER_TIMEOUT", 0.5), \
+                self.assertRaisesRegex(RuntimeError, r"^no answer from codex app-server in 0\.5 s$") as caught:
             usage.codex_rate_limits(binary)
         self.assertLess(time.monotonic() - start, 10)
+        self.assertEqual((caught.exception.reason, caught.exception.host), ("timeout", ""))
 
     # A process the server starts in a session of its own survives the kill
     # and keeps stdout open; the deadline still holds.
     def test_deadline_holds_when_a_survivor_keeps_stdout_open(self):
         binary = self.server("#!/bin/sh\nsetsid sleep 8 &\nexit 0\n")
         start = time.monotonic()
-        with mock.patch.object(usage, "CODEX_TIMEOUT", 1), \
+        with mock.patch.object(usage, "ANSWER_TIMEOUT", 1), \
                 self.assertRaisesRegex(RuntimeError, r"^no answer from codex app-server in 1 s$"):
             usage.codex_rate_limits(binary)
         self.assertLess(time.monotonic() - start, 4)
 
     def test_early_close_is_not_a_timeout(self):
         binary = self.server("#!/bin/sh\nexec >&-\nsleep 30\n")
-        with self.assertRaisesRegex(RuntimeError, "^app-server closed without answering$"):
+        with self.assertRaisesRegex(RuntimeError, "^app-server closed without answering$") as caught:
             usage.codex_rate_limits(binary)
+        self.assertFalse(hasattr(caught.exception, "reason"))
 
 
 class Polling(Isolated):
@@ -548,7 +628,7 @@ class Polling(Isolated):
     # a request's details, a token among them.
     def test_unexpected_errors_report_only_their_type(self):
         self.assertEqual(usage.poll(mock.Mock(side_effect=ValueError("Invalid header value b'Bearer secret'"))),
-                         {"status": "error", "message": "unexpected ValueError"})
+                         {"status": "error", "message": "unexpected ValueError", "reason": "other", "host": ""})
 
     def test_statuses_come_from_exceptions(self):
         self.assertEqual(usage.poll(lambda: {"weekly": {}}), {"weekly": {}, "status": "ok"})
@@ -556,13 +636,20 @@ class Polling(Isolated):
                          {"status": "signed_out"})
         self.assertEqual(usage.poll(mock.Mock(side_effect=usage.RateLimited(90))),
                          {"status": "rate_limited", "retryAfter": 90,
-                          "message": "rate limited, retrying in 90 s"})
+                          "message": "rate limited, retrying in 90 s", "reason": "rate-limited", "host": ""})
         self.assertEqual(usage.poll(mock.Mock(side_effect=RuntimeError("boom"))),
-                         {"status": "error", "message": "boom"})
+                         {"status": "error", "message": "boom", "reason": "other", "host": ""})
+        self.assertEqual(usage.poll(mock.Mock(side_effect=usage.CheckFailed("HTTP 502 from a.test", "server", "a.test"))),
+                         {"status": "error", "message": "HTTP 502 from a.test", "reason": "server", "host": "a.test"})
+
+    def test_missing_codex_cli_says_so(self):
+        with mock.patch.object(usage, "CODEX_AUTH", Path(__file__)):
+            self.assertEqual(usage.poll(usage.codex_usage),
+                             {"status": "error", "message": "codex CLI not found", "reason": "not-installed", "host": ""})
 
     def test_codex_login_errors_read_as_signed_out(self):
         with mock.patch.object(usage, "CODEX_AUTH", Path(__file__)), \
-             mock.patch.object(usage, "find_codex", return_value="codex"), \
+             mock.patch.object(usage, "find_cli", return_value=("codex", "")), \
              mock.patch.object(usage, "codex_rate_limits",
                                side_effect=RuntimeError("Not logged in")):
             self.assertEqual(usage.poll(usage.codex_usage), {"status": "signed_out"})
@@ -595,10 +682,13 @@ class ReadingCache(Isolated):
 
     # A failure or a sign-out stands for five minutes like a reading, so a
     # second widget or a restart doesn't ask again before then.
+    # A replay gives the reason, the host and the end of the hold as the
+    # failure did.
     def test_errors_and_sign_outs_are_replayed_for_five_minutes(self):
         for name, failure, report in (
-                ("claude", RuntimeError("HTTP 500 from api.anthropic.com"),
-                 {"status": "error", "message": "HTTP 500 from api.anthropic.com"}),
+                ("claude", usage.CheckFailed("HTTP 500 from api.anthropic.com", "server", "api.anthropic.com"),
+                 {"status": "error", "message": "HTTP 500 from api.anthropic.com", "reason": "server",
+                  "host": "api.anthropic.com", "retryAt": 1300}),
                 ("codex", usage.SignedOut(), {"status": "signed_out"})):
             with self.subTest(report["status"]):
                 self.assertEqual(self.collect(1000, **{name: mock.Mock(side_effect=failure)})[name], report)
@@ -610,21 +700,24 @@ class ReadingCache(Isolated):
 
     # Two widgets, or a widget and a restart, a moment apart.
     def test_runs_in_quick_succession_after_a_failure_poll_once(self):
-        failed = {"status": "error", "message": "HTTP 500 from api.anthropic.com"}
+        failed = {"status": "error", "message": "HTTP 500 from api.anthropic.com", "reason": "other", "host": ""}
         with mock.patch.object(usage, "claude_usage", side_effect=RuntimeError(failed["message"])) as claude:
             reports = [self.run_main("--providers", "claude")["providers"] for _ in range(2)]
         claude.assert_called_once()
-        self.assertEqual(reports, [{"claude": failed}] * 2)
+        retry = reports[0]["claude"]["retryAt"]
+        self.assertLessEqual(abs(retry - (time.time() + usage.CACHE_TTL)), 5)
+        self.assertEqual(reports, [{"claude": dict(failed, retryAt=retry, starter=OFF, program=NOT_FOUND)}] * 2)
 
     # A refusal holds the provider back for every run until Retry-After has
     # passed, and only that provider.
     def test_a_rate_limit_holds_until_retry_after(self):
-        refused = mock.Mock(side_effect=usage.RateLimited(600))
+        refused = mock.Mock(side_effect=usage.RateLimited(600, "a.test"))
+        held = {"status": "rate_limited", "reason": "rate-limited", "host": "a.test", "retryAt": 1600}
         self.assertEqual(self.collect(1000, codex=refused)["codex"],
-                         {"status": "rate_limited", "retryAfter": 600, "message": "rate limited, retrying in 600 s"})
+                         dict(held, retryAfter=600, message="rate limited, retrying in 600 s"))
         again = mock.Mock(return_value=reading(3, 5))
         self.assertEqual(self.collect(1400, codex=again)["codex"],
-                         {"status": "rate_limited", "retryAfter": 200, "message": "rate limited, retrying in 200 s"})
+                         dict(held, retryAfter=200, message="rate limited, retrying in 200 s"))
         again.assert_not_called()
         other = mock.Mock(return_value=reading(7, 5))
         self.assertEqual(self.collect(1400, claude=other)["claude"]["status"], "ok")
@@ -633,9 +726,11 @@ class ReadingCache(Isolated):
 
     def test_a_short_rate_limit_still_holds_for_five_minutes(self):
         self.assertEqual(self.collect(1000, codex=mock.Mock(side_effect=usage.RateLimited(60)))["codex"],
-                         {"status": "rate_limited", "retryAfter": 300, "message": "rate limited, retrying in 300 s"})
+                         {"status": "rate_limited", "retryAfter": 300, "message": "rate limited, retrying in 300 s",
+                          "reason": "rate-limited", "host": "", "retryAt": 1300})
         again = mock.Mock(return_value=reading(3, 5))
         self.assertEqual(self.collect(1000 + 299, codex=again)["codex"]["retryAfter"], 1)
+        self.assertEqual(self.collect(1000 + 299, codex=again)["codex"]["retryAt"], 1300)
         again.assert_not_called()
         self.assertEqual(self.collect(1000 + 300, codex=again)["codex"]["status"], "ok")
 
@@ -645,8 +740,10 @@ class ReadingCache(Isolated):
         step = 1000 - 7200
         for failure, length, report in (
                 (usage.RateLimited(600), 600,
-                 {"status": "rate_limited", "retryAfter": 600, "message": "rate limited, retrying in 600 s"}),
-                (RuntimeError("down"), 300, {"status": "error", "message": "down"})):
+                 {"status": "rate_limited", "retryAfter": 600, "message": "rate limited, retrying in 600 s",
+                  "reason": "rate-limited", "host": "", "retryAt": step + 600}),
+                (RuntimeError("down"), 300,
+                 {"status": "error", "message": "down", "reason": "other", "host": "", "retryAt": step + 300})):
             with self.subTest(report["status"]):
                 usage.CACHE_FILE.unlink(missing_ok=True)
                 self.collect(1000, codex=mock.Mock(side_effect=failure))
@@ -656,6 +753,20 @@ class ReadingCache(Isolated):
                 self.assertEqual(self.collect(step + length - 1, codex=again)["codex"]["status"], report["status"])
                 again.assert_not_called()
                 self.assertEqual(self.collect(step + length, codex=again)["codex"]["status"], "ok")
+
+    # A reading from before the clock stepped back is ahead of now; it is
+    # served for five minutes from the step, not polled again at once.
+    def test_a_reading_from_before_a_clock_step_keeps_the_floor(self):
+        fetch = mock.Mock(return_value=reading(3, 5))
+        self.collect(1000, codex=fetch)
+        self.collect(1060, codex=fetch)
+        step = 1000 - 600
+        self.assertEqual(self.collect(step, codex=fetch)["codex"]["fetchedAt"], step)
+        self.assertEqual(self.cached()["codex"]["fetchedAt"], step)
+        self.collect(step + 299, codex=fetch)
+        fetch.assert_called_once()
+        self.collect(step + 300, codex=fetch)
+        self.assertEqual(fetch.call_count, 2)
 
     def test_a_hold_never_lasts_more_than_a_day(self):
         self.assertEqual(self.collect(1000, codex=mock.Mock(side_effect=usage.RateLimited(10 ** 9)))["codex"]["retryAfter"],
@@ -687,7 +798,7 @@ class ReadingCache(Isolated):
         self.assertEqual(self.cached()["codex"]["weekly"]["percent"], 7)
         self.collect(2000, codex=mock.Mock(side_effect=RuntimeError("down")))
         self.assertEqual(self.cached(), {"claude": stale, "codex": {
-            "status": "error", "message": "down", "heldUntil": 2300, "holdSeconds": 300}})
+            "status": "error", "message": "down", "heldUntil": 2300, "holdSeconds": 300, "reason": "other", "host": ""}})
 
     def test_a_cached_entry_keeps_the_time_it_was_polled(self):
         polled_at = int(time.time()) - 100
@@ -707,8 +818,10 @@ class ReadingCache(Isolated):
         fetch = mock.Mock(return_value=reading(1, 5))
         with mock.patch.object(usage, "LOCK_WAIT", 0.3), mock.patch.object(usage, "codex_usage", fetch):
             report = self.run_main("--providers", "codex")
-        self.assertEqual(report["providers"], {"codex": {"status": "error",
-                                                         "message": "another usage check is still running"}})
+        self.assertEqual(report["providers"], {"codex": {"status": "error", "starter": OFF, "program": NOT_FOUND,
+                                                         "message": "another usage check is still running",
+                                                         "reason": "busy", "host": "",
+                                                         "retryAt": report["fetchedAt"]}})
         fetch.assert_not_called()
 
     # A run that can't get the lock still reports what the cache holds.
@@ -722,7 +835,8 @@ class ReadingCache(Isolated):
         self.assertEqual(report["providers"]["codex"]["weekly"]["percent"], 4)
         self.assertEqual(report["providers"]["codex"]["weekly"]["history"], [])
         self.assertEqual(report["providers"]["claude"],
-                         {"status": "error", "message": "another usage check is still running"})
+                         {"status": "error", "message": "another usage check is still running", "starter": OFF,
+                          "program": NOT_FOUND, "reason": "busy", "host": "", "retryAt": report["providers"]["claude"]["retryAt"]})
 
     # ...and a failure it still holds, as a run with the lock would.
     def test_a_busy_run_replays_a_held_failure(self):
@@ -733,8 +847,50 @@ class ReadingCache(Isolated):
         with mock.patch.object(usage, "LOCK_WAIT", 0.3):
             report = self.run_main("--providers", "claude,codex")
         self.assertEqual(report["providers"], {
-            "claude": {"status": "signed_out"},
-            "codex": {"status": "error", "message": "another usage check is still running"}})
+            "claude": {"status": "signed_out", "starter": OFF, "program": NOT_FOUND},
+            "codex": {"status": "error", "message": "another usage check is still running", "starter": OFF,
+                      "program": NOT_FOUND, "reason": "busy", "host": "", "retryAt": report["providers"]["codex"]["retryAt"]}})
+
+    # A busy run replays a held failure as a run with the lock would, its
+    # hold's end included, and says of the rest that the lock was busy and
+    # nothing holds them back.
+    def test_a_busy_run_replays_the_end_of_a_hold(self):
+        now = int(time.time())
+        usage.collect({"claude": mock.Mock(side_effect=usage.RateLimited(900, "api.anthropic.com"))}, now)
+        fd = os.open(usage.LOCK_FILE, os.O_RDWR | os.O_CREAT, 0o600)
+        self.addCleanup(os.close, fd)
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        with mock.patch.object(usage, "LOCK_WAIT", 0.3):
+            report = self.run_main("--providers", "claude,codex")
+        claude, codex = report["providers"]["claude"], report["providers"]["codex"]
+        self.assertEqual((claude["reason"], claude["host"], claude["retryAt"]), ("rate-limited", "api.anthropic.com", now + 900))
+        self.assertGreaterEqual(codex["retryAt"], now)
+        self.assertLessEqual(codex["retryAt"], report["fetchedAt"])
+
+    # A hold cached by 0.2 has no reason or host; it is replayed as it was,
+    # with none to give, rather than polled again.
+    def test_a_hold_without_a_reason_replays_as_other(self):
+        for entry, report in (
+                ({"status": "error", "message": "down", "heldUntil": 1300, "holdSeconds": 300},
+                 {"status": "error", "message": "down", "reason": "other", "host": "", "retryAt": 1300}),
+                ({"status": "rate_limited", "heldUntil": 1600, "holdSeconds": 600, "reason": 5, "host": None},
+                 {"status": "rate_limited", "retryAfter": 400, "message": "rate limited, retrying in 400 s",
+                  "reason": "other", "host": "", "retryAt": 1600})):
+            with self.subTest(entry["status"]):
+                self.write_cache({"codex": entry})
+                fetch = mock.Mock()
+                self.assertEqual(self.collect(1200, codex=fetch)["codex"], report)
+                fetch.assert_not_called()
+
+    # The reason and host reach the cache with the hold, so every run that
+    # replays it says the same.
+    def test_the_reason_and_host_are_cached_with_the_hold(self):
+        self.collect(1000, claude=mock.Mock(side_effect=usage.CheckFailed("can't reach a.test: x", "offline", "a.test")))
+        self.assertEqual(self.cached()["claude"], {"status": "error", "message": "can't reach a.test: x",
+                                                   "heldUntil": 1300, "holdSeconds": 300,
+                                                   "reason": "offline", "host": "a.test"})
+        self.collect(1000, codex=mock.Mock(side_effect=usage.SignedOut()))
+        self.assertEqual(self.cached()["codex"], {"status": "signed_out", "heldUntil": 1300, "holdSeconds": 300})
 
     def test_malformed_cache_entries_read_as_missing(self):
         window = {"percent": 1, "resetsAt": 5, "windowSeconds": WEEK}
@@ -812,6 +968,146 @@ class ReadingCache(Isolated):
             report = usage.collect({"codex": lambda: calls.append(1) or reading(9, 5)})
         self.assertEqual(calls, [])
         self.assertEqual(report["codex"]["fetchedAt"], 1010)
+
+
+class ChosenProgram(Isolated):
+    """A program chosen in the settings is run as it is, or reported, and
+    never traded for one found by itself."""
+
+    def setUp(self):
+        super().setUp()
+        self.enterContext(mock.patch.object(usage, "find_cli", REAL_FIND_CLI))
+        # Nothing on this machine's PATH.
+        self.enterContext(mock.patch.object(usage.shutil, "which", return_value=None))
+        # A codex the automatic search would find, to show it isn't used.
+        local = Path.home() / ".local" / "bin"
+        local.mkdir(parents=True)
+        self.found = local / "codex"
+        self.found.write_text("#!/bin/sh\n")
+        self.found.chmod(0o700)
+        self.programs = self.tmp / "programs"
+        self.programs.mkdir()
+
+    def program(self, name, mode=0o700):
+        path = self.programs / name
+        path.write_text("#!/bin/sh\n")
+        path.chmod(mode)
+        return str(path)
+
+    def test_a_chosen_program_that_runs(self):
+        path = self.program("codex")
+        self.assertEqual(usage.find_cli("codex", path), (path, ""))
+
+    def test_a_chosen_program_that_cant_run_says_why(self):
+        os.mkfifo(self.programs / "pipe")
+        (self.programs / "folder").mkdir(mode=0o700)
+        for chosen, problem in ((str(self.programs / "nothing"), "missing"),
+                                (self.program("plain", 0o600), "not-executable"),
+                                (str(self.programs / "pipe"), "not-executable"),
+                                (str(self.programs / "folder"), "folder"),
+                                ("codex", "missing"), ("bin/codex", "missing")):
+            with self.subTest(chosen=chosen):
+                self.assertEqual(usage.find_cli("codex", chosen), (chosen, problem))
+
+    def test_the_home_folder_is_expanded(self):
+        path = Path.home() / "my bin" / "codex"
+        path.parent.mkdir()
+        path.write_text("#!/bin/sh\n")
+        path.chmod(0o700)
+        self.assertEqual(usage.find_cli("codex", "~/my bin/codex"), (str(path), ""))
+        self.assertEqual(usage.find_cli("codex", "~/elsewhere/codex"), (str(Path.home() / "elsewhere" / "codex"), "missing"))
+
+    def test_a_chosen_program_never_falls_back(self):
+        missing = str(self.programs / "codex")
+        self.assertEqual(usage.find_cli("codex"), (str(self.found), ""))
+        self.assertEqual(usage.find_cli("codex", missing), (missing, "missing"))
+        usage.PROGRAMS["codex"] = missing
+        with mock.patch.object(usage, "CODEX_AUTH", Path(__file__)), \
+                mock.patch.object(usage, "codex_rate_limits", side_effect=AssertionError("ran a codex")):
+            report = usage.poll(usage.codex_usage)
+        self.assertEqual((report["status"], report["reason"]), ("error", "program"))
+        with self.assertRaises(usage.Failed) as failed:
+            usage.installed("codex")
+        self.assertEqual(failed.exception.reason, "program")
+
+    def test_the_chosen_program_is_the_one_run(self):
+        path = self.program("codex")
+        usage.PROGRAMS["codex"] = path
+        with mock.patch.object(usage, "CODEX_AUTH", Path(__file__)), \
+                mock.patch.object(usage, "codex_rate_limits", side_effect=RuntimeError("stop")) as run:
+            usage.poll(usage.codex_usage)
+        run.assert_called_once_with(path)
+        self.assertEqual(usage.installed("codex"), path)
+
+    # A program that couldn't be found or run is held back for five
+    # minutes like any failure, but only while the same one is chosen.
+    def test_a_program_hold_is_only_for_the_program_chosen_then(self):
+        fetch = mock.Mock(side_effect=usage.CheckFailed("codex CLI not found", "not-installed"))
+        self.assertEqual(usage.collect({"codex": fetch}, 1000)["codex"]["reason"], "not-installed")
+        usage.collect({"codex": fetch}, 1060)
+        self.assertEqual(fetch.call_count, 1, "the same program is held back")
+        usage.PROGRAMS["codex"] = "~/bin/codex"
+        fetch.side_effect = usage.CheckFailed("can't be run", "program")
+        self.assertEqual(usage.collect({"codex": fetch}, 1120)["codex"]["reason"], "program")
+        self.assertEqual(fetch.call_count, 2, "a newly chosen program is checked at once")
+        usage.collect({"codex": fetch}, 1180)
+        self.assertEqual(fetch.call_count, 2)
+        self.assertEqual(json.loads(usage.CACHE_FILE.read_text())["codex"]["program"], "~/bin/codex")
+        usage.PROGRAMS["codex"] = ""
+        usage.collect({"codex": fetch}, 1240)
+        self.assertEqual(fetch.call_count, 3, "going back to automatic checks at once")
+        # A hold cached before programs could be chosen holds automatic only.
+        cache = json.loads(usage.CACHE_FILE.read_text())
+        del cache["codex"]["program"]
+        self.write_cache(cache)
+        usage.PROGRAMS["codex"] = "/opt/codex"
+        usage.collect({"codex": fetch}, 1300)
+        self.assertEqual(fetch.call_count, 4)
+
+    # A busy run replays holds the same way.
+    def test_a_busy_run_ignores_another_programs_hold(self):
+        usage.collect({"codex": mock.Mock(side_effect=usage.CheckFailed("codex CLI not found", "not-installed"))})
+        usage.PROGRAMS["codex"] = "/opt/codex"
+        with mock.patch.object(usage, "read_history", return_value={}):
+            self.assertEqual(usage.waiting(["codex"], "busy")["codex"]["reason"], "busy")
+            usage.PROGRAMS["codex"] = ""
+            self.assertEqual(usage.waiting(["codex"], "busy")["codex"]["reason"], "not-installed")
+
+    # A rate limit is the account's, whichever program asked.
+    def test_other_holds_stay_whichever_program_is_chosen(self):
+        fetch = mock.Mock(side_effect=usage.RateLimited(900))
+        usage.collect({"codex": fetch}, 1000)
+        usage.PROGRAMS["codex"] = "/opt/codex"
+        self.assertEqual(usage.collect({"codex": fetch}, 1060)["codex"]["status"], "rate_limited")
+        self.assertEqual(fetch.call_count, 1)
+
+    def test_every_entry_reports_its_program(self):
+        plain = self.program("claude", 0o600)
+        with mock.patch.object(usage, "claude_usage", side_effect=usage.SignedOut()), \
+                mock.patch.object(usage, "codex_usage", return_value=reading(1, 2000000000)):
+            report = self.run_main("--program", f"claude={plain}")["providers"]
+            self.assertEqual(report["claude"]["program"], {"path": plain, "chosen": True, "problem": "not-executable"})
+            self.assertEqual(report["codex"]["program"], {"path": str(self.found), "chosen": False, "problem": ""})
+            # Looked up afresh on every run, a cached reading's too.
+            self.found.unlink()
+            report = self.run_main("--program", "codex=~/.local/bin/codex")["providers"]
+            self.assertEqual(report["codex"]["program"], {"path": str(self.found), "chosen": True, "problem": "missing"})
+            self.assertEqual(report["claude"]["program"], NOT_FOUND)
+        self.assertNotIn("program", json.loads(usage.CACHE_FILE.read_text())["codex"])
+
+    def test_program_arguments(self):
+        with mock.patch.object(usage, "collect", return_value={}):
+            self.run_main("--program", "codex=/a b/=c/$(x)`y`'z", "--program", "claude=")
+        self.assertEqual(usage.PROGRAMS, {"codex": "/a b/=c/$(x)`y`'z", "claude": ""})
+        for value in ("codex", "gemini=/x", "=/x", " codex=/x"):
+            with self.subTest(value), mock.patch("sys.stderr", new=io.StringIO()) as err, \
+                    self.assertRaises(SystemExit) as exit_:
+                usage.main(["--program", value])
+            self.assertEqual(exit_.exception.code, 2)
+            self.assertIn("expected <provider>=<path>", err.getvalue())
+
+
+REAL_FIND_CLI = usage.find_cli
 
 
 class ProviderChoice(Isolated):
@@ -1077,6 +1373,34 @@ selectedTimeZones=Local,America/New_York
         self.assertEqual(providers["codex"]["weekly"]["clockZone"], {"offset": -18000, "abbreviation": "EST"})
         self.assertNotIn("clockZone", providers["other"]["weekly"])
 
+    def test_the_session_and_each_starter_get_the_zone_too(self):
+        off = dict(OFF)
+        providers = {"claude": {"weekly": {"resetsAt": None}, "scoped": [],
+                                "session": {"resetsAt": self.NOV_2_NOON_EST},
+                                "starter": {"enabled": True, "state": "started", "at": self.NOV_2_NOON_EST,
+                                            "next": self.SEP_4_NOON_EDT, "reason": None}},
+                     "codex": {"weekly": {"resetsAt": None},
+                               "starter": {"enabled": True, "state": "confirming", "at": self.NOV_2_NOON_EST,
+                                           "next": None, "reason": None}},
+                     "off": {"status": "signed_out", "starter": off}}
+        usage.show_in_zone(providers, usage.clock_zone())
+        self.assertEqual(providers["claude"]["session"]["clockZone"], {"offset": -18000, "abbreviation": "EST"})
+        self.assertEqual(providers["claude"]["starter"]["clockZone"], {"offset": -14400, "abbreviation": "EDT"})
+        self.assertEqual(providers["claude"]["starter"]["atClockZone"], {"offset": -18000, "abbreviation": "EST"})
+        self.assertEqual(providers["codex"]["starter"]["clockZone"], {"offset": -18000, "abbreviation": "EST"})
+        self.assertEqual(providers["codex"]["starter"]["atClockZone"], {"offset": -18000, "abbreviation": "EST"})
+        self.assertEqual(off, OFF)
+
+    # A Codex week started on daylight saving time ends a week later on
+    # standard time; the status shows the start, so it needs the start's zone.
+    def test_a_started_week_gets_the_zone_at_its_start(self):
+        start = self.NOV_2_NOON_EST - 3 * 86400 - 3 * 3600
+        providers = {"codex": {"weekly": {"resetsAt": None}, "starter": {
+            "enabled": True, "state": "started", "at": start, "next": start + 7 * 86400 + 1, "reason": None}}}
+        usage.show_in_zone(providers, usage.clock_zone())
+        self.assertEqual(providers["codex"]["starter"]["atClockZone"], {"offset": -14400, "abbreviation": "EDT"})
+        self.assertEqual(providers["codex"]["starter"]["clockZone"], {"offset": -18000, "abbreviation": "EST"})
+
     def test_reset_the_zone_cannot_place_keeps_system_time(self):
         providers = {"claude": {"weekly": {"resetsAt": self.SEP_4_NOON_EDT * 1000}},
                      "codex": {"weekly": {"resetsAt": self.SEP_4_NOON_EDT}}}
@@ -1091,6 +1415,10 @@ selectedTimeZones=Local,America/New_York
         claude = report["providers"]["claude"]
         self.assertEqual(claude["weekly"]["clockZone"]["abbreviation"], "EDT")
         self.assertEqual(claude["scoped"][0]["clockZone"]["abbreviation"], "EDT")
+        self.assertNotIn("clockZone", claude["starter"])
+        usage.STARTER_FILE.parent.mkdir(parents=True)
+        usage.STARTER_FILE.write_text('{"claude": true}')
+        self.assertIn(self.run_main()["providers"]["claude"]["starter"]["clockZone"]["abbreviation"], ("EDT", "EST"))
         cached = json.loads(usage.CACHE_FILE.read_text())["claude"]
         self.assertNotIn("clockZone", cached["weekly"])
         self.assertNotIn("clockZone", cached["scoped"][0])

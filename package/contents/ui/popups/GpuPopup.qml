@@ -9,66 +9,122 @@ import "../code/format.js" as Format
 import "../code/style.js" as Style
 import ".."
 
-// One section per awake GPU, the outer ring's first, the second under a rule
-// and drawn dimmer as its ring is. A powered-down GPU is a single line at the
-// end; nothing here reads it, so opening the popup can't wake it.
+// One section per awake GPU, the integrated one first, so a discrete GPU
+// waking up opens below it rather than pushing it down; each under a header as
+// in the other popups and the second after a rule. A powered-down GPU is a
+// single line at the end; nothing here reads it, so opening the popup can't
+// wake it. A GPU that wakes opens its section at once and fades it in; one
+// that goes to sleep fades its section out with its last readings, and only
+// then gives way to its line, so the popup changes height once each way.
 PopupPage {
     id: popup
 
     readonly property var slots: [popup.monitor.gpuOuter, popup.monitor.gpuInner].filter(slot => slot.present)
+        .sort((a, b) => (a.kind === "integrated" ? 0 : 1) - (b.kind === "integrated" ? 0 : 1))
     readonly property var awake: slots.filter(slot => slot.phase !== "asleep")
-    readonly property var asleep: slots.filter(slot => slot.phase === "asleep")
+    // The GPUs with a section open: the awake ones, and one that has just
+    // gone to sleep while its section fades out. Set rather than bound, so
+    // that a GPU going to sleep is still among them when it is noticed.
+    property var open: []
+    // Off opens and closes sections at once, as at Plasma's Instant speed.
+    property bool animated: Kirigami.Units.longDuration > 1
 
-    PopupHeader {
-        Layout.bottomMargin: Kirigami.Units.smallSpacing
-        ringShown: false
-        title: i18nc("@title", "GPU")
-        subtitle: [popup.monitor.gpuOuter, popup.monitor.gpuInner]
-            .filter(slot => slot.present)
-            .map(slot => slot.kind === "discrete" ? i18nc("@info kind of GPU", "Discrete")
-                       : slot.kind === "integrated" ? i18nc("@info kind of GPU", "Integrated") : "")
-            .filter(kind => kind !== "")
-            .join(" · ")
-    }
-
-    Repeater {
-        model: popup.awake
-
-        delegate: Section {
-            required property var modelData
-            required property int index
-
-            monitor: popup.monitor
-            slot: modelData
-            inner: index > 0
+    Component.onCompleted: open = awake
+    onAwakeChanged: {
+        if (animated && open.some(slot => !awake.includes(slot))) {
+            open = slots.filter(slot => open.includes(slot) || awake.includes(slot));
+            closing.restart();
+        } else {
+            closing.stop();
+            open = awake;
         }
     }
 
+    Timer {
+        id: closing
+        interval: Kirigami.Units.longDuration
+        onTriggered: popup.open = popup.awake
+    }
+
+    // A section per GPU, kept as it sleeps and wakes.
     Repeater {
-        model: popup.asleep
+        model: popup.slots.length
+
+        delegate: Section {
+            required property int index
+            readonly property var live: popup.slots[index] ?? popup.monitor.gpuOuter
+            readonly property bool opened: popup.open.includes(live)
+            // Its readings while it was last awake, a reading that went
+            // missing keeping the one before.
+            property var last: null
+            readonly property var readings: [live.phase, live.usage, live.temperature, live.vramUsed, live.knownVramTotal,
+                                             live.clock, live.power, live.history, live.temperatureHistory, live.highs,
+                                             live.temperatureHighs, live.temperatureExtent]
+
+            function keep() {
+                if (live.phase === "asleep") {
+                    return;
+                }
+                const was = last ?? {};
+                const held = key => Number.isFinite(live[key]) ? live[key] : was[key] ?? NaN;
+                last = {
+                    present: true, name: live.name, kind: live.kind, reportsVram: live.reportsVram,
+                    reportsTemperature: live.reportsTemperature, temperatureLabel: live.temperatureLabel,
+                    knownVramTotal: held("knownVramTotal"), usage: held("usage"), temperature: held("temperature"),
+                    vramUsed: held("vramUsed"), clock: held("clock"), power: held("power"),
+                    history: live.history.length > 0 ? live.history : was.history ?? [],
+                    highs: live.history.length > 0 ? live.highs : was.highs ?? [],
+                    temperatureHistory: live.temperatureHistory.length > 0 ? live.temperatureHistory : was.temperatureHistory ?? [],
+                    temperatureHighs: live.temperatureHistory.length > 0 ? live.temperatureHighs : was.temperatureHighs ?? [],
+                    temperatureExtent: live.temperatureExtent.length > 0 ? live.temperatureExtent : was.temperatureExtent ?? []
+                };
+            }
+
+            Component.onCompleted: keep()
+            onReadingsChanged: keep()
+
+            monitor: popup.monitor
+            awake: live.phase !== "asleep"
+            visible: opened
+            slot: !awake && opened && last ? last : live
+            temperatureName: words.sensorName(live.temperatureLabel)
+            // Not an integrated GPU's beside a discrete one: it shares the
+            // CPU's die, whose temperature the CPU popup graphs, and a second
+            // graph would make the popup too tall for a small screen.
+            temperatureGraphed: live.kind !== "integrated" || !popup.slots.some(slot => slot.kind === "discrete")
+            first: popup.open.indexOf(live) === 0
+            animated: popup.animated
+        }
+    }
+
+    Words {
+        id: words
+        monitor: popup.monitor
+    }
+
+    Repeater {
+        model: popup.slots.filter(slot => !popup.open.includes(slot))
 
         delegate: ColumnLayout {
             id: sleeper
 
             required property var modelData
+            required property int index
 
             Layout.fillWidth: true
             spacing: 0
 
-            Rectangle {
-                visible: popup.awake.length > 0
-                Layout.fillWidth: true
-                Layout.leftMargin: Math.round(Kirigami.Units.largeSpacing * 1.5)
-                Layout.rightMargin: Layout.leftMargin
-                Layout.preferredHeight: 1
-                color: Qt.alpha(Kirigami.Theme.textColor, 0.1)
+            Divider {
+                visible: popup.open.length > 0
             }
 
             Text {
                 Layout.fillWidth: true
                 Layout.leftMargin: Math.round(Kirigami.Units.largeSpacing * 2)
                 Layout.rightMargin: Layout.leftMargin
-                Layout.topMargin: Kirigami.Units.largeSpacing
+                // Where it opens the page, as far down as a header would start.
+                Layout.topMargin: popup.open.length > 0 || sleeper.index > 0
+                    ? Kirigami.Units.largeSpacing : Math.round(Kirigami.Units.largeSpacing * 1.75)
                 Layout.bottomMargin: Kirigami.Units.largeSpacing
                 text: i18nc("@info a powered-down GPU: its name, then off", "%1 · off", sleeper.modelData.name)
                 color: Style.dim(Kirigami.Theme.textColor)
@@ -85,123 +141,66 @@ PopupPage {
         required property var monitor
         // A GpuReader, or an object with the same properties.
         required property var slot
-        property bool inner: false
+        // The slot's temperature label in plain words.
+        required property string temperatureName
+        property bool temperatureGraphed: true
+        // Any section after the first is set off from it by a rule.
+        property bool first: true
+        // Faded in while the GPU is awake and out while it sleeps.
+        property bool awake: true
+        property bool animated: true
 
-        readonly property color dim: Style.dim(Kirigami.Theme.textColor)
-        readonly property color tone: inner ? dim : Kirigami.Theme.textColor
         // Intel GPUs publish no temperature, so theirs is left out rather than shown as a dash.
         readonly property bool temperatureShown: slot.reportsTemperature
         readonly property bool hasPower: Number.isFinite(slot.power)
         readonly property real tilePointSize: Kirigami.Theme.defaultFont.pointSize * 1.23
 
         Layout.fillWidth: true
-        visible: slot.present
+        opacity: awake ? 1 : 0
         spacing: 0
 
-        Rectangle {
-            visible: section.inner
-            Layout.fillWidth: true
-            Layout.leftMargin: Math.round(Kirigami.Units.largeSpacing * 1.5)
-            Layout.rightMargin: Layout.leftMargin
-            Layout.preferredHeight: 1
-            color: Qt.alpha(Kirigami.Theme.textColor, 0.1)
+        Behavior on opacity {
+            enabled: section.animated
+            NumberAnimation { duration: Kirigami.Units.longDuration; easing.type: Easing.InOutQuad }
         }
 
-        RowLayout {
-            Layout.fillWidth: true
-            Layout.leftMargin: Math.round(Kirigami.Units.largeSpacing * 2)
-            Layout.rightMargin: Layout.leftMargin
-            Layout.topMargin: section.inner ? Math.round(Kirigami.Units.largeSpacing * 1.5) : Kirigami.Units.largeSpacing
-            Layout.bottomMargin: Kirigami.Units.largeSpacing
-            spacing: Math.round(Kirigami.Units.largeSpacing * 1.25)
+        Divider {
+            visible: !section.first
+        }
 
-            RingGauge {
-                Layout.preferredWidth: Math.round(Kirigami.Units.gridUnit * 2.2)
-                Layout.preferredHeight: Layout.preferredWidth
-                strokeWidth: 3.5
-                color: section.tone
-                value: section.slot.usage
-                text: Number.isFinite(value) ? Format.percent(value) + "%" : "–"
-                textScale: 0.275
-
-                Accessible.role: Accessible.ProgressBar
-                Accessible.name: section.slot.name
-                Accessible.description: text
+        PopupHeader {
+            ringValue: section.slot.usage
+            interval: section.monitor.sampleInterval
+            title: section.slot.name
+            subtitle: {
+                const slot = section.slot;
+                if (slot.kind === "integrated") {
+                    return i18nc("@info integrated GPU using system memory", "iGPU · shared");
+                }
+                if (slot.kind !== "discrete") {
+                    return "";
+                }
+                const total = Format.bytes(slot.knownVramTotal, true);
+                return total.unit ? i18nc("@info discrete GPU and its memory, e.g. dGPU · 8 GiB",
+                                          "dGPU · %1 %2", total.value, total.unit)
+                                  : i18nc("@info discrete GPU", "dGPU");
             }
-
-            // Stacked rather than on one line as in the mock: real names
-            // ("AMD Radeon 780M Graphics") don't fit beside the descriptor.
-            ColumnLayout {
-                Layout.fillWidth: true
-                spacing: 0
-
-                Text {
-                    Layout.fillWidth: true
-                    text: section.slot.name
-                    color: Kirigami.Theme.textColor
-                    font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.96
-                    font.weight: Font.DemiBold
-                    elide: Text.ElideRight
-                    textFormat: Text.PlainText
-                    horizontalAlignment: Text.AlignLeft
-                }
-
-                Text {
-                    Layout.fillWidth: true
-                    visible: text !== ""
-                    text: {
-                        const slot = section.slot;
-                        if (slot.kind === "integrated") {
-                            return i18nc("@info integrated GPU using system memory", "iGPU · shared");
-                        }
-                        if (slot.kind !== "discrete") {
-                            return "";
-                        }
-                        const total = Format.bytes(slot.knownVramTotal, true);
-                        return total.unit ? i18nc("@info discrete GPU and its memory, e.g. dGPU · 8 GiB",
-                                                  "dGPU · %1 %2", total.value, total.unit)
-                                          : i18nc("@info discrete GPU", "dGPU");
-                    }
-                    color: section.dim
-                    font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.85
-                    elide: Text.ElideRight
-                    textFormat: Text.PlainText
-                    horizontalAlignment: Text.AlignLeft
-                }
+            value: section.temperatureShown ? Format.temperature(section.slot.temperature, section.monitor.fahrenheit) : ""
+            degreeUnit: section.monitor.fahrenheit ? "F" : "C"
+            valueColor: {
+                const level = section.monitor.heat(section.slot.temperature);
+                return level === 2 ? Kirigami.Theme.negativeTextColor
+                     : level === 1 ? Kirigami.Theme.neutralTextColor : Kirigami.Theme.textColor;
             }
-
-            RowLayout {
-                spacing: Math.round(Kirigami.Units.smallSpacing * 1.5)
-
-                Text {
-                    Layout.alignment: Qt.AlignBaseline
-                    visible: text !== "" && section.temperatureShown
-                    text: section.slot.temperatureLabel
-                    color: section.dim
-                    font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.81
-                    textFormat: Text.PlainText
-                }
-
-                Reading {
-                    Layout.alignment: Qt.AlignBaseline
-                    visible: section.temperatureShown
-                    value: Format.temperature(section.slot.temperature, section.monitor.fahrenheit)
-                    degree: true
-                    degreeUnit: section.monitor.fahrenheit ? "F" : "C"
-                    color: {
-                        const level = section.monitor.heat(section.slot.temperature);
-                        return level === 2 ? Kirigami.Theme.negativeTextColor
-                             : level === 1 ? Kirigami.Theme.neutralTextColor : Kirigami.Theme.textColor;
-                    }
-                }
-            }
+            caption: section.temperatureName
         }
 
         GridLayout {
             Layout.fillWidth: true
-            Layout.leftMargin: Math.round(Kirigami.Units.largeSpacing * 1.5)
+            Layout.leftMargin: Math.round(Kirigami.Units.largeSpacing * 2)
             Layout.rightMargin: Layout.leftMargin
-            Layout.bottomMargin: Layout.leftMargin
+            Layout.topMargin: Math.round(Kirigami.Units.smallSpacing * 1.5)
+            Layout.bottomMargin: Math.round(Kirigami.Units.largeSpacing * 1.5)
             columns: (section.slot.reportsVram ? 1 : 0) + 1 + (section.hasPower ? 1 : 0)
             rowSpacing: Kirigami.Units.largeSpacing
             columnSpacing: Kirigami.Units.largeSpacing
@@ -212,25 +211,36 @@ PopupPage {
             Tile {
                 Layout.columnSpan: parent.columns
                 caption: i18nc("@title:group", "Usage")
-                graphSeconds: section.monitor.historySeconds
+                spans: section.monitor
+                graphTop: i18nc("@info a percentage", "%1%", Format.percent(100))
 
                 Graph {
                     Layout.fillWidth: true
-                    Layout.preferredHeight: section.inner ? Math.round(Kirigami.Units.gridUnit * 2) : implicitHeight
                     values: section.slot.history
+                    highs: section.slot.highs
                     length: section.monitor.historyLength
-                    color: section.tone
-                    // Graph scales the fill by the colour's alpha; undo that for the dimmer tone.
-                    fillOpacity: (section.inner ? 0.1 : 0.15) / section.tone.a
                 }
+            }
+
+            // As in the CPU popup: under the usage it follows.
+            TemperatureTile {
+                id: temperature
+                visible: temperature.hasReading && section.temperatureGraphed
+                Layout.columnSpan: parent.columns
+                monitor: section.monitor
+                history: section.slot.temperatureHistory
+                highs: section.slot.temperatureHighs
+                extent: section.slot.temperatureExtent
             }
 
             Tile {
                 id: vram
                 visible: section.slot.reportsVram
                 caption: i18nc("@title:group video memory", "VRAM")
+                foot: vramReading
 
                 Reading {
+                    id: vramReading
                     // An integrated GPU's share of system memory has no meaningful total.
                     // The known size stands in while a resting GPU's readings are held.
                     readonly property bool ofTotal: section.slot.kind === "discrete"
@@ -238,19 +248,19 @@ PopupPage {
                                                      : Format.bytes(section.slot.vramUsed, false)
                     value: b.value
                     unit: ofTotal && b.unit ? "/ " + b.total + " " + b.unit : b.unit
-                    unitScale: 0.69
                     pointSize: section.tilePointSize
                 }
             }
 
             Tile {
                 caption: i18nc("@title:group GPU core clock", "Clock")
+                foot: clockReading
 
                 Reading {
+                    id: clockReading
                     readonly property var f: Format.frequency(section.slot.clock)
                     value: f.value
                     unit: f.unit
-                    unitScale: 0.69
                     pointSize: section.tilePointSize
                 }
             }
@@ -258,12 +268,13 @@ PopupPage {
             Tile {
                 visible: section.hasPower
                 caption: i18nc("@title:group GPU power draw", "Power")
+                foot: powerReading
 
                 Reading {
+                    id: powerReading
                     readonly property var w: Format.watts(section.slot.power)
                     value: w.value
                     unit: w.unit
-                    unitScale: 0.69
                     pointSize: section.tilePointSize
                 }
             }

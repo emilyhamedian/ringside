@@ -25,14 +25,33 @@ function helperFailure(data) {
     return { reason: reason, code: code, detail: detail };
 }
 
+// What a helper failure is, for the words and for "Try again": "missing"
+// when python3 couldn't be found, "files" when it stopped on an error
+// reading or writing its files, both of which would only happen again,
+// else "helper".
+function failureReason(failure) {
+    if (failure.reason === "missing") {
+        return "missing";
+    }
+    return /^(OSError|PermissionError|FileNotFoundError|FileExistsError|IsADirectoryError|NotADirectoryError)\b/
+        .test(failure.detail) ? "files" : "helper";
+}
+
 // The entries with every shown one marked as failed at `at`, keeping its
-// last reading so the item dims. Signed-out entries are left alone, and a
-// failure never adds an entry for a tool nobody signed in to.
-function markFailed(entries, message, at) {
+// last reading, as UsageData.merge() marks a provider's failed check, with
+// `reason` from failureReason(). A helper that failed set no hold, so the
+// retry waits the five minutes the helper holds a failed provider back, or
+// to the end of a longer hold the provider's last report gave, such as a
+// rate limit, which the helper still keeps. Signed-out entries are left
+// alone, and no entry is added: UsageData adds one first for a provider
+// still loading.
+function markFailed(entries, message, at, reason) {
     const marked = Object.assign({}, entries);
     for (const id in marked) {
         if (marked[id].status !== "signed_out") {
-            marked[id] = Object.assign({}, marked[id], { lastError: message, lastErrorAt: at });
+            const held = Number.isFinite(marked[id].retryAt) ? marked[id].retryAt : 0;
+            marked[id] = Object.assign({}, marked[id], { lastError: message, lastErrorAt: at, reason: reason,
+                                                         host: "", retryAt: Math.max(at + 300, held) });
         }
     }
     return marked;
