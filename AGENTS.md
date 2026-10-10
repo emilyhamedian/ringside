@@ -22,6 +22,8 @@ GPL-3.0-or-later.
   - `code/ringside-info.sh`: hardware facts ksystemstats doesn't publish.
 - `tests/`:
   - `qml/tst_*.qml`: the QtTest suites.
+  - `qml/units/tst_units.qml`: KDE's data units against the real formatter,
+    run once per setting by the scripts.
   - `helper/`: the sh helper's fixtures.
   - `python/`: the Python helper's tests.
   - `floor/`: a stand-in Plasma module for the Plasma 6.0 floor run.
@@ -71,7 +73,8 @@ unless there's a good reason to differ, and may is allowed but optional.
 
 - `sh scripts/test.sh` must pass on a Plasma 6.5 or later desktop: qmllint (only
   unqualified i18n warnings accepted), the QtTest suites including the de_DE
-  and ar_EG runs, the helper fixtures and the Python tests.
+  and ar_EG runs and the three data-unit runs, the helper fixtures and the
+  Python tests.
   `sh scripts/gallery.sh` renders every state for a visual check.
 - A running plasmashell keeps old QML until it restarts;
   `plasmawindowed dev.emily.ringside` runs the installed widget in a window.
