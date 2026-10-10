@@ -22,6 +22,8 @@ Item {
     required property real ring
     required property bool textShown
     required property bool twoLines
+    // Strip.egg.
+    property Egg egg: null
 
     readonly property var usage: monitor.usage
     readonly property var entry: usage.entry(item)
@@ -87,6 +89,7 @@ Item {
         cancelled: content.failed && !content.staleShown
         stale: content.staleShown
         loading: content.loading
+        egg: content.egg
         // The cell's description covers it, saying which it was, how old
         // and why.
         Accessible.ignored: true

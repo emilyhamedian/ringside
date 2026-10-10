@@ -68,6 +68,9 @@ PlasmoidItem {
     }
 
     preferredRepresentation: fullRepresentation
+    // Keys a focused item in the strip leaves go to the hidden animation,
+    // which only looks at them.
+    Keys.onPressed: event => eggClock.watch(event)
 
     // With every item hidden the applet keeps a square the panel's
     // thickness, for the icon below.
@@ -120,7 +123,14 @@ PlasmoidItem {
         ringsOnly: Plasmoid.configuration.ringsOnly
         location: Plasmoid.location
         openItem: popup.visible ? root.openItem : ""
+        egg: eggClock
         onActivated: (item, cell) => root.toggle(item, cell)
+    }
+
+    Egg {
+        id: eggClock
+        stage: strip
+        vertical: root.vertical
     }
 
     // With every item hidden, something still has to be there to right-click.
@@ -197,6 +207,8 @@ PlasmoidItem {
             LayoutMirroring.childrenInherit: true
             focus: true
             Keys.onEscapePressed: popup.visible = false
+            // As the applet's own, for any popup.
+            Keys.onPressed: event => eggClock.watch(event)
         }
     }
 

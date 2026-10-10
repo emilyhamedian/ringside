@@ -26,6 +26,8 @@ Item {
     property real value: NaN
     property real innerValue: NaN
     property bool inner: false
+    // The strip's hidden animation, which a panel ring plays; null elsewhere.
+    property Egg egg: null
     // The colour below the alert levels.
     property color color: Kirigami.Theme.textColor
     // Raises the ring's level, for a hot temperature the panel has no room
@@ -491,6 +493,17 @@ Item {
             id: middle
             anchors.fill: parent
             opacity: 1 - Math.max(0.85 * gauge.struck, 0.6 * Math.max(gauge.greyed, gauge.waitDim))
+        }
+
+        // Draws the hidden animation over the arcs while it plays; see
+        // Egg.qml for what it may change and how it gives it back.
+        Egg.Ring {
+            anchors.fill: parent
+            clock: gauge.egg
+            outerRing: outer
+            innerRing: innerArc
+            innerOn: gauge.innerOn
+            innerShown: gauge.innerShown
         }
 
         // The cancelling stroke, from the bottom left of the track to its

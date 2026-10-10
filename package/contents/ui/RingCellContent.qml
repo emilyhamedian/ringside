@@ -22,6 +22,8 @@ Item {
     required property real ring
     required property bool textShown
     required property bool twoLines
+    // Strip.egg.
+    property Egg egg: null
 
     readonly property var gpuOuter: monitor.gpuOuter
     readonly property var gpuInner: monitor.gpuInner
@@ -123,6 +125,7 @@ Item {
         innerValue: content.gpuInner.panelUsage
         minimumLevel: content.textShown ? 0 : content.monitor.heat(content.hottest)
         interval: content.monitor.interval
+        egg: content.egg
         // The cell's description covers it.
         Accessible.ignored: true
 
