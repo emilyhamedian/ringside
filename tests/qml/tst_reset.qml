@@ -30,6 +30,15 @@ Item {
         }
     }
 
+    Component {
+        id: samplerComponent
+        FrameAnimation {
+            property var sample: null
+            running: true
+            onTriggered: sample()
+        }
+    }
+
     TestCase {
         name: "ResetDetect"
 
@@ -88,6 +97,11 @@ Item {
             failOnWarning(/TypeError|ReferenceError|SyntaxError|is not a function|Unable to assign|Cannot assign|Binding loop/);
         }
 
+        // A colour as it is now: one read from a property keeps following it.
+        function channels(c) {
+            return { r: c.r, g: c.g, b: c.b, a: c.a };
+        }
+
         // The outer arc, then the inner one.
         function arcs(gauge) {
             const found = [];
@@ -109,6 +123,8 @@ Item {
                 compare(arc.tail, 0);
                 compare(arc.lift, 0);
                 compare(arc.drawColor, arc.color);
+                compare(String(arc.litColor), String(arc.shaded(arc.color, true)));
+                compare(String(arc.deepColor), String(arc.shaded(arc.color, false)));
             }
             gauge.value = 30;
             tryCompare(arcs(gauge)[0], "head", 30, 2000, "and keep following them");
@@ -137,6 +153,58 @@ Item {
             wait(200);
             verify(outer.lift > 0, "dissolving: " + outer.lift);
             compare(outer.tail, 0);
+            settled(gauge);
+        }
+
+        // As the spent arc turns from its old colour to its new one, its
+        // gradient's ends turn with it, from the old level's shading to the
+        // new one's, rather than losing the shading part way.
+        function test_onScheduleShadesAsItTurns() {
+            const gauge = createTemporaryObject(gaugeComponent, root);
+            waitForRendering(gauge);
+            const outer = arcs(gauge)[0];
+            const from = Kirigami.Theme.neutralTextColor, to = outer.color;
+            const ends = [[outer.shaded(from, true), outer.shaded(to, true)], [outer.shaded(from, false), outer.shaded(to, false)]];
+            const seen = [];
+            createTemporaryObject(samplerComponent, root, {
+                sample: () => seen.push([channels(outer.drawColor), channels(outer.litColor), channels(outer.deepColor)])
+            });
+            gauge.playResets({ from: 78, early: false }, null);
+            compare(String(outer.litColor), String(ends[0][0]), "the old level's shading");
+            tryVerify(() => !outer.animating, 5000);
+            // How far the colour has turned, on the channel that changes most.
+            const k = ["r", "g", "b"].reduce((m, c) => Math.abs(to[c] - from[c]) > Math.abs(to[m] - from[m]) ? c : m, "r");
+            const turned = seen.map(([draw, lit, deep]) => {
+                const t = (draw[k] - from[k]) / (to[k] - from[k]);
+                [lit, deep].forEach((end, i) => ["r", "g", "b", "a"].forEach(c => {
+                    const expected = ends[i][0][c] + (ends[i][1][c] - ends[i][0][c]) * t;
+                    verify(Math.abs(end[c] - expected) < 0.01, (i ? "bottom " : "top ") + c + " at " + t + ": " + end[c] + ", " + expected);
+                }));
+                return t;
+            });
+            verify(turned.some(t => t > 0.2 && t < 0.8), "seen part way: " + JSON.stringify(turned));
+            settled(gauge);
+        }
+
+        // Dissolved, the arc is flat in the track's tone, so its length
+        // changes there without a seam.
+        function test_earlyHoldsTheTrackTone() {
+            const gauge = createTemporaryObject(gaugeComponent, root);
+            waitForRendering(gauge);
+            const outer = arcs(gauge)[0];
+            const seen = [];
+            createTemporaryObject(samplerComponent, root, {
+                sample: () => seen.push([outer.lift, channels(outer.topColor), channels(outer.bottomColor)])
+            });
+            gauge.playResets({ from: 78, early: true }, null);
+            tryVerify(() => !outer.animating, 5000);
+            const held = seen.filter(([lift]) => lift === 1);
+            verify(held.length > 0, "held at the tone");
+            for (const [, top, bottom] of held) {
+                verify(["r", "g", "b", "a"].every(c => Math.abs(top[c] - outer.turnTone[c]) < 0.002
+                                                    && Math.abs(bottom[c] - outer.turnTone[c]) < 0.002),
+                       JSON.stringify([top, bottom]));
+            }
             settled(gauge);
         }
 
