@@ -1897,7 +1897,7 @@ Item {
         // The system popups' footers keep the System Monitor link and the
         // configure button on one line, with no switch: the session
         // starter's belongs to the Claude and Codex popups only. The link's
-        // text and the button's icon sit on the readings' edges, plain and
+        // text and the icon's drawing sit on the readings' edges, plain and
         // mirrored.
         function test_systemFooters_data() {
             const rows = [];
@@ -1920,15 +1920,18 @@ Item {
             compare(footer.height, footer.topPadding + footer.bottomPadding + Math.max(link.implicitHeight, button.implicitHeight));
             const middle = i => i.mapToItem(footer, Qt.point(0, i.height / 2)).y;
             fuzzyCompare(middle(button), middle(link), 0.5);
-            // On the readings' edges: the link's text, and the icon inside the button's padding.
+            // On the readings' edges: the link's text, and the icon's drawing
+            // inside the button's padding and the 3 px Breeze's 22 px icon
+            // keeps free around it.
             const edge = Math.round(Kirigami.Units.largeSpacing * 2);
+            const slack = Kirigami.Units.iconSizes.smallMedium * 3 / 22;
             const x = (i, at) => i.mapToItem(footer, Qt.point(at, 0)).x;
             if (data.mirrored) {
                 compare(x(link, link.width), footer.width - edge);
-                compare(x(button, button.leftPadding), edge);
+                compare(x(button, button.leftPadding + slack), edge);
             } else {
                 compare(x(link, 0), edge);
-                compare(x(button, button.width - button.rightPadding), footer.width - edge);
+                compare(x(button, button.width - button.rightPadding - slack), footer.width - edge);
             }
         }
 
