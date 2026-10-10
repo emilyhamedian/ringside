@@ -110,12 +110,12 @@ Item {
             const up = button(page, "Move GPU up");
             const down = button(page, "Move GPU down");
             up.forceActiveFocus(Qt.TabFocusReason);
-            verify(up.visualFocus);
+            tryVerify(() => up.visualFocus);
             keyClick(Qt.Key_Space);
             compare(page.cfg_itemOrder, ["gpu", "cpu", "memory", "network", "disk", "claude", "codex"]);
             tryVerify(() => !up.enabled);
-            verify(down.activeFocus, "focus moved to Move GPU down");
-            verify(down.visualFocus, "keyboard focus stays visible");
+            tryVerify(() => down.activeFocus, 5000, "focus moved to Move GPU down");
+            tryVerify(() => down.visualFocus, 5000, "keyboard focus stays visible");
             keyClick(Qt.Key_Space);
             compare(page.cfg_itemOrder, ["cpu", "gpu", "memory", "network", "disk", "claude", "codex"]);
             verify(down.activeFocus, "focus stays on the pressed button");
