@@ -142,29 +142,44 @@ Rectangle {
             }
         }
 
-        RowLayout {
+        // Shot twice, over black and over white, so pictures.sh can work out
+        // each pixel's transparency: Qt saves this shot without an alpha
+        // channel once ksysguard's process module is loaded.
+        Item {
             objectName: "popups"
-            spacing: 24
+            implicitWidth: popupRow.implicitWidth
+            implicitHeight: popupRow.implicitHeight
 
-            Dialog {
-                Layout.alignment: Qt.AlignTop
-                CpuPopup { monitor: sample }
+            Rectangle {
+                id: backdrop
+                anchors.fill: parent
+                color: "black"
             }
-            Dialog {
-                Layout.alignment: Qt.AlignTop
-                GpuPopup { monitor: sample }
-            }
-            Dialog {
-                Layout.alignment: Qt.AlignTop
-                MemoryPopup { monitor: sample }
-            }
-            Dialog {
-                Layout.alignment: Qt.AlignTop
-                NetworkPopup { monitor: sample }
-            }
-            Dialog {
-                Layout.alignment: Qt.AlignTop
-                DiskPopup { monitor: sample }
+
+            RowLayout {
+                id: popupRow
+                spacing: 24
+
+                Dialog {
+                    Layout.alignment: Qt.AlignTop
+                    CpuPopup { monitor: sample }
+                }
+                Dialog {
+                    Layout.alignment: Qt.AlignTop
+                    GpuPopup { monitor: sample }
+                }
+                Dialog {
+                    Layout.alignment: Qt.AlignTop
+                    MemoryPopup { monitor: sample }
+                }
+                Dialog {
+                    Layout.alignment: Qt.AlignTop
+                    NetworkPopup { monitor: sample }
+                }
+                Dialog {
+                    Layout.alignment: Qt.AlignTop
+                    DiskPopup { monitor: sample }
+                }
             }
         }
 
@@ -183,8 +198,10 @@ Rectangle {
             done();
             return;
         }
-        const item = find(shots, names[0]);
-        item.grabToImage(result => {
+        // "popups-black" and "popups-white" are the popups over each backdrop.
+        const [name, colour] = names[0].split("-");
+        backdrop.color = colour ?? "black";
+        find(shots, name).grabToImage(result => {
             result.saveToFile(outDir + "/" + names[0] + ".png");
             save(names.slice(1), done);
         });
@@ -210,7 +227,7 @@ Rectangle {
         running: pictures.outDir !== ""
         onTriggered: {
             usagePopup.nowMs = pictures.now * 1000;
-            pictures.save(["panel", "popups", "usage"], Qt.quit);
+            pictures.save(["panel", "popups-black", "popups-white", "usage"], Qt.quit);
         }
     }
 }

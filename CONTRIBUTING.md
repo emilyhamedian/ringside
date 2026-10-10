@@ -6,7 +6,7 @@
 sh scripts/test.sh        # qmllint, the QML tests, the helpers' tests, shellcheck, reuse lint
 sh scripts/test-floor.sh  # the tests and the gallery on Plasma 6.0, which CI runs on Fedora 40
 sh scripts/gallery.sh     # renders every view to /tmp/ringside-gallery.png
-sh scripts/pictures.sh    # renders the README's pictures in docs/ from sample readings
+sh scripts/pictures.sh    # renders the README's pictures in docs/ from sample readings; needs Pillow
 python3 scripts/logo.py   # draws the logo in docs/ and the widget's icon; needs fontTools, Nunito and rsvg-convert
 sh scripts/package.sh     # builds ringside.plasmoid from the last commit
 ```

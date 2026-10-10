@@ -45,9 +45,21 @@ if printf '%s\n' "$log" | grep -qE 'TypeError|ReferenceError|SyntaxError|Binding
     exit 1
 fi
 
-for name in panel popups usage; do
+for name in panel popups-black popups-white usage; do
     [ -s "$home/shots/$name.png" ] || { printf '%s\n' "$log" >&2; echo "pictures.sh: no $name.png" >&2; exit 1; }
-    cp "$home/shots/$name.png" "$docs/$name.png"
 done
+cp "$home/shots/panel.png" "$home/shots/usage.png" "$docs/"
+# The popups were shot over black and over white: how far white shows
+# through is each pixel's transparency, and the black shot divided by its
+# opacity its colour, so the shadows stay soft on any page.
+python3 -I - "$home/shots" "$docs/popups.png" <<'PY'
+import sys
+from PIL import Image, ImageChops
+shots, out = sys.argv[1], sys.argv[2]
+black = Image.open(f"{shots}/popups-black.png").convert("RGB")
+white = Image.open(f"{shots}/popups-white.png").convert("RGB")
+alpha = ImageChops.invert(ImageChops.subtract(white, black).convert("L"))
+Image.merge("RGBa", (*black.split(), alpha)).convert("RGBA").save(out, optimize=True)
+PY
 
 ls -l "$docs"/panel.png "$docs"/popups.png "$docs"/usage.png
