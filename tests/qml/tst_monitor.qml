@@ -32,32 +32,7 @@ TestRoot {
 
         Component {
             id: configComponent
-            QtObject {
-                property int updateInterval: 1000
-                property string graphSpan: "minute"
-                property bool keepGraphHistory: false
-                property bool fahrenheit: false
-                property bool networkBits: true
-                property bool highlightTemperatures: true
-                property real warmCelsius: 75
-                property real hotCelsius: 90
-                property var itemOrder: ["cpu", "gpu", "memory", "network", "disk"]
-                property var hiddenItems: ["disk"]
-                property var ringsOnly: []
-                property string cpuTemperatureSensor: ""
-                property string outerGpu: ""
-                property string innerGpu: ""
-                property string networkInterface: ""
-                property string diskDevice: ""
-                property string diskVolume: ""
-                property string diskTemperatureSensor: ""
-                property string detectedHardware: ""
-                property int usageRefreshMinutes: 5
-                property string claudeInnerLimit: ""
-                property string codexInnerLimit: ""
-                property string knownLimits: ""
-                property string usageStatus: ""
-            }
+            FakeConfig {}
         }
 
         Component {
@@ -189,7 +164,9 @@ TestRoot {
             compare(monitor.diskIds, ["vdz"]);
             config.diskDevice = "all";
             compare(monitor.diskIds, ["vdz", "vdy"]);
-            compare(monitor.member(diskReadersOf(monitor), 5).sensorId, "disk/vdy/total");
+            const diskReaders = Array.from(monitor.data).find(child => child.model !== undefined
+                                                                  && String(child.model).indexOf("disk/") >= 0);
+            compare(monitor.member(diskReaders, 5).sensorId, "disk/vdy/total");
             config.diskDevice = "vdy";
             compare(monitor.diskIds, ["vdy"]);
         }
@@ -851,18 +828,14 @@ TestRoot {
             return sampling(m);
         }
 
-        function counted(m) {
-            m.store = countingStore.createObject(m, { store: m.store });
-            return m.store;
-        }
-
         // Kept, closed buckets are saved with the day's, every 10 minutes,
         // since each save is a commit on Plasma's main thread, and what waits
         // is saved as the widget stops. Each series goes to a tenth.
         function test_bucketsAreSavedEveryTenMinutes() {
             forget();
             const m = suspended(keeping("w1", true));
-            const store = counted(m);
+            const store = countingStore.createObject(m, { store: m.store });
+            m.store = store;
             const t = tenMinutes(1);
             const cpu = m.cpuUsage;
             m.sample(t);
@@ -1135,15 +1108,6 @@ TestRoot {
                 }
             }
             return found;
-        }
-
-        function diskReadersOf(m) {
-            for (const child of m.data) {
-                if (child.model !== undefined && String(child.model).indexOf("disk/") >= 0) {
-                    return child;
-                }
-            }
-            return null;
         }
     }
 }

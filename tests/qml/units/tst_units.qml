@@ -21,32 +21,10 @@ TestRoot {
         name: "Units"
 
         // Outlives each test's monitor, which reads it until it is gone.
-        QtObject {
+        FakeConfig {
             id: settings
-            property int updateInterval: 1000
-            property string graphSpan: "minute"
-            property bool keepGraphHistory: false
-            property bool fahrenheit: false
-            property bool networkBits: false
-            property bool highlightTemperatures: true
-            property real warmCelsius: 75
-            property real hotCelsius: 90
-            property var itemOrder: ["cpu", "gpu", "memory", "network", "disk"]
-            property var hiddenItems: []
-            property var ringsOnly: []
-            property string cpuTemperatureSensor: ""
-            property string outerGpu: ""
-            property string innerGpu: ""
-            property string networkInterface: ""
-            property string diskDevice: ""
-            property string diskVolume: ""
-            property string diskTemperatureSensor: ""
-            property string detectedHardware: ""
-            property int usageRefreshMinutes: 5
-            property string claudeInnerLimit: ""
-            property string codexInnerLimit: ""
-            property string knownLimits: ""
-            property string usageStatus: ""
+            networkBits: false
+            hiddenItems: []
         }
 
         Component {
