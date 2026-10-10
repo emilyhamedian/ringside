@@ -1382,7 +1382,7 @@ Item {
             compare([line(c, "first").text, line(c, "second").text], ["––%", "–d"]);
             const dim = String(Style.dim(Kirigami.Theme.textColor));
             compare([String(line(c, "first").color), String(line(c, "second").color)], [dim, dim]);
-            fuzzyCompare(middle(c).opacity, 0.4, 1e-6);
+            fuzzyCompare(middle(c).opacity, 0.15, 1e-6, "fainter than the stroke once struck");
             compare([gauge.centreWidth, mark(c).width], [room, markWidth], "the mark keeps its size");
 
             const s = strike(c);
@@ -1574,7 +1574,7 @@ Item {
             compare(strikePath(c).strokeColor, arc.trackColor, "struck in the track's grey");
             compare(arc.percent, 0);
             compare([line(c, "first").text, line(c, "second").text], ["––%", "–d"]);
-            fuzzyCompare(middle(c).opacity, 0.4, 1e-6);
+            fuzzyCompare(middle(c).opacity, 0.15, 1e-6, "fainter than the stroke once struck");
             compare(c.accessibleDescription.split("\n"), [
                 "Last check failed at " + wordsOf(c).timeOfDay(failed.lastErrorAt, c.nowMs) + ". Can't reach api.anthropic.com.",
                 nextCheckAt(c)]);
