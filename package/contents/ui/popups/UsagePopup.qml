@@ -199,11 +199,13 @@ PopupPage {
         horizontalAlignment: Text.AlignLeft
     }
 
+    // Set off from the header by about what sets it off from the bars.
     CheckStatus {
         visible: popup.failed
         Layout.fillWidth: true
         Layout.leftMargin: Math.round(Kirigami.Units.largeSpacing * 2)
         Layout.rightMargin: Layout.leftMargin
+        Layout.topMargin: Kirigami.Units.largeSpacing
         Layout.bottomMargin: Math.round(Kirigami.Units.largeSpacing * 1.25)
         item: popup.item
         usage: popup.usage
