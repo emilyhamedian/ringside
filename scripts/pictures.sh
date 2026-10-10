@@ -14,11 +14,10 @@ set -eu
 cd "$(dirname "$0")/.." || exit 1
 docs=$PWD/docs
 
-if [ -z "${QML:-}" ]; then
-    for QML in /usr/lib/qt6/bin/qml /usr/lib64/qt6/bin/qml qml6; do
-        command -v "$QML" >/dev/null 2>&1 && break
-    done
-fi
+# shellcheck source=scripts/qt.sh
+. scripts/qt.sh
+# The bare qml on PATH may be Qt 5.
+QML=${QML:-$(qt_tool qml qml6)}
 
 # A settings folder of its own, so the user's colours and fonts stay out.
 home=$(mktemp -d)
