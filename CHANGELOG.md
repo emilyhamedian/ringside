@@ -130,6 +130,9 @@ follows [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- A Claude check waits up to 20 seconds for Anthropic, as a Codex check
+  always has for Codex, so a slow or lossy connection greys the ring less
+  often.
 - Across a horizontal panel, rates always show three figures, from kb/s or
   KiB/s up, such as "8.40 Mb/s", "62.1 kb/s", or "0.00 KiB/s" when idle,
   and move to the next unit before a fourth: 1023 KiB/s reads "1.00 MiB/s".

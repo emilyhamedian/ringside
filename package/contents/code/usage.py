@@ -130,9 +130,10 @@ USER_AGENT = f"ringside/{VERSION}"
 CLAUDE_EXPIRY_MARGIN = 60
 
 CODEX_AUTH = Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex") / "auth.json"
-CODEX_TIMEOUT = 20
 
-HTTP_TIMEOUT = 10
+# How long a provider has to answer, Anthropic's servers or the Codex CLI
+# alike: long enough for a lossy connection's retries to get through.
+ANSWER_TIMEOUT = 20
 # Seconds to wait after a 429 whose Retry-After is missing or unreadable.
 RETRY_AFTER_DEFAULT = 60
 
@@ -142,8 +143,8 @@ HISTORY_FILE = CACHE_DIR / "usage-history.json"
 LOCK_FILE = CACHE_DIR / "usage.lock"
 CACHE_TTL = 5 * 60
 # How long a run waits for another to finish before giving up. A poll takes
-# at most about 50 s (Codex, then a token refresh and a poll); a starter
-# send, which holds the lock throughout, about 110 s (a poll, a renewal,
+# at most about 70 s (Codex, then a token refresh and a poll); a starter
+# send, which holds the lock throughout, about 130 s (a poll, a renewal,
 # the preflight and the send).
 LOCK_WAIT = 150
 # The longest a refusal holds a provider back, whatever Retry-After says.
@@ -312,7 +313,7 @@ def failure_why(name, failure, asked=None, hold=None):
     if reason == "offline":
         return f"can't reach {host or 'the server'}"
     if reason == "timeout":
-        return f"{host} didn't answer in time" if host else f"the Codex CLI didn't answer in {CODEX_TIMEOUT} s"
+        return f"{host} didn't answer in time" if host else f"the Codex CLI didn't answer in {ANSWER_TIMEOUT} s"
     if reason == "server":
         status = failure.get("httpStatus")
         return f"{host or 'the server'} answered with " + (f"HTTP {status}" if type(status) is int else "an error")
@@ -429,7 +430,7 @@ def codex_rate_limits(binary):
         stderr=subprocess.DEVNULL,
         start_new_session=True,
     )
-    deadline = time.monotonic() + CODEX_TIMEOUT
+    deadline = time.monotonic() + ANSWER_TIMEOUT
     try:
         for message in (
             {"id": 1, "method": "initialize",
@@ -450,7 +451,7 @@ def codex_rate_limits(binary):
                     raise RuntimeError(str((reply["error"] or {}).get("message") or "app-server error"))
                 return reply["result"]
         if time.monotonic() >= deadline:
-            raise CheckFailed(f"no answer from codex app-server in {CODEX_TIMEOUT} s", "timeout")
+            raise CheckFailed(f"no answer from codex app-server in {ANSWER_TIMEOUT} s", "timeout")
         raise RuntimeError("app-server closed without answering")
     finally:
         stop_session(proc)
@@ -584,7 +585,7 @@ def http_json(url, headers, body=None):
     request = urllib.request.Request(url, data=data, headers={"User-Agent": USER_AGENT, **headers},
                                      method="POST" if data else "GET")
     try:
-        with urllib.request.urlopen(request, timeout=HTTP_TIMEOUT) as response:
+        with urllib.request.urlopen(request, timeout=ANSWER_TIMEOUT) as response:
             return json.load(response)
     except urllib.error.HTTPError as err:
         if err.code == 401:

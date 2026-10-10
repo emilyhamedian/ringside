@@ -600,7 +600,7 @@ for line in sys.stdin:
         # The child keeps stdout open, so the read only ends once it is killed too.
         binary = self.server("#!/bin/sh\nsleep 30 &\nwait\n")
         start = time.monotonic()
-        with mock.patch.object(usage, "CODEX_TIMEOUT", 0.5), \
+        with mock.patch.object(usage, "ANSWER_TIMEOUT", 0.5), \
                 self.assertRaisesRegex(RuntimeError, r"^no answer from codex app-server in 0\.5 s$") as caught:
             usage.codex_rate_limits(binary)
         self.assertLess(time.monotonic() - start, 10)
@@ -611,7 +611,7 @@ for line in sys.stdin:
     def test_deadline_holds_when_a_survivor_keeps_stdout_open(self):
         binary = self.server("#!/bin/sh\nsetsid sleep 8 &\nexit 0\n")
         start = time.monotonic()
-        with mock.patch.object(usage, "CODEX_TIMEOUT", 1), \
+        with mock.patch.object(usage, "ANSWER_TIMEOUT", 1), \
                 self.assertRaisesRegex(RuntimeError, r"^no answer from codex app-server in 1 s$"):
             usage.codex_rate_limits(binary)
         self.assertLess(time.monotonic() - start, 4)
