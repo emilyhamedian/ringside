@@ -6,13 +6,6 @@ follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-### Changed
-
-- 2026-10-10: Draft PRs to main defer the Fedora test jobs and their exact
-  matching development pushes. Ready PRs run both full suites, including
-  docs-only changes; subsequent ready updates and base changes run them again.
-  Main, release and tag checks retain full coverage.
-
 ## [0.3.0] - 2026-10-05
 
 ### Added
@@ -217,7 +210,7 @@ follows [Semantic Versioning](https://semver.org/).
 
 ### Removed
 
-- The Graph history setting on General, which set every graph to 30
+- The Graph history span list on General, which set every graph to 30
   seconds up to 10 minutes. The span on each graph's caption replaces it;
   its minute is the old default of 60 seconds.
 - The Standalone layout, with its Layout and Fold settings and
