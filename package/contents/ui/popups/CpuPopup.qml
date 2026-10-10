@@ -114,8 +114,12 @@ PopupPage {
             // The last minute large, then the 5 and 15 minute averages dimmer,
             // evenly spaced and in reading order under mirroring too. The
             // spans don't fit beside the caption in a half-width tile, so
-            // only the spoken name carries them.
-            RowLayout {
+            // only the spoken name carries them. A Row rather than a
+            // RowLayout: the tile's layout sits inside a Rectangle, out of
+            // the popup's reach, and on Qt 6.6 a nested layout there only
+            // reports its new width when the popup next lays out, so the
+            // first readings arriving set off a layout polish loop.
+            Row {
                 id: load
                 readonly property real pointSize: Kirigami.Theme.defaultFont.pointSize * 1.38
                 spacing: Kirigami.Units.largeSpacing
@@ -125,7 +129,6 @@ PopupPage {
 
                 Reading {
                     id: lastMinute
-                    Layout.alignment: Qt.AlignBaseline
                     value: Format.load(popup.sensorValue(load1))
                     pointSize: load.pointSize
                     accessibleIgnored: true
@@ -136,7 +139,7 @@ PopupPage {
 
                     delegate: Text {
                         required property var modelData
-                        Layout.alignment: Qt.AlignBaseline
+                        anchors.baseline: lastMinute.baseline
                         text: Format.load(popup.sensorValue(modelData))
                         color: Style.dim(Kirigami.Theme.textColor)
                         font.family: Kirigami.Theme.defaultFont.family
