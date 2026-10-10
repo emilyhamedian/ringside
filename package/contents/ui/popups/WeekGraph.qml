@@ -49,7 +49,7 @@ Item {
     // The readings may be out of date: the run-out carries no alert colour.
     property bool grey: false
     readonly property color color: Kirigami.Theme.textColor
-    readonly property real fillOpacity: 0.15
+    readonly property real fillOpacity: Style.AREA
     // The series whose run-out is drawn, "main" or "second", or "" for none:
     // the limit the popup's pace sentence names, so the two agree.
     property string projected: ""
@@ -58,7 +58,7 @@ Item {
     // A new stretch of line draws on over twice this, and the rest fades
     // over it or half of it: Kirigami's long duration, or 0 at Plasma's
     // Instant speed, where everything is drawn at once. A test seam.
-    property int duration: Kirigami.Units.longDuration > 1 ? Kirigami.Units.longDuration : 0
+    property int duration: Style.animated(Kirigami.Units) ? Kirigami.Units.longDuration : 0
 
     // The time axis, in epoch seconds.
     readonly property real end: window && Number.isFinite(window.resetsAt) ? window.resetsAt : NaN
@@ -341,8 +341,7 @@ Item {
     function levelColor(level) {
         // A run-out projected from a reading that couldn't be renewed
         // carries no alert colour, as the bars above it don't.
-        return grey ? graph.color
-             : level === 2 ? Kirigami.Theme.negativeTextColor : level === 1 ? Kirigami.Theme.neutralTextColor : graph.color;
+        return Style.levelColor(grey ? 0 : level, Kirigami.Theme, graph.color);
     }
 
     // The run-out's time, the text the tile ends on while it shows.

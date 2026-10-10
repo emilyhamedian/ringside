@@ -21,7 +21,7 @@ GridLayout {
     required property var entry
     // The popup shows no reading: see UsageData.struck().
     required property bool struck
-    required property var texts
+    required property Words texts
     required property real nowMs
 
     readonly property var weekly: entry && entry.weekly ? entry.weekly : null

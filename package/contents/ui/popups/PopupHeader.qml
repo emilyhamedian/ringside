@@ -67,8 +67,8 @@ RowLayout {
 
     Layout.fillWidth: true
     Layout.minimumHeight: bandHeight
-    Layout.leftMargin: Math.round(Kirigami.Units.largeSpacing * 2)
-    Layout.rightMargin: Math.round(Kirigami.Units.largeSpacing * 2)
+    Layout.leftMargin: Style.contentEdge(Kirigami.Units.largeSpacing)
+    Layout.rightMargin: Style.contentEdge(Kirigami.Units.largeSpacing)
     Layout.topMargin: Math.round(Kirigami.Units.largeSpacing * 1.75)
     Layout.bottomMargin: Kirigami.Units.largeSpacing
     spacing: Math.round(Kirigami.Units.largeSpacing * 1.75)

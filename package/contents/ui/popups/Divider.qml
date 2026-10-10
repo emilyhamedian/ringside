@@ -4,6 +4,7 @@
 import QtQuick
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
+import "../code/style.js" as Style
 
 // A faint rule between sections of a popup's body, inset to the content's
 // edge. The footer brings its own. A whole number of the screen's pixels
@@ -15,8 +16,8 @@ Rectangle {
     readonly property real ratio: Window.window?.devicePixelRatio ?? Screen.devicePixelRatio // qmllint disable missing-property
 
     Layout.fillWidth: true
-    Layout.leftMargin: Math.round(Kirigami.Units.largeSpacing * 2)
+    Layout.leftMargin: Style.contentEdge(Kirigami.Units.largeSpacing)
     Layout.rightMargin: Layout.leftMargin
     Layout.preferredHeight: Math.max(1, Math.floor(ratio)) / ratio
-    color: Qt.alpha(Kirigami.Theme.textColor, 0.08)
+    color: Qt.alpha(Kirigami.Theme.textColor, Style.TRACK)
 }

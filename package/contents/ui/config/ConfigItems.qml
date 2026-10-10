@@ -9,7 +9,6 @@ import org.kde.kirigami as Kirigami
 import org.kde.plasma.core as PlasmaCore
 import org.kde.plasma.plasmoid
 import "../code/format.js" as Format
-import "../code/style.js" as Style
 import "../code/items.js" as Items
 import "../code/providers.js" as Providers
 
@@ -112,13 +111,8 @@ ConfigPage {
     ColumnLayout {
         spacing: Kirigami.Units.smallSpacing
 
-        QQC2.Label {
-            Layout.fillWidth: true
+        Note {
             text: i18nc("@info:usagetip", "Drag or use the arrows to reorder. Uncheck an item to hide it.")
-            textFormat: Text.PlainText
-            wrapMode: Text.Wrap
-            color: Style.dim(Kirigami.Theme.textColor)
-            font.pointSize: Kirigami.Theme.defaultFont.pointSize * 11.5 / 13
         }
 
         QQC2.Frame {
@@ -207,13 +201,10 @@ ConfigPage {
                                     page.save();
                                 }
                             }
-                            QQC2.Label {
-                                Layout.fillWidth: true
+                            Note {
                                 text: page.hints[entry.key]
-                                textFormat: Text.PlainText
+                                wrapMode: Text.NoWrap
                                 elide: Text.ElideRight
-                                color: Style.dim(Kirigami.Theme.textColor)
-                                font.pointSize: Kirigami.Theme.defaultFont.pointSize * 11.5 / 13
                             }
                             QQC2.ComboBox {
                                 id: mode
@@ -254,14 +245,9 @@ ConfigPage {
             }
         }
 
-        QQC2.Label {
-            Layout.fillWidth: true
+        Note {
             visible: page.vertical
             text: i18nc("@info", "This panel is vertical, so the rings show without their readings.")
-            textFormat: Text.PlainText
-            wrapMode: Text.Wrap
-            color: Style.dim(Kirigami.Theme.textColor)
-            font.pointSize: Kirigami.Theme.defaultFont.pointSize * 11.5 / 13
         }
     }
 }

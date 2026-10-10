@@ -6,6 +6,7 @@ import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
 import "../code/format.js" as Format
 import "../code/history.js" as History
+import "../code/style.js" as Style
 import ".."
 
 PopupPage {
@@ -33,7 +34,7 @@ PopupPage {
             readonly property var r: Format.rate(tile.rate, false)
             value: r.value
             unit: r.unit
-            pointSize: Kirigami.Theme.defaultFont.pointSize * 1.38
+            pointSize: Style.tilePointSize(Kirigami.Theme.defaultFont.pointSize)
         }
 
         Graph {
@@ -59,26 +60,22 @@ PopupPage {
             const m = popup.monitor;
             const size = Format.bytes(m.diskSize, true);
             const free = Format.bytes(m.volumeFree, true);
-            return [
-                size.unit ? size.value + " " + size.unit : "",
+            return words.joined([
+                size.unit ? words.bytesText(size) : "",
                 !free.unit ? ""
                     : m.volumeLabel ? i18nc("@info free space on a volume, e.g. 1.2 TiB free on /", "%1 %2 free on %3",
                                             free.value, free.unit, m.volumeLabel)
                     : i18nc("@info free space, e.g. 1.2 TiB free", "%1 %2 free", free.value, free.unit)
-            ].filter(s => s !== "").join(" · ");
+            ]);
         }
         value: Number.isFinite(popup.temperature) ? Format.temperature(popup.temperature, popup.monitor.fahrenheit) : ""
         degreeUnit: popup.monitor.fahrenheit ? "F" : "C"
-        valueColor: {
-            const level = popup.monitor.heat(popup.temperature);
-            return level === 2 ? Kirigami.Theme.negativeTextColor
-                 : level === 1 ? Kirigami.Theme.neutralTextColor : Kirigami.Theme.textColor;
-        }
+        valueColor: Style.levelColor(popup.monitor.heat(popup.temperature), Kirigami.Theme)
     }
 
     ColumnLayout {
         Layout.fillWidth: true
-        Layout.leftMargin: Math.round(Kirigami.Units.largeSpacing * 2)
+        Layout.leftMargin: Style.contentEdge(Kirigami.Units.largeSpacing)
         Layout.rightMargin: Layout.leftMargin
         Layout.topMargin: Math.round(Kirigami.Units.smallSpacing * 1.5)
         Layout.bottomMargin: Math.round(Kirigami.Units.largeSpacing * 1.5)

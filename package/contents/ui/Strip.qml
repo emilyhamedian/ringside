@@ -107,56 +107,35 @@ GridLayout {
             Component {
                 id: ringContent
                 RingCellContent {
-                    id: rings
                     monitor: strip.monitor
                     item: entry.item
                     ring: strip.ring
                     textShown: entry.textShown
                     twoLines: strip.twoLines
                     egg: strip.egg
-
-                    Binding {
-                        target: cell
-                        property: "description"
-                        value: rings.accessibleDescription
-                    }
                 }
             }
 
             Component {
                 id: usageContent
                 UsageCellContent {
-                    id: usage
                     monitor: strip.monitor
                     item: entry.item
                     ring: strip.ring
                     textShown: entry.textShown
                     twoLines: strip.twoLines
                     egg: strip.egg
-
-                    Binding {
-                        target: cell
-                        property: "description"
-                        value: usage.accessibleDescription
-                    }
                 }
             }
 
             Component {
                 id: rateContent
                 RateCellContent {
-                    id: rates
                     monitor: strip.monitor
                     item: entry.item
                     vertical: strip.vertical
                     singleRow: !strip.vertical && !strip.twoLines
                     availableWidth: strip.vertical ? cell.width - 2 * Kirigami.Units.smallSpacing : Infinity
-
-                    Binding {
-                        target: cell
-                        property: "description"
-                        value: rates.accessibleDescription
-                    }
                 }
             }
         }

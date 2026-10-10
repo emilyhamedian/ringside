@@ -48,3 +48,8 @@ function gpuView(outer, inner) {
         dual: inner.present && !outerAsleep && !innerAsleep
     };
 }
+
+// A ksystemstats Sensor's reading, or NaN while it has none.
+function sensorValue(sensor) {
+    return sensor && typeof sensor.value === "number" ? sensor.value : NaN;
+}

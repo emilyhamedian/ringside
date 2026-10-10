@@ -25,3 +25,46 @@ function unitPointSize(pointSize, smallPointSize) {
 function unitGap(pointSize) {
     return Math.round(pointSize * 0.4);
 }
+
+// Where a popup's readings, headers and rules start and end, in from its
+// sides, in pixels.
+function contentEdge(largeSpacing) {
+    return Math.round(largeSpacing * 2);
+}
+
+// A reading's colour at a level: red at 2, amber at 1, else `base`, the
+// text colour unless given. Pass the Kirigami.Theme of the item being drawn.
+function levelColor(level, theme, base) {
+    return level === 2 ? theme.negativeTextColor : level === 1 ? theme.neutralTextColor : base ?? theme.textColor;
+}
+
+// The size of a tile's reading, "4.61 GHz" or "0.42", for the default
+// font's point size.
+function tilePointSize(pointSize) {
+    return pointSize * 1.38;
+}
+
+// The popups' graphs: their height in grid units, and as alphas of the
+// line's colour the area under a line and the fainter band up to each
+// bucket's highest reading. TRACK is the text colour's alpha for the track
+// a bar runs along and for the rules between sections.
+const GRAPH_HEIGHT = 2.7;
+const AREA = 0.15;
+const BAND = 0.6 * AREA;
+const TRACK = 0.08;
+
+// The height of a font's capitals, or of whatever `sample` measures in it
+// in their place: FontMetrics.capitalHeight needs Qt 6.9, and before that
+// the ink of a sample such as "H" stands in.
+function capHeight(metrics, sample) {
+    return metrics.capitalHeight ?? sample.tightBoundingRect.height;
+}
+
+// Whether to animate: at Plasma's Instant speed Kirigami's durations are a
+// millisecond or so rather than none. Pass Kirigami.Units.
+function animated(units) {
+    return units.longDuration > 1;
+}
+
+// An arrow beside a rate, as wide as this times its height.
+const ARROW_ASPECT = 0.8;

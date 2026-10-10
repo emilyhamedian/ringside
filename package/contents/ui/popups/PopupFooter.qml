@@ -7,6 +7,7 @@ import QtQuick.Templates as T
 import org.kde.kirigami as Kirigami
 import org.kde.plasma.components as PlasmaComponents
 import org.kde.plasma.extras as PlasmaExtras
+import "../code/style.js" as Style
 
 PlasmaExtras.PlasmoidHeading {
     id: footer
@@ -16,6 +17,8 @@ PlasmaExtras.PlasmoidHeading {
     property bool systemMonitorShown: true
     // A popup's own control, such as the usage popups' starter switch.
     property alias leading: lead.data
+    // The readings' edge, from inside the footer's padding.
+    readonly property real readingsEdge: Style.contentEdge(Kirigami.Units.largeSpacing) - leftPadding
 
     position: T.ToolBar.Footer
 
@@ -25,7 +28,7 @@ PlasmaExtras.PlasmoidHeading {
         Kirigami.LinkButton {
             visible: footer.systemMonitorShown
             // On the readings' edge, as the lead is.
-            Layout.leftMargin: Math.round(Kirigami.Units.largeSpacing * 2) - footer.leftPadding
+            Layout.leftMargin: footer.readingsEdge
             text: i18nc("@action:button", "Open System Monitor")
             font.underline: false
             onClicked: footer.monitor.systemMonitorRequested()
@@ -37,7 +40,7 @@ PlasmaExtras.PlasmoidHeading {
             visible: children.length > 0
             Layout.fillWidth: true
             // On the readings' edge.
-            Layout.leftMargin: Math.round(Kirigami.Units.largeSpacing * 2) - footer.leftPadding
+            Layout.leftMargin: footer.readingsEdge
             // Clear of the configure button, so a long status doesn't run into it.
             Layout.rightMargin: Kirigami.Units.largeSpacing
             spacing: 0
@@ -60,7 +63,7 @@ PlasmaExtras.PlasmoidHeading {
             // The icon's drawing on the readings' far edge, in every popup
             // alike. Breeze's 22 px icons keep 3 px free around the drawing,
             // so the icon sits that much past the edge.
-            Layout.rightMargin: Math.round(Kirigami.Units.largeSpacing * 2) - footer.rightPadding - configure.rightPadding
+            Layout.rightMargin: Style.contentEdge(Kirigami.Units.largeSpacing) - footer.rightPadding - configure.rightPadding
                                 - Kirigami.Units.iconSizes.smallMedium * 3 / 22
             icon.name: "configure"
             display: T.AbstractButton.IconOnly

@@ -46,10 +46,7 @@ GridLayout {
         Layout.fillWidth: !readout.oneLine
         horizontalAlignment: readout.oneLine ? Text.AlignRight : Text.AlignLeft
         text: readout.lines.first
-        color: readout.lines.off ? Style.dim(Kirigami.Theme.textColor)
-             : readout.lines.level === 2 ? Kirigami.Theme.negativeTextColor
-             : readout.lines.level === 1 ? Kirigami.Theme.neutralTextColor
-             : Kirigami.Theme.textColor
+        color: readout.lines.off ? Style.dim(Kirigami.Theme.textColor) : Style.levelColor(readout.lines.level, Kirigami.Theme)
         font: readoutFace.strong.font
         textFormat: Text.PlainText
         Accessible.ignored: true
@@ -74,9 +71,7 @@ GridLayout {
         Layout.fillWidth: !readout.oneLine
         horizontalAlignment: Text.AlignLeft
         text: readout.lines.second
-        color: readout.lines.heat === 2 ? Kirigami.Theme.negativeTextColor
-             : readout.lines.heat === 1 ? Kirigami.Theme.neutralTextColor
-             : Style.dim(Kirigami.Theme.textColor)
+        color: Style.levelColor(readout.lines.heat, Kirigami.Theme, Style.dim(Kirigami.Theme.textColor))
         font: readoutFace.plain.font
         textFormat: Text.PlainText
         Accessible.ignored: true

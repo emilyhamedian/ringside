@@ -31,7 +31,7 @@ Item {
     property bool active: true
     // Off draws a new size, and a name that comes or goes, at once, as at
     // Plasma's Instant speed.
-    property bool animated: Kirigami.Units.longDuration > 1
+    property bool animated: Style.animated(Kirigami.Units)
     // The size laid out, a name's pixel size or a mark's, and the one
     // drawn, eased from the last: the name is laid out once at its new
     // size and scaled from the old one.
@@ -150,8 +150,7 @@ Item {
         text: "H"
     }
 
-    // capitalHeight needs Qt 6.9; the ink of "H" stands in before that.
-    readonly property real capHeight: fitted.capitalHeight ?? capSample.tightBoundingRect.height // qmllint disable missing-property
+    readonly property real capHeight: Style.capHeight(fitted, capSample)
 
     // Laid out across the chord, so it shrinks to fit, and set so that the
     // capitals' middle sits at the centre, not the line box's, which is

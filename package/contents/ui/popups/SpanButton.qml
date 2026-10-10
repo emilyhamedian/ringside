@@ -8,6 +8,7 @@ import QtQuick.Templates as T
 import org.kde.kirigami as Kirigami
 import org.kde.plasma.components as PlasmaComponents
 import "../code/format.js" as Format
+import "../code/history.js" as History
 import "../code/style.js" as Style
 
 // The span on a graph's caption line, "1 min", which opens a menu of the
@@ -24,7 +25,7 @@ T.AbstractButton {
     // Monitor.qml: graphSpan, and chooseSpan() to change it.
     required property var monitor
 
-    readonly property var spans: ["minute", "hour", "day"]
+    readonly property var spans: History.SPANS
     // Short on the caption line; whole words in the menu and for a screen
     // reader. The 1 goes in as a number, in the locale's digits.
     readonly property string one: Format.whole(1)

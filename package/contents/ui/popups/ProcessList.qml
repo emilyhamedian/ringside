@@ -51,8 +51,8 @@ ColumnLayout {
     }
 
     Layout.fillWidth: true
-    Layout.leftMargin: Math.round(Kirigami.Units.largeSpacing * 2)
-    Layout.rightMargin: Math.round(Kirigami.Units.largeSpacing * 2)
+    Layout.leftMargin: Style.contentEdge(Kirigami.Units.largeSpacing)
+    Layout.rightMargin: Style.contentEdge(Kirigami.Units.largeSpacing)
     Layout.topMargin: Kirigami.Units.largeSpacing
     // Room above the footer: a tile's vertical padding, a little under the
     // tile grids' bottom margin.
@@ -191,7 +191,7 @@ ColumnLayout {
 
                 readonly property real stroke: Math.max(1, width / 13)
                 readonly property bool turning: visible && Window.visibility !== Window.Hidden
-                    && Kirigami.Units.longDuration > 1
+                    && Style.animated(Kirigami.Units)
 
                 implicitWidth: Kirigami.Units.iconSizes.smallMedium
                 implicitHeight: implicitWidth

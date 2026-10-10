@@ -8,6 +8,7 @@ import org.kde.kirigami as Kirigami
 import org.kde.plasma.core as PlasmaCore
 import org.kde.plasma.plasmoid
 import org.kde.plasma.plasma5support as P5Support
+import "code/buttons.js" as Buttons
 import "code/items.js" as Items
 
 // The items sit straight in the panel (there is no full representation to
@@ -149,7 +150,7 @@ PlasmoidItem {
             Accessible.onPressAction: Plasmoid.internalAction("configure").trigger()
             onClicked: Plasmoid.internalAction("configure").trigger()
             Keys.onPressed: event => {
-                if ([Qt.Key_Space, Qt.Key_Enter, Qt.Key_Return, Qt.Key_Select].includes(event.key)) {
+                if (Buttons.pressedBy(event)) {
                     Plasmoid.internalAction("configure").trigger();
                     event.accepted = true;
                 }

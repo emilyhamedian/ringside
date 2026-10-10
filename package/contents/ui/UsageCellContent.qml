@@ -3,6 +3,7 @@
 
 import QtQuick
 import org.kde.kirigami as Kirigami
+import "code/style.js" as Style
 
 // A Claude or Codex item in the panel: the weekly limit as a ring with the
 // provider's mark inside it and the chosen model's limit as an inner ring,
@@ -24,6 +25,9 @@ Item {
     required property bool twoLines
     // Strip.egg.
     property Egg egg: null
+    // Off changes the name in the ring at once, as at Plasma's Instant
+    // speed. A test seam.
+    property bool animated: Style.animated(Kirigami.Units)
 
     readonly property var usage: monitor.usage
     readonly property var entry: usage.entry(item)
@@ -101,6 +105,7 @@ Item {
             // Readings on one line, on a thin panel, go unnamed as the
             // rings there are too small to name them all.
             active: content.twoLines || !content.textShown
+            animated: content.animated
         }
     }
 
