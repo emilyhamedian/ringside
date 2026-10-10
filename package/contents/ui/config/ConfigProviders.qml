@@ -202,7 +202,7 @@ ConfigPage {
     Kirigami.FormLayout {
         Item {
             Kirigami.FormData.isSection: true
-            Kirigami.FormData.label: i18nc("@title:group settings that apply to both Claude and OpenAI", "Claude and OpenAI")
+            Kirigami.FormData.label: i18nc("@title:group settings that apply to every AI provider", "All Providers")
         }
 
         QQC2.SpinBox {
@@ -220,7 +220,7 @@ ConfigPage {
         }
 
         Note {
-            text: i18nc("@info", "Applies while the Claude or OpenAI item is on in Panel Items.")
+            text: i18nc("@info", "Applies while any provider's item is on in Panel Items.")
         }
 
         // Each provider's section shows only while it has something to set.

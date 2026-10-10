@@ -1381,7 +1381,7 @@ Item {
                                            knownLimits: { claude: [{ id: "opus", label: "Opus", reported: true }],
                                                           codex: [{ id: "gpt5", label: "GPT-5", reported: true }] } });
             const y = item => item.mapToItem(null, 0, 0).y;
-            const both = heading(page, "Claude and OpenAI");
+            const both = heading(page, "All Providers");
             const claude = heading(page, "Claude");
             const codex = heading(page, "OpenAI");
             for (const h of [both, claude, codex]) {
@@ -1398,7 +1398,7 @@ Item {
 
             // With neither provider to set, only the shared section shows.
             const bare = make(providers);
-            verify(heading(bare, "Claude and OpenAI").visible);
+            verify(heading(bare, "All Providers").visible);
             verify(!heading(bare, "Claude").visible);
             verify(!heading(bare, "OpenAI").visible);
         }
