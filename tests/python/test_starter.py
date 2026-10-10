@@ -11,7 +11,6 @@ import json
 import os
 import stat
 import subprocess
-import sys
 import threading
 import time
 import unittest
@@ -1194,25 +1193,6 @@ class Report(Isolated):
         usage.STATE_DIR.mkdir(parents=True)
         usage.STARTER_STATE.write_text("{broken")
         self.assertEqual(usage.read_starter_states(), {})
-
-    def test_fake_reports_carry_their_starters_and_default_to_off(self):
-        with mock.patch.dict(os.environ, {"RINGSIDE_USAGE_FAKE": str(FIXTURES / "fake_report.json")}):
-            providers = self.run_main("--starter-set", "claude=on", "--start")["providers"]
-        expected = json.loads((FIXTURES / "fake_report.json").read_text())["providers"]
-        self.assertEqual(providers["claude"]["starter"], expected["claude"]["starter"])
-        self.assertEqual(providers["codex"]["starter"], expected["codex"]["starter"])
-        self.assertFalse(usage.STARTER_FILE.exists())
-        bare = self.tmp / "bare.json"
-        bare.write_text(json.dumps({"fetchedAt": 1, "providers": {"codex": {"status": "signed_out"}}}))
-        with mock.patch.dict(os.environ, {"RINGSIDE_USAGE_FAKE": str(bare)}):
-            self.assertEqual(self.run_main()["providers"]["codex"]["starter"], OFF)
-
-    def test_the_script_takes_the_new_flags(self):
-        env = dict(os.environ, RINGSIDE_USAGE_FAKE=str(FIXTURES / "fake_report.json"))
-        run = subprocess.run([sys.executable, usage.__file__, "--providers", "codex", "--start",
-                              "--starter-set", "codex=on"], env=env, capture_output=True, text=True, timeout=30)
-        self.assertEqual(run.returncode, 0, run.stderr)
-        self.assertIn("starter", json.loads(run.stdout)["providers"]["codex"])
 
 
 class Session(Isolated):

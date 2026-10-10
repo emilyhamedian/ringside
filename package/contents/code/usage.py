@@ -80,11 +80,6 @@ the retry);
 "paused" (two in a row; next is when the hold ends). The widget runs
 --start once Date.now() reaches next, and --starter-set when its switch is
 toggled.
-
-Set RINGSIDE_USAGE_FAKE to a JSON report to print it instead of polling,
-limited to the requested providers and with the clock zone added as on a live
-run. --start and --starter-set change nothing then, and each "program" is
-as the file gives it.
 """
 
 import argparse
@@ -1964,44 +1959,34 @@ def main(argv=None):
     args = arguments(argv)
     ids = args.providers
     PROGRAMS.update(args.program)
-    fake = os.environ.get("RINGSIDE_USAGE_FAKE")
-    if fake:
-        report = read_json(fake)
-        report["providers"] = {name: entry for name, entry in (report.get("providers") or {}).items()
-                               if name in ids}
-        for entry in report["providers"].values():
-            entry.setdefault("starter", dict(STARTER_OFF))
-            for window in windows(entry):
-                window.setdefault("history", [])
-    else:
-        if args.starter_set:
-            # A switch that can't be written stays as it was, and the report
-            # shows it so, which moves the widget's switch back. The widget
-            # shows the line on stderr under the switch as the reason.
+    if args.starter_set:
+        # A switch that can't be written stays as it was, and the report
+        # shows it so, which moves the widget's switch back. The widget
+        # shows the line on stderr under the switch as the reason.
+        try:
+            set_switches(dict(args.starter_set))
+        except (Busy, OSError) as err:
+            print(err, file=sys.stderr)
+            for name in dict(args.starter_set):
+                event("warning", name, "starter-switch-failed", why=os_why(err))
+    if args.start:
+        for name in ids:
+            # A state that can't be written stops the starter, never the
+            # report; the widget shows the reason under the switch.
             try:
-                set_switches(dict(args.starter_set))
+                run_starter(name)
             except (Busy, OSError) as err:
                 print(err, file=sys.stderr)
-                for name in dict(args.starter_set):
-                    event("warning", name, "starter-switch-failed", why=os_why(err))
-        if args.start:
-            for name in ids:
-                # A state that can't be written stops the starter, never the
-                # report; the widget shows the reason under the switch.
-                try:
-                    run_starter(name)
-                except (Busy, OSError) as err:
-                    print(err, file=sys.stderr)
-                    event("warning", name, "starter-stopped", why=os_why(err))
-        sources = fetchers()
-        try:
-            providers = collect({name: sources[name] for name in ids})
-        except Busy as err:
-            providers = waiting(ids, str(err))
-        report = {"fetchedAt": int(time.time()), "providers": providers, "events": EVENTS}
-        attach_starters(providers, report["fetchedAt"])
-        for name, entry in providers.items():
-            entry["program"] = program(name)
+                event("warning", name, "starter-stopped", why=os_why(err))
+    sources = fetchers()
+    try:
+        providers = collect({name: sources[name] for name in ids})
+    except Busy as err:
+        providers = waiting(ids, str(err))
+    report = {"fetchedAt": int(time.time()), "providers": providers, "events": EVENTS}
+    attach_starters(providers, report["fetchedAt"])
+    for name, entry in providers.items():
+        entry["program"] = program(name)
     # Read on every run, cached or not, so a change of clock zone shows by the
     # next poll; the cache itself never holds it.
     zone = clock_zone()
