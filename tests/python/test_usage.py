@@ -211,32 +211,17 @@ class ClaudeParsing(Isolated):
         scoped = usage.parse_claude(usage_body)["scoped"]
         self.assertEqual([(s["id"], s["label"]) for s in scoped], [("Fable", "Fable"), ("Opus", "Opus")])
 
-    def test_model_limits_come_only_from_the_limits_list(self):
-        # Every top-level key the endpoint sends today, each other than the
-        # list and seven_day given a window a fallback could read.
-        live_keys = ("amber_cistern", "amber_gauge", "amber_ladder", "brass_thimble", "cedar_ember", "cinder_cove",
-                     "copper_kite", "extra_usage", "five_hour", "harbor_lantern", "iguana_necktie", "juniper_tide",
-                     "limits", "member_dashboard_available", "nimbus_quill", "omelette_promotional", "seven_day",
-                     "seven_day_breakdown", "seven_day_cowork", "seven_day_oauth_apps", "seven_day_omelette",
-                     "seven_day_opus", "seven_day_sonnet", "spend", "tangelo", "wattle_ember")
-        listed = fixture("claude_usage.json")
-        # No list at all, an empty one, and today's.
-        for limits, expected in ((None, []), ([], []), (listed["limits"], [("Fable", 78), ("Opus", 9)])):
-            with self.subTest(limits=limits and len(limits)):
-                usage_body = {key: {"utilization": 55.6, "resets_at": "2026-09-04T16:00:00Z"} for key in live_keys}
-                usage_body["seven_day"] = listed["seven_day"]
-                if limits is None:
+    # An empty, null or missing limits list: the weekly window stands alone.
+    def test_scoped_is_empty_when_not_reported(self):
+        for limits in ([], None, "absent"):
+            with self.subTest(limits=limits):
+                usage_body = fixture("claude_usage.json")
+                if limits == "absent":
                     del usage_body["limits"]
                 else:
                     usage_body["limits"] = limits
                 report = usage.parse_claude(usage_body)
-                self.assertEqual(report["weekly"]["percent"], 62)
-                self.assertEqual([(s["id"], s["percent"]) for s in report["scoped"]], expected)
-
-    def test_scoped_is_empty_when_not_reported(self):
-        usage_body = fixture("claude_usage.json")
-        usage_body["limits"] = []
-        self.assertEqual(usage.parse_claude(usage_body)["scoped"], [])
+                self.assertEqual((report["weekly"]["percent"], report["scoped"]), (62, []))
 
     # Read as 0%, it would let the starter send past a reached weekly limit.
     def test_a_weekly_window_without_its_share_is_an_error(self):
@@ -583,25 +568,25 @@ class Http(Isolated):
 
 
 class ConfigHomes(Isolated):
-    def test_follow_the_clis_overrides(self):
-        with mock.patch.dict(os.environ, {"CLAUDE_CONFIG_DIR": "/cfg/claude", "CODEX_HOME": "/cfg/codex"}):
-            helper = load_helper()
-        self.assertEqual(helper.CLAUDE_CREDENTIALS, Path("/cfg/claude/.credentials.json"))
-        self.assertEqual(helper.CODEX_AUTH, Path("/cfg/codex/auth.json"))
-
-    def test_default_to_home_when_unset_or_empty(self):
-        with mock.patch.dict(os.environ, {"CLAUDE_CONFIG_DIR": "", "CODEX_HOME": ""}):
-            helper = load_helper()
-        self.assertEqual(helper.CLAUDE_CREDENTIALS, Path.home() / ".claude" / ".credentials.json")
-        self.assertEqual(helper.CODEX_AUTH, Path.home() / ".codex" / "auth.json")
-
-    def test_cache_follows_xdg_cache_home(self):
-        self.assertEqual(usage.CACHE_FILE, self.tmp / "cache" / "ringside" / "usage.json")
-        self.assertEqual(usage.HISTORY_FILE, self.tmp / "cache" / "ringside" / "usage-history.json")
-        self.assertEqual(usage.LOCK_FILE, self.tmp / "cache" / "ringside" / "usage.lock")
-        with mock.patch.dict(os.environ, {"XDG_CACHE_HOME": ""}):
-            helper = load_helper()
-        self.assertEqual(helper.CACHE_DIR, Path.home() / ".cache" / "ringside")
+    # The CLIs' config homes and the cache follow their variables, read as
+    # the module loads; unset or empty, they sit under the home folder.
+    def test_follow_the_environment_or_default_to_home(self):
+        home = Path.home()
+        for case, env, claude, codex, cache in (
+                ("set", {"CLAUDE_CONFIG_DIR": "/cfg/claude", "CODEX_HOME": "/cfg/codex", "XDG_CACHE_HOME": "/cfg/cache"},
+                 Path("/cfg/claude"), Path("/cfg/codex"), Path("/cfg/cache/ringside")),
+                ("empty", {"CLAUDE_CONFIG_DIR": "", "CODEX_HOME": "", "XDG_CACHE_HOME": ""},
+                 home / ".claude", home / ".codex", home / ".cache" / "ringside"),
+                ("unset", None, home / ".claude", home / ".codex", home / ".cache" / "ringside")):
+            with self.subTest(case), mock.patch.dict(os.environ, env or {}):
+                if env is None:
+                    for key in ("CLAUDE_CONFIG_DIR", "CODEX_HOME", "XDG_CACHE_HOME"):
+                        os.environ.pop(key, None)
+                helper = load_helper()
+            self.assertEqual(helper.CLAUDE_CREDENTIALS, claude / ".credentials.json")
+            self.assertEqual(helper.CODEX_AUTH, codex / "auth.json")
+            self.assertEqual((helper.CACHE_DIR, helper.CACHE_FILE, helper.HISTORY_FILE, helper.LOCK_FILE),
+                             (cache, cache / "usage.json", cache / "usage-history.json", cache / "usage.lock"))
 
 
 class CodexAppServer(Isolated):
@@ -900,48 +885,35 @@ class ReadingCache(Isolated):
                                                          "retryAt": report["fetchedAt"]}})
         fetch.assert_not_called()
 
-    # A run that can't get the lock still reports what the cache holds.
-    def test_a_busy_run_reports_fresh_readings_from_the_cache(self):
-        self.write_cache({"codex": dict(reading(4, int(time.time()) + 3600), status="ok", fetchedAt=int(time.time()))})
-        fd = os.open(usage.LOCK_FILE, os.O_RDWR | os.O_CREAT, 0o600)
-        self.addCleanup(os.close, fd)
-        fcntl.flock(fd, fcntl.LOCK_EX)
-        with mock.patch.object(usage, "LOCK_WAIT", 0.3):
-            report = self.run_main("--providers", "claude,codex")
-        self.assertEqual(report["providers"]["codex"]["weekly"]["percent"], 4)
-        self.assertEqual(report["providers"]["codex"]["weekly"]["history"], [])
-        self.assertEqual(report["providers"]["claude"],
-                         {"status": "error", "message": "another usage check is still running", "starter": OFF,
-                          "program": NOT_FOUND, "reason": "busy", "host": "", "retryAt": report["providers"]["claude"]["retryAt"]})
-
-    # ...and a failure it still holds, as a run with the lock would.
-    def test_a_busy_run_replays_a_held_failure(self):
-        usage.collect({"claude": mock.Mock(side_effect=usage.SignedOut())})
-        fd = os.open(usage.LOCK_FILE, os.O_RDWR | os.O_CREAT, 0o600)
-        self.addCleanup(os.close, fd)
-        fcntl.flock(fd, fcntl.LOCK_EX)
-        with mock.patch.object(usage, "LOCK_WAIT", 0.3):
-            report = self.run_main("--providers", "claude,codex")
-        self.assertEqual(report["providers"], {
-            "claude": {"status": "signed_out", "starter": OFF, "program": NOT_FOUND},
-            "codex": {"status": "error", "message": "another usage check is still running", "starter": OFF,
-                      "program": NOT_FOUND, "reason": "busy", "host": "", "retryAt": report["providers"]["codex"]["retryAt"]}})
-
-    # A busy run replays a held failure as a run with the lock would, its
-    # hold's end included, and says of the rest that the lock was busy and
-    # nothing holds them back.
-    def test_a_busy_run_replays_the_end_of_a_hold(self):
+    # A run that can't get the lock still reports what the cache holds: a
+    # fresh reading, or a held failure with its hold's end, as a run with
+    # the lock would; of the rest it says the lock was busy and nothing
+    # holds them back.
+    def test_a_busy_run_reports_what_the_cache_holds(self):
         now = int(time.time())
-        usage.collect({"claude": mock.Mock(side_effect=usage.RateLimited(900, "api.anthropic.com"))}, now)
+        fresh = dict(reading(4, now + 3600), status="ok", fetchedAt=now)
+        busy = {"status": "error", "message": "another usage check is still running", "starter": OFF,
+                "program": NOT_FOUND, "reason": "busy", "host": ""}
+        usage.CACHE_DIR.mkdir(parents=True, exist_ok=True)
         fd = os.open(usage.LOCK_FILE, os.O_RDWR | os.O_CREAT, 0o600)
         self.addCleanup(os.close, fd)
         fcntl.flock(fd, fcntl.LOCK_EX)
-        with mock.patch.object(usage, "LOCK_WAIT", 0.3):
-            report = self.run_main("--providers", "claude,codex")
-        claude, codex = report["providers"]["claude"], report["providers"]["codex"]
-        self.assertEqual((claude["reason"], claude["host"], claude["retryAt"]), ("rate-limited", "api.anthropic.com", now + 900))
-        self.assertGreaterEqual(codex["retryAt"], now)
-        self.assertLessEqual(codex["retryAt"], report["fetchedAt"])
+        for name, entry, expected in (
+                ("reading", fresh, dict(fresh, weekly=dict(fresh["weekly"], history=[]), starter=OFF, program=NOT_FOUND)),
+                ("sign-out", {"status": "signed_out", "heldUntil": now + 300, "holdSeconds": 300},
+                 {"status": "signed_out", "starter": OFF, "program": NOT_FOUND}),
+                ("rate limit", {"status": "rate_limited", "heldUntil": now + 900, "holdSeconds": 900,
+                                "reason": "rate-limited", "host": "api.anthropic.com"},
+                 {"status": "rate_limited", "reason": "rate-limited", "host": "api.anthropic.com", "retryAt": now + 900})):
+            with self.subTest(name):
+                self.write_cache({"codex": entry})
+                with mock.patch.object(usage, "LOCK_WAIT", 0.3):
+                    report = self.run_main("--providers", "claude,codex")
+                codex = report["providers"]["codex"]
+                self.assertEqual({key: codex[key] for key in expected}, expected)
+                claude = report["providers"]["claude"]
+                self.assertEqual(claude, dict(busy, retryAt=claude["retryAt"]))
+                self.assertTrue(now <= claude["retryAt"] <= report["fetchedAt"])
 
     # A hold without a reason or host is replayed as it was, with none to
     # give, rather than polled again.

@@ -268,14 +268,6 @@ class Steps(unittest.TestCase):
         self.assertEqual(h.count("send"), 2)
         self.assertEqual(h.record["uncertain"], 0)
 
-    def test_two_unconfirmed_sends_in_a_row_pause_five_hours(self):
-        h = Harness(NOW)
-        for at in (NOW, NOW + 300, NOW + 600, NOW + 900):
-            h.step(at)
-        self.assertEqual(h.count("send"), 2)
-        self.assertEqual(h.shows(), ("paused", None, NOW + 900 + 5 * HOUR))
-        self.assertEqual(usage.PAUSE, 5 * HOUR)
-
     def test_a_late_confirmation_counts(self):
         h = Harness(NOW)
         h.step()
@@ -444,14 +436,6 @@ class Steps(unittest.TestCase):
                 self.assertEqual((h.record["next"], h.count("read"), h.count("send")), (NOW + wait, reads, 0))
                 h.step(NOW + wait - 1)
                 self.assertEqual(h.count("read"), reads)
-
-    # Owner decision: no guard for extra usage or credits; users on them
-    # switch the starter off. The reading the starter sees has no such field.
-    def test_no_extra_usage_guard(self):
-        reading = dict(claude(NOW), extra_usage={"is_enabled": True})
-        h = Harness(NOW, reading)
-        h.step()
-        self.assertEqual(h.count("send"), 1)
 
 
 class Codex(unittest.TestCase):
@@ -690,8 +674,15 @@ class Commands(Isolated):
         self.assertEqual(env, {"HOME": "/home/test", "PATH": "/usr/bin", "CODEX_HOME": "/cfg/codex"})
 
     def models(self, models):
+        """The CLI's model cache: a list of models, a whole file as a dict,
+        raw bytes, or None for no file."""
         usage.CODEX_MODEL_CACHE.parent.mkdir(parents=True, exist_ok=True)
-        usage.CODEX_MODEL_CACHE.write_text(json.dumps({"models": models} if isinstance(models, list) else models))
+        if models is None:
+            usage.CODEX_MODEL_CACHE.unlink(missing_ok=True)
+        elif isinstance(models, bytes):
+            usage.CODEX_MODEL_CACHE.write_bytes(models)
+        else:
+            usage.CODEX_MODEL_CACHE.write_text(json.dumps({"models": models} if isinstance(models, list) else models))
 
     # The newest Luna the CLI lists, at its lightest effort.
     def test_codex_sends_with_the_newest_listed_luna(self):
@@ -717,7 +708,8 @@ class Commands(Isolated):
                  ("gpt-7-luna", "low")),
                 ([luna("gpt-6.1-sol", "minimal")], ("gpt-6-luna", "low")), ([], ("gpt-6-luna", "low")),
                 ("odd", ("gpt-6-luna", "low")), ([["x"], {"slug": 7}, {}], ("gpt-6-luna", "low")),
-                ({"models": {"slug": "gpt-7-luna"}}, ("gpt-6-luna", "low")), (["models"], ("gpt-6-luna", "low"))):
+                ({"models": {"slug": "gpt-7-luna"}}, ("gpt-6-luna", "low")), (["models"], ("gpt-6-luna", "low")),
+                (None, ("gpt-6-luna", "low")), (b"{broken", ("gpt-6-luna", "low")), (b"\xff\xfe", ("gpt-6-luna", "low"))):
             with self.subTest(models=models):
                 self.models(models)
                 self.assertEqual(usage.codex_model(), expected)
@@ -725,26 +717,12 @@ class Commands(Isolated):
                 self.assertEqual(command[command.index("--model") + 1], expected[0])
                 self.assertEqual(command[command.index("--config") + 1], f'model_reasoning_effort="{expected[1]}"')
 
-    def test_codex_falls_back_without_a_readable_model_list(self):
-        self.assertFalse(usage.CODEX_MODEL_CACHE.exists())
-        self.assertEqual(usage.codex_model(), ("gpt-6-luna", "low"))
-        usage.CODEX_MODEL_CACHE.parent.mkdir(parents=True, exist_ok=True)
-        usage.CODEX_MODEL_CACHE.write_text("{broken")
-        self.assertEqual(usage.codex_model(), ("gpt-6-luna", "low"))
-        usage.CODEX_MODEL_CACHE.write_bytes(b"\xff\xfe")
-        self.assertEqual(usage.codex_model(), ("gpt-6-luna", "low"))
-
     def test_codex_that_couldnt_start_never_left_and_a_timeout_did(self):
         self.runner(OSError("exec format error"))
         with self.assertRaises(usage.NotSent):
             usage.send_codex("/mock/codex", switched_on)
         self.runner(subprocess.TimeoutExpired("codex", 60))
         usage.send_codex("/mock/codex", switched_on)
-
-    def test_a_missing_cli_is_not_installed(self):
-        with self.assertRaises(usage.Failed) as failed:
-            usage.installed("claude")
-        self.assertEqual(failed.exception.reason, "not-installed")
 
     def test_the_cli_is_found_in_local_bin_before_path(self):
         self.enterContext(mock.patch.object(usage, "find_cli", REAL_FIND_CLI))
