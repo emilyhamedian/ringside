@@ -55,6 +55,13 @@ User-Agent, and the Python tests check that the versions agree.
   dependencies.
 - Comments explain intent in plain sentences; match the surrounding code
   rather than restating it.
+- Journal lines go through `ui/code/log.js` under a `ringside.<area>`
+  LoggingCategory (usage, network, gpu, setup) at info by default: warnings
+  and info for failures and changes, debug for each check. The helper's lines
+  come from the fixed templates in `usage.py`'s `MESSAGES`, so no token,
+  address, account or reply text can reach them; keep it that way, and keep
+  the privacy tests in `tests/python/test_journal.py` covering any new
+  input. Turn debug on with `QT_LOGGING_RULES="ringside.*.debug=true"`.
 - Tests map points with `mapToItem(item, Qt.point(x, y))`: Qt 6.6 truncates
   the separate x and y of `mapToItem(item, x, y)` to whole numbers.
 
