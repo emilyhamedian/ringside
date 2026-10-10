@@ -16,34 +16,21 @@ import "../../package/contents/ui/code/style.js" as Style
 // frequency, load average and per-thread bars read this machine.
 // scripts/gallery.sh renders it to a PNG; qml tests/qml/Gallery.qml shows it
 // in a window, and adding -- --snapshot out.png saves a PNG and quits.
-Rectangle {
+TestRoot {
     id: gallery
 
     readonly property string snapshotPath: Qt.application.arguments.indexOf("--snapshot") >= 0
         ? Qt.application.arguments[Qt.application.arguments.indexOf("--snapshot") + 1] : ""
 
-    // A bare qml runtime has no KI18n; the views find these on the root.
-    function substitute(text, args) {
-        return text.replace(/%(\d+)/g, (match, n) => n <= args.length ? String(args[n - 1]) : match);
-    }
-    function i18n(text, ...args) {
-        return substitute(text, args);
-    }
-    function i18nc(context, text, ...args) {
-        return substitute(text, args);
-    }
-    function i18np(singular, plural, n, ...args) {
-        return substitute(n === 1 ? singular : plural, [n].concat(args));
-    }
-    function i18ncp(context, singular, plural, n, ...args) {
-        return substitute(n === 1 ? singular : plural, [n].concat(args));
-    }
-
     width: layout.implicitWidth + 2 * layout.x
     height: layout.implicitHeight + 2 * layout.y
-    color: Kirigami.Theme.backgroundColor
     Kirigami.Theme.colorSet: Kirigami.Theme.Window
     Kirigami.Theme.inherit: false
+
+    Rectangle {
+        anchors.fill: parent
+        color: Kirigami.Theme.backgroundColor
+    }
 
     FakeMonitor {
         id: normal
@@ -273,19 +260,16 @@ Rectangle {
         required property var monitor
 
         function i18n(text, ...args) {
-            return stretch(gallery.i18n(text, ...args));
+            return gallery.stretch(gallery.i18n(text, ...args));
         }
         function i18nc(context, text, ...args) {
-            return stretch(gallery.i18nc(context, text, ...args));
+            return gallery.stretch(gallery.i18nc(context, text, ...args));
         }
         function i18np(singular, plural, n, ...args) {
-            return stretch(gallery.i18np(singular, plural, n, ...args));
+            return gallery.stretch(gallery.i18np(singular, plural, n, ...args));
         }
         function i18ncp(context, singular, plural, n, ...args) {
-            return stretch(gallery.i18ncp(context, singular, plural, n, ...args));
-        }
-        function stretch(s) {
-            return s + "ß".repeat(Math.round(s.length * 0.35));
+            return gallery.stretch(gallery.i18ncp(context, singular, plural, n, ...args));
         }
 
         implicitWidth: popup.implicitWidth

@@ -10,14 +10,10 @@ import "../../package/contents/ui/code/reset.js" as Reset
 // When a Claude or Codex week counts as started over (code/reset.js), and
 // the two ways a ring shows it: on schedule the spent arc runs out through
 // twelve o'clock, early the ring dissolves and resolves in its new reading.
-Item {
+TestRoot {
     id: root
     width: 200
     height: 200
-
-    function i18nc(context, text, ...args) {
-        return text.replace(/%(\d+)/g, (m, n) => n <= args.length ? String(args[n - 1]) : m);
-    }
 
     Component {
         id: gaugeComponent

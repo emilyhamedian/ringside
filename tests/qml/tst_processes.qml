@@ -9,15 +9,10 @@ import "../../package/contents/ui/code/processes.js" as Processes
 import "../../package/contents/ui/code/style.js" as Style
 import "../../package/contents/ui/popups"
 
-Item {
+TestRoot {
     id: root
     width: 400
     height: 300
-
-    // A bare qml runtime has no KI18n; the list finds this on the root.
-    function i18nc(context, text, ...args) {
-        return text.replace(/%(\d+)/g, (m, n) => n <= args.length ? String(args[n - 1]) : m);
-    }
 
     Component {
         id: liveList
@@ -48,19 +43,6 @@ Item {
             spy.clear();
             spy.target = null;
             spy.signalName = "";
-        }
-
-        // Every item under `item` that `test` accepts.
-        function all(item, test) {
-            const found = [];
-            const collect = i => {
-                if (test(i)) {
-                    found.push(i);
-                }
-                Array.from(i.children).forEach(collect);
-            };
-            collect(item);
-            return found;
         }
 
         function rowsOf(list) {

@@ -16,18 +16,10 @@ import "fakeplasmoid"
 // actions left out (they are an attached property, which a fake can't
 // take) and FakeMonitor for Monitor. Reading the source needs
 // QML_XHR_ALLOW_FILE_READ=1, which scripts/test.sh sets.
-Item {
+TestRoot {
     id: root
     width: 1800
     height: 1000
-
-    function substitute(text, args) {
-        return text.replace(/%(\d+)/g, (m, n) => n <= args.length ? String(args[n - 1]) : m);
-    }
-    function i18n(text, ...args) { return substitute(text, args); }
-    function i18nc(context, text, ...args) { return substitute(text, args); }
-    function i18np(s, p, n, ...args) { return substitute(n === 1 ? s : p, [n].concat(args)); }
-    function i18ncp(c, s, p, n, ...args) { return substitute(n === 1 ? s : p, [n].concat(args)); }
 
     // A panel as Plasma lays one out: a GridLayout whose flow follows the
     // form factor, with something before the applet and room after it.
@@ -118,19 +110,6 @@ Item {
             for (const item of root.children) {
                 verify(waitForPolish(item), "laid out");
             }
-        }
-
-        function find(item, test) {
-            if (test(item)) {
-                return item;
-            }
-            for (const child of item.children) {
-                const found = find(child, test);
-                if (found) {
-                    return found;
-                }
-            }
-            return null;
         }
 
         function strip(applet) {
@@ -364,7 +343,7 @@ Item {
             typeCode();
             verify(e.playing);
             compare(e.vertical, data.vertical);
-            const rings = find(applet, i => i.innerRing !== undefined && i.index === 2);
+            const rings = root.find(applet, i => i.innerRing !== undefined && i.index === 2);
             verify(rings, "the rings are numbered along the strip");
             verify(!popup(applet).visible, "no popup opened");
             tryCompare(e, "playing", false, 3000);
@@ -384,7 +363,7 @@ Item {
             verify(e.playing, "played from the popup");
             tryCompare(e, "playing", false, 3000);
 
-            const span = find(loader.item, i => i.objectName === "span");
+            const span = root.find(loader.item, i => i.objectName === "span");
             span.forceActiveFocus(Qt.TabFocusReason);
             verify(span.activeFocus);
             keyClick(Qt.Key_Up);

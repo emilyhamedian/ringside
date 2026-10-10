@@ -18,18 +18,10 @@ import "fakeplasmoid"
 // fakeplasmoid/, whose form factor the test sets. Reading the source needs
 // QML_XHR_ALLOW_FILE_READ=1, which scripts/test.sh sets.
 
-Item {
+TestRoot {
     id: root
     width: 660
     height: 560
-
-    function substitute(text, args) {
-        return text.replace(/%(\d+)/g, (m, n) => n <= args.length ? String(args[n - 1]) : m);
-    }
-    function i18n(text, ...args) { return substitute(text, args); }
-    function i18nc(context, text, ...args) { return substitute(text, args); }
-    function i18np(s, p, n, ...args) { return substitute(n === 1 ? s : p, [n].concat(args)); }
-    function i18ncp(c, s, p, n, ...args) { return substitute(n === 1 ? s : p, [n].concat(args)); }
 
 
     Component {
@@ -89,14 +81,6 @@ Item {
         }
         when: windowShown
 
-        function find(item, pred) {
-            if (pred(item)) return item;
-            for (let i = 0; i < item.children.length; ++i) {
-                const r = find(item.children[i], pred);
-                if (r) return r;
-            }
-            return null;
-        }
         function button(page, label) {
             return find(page, i => i.text === label && i.display !== undefined && i.icon !== undefined);
         }

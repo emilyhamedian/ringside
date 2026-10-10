@@ -14,24 +14,10 @@ import "../../package/contents/ui/code/style.js" as Style
 // script error in a popup binding, such as a JavaScript builtin Qt's engine
 // lacks, only shows up at run time; any such warning fails the test.
 
-Item {
+TestRoot {
     id: root
     width: 800
     height: 900
-
-    // Set by the long-translations test: every string comes back about a
-    // third longer, as German and the Romance languages often run.
-    property bool pseudo: false
-
-    // A bare qml runtime has no KI18n; the views find these on the root.
-    function substitute(text, args) {
-        const s = text.replace(/%(\d+)/g, (m, n) => n <= args.length ? String(args[n - 1]) : m);
-        return pseudo ? s + "ß".repeat(Math.round(s.length * 0.35)) : s;
-    }
-    function i18n(text, ...args) { return substitute(text, args); }
-    function i18nc(context, text, ...args) { return substitute(text, args); }
-    function i18np(s, p, n, ...args) { return substitute(n === 1 ? s : p, [n].concat(args)); }
-    function i18ncp(c, s, p, n, ...args) { return substitute(n === 1 ? s : p, [n].concat(args)); }
 
     FakeMonitor {
         id: normal
@@ -354,18 +340,6 @@ Item {
             return text.replace(/\d+(?:\.(\d+))?/g, (m, decimals) => Format.fixed(Number(m), decimals ? decimals.length : 0));
         }
 
-        function texts(item) {
-            const found = [];
-            const collect = i => {
-                if (i.visible && typeof i.text === "string" && i.text !== "") {
-                    found.push(i.text);
-                }
-                i.children.forEach(collect);
-            };
-            collect(item);
-            return found;
-        }
-
         // A sleeping GPU is one dim line, not a section: under the awake
         // GPU's, or where a header would start when no GPU is awake.
         function test_aSleepingGpuIsOneLine_data() {
@@ -512,23 +486,6 @@ Item {
                 tryCompare(g, "width", 80);
                 compare(g.strokeWidth, 4, tag + " keeps its stroke at any size");
             });
-        }
-
-        // Every item under `item` that `test` accepts, outside any gauge when
-        // `skipGauges` is set.
-        function all(item, test, skipGauges) {
-            const found = [];
-            const collect = i => {
-                if (skipGauges && i.outerTone !== undefined) {
-                    return;
-                }
-                if (test(i)) {
-                    found.push(i);
-                }
-                i.children.forEach(collect);
-            };
-            collect(item);
-            return found;
         }
 
         function readings(item) {
@@ -691,7 +648,8 @@ Item {
             const digits = Array.from({ length: 10 }, (_, n) => Format.whole(n));
             const ascii = t => Array.from(t).map(c => digits.indexOf(c) >= 0 ? String(digits.indexOf(c))
                                                     : c === Qt.locale().decimalPoint ? "." : c).join("");
-            const numbers = all(popup, i => i.visible && typeof i.text === "string" && /^[0-9.,–]+%?$/.test(ascii(i.text)) && i.font !== undefined, true);
+            const numbers = all(popup, i => i.visible && typeof i.text === "string" && /^[0-9.,–]+%?$/.test(ascii(i.text)) && i.font !== undefined
+                                                 && !ancestor(i, a => a.outerTone !== undefined));
             verify(numbers.length > 0);
             numbers.forEach(t => {
                 compare(t.font.family, Kirigami.Theme.defaultFont.family, t.text);
@@ -973,7 +931,7 @@ Item {
         // The peak shows whole or not at all, never as a stub or a bare
         // ellipsis.
         function test_rateCaptionsKeepTheirLabel(data) {
-            root.pseudo = true;
+            root.longStrings = true;
             try {
                 const loader = createTemporaryObject(data.mirrored ? mirroredHost : host, root, { width: data.width });
                 loader.setSource(Qt.resolvedUrl("../../package/contents/ui/popups/" + data.popup + ".qml"), { monitor: normal });
@@ -1009,7 +967,7 @@ Item {
                     checkSpanLine(tile, c, tops[i], data.mirrored);
                 });
             } finally {
-                root.pseudo = false;
+                root.longStrings = false;
             }
         }
 
@@ -1284,12 +1242,12 @@ Item {
             disk.forEach((g, n) => compare(look(g), look(throughput[0]), ["read", "write"][n]));
             compare(disk.map(heading), ["READ · 1 min", "WRITE · 1 min"]);
             verify(disk.map(tileTop).every(t => t.visible && t.text !== ""), "the peaks shown");
-            root.pseudo = true;
+            root.longStrings = true;
             try {
                 graphs(load("DiskPopup", normal)).forEach(g => checkSpanLine(ancestor(g, i => i.graphTop !== undefined),
                                                                              tileCaption(g), tileTop(g), false));
             } finally {
-                root.pseudo = false;
+                root.longStrings = false;
             }
         }
 
@@ -1749,7 +1707,7 @@ Item {
         function test_numbersAreTranslated() {
             const sample = normal.processSample;
             normal.processSample = [{ name: "chrome", usage: 8.4 * 16, memory: 3.9 * 1024 ** 3, count: 12 }].concat(sample.slice(1));
-            root.pseudo = true;
+            root.longStrings = true;
             try {
                 const translated = t => t.endsWith("ß");
                 const rings = popup => all(popup, i => i.outerTone !== undefined && i.text !== undefined && i.text !== "–");
@@ -1764,7 +1722,7 @@ Item {
                 compare(rings(gpu).length, 2, "each GPU's ring");
                 rings(gpu).forEach(r => verify(translated(r.text), r.text));
             } finally {
-                root.pseudo = false;
+                root.longStrings = false;
                 normal.processSample = sample;
             }
         }
@@ -2151,7 +2109,7 @@ Item {
         }
 
         function test_temperatureCaptionsFit(data) {
-            root.pseudo = true;
+            root.longStrings = true;
             normal.fahrenheit = true;
             try {
                 const loader = createTemporaryObject(data.mirrored ? mirroredHost : host, root, { width: data.width });
@@ -2183,7 +2141,7 @@ Item {
                     verify(g.plot.points[0].x < newest.x);
                 });
             } finally {
-                root.pseudo = false;
+                root.longStrings = false;
                 normal.fahrenheit = false;
             }
         }
@@ -2487,7 +2445,7 @@ Item {
 
         function test_longTranslationsFit(data) {
             const width = load(data.popup, normal).implicitWidth;
-            root.pseudo = true;
+            root.longStrings = true;
             try {
                 const popup = load(data.popup, data.monitor);
                 verify(texts(popup).some(t => t.endsWith("ß")), "the pseudo-locale is on");
@@ -2510,7 +2468,7 @@ Item {
                     verify(left(subtitle) + subtitle.width <= left(value) + 0.5, "the subtitle stops short of the reading");
                 }
             } finally {
-                root.pseudo = false;
+                root.longStrings = false;
             }
         }
     }

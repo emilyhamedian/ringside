@@ -16,31 +16,14 @@ import "../../package/contents/ui/popups"
 // panel picture counts down a fixed time, so usage.png and panel.png come
 // out the same on every run. The CPU popup's frequency, load and threads
 // are read live, so popups.png shows the machine that renders it.
-Rectangle {
+TestRoot {
     id: pictures
 
     readonly property string outDir: Qt.application.arguments.indexOf("--out") >= 0
         ? Qt.application.arguments[Qt.application.arguments.indexOf("--out") + 1] : ""
 
-    function substitute(text, args) {
-        return text.replace(/%(\d+)/g, (match, n) => n <= args.length ? String(args[n - 1]) : match);
-    }
-    function i18n(text, ...args) {
-        return substitute(text, args);
-    }
-    function i18nc(context, text, ...args) {
-        return substitute(text, args);
-    }
-    function i18np(singular, plural, n, ...args) {
-        return substitute(n === 1 ? singular : plural, [n].concat(args));
-    }
-    function i18ncp(context, singular, plural, n, ...args) {
-        return substitute(n === 1 ? singular : plural, [n].concat(args));
-    }
-
     width: shots.implicitWidth
     height: shots.implicitHeight
-    color: Kirigami.Theme.backgroundColor
 
     // Now is 9:30 AM on Tuesday 6 October 2026 in New York; the reset the
     // first 11:00 UTC at least two and a half days away, and the week's use
@@ -201,23 +184,10 @@ Rectangle {
         // "popups-black" and "popups-white" are the popups over each backdrop.
         const [name, colour] = names[0].split("-");
         backdrop.color = colour ?? "black";
-        find(shots, name).grabToImage(result => {
+        find(shots, i => i.objectName === name).grabToImage(result => {
             result.saveToFile(outDir + "/" + names[0] + ".png");
             save(names.slice(1), done);
         });
-    }
-
-    function find(item, name) {
-        if (item.objectName === name) {
-            return item;
-        }
-        for (const child of item.children) {
-            const found = find(child, name);
-            if (found) {
-                return found;
-            }
-        }
-        return null;
     }
 
     // Long enough for the process lists' first scan. The usage popup steps
