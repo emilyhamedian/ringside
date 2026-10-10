@@ -30,6 +30,12 @@ GridLayout {
 
     signal activated(string item, Item cell)
 
+    // The cells' names for their tooltips.
+    Words {
+        id: words
+        monitor: strip.monitor
+    }
+
     // Rings fill the panel inside the cell's hover wash (PanelCell.inset
     // across a horizontal panel, a margin either side across a vertical one),
     // up to a size that still sits well beside two lines of text. A ring held
@@ -85,7 +91,7 @@ GridLayout {
             item: entry.item
             open: strip.openItem === entry.item
             vertical: strip.vertical
-            codexMark: strip.monitor.codexMark
+            title: words.title(entry.item)
             onActivated: strip.activated(entry.item, cell)
 
             // Along a horizontal panel the content keeps to the cell's start,

@@ -11,6 +11,7 @@ import org.kde.plasma.plasmoid
 import "../code/format.js" as Format
 import "../code/style.js" as Style
 import "../code/items.js" as Items
+import "../code/providers.js" as Providers
 
 ConfigPage {
     id: page
@@ -48,17 +49,15 @@ ConfigPage {
         }
         const entry = usageStatus[id];
         if (!entry || !entry.status) {
-            return id === "claude"
-                ? i18nc("@info:usagetip shown before Claude Code has been checked", "Shows while Claude Code is signed in")
-                : i18nc("@info:usagetip shown before Codex has been checked", "Shows while Codex is signed in");
+            return i18nc("@info:usagetip shown before it has been checked; %1 is a program, such as Claude Code",
+                         "Shows while %1 is signed in", Providers.facts(id).product);
         }
         switch (entry.status) {
         case "ok":
             return i18nc("@info:usagetip", "Signed in");
         case "signed_out":
-            return id === "claude"
-                ? i18nc("@info:usagetip", "Not signed in: run claude in a terminal")
-                : i18nc("@info:usagetip", "Not signed in: run codex in a terminal");
+            return i18nc("@info:usagetip %1 is a command, such as claude", "Not signed in: run %1 in a terminal",
+                         Providers.facts(id).command);
         case "error":
         case "rate_limited":
             return String(entry.message || "");

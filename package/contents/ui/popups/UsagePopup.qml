@@ -29,7 +29,6 @@ PopupPage {
     readonly property var entry: usage.entry(item)
     readonly property var weekly: entry && entry.weekly ? entry.weekly : null
     readonly property var innerLimit: usage.inner(item)
-    readonly property bool claude: item === "claude"
     // The last check failed. Its reading stays, greyed, until it is struck
     // (see UsageData.struck()), and then nothing of it is shown.
     readonly property bool failed: entry !== null && entry.lastError !== undefined
@@ -188,8 +187,7 @@ PopupPage {
             }
             if (!e || e.status === "signed_out") {
                 return popup.usage.helperError
-                    || (popup.claude ? i18nc("@info", "Run claude in a terminal to sign in.")
-                                     : i18nc("@info", "Run codex in a terminal to sign in."));
+                    || words.signInHint(popup.item);
             }
             return "";
         }

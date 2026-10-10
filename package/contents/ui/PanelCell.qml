@@ -18,8 +18,6 @@ MouseArea {
     property Item contentItem: null
     // Its readings in words.
     property string description: ""
-    // Which logo the OpenAI ring shows, which names it (see Monitor.codexMark).
-    property string codexMark: "codex"
     // Between the wash and the panel's edges, across a horizontal panel.
     readonly property real inset: vertical ? 0 : Math.round(Kirigami.Units.smallSpacing / 2)
     // Between the content and the cell's ends. Along a horizontal panel two
@@ -27,14 +25,8 @@ MouseArea {
     // gap between a ring and its readings, so readings read as the ring's
     // beside them and not the next one's.
     readonly property real padding: vertical ? Kirigami.Units.smallSpacing : Math.round(Kirigami.Units.smallSpacing * 1.5)
-    readonly property string title: item === "cpu" ? i18nc("@info:tooltip", "Processor")
-                                  : item === "gpu" ? i18nc("@info:tooltip", "Graphics")
-                                  : item === "memory" ? i18nc("@info:tooltip", "Memory")
-                                  : item === "network" ? i18nc("@info:tooltip", "Network")
-                                  : item === "disk" ? i18nc("@info:tooltip", "Disk activity")
-                                  : item === "claude" ? i18nc("@info:tooltip the Claude Code weekly limits", "Claude")
-                                  : codexMark === "openai" ? i18nc("@info:tooltip the OpenAI weekly limits, with the OpenAI logo chosen for their ring", "ChatGPT")
-                                  : i18nc("@info:tooltip the Codex weekly limits", "Codex")
+    // Its name for the tooltip and screen readers (see Words.title()).
+    property string title: ""
 
     signal activated()
 
