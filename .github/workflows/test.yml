@@ -8,8 +8,6 @@ on:
 permissions:
   contents: read
 
-# Separate event groups keep a feature push from cancelling its PR merge test.
-# Every other ref gets its own run id, so queued main/release/tag runs survive too.
 concurrency:
   group: >-
     ${{ github.workflow }}-${{ github.event_name }}-${{
@@ -36,10 +34,8 @@ concurrency:
 
 jobs:
   coverage:
-    # Main/release/tag/unknown refs go straight to full tests without this cost.
     if: *development
     runs-on: ubuntu-latest
-    # Only classification reads PR metadata; the Fedora jobs keep contents: read.
     permissions:
       contents: read
       pull-requests: read
@@ -51,9 +47,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Test CI coverage rules
-        run: python3 -m unittest discover -s .github/scripts -p 'test_*.py'
-
       - name: Choose coverage for ${{ github.sha }}${{ github.event.pull_request.draft && ' (draft)' || '' }}
         id: coverage
         env:
@@ -62,8 +55,6 @@ jobs:
 
   test:
     needs: coverage
-    # Draft PRs defer Fedora jobs even if classification fails.
-    # Every ready PR gets full tests; classification failures still run in full.
     if: >-
       ${{ !cancelled() &&
         (github.event_name != 'pull_request' ||
@@ -73,9 +64,6 @@ jobs:
     runs-on: ubuntu-latest
     env:
       CI_COVERAGE: ${{ needs.coverage.result == 'success' && needs.coverage.outputs.mode == 'docs' && 'docs' || 'full' }}
-    # The QtTest suites import org.kde.plasma.plasmoid, which libplasma
-    # ships as a QML module from 6.5 on, so the checks run on Fedora 44
-    # (Plasma 6.7, Qt 6.11).
     container: fedora:44
     steps:
       - name: Install the docs license tools
@@ -83,7 +71,6 @@ jobs:
         run: >-
           dnf -y -q install --setopt=install_weak_deps=False git python3 reuse
 
-      # Git preserves tracked-file information for REUSE lint.
       - name: Install Qt 6, the Plasma 6 QML modules and the check tools
         if: env.CI_COVERAGE == 'full'
         run: >-
@@ -96,8 +83,6 @@ jobs:
 
       - uses: actions/checkout@v7
 
-      # The checkout belongs to the runner's user, not the container's, and
-      # reuse lint only lists tracked files through a git it trusts.
       - name: Trust the checkout
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
@@ -107,6 +92,8 @@ jobs:
 
       - name: Test CI coverage rules
         if: env.CI_COVERAGE == 'full'
+        env:
+          PYTHONDONTWRITEBYTECODE: 1
         run: python3 -m unittest discover -s .github/scripts -p 'test_*.py'
 
       # D-Bus starts ksystemstats when the tests ask for it.
@@ -114,8 +101,6 @@ jobs:
         if: env.CI_COVERAGE == 'full'
         run: dbus-run-session -- sh scripts/test.sh
 
-      # Into the workspace, which this step and the upload both see at the
-      # same path inside the container.
       - name: Render the gallery
         if: env.CI_COVERAGE == 'full'
         run: dbus-run-session -- sh scripts/gallery.sh ringside-gallery.png
@@ -146,11 +131,6 @@ jobs:
     # path.
     container: fedora:40
     steps:
-      # Keep the floor check present for docs-only PRs; licensing runs in test.
-      - name: Docs-only floor gate
-        if: env.CI_COVERAGE == 'docs'
-        run: echo 'Docs-only change; no Plasma APIs changed.'
-
       # Fedora 40 is end of life and its release repository lives in the
       # archive on Fedora's download server. That repository alone is enabled,
       # so everything installed here is at its release version. Keep DNF's
