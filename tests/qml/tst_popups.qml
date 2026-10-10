@@ -252,7 +252,6 @@ Item {
         Loader {}
     }
 
-    // As main.qml hosts a popup's page: Escape there closes the popup.
     // A widget just started at an hour or a day: its first buckets are
     // still open, so those spans have nothing to draw yet.
     Component {
@@ -273,6 +272,7 @@ Item {
         }
     }
 
+    // As main.qml hosts a popup's page: Escape there closes the popup.
     Component {
         id: escapeHost
         Loader {
@@ -1637,11 +1637,6 @@ Item {
             compare(rules.length, Math.max(0, headers.length - 1) + (headers.length > 0 ? data.off.length : 0));
         }
 
-        // Every GPU header is laid out as the CPU popup's is, on the
-        // content's edges and with its tiles as far under it, plain and
-        // mirrored. Each section's parts sit where the CPU header's do. An
-        // NVIDIA GPU names no sensor, yet its temperature stays level with
-        // its name; the Intel GPU after it has no reading to line up.
         // The CPU popup's own readings, the average frequency and each
         // thread's bar, are read as often as the graph above them, so at a
         // long update interval the whole popup still moves together.
@@ -1674,6 +1669,11 @@ Item {
             }
         }
 
+        // Every GPU header is laid out as the CPU popup's is, on the
+        // content's edges and with its tiles as far under it, plain and
+        // mirrored. Each section's parts sit where the CPU header's do. An
+        // NVIDIA GPU names no sensor, yet its temperature stays level with
+        // its name; the Intel GPU after it has no reading to line up.
         function test_gpuHeadersMatchTheCpu_data() {
             const every = ["edges", "height", "ring", "title", "subtitle", "headline", "caption", "tiles"];
             const unnamed = every.filter(key => key !== "caption");
@@ -1870,9 +1870,6 @@ Item {
             verify(!texts(cpu).concat(found).some(t => raw.includes(t)), "no raw label is shown");
         }
 
-        // A third longer in every string, the page keeps its width and
-        // nothing runs past it: long text elides or wraps, and the header's
-        // reading keeps its full width while the subtitle gives way.
         // Percentages and counts go through translation, so a language that
         // sets "%1 %" or "%%1" sets every one of them alike, and a count
         // takes the locale's digits: the rings' centres, the per-thread bars'
@@ -2531,8 +2528,7 @@ Item {
         }
 
         // The span opens its menu at a click: the three spans, the one shown
-        // checked. Picking one changes every graph in the popup, and in every
-        // other popup, which read the same setting.
+        // checked. Picking one changes every graph in the popup.
         function test_spanMenuByPointer_data() {
             return ["CpuPopup", "GpuPopup", "MemoryPopup", "NetworkPopup", "DiskPopup"].map(p => ({ tag: p, popup: p }));
         }
@@ -2619,6 +2615,9 @@ Item {
             verify(spans[1].activeFocus, "Tab goes on to the temperature's");
         }
 
+        // A third longer in every string, the page keeps its width and
+        // nothing runs past it: long text elides or wraps, and the header's
+        // reading keeps its full width while the subtitle gives way.
         function test_longTranslationsFit_data() {
             return [{ tag: "cpu", popup: "CpuPopup", monitor: normal }, { tag: "gpu", popup: "GpuPopup", monitor: normal },
                     { tag: "memory", popup: "MemoryPopup", monitor: normal }, { tag: "network", popup: "NetworkPopup", monitor: normal },

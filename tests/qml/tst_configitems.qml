@@ -95,8 +95,8 @@ Item {
             const page = make().page;
             verify(!button(page, "Move CPU up").enabled);
             verify(button(page, "Move CPU down").enabled);
-            // Claude and OpenAI trail the list by default, so OpenAI is now
-            // the last row rather than Disk.
+            // Claude and OpenAI trail the list by default, so OpenAI is the
+            // last row.
             verify(button(page, "Move OpenAI up").enabled);
             verify(!button(page, "Move OpenAI down").enabled);
             const up = button(page, "Move GPU up");
@@ -126,7 +126,7 @@ Item {
         }
 
         // Claude and Codex trail every stored order, so they are the pair
-        // that now sits at the bottom of the list.
+        // at the bottom of the list.
         function test_keyboard_down_to_bottom() {
             const page = make().page;
             const down = button(page, "Move Claude down");

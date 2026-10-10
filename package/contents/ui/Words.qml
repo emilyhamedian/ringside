@@ -51,9 +51,6 @@ QtObject {
         return "";
     }
 
-    // A provider's name as its popup and tooltip give it: the OpenAI item is
-    // ChatGPT while its ring shows the OpenAI logo, and Codex with the Codex
-    // mark.
     // An item's name as the panel's tooltip and screen readers give it.
     function title(item) {
         switch (item) {
@@ -77,6 +74,9 @@ QtObject {
         return i18nc("@info %1 is a command, such as claude", "Run %1 in a terminal to sign in.", Providers.FACTS[item].command);
     }
 
+    // A provider's name as its popup and tooltip give it: the OpenAI item is
+    // ChatGPT while its ring shows the OpenAI logo, and Codex with the Codex
+    // mark.
     function providerName(item) {
         return item === "claude" ? i18nc("@title", "Claude")
              : monitor.codexMark === "openai" ? i18nc("@title the OpenAI weekly limits, with the OpenAI logo chosen for their ring", "ChatGPT")
@@ -233,12 +233,11 @@ QtObject {
     // Why a check failed, as a sentence, from the reason the helper gives
     // (see usage.py and code/report.js): the network, a server, a provider
     // asking to wait, a Codex CLI that isn't installed or a chosen program
-    // that can't be run, or the helper itself. The helper's own message, which names the Python error, is
-    // for the settings page and screen readers. Anything else, another
-    // check holding the helper's lock among it, is the helper's message as
-    // it gave it. A rate limit's end is left to the next check's time: the
-    // helper waits at least five minutes, which may be longer than the
-    // provider asked.
+    // that can't be run, or the helper itself, whose own message, naming
+    // the Python error, is left to the settings page and screen readers.
+    // Any other reason, another check holding the helper's lock say, gives
+    // the helper's message as it is. A rate limit's end is left to the
+    // next check's time, at least five minutes away.
     function failureReason(item, entry) {
         const host = entry.host ?? "";
         switch (entry.reason) {

@@ -632,10 +632,10 @@ Item {
             return rows;
         }
 
-        // The OpenAI logo is drawn at the size it had before the Codex mark
-        // replaced it, 1.2 times a name's line, the Claude star's size, and
-        // wherever the ring has room for that, with no smallest size of its
-        // own: at 22 px the Codex cloud is left out but the logo shows.
+        // The OpenAI logo is drawn at 1.2 times a name's line, the Claude
+        // star's size, wherever the ring has room for that, with no smallest
+        // size of its own: at 22 px the Codex cloud is left out but the logo
+        // shows.
         function test_openaiLogoAtItsOldSize(data) {
             monitor.codexMark = "openai";
             const name = nameIn(breezeSized(cell("codex", { ring: data.ring, textShown: false })));

@@ -64,8 +64,9 @@ QtObject {
     readonly property bool gated: kind === "discrete"
         && (pmControl || (info.runtimePm ? "auto" : "on")) === "auto"
     readonly property string ownPhase: !present ? "asleep" : gated ? gate.phase : "live"
+    // The leader is another GpuReader, a type this file can't name, so the
+    // linter can't see its properties.
     // qmllint disable missing-property
-    // (the leader is another GpuReader; a file can't name its own type)
     // live, resting or asleep, as the leader sees it.
     readonly property string phase: !present ? "asleep" : leading ? ownPhase : leader ? leader.phase : "asleep"
     readonly property bool live: phase === "live"
@@ -133,8 +134,7 @@ QtObject {
     }
 
     function read(index) {
-        // Qt 6.10 and older emit no countChanged when an Instantiator's
-        // objects are recreated at the same count; modelChanged comes after.
+        // Both, as a binding dependency: see Monitor.member().
         void sensors.model;
         void sensors.count;
         const sensor = sensors.objectAt(index) as Sensors.Sensor;

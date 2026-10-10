@@ -85,8 +85,9 @@ GridLayout {
     // The reason wraps to its room as soon as it shows rather than when
     // the popup lays it out: on Qt 6.6 a height that changes in the middle
     // of laying out the popup costs it two more passes, and it gives up as
-    // a polish loop. The room comes from the popup's body, laid out before
-    // this shows, not from this layout, which sizes it only once it shows.
+    // a polish loop. AddressBlock keeps to the same rule. The room comes
+    // from the popup's body, laid out before this shows, not from this
+    // layout, which sizes it only once it shows.
     Item {
         Layout.fillWidth: true
         implicitHeight: reason.implicitHeight

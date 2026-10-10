@@ -285,8 +285,8 @@ Item {
     // older emit no countChanged when the objects are recreated at the same
     // count (new ids, same length); modelChanged comes after regeneration.
     function member(group, index) {
-        group.model;
-        group.count;
+        void group.model;
+        void group.count;
         return group.objectAt(index);
     }
 
@@ -312,8 +312,9 @@ Item {
     }
 
     function readers() {
-        gpuReaders.model;
-        gpuReaders.count;
+        // Both, as a binding dependency: see member().
+        void gpuReaders.model;
+        void gpuReaders.count;
         const list = [];
         for (let i = 0; i < gpuReaders.count; ++i) {
             const r = gpuReaders.objectAt(i);

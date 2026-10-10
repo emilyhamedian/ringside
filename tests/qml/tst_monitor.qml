@@ -250,8 +250,7 @@ TestCase {
         return Array.from(m.data).find(child => child.pendingSource !== undefined);
     }
 
-    // The default route is re-read only while the network popup shows it;
-    // the disk popup, which once shared that popup, has no use for it.
+    // The default route is re-read only while the network popup shows it.
     function test_theRouteIsReadForTheNetworkPopupOnly() {
         const route = Array.from(monitor.data).find(child => child.engine === "executable" && child.interval === 3000);
         verify(route, "the monitor owns the route's DataSource");

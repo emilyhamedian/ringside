@@ -54,7 +54,8 @@ ColumnLayout {
     Layout.leftMargin: Math.round(Kirigami.Units.largeSpacing * 2)
     Layout.rightMargin: Math.round(Kirigami.Units.largeSpacing * 2)
     Layout.topMargin: Kirigami.Units.largeSpacing
-    // As much room below as the tile grids leave above the footer.
+    // Room above the footer: a tile's vertical padding, a little under the
+    // tile grids' bottom margin.
     Layout.bottomMargin: Math.round(Kirigami.Units.largeSpacing * 1.25)
     spacing: Kirigami.Units.smallSpacing
 
