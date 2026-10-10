@@ -1110,8 +1110,8 @@ class StarterRuns(Isolated):
         self.assertEqual(polled[0], "fetched")
 
     def test_the_lock_outlasts_the_longest_send(self):
-        self.assertGreater(usage.LOCK_WAIT, usage.PREFLIGHT_TIMEOUT + usage.SEND_TIMEOUT + 2 * usage.HTTP_TIMEOUT
-                           + usage.CODEX_TIMEOUT)
+        self.assertGreater(usage.LOCK_WAIT, usage.PREFLIGHT_TIMEOUT + usage.SEND_TIMEOUT
+                           + 3 * usage.ANSWER_TIMEOUT)
 
 
 class Report(Isolated):
