@@ -16,7 +16,8 @@ import "code/style.js" as Style
 // inner ring that comes fades its track in, then draws its arc in; one that
 // goes unwinds its arc, then fades its track out. Children sit in the
 // middle, over the rings. A ring can also show a reading that may be out of
-// date, in grey, or none at all, struck through, or wait for its first.
+// date, in grey and broken into segments, or none at all, struck through, or
+// wait for its first.
 // Assistive technology sees a progress bar from 0 to 100 with the outer
 // reading as its value; the caller gives it a name.
 Item {
@@ -62,6 +63,14 @@ Item {
     property bool stale: false
     property real greyed: stale || held ? 1 : 0
     Behavior on greyed {
+        enabled: gauge.settle > 0
+        NumberAnimation { duration: Kirigami.Units.longDuration; easing.type: Easing.InOutCubic }
+    }
+    // An out of date reading also breaks the rings into eight segments, so a
+    // full grey ring doesn't read as a greyed-out mark; the gaps open and
+    // close as the grey comes and goes. A struck ring is whole again.
+    property real gap: stale ? 0.2 : 0
+    Behavior on gap {
         enabled: gauge.settle > 0
         NumberAnimation { duration: Kirigami.Units.longDuration; easing.type: Easing.InOutCubic }
     }
@@ -458,6 +467,7 @@ Item {
             // The track keeps the base colour whatever the level.
             trackColor: Qt.alpha(gauge.color, 0.16 * gauge.color.a * (gauge.sweep > 0 ? 1 : 1 - gauge.dotsShown))
             trackSweep: gauge.sweep > 0 ? gauge.sweep : 1
+            gap: gauge.gap
         }
 
         RingArc {
@@ -471,6 +481,7 @@ Item {
             shortest: gauge.innerDrawn && Number.isFinite(gauge.innerValue) ? 0 : gauge.along(gauge.innerStrokeWidth, radius)
             color: gauge.innerColor(gauge.drawnInnerLevel)
             trackColor: Qt.alpha(gauge.color, 0.22 * 0.55 * gauge.color.a)
+            gap: gauge.gap
         }
 
         // The name or mark, greyed out further while the ring is grey or

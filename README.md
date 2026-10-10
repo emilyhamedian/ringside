@@ -153,8 +153,8 @@ inner ring shows it; choose which under *AI Providers*. Model limits are the
 ones Anthropic's usage reply lists, under the names it gives them, such as
 Fable.
 
-When a check fails, the ring keeps its last reading in grey until that
-reading is two checks old. After that, or once the week has reset, the ring
+When a check fails, the ring keeps its last reading in grey, broken into
+segments, until that reading is two checks old. After that, or once the week has reset, the ring
 is struck through and its numbers turn to dashes until a check succeeds. The
 tooltip and the popup say when and why the check failed, when the last
 reading was taken and when the next check runs. The popup keeps the last

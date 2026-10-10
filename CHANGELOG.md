@@ -65,8 +65,9 @@ follows [Semantic Versioning](https://semver.org/).
   the moment, with the time under the floor. A single reading shows as a
   dot, and the marker for now appears only when the last reading is over
   two hours old.
-- A failed Claude or Codex check keeps the last reading in grey, with no
-  amber, red or breathing, until it is two check intervals old. Then, or
+- A failed Claude or Codex check keeps the last reading in grey, the ring
+  broken into eight segments, with no amber, red or breathing, until it is
+  two check intervals old. Then, or
   once the week has reset, the arcs unwind, the ring is struck through in
   the grey of its track, and the numbers read "––%" over "–d" until a check
   succeeds. The tooltip, which screen readers also read, says when and why

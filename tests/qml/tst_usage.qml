@@ -1444,6 +1444,7 @@ Item {
             const c = cell("claude");
             const gauge = c.children[0];
             const arc = outerArc(c);
+            compare(arc.gap, 0, "a fresh reading's ring is whole");
             const changes = failure(data.age);
             if (data.reset) {
                 changes.weekly = usage.window(95, -600, []);
@@ -1453,9 +1454,15 @@ Item {
             compare(gauge.cancelled, !data.grey);
             if (!data.grey) {
                 tryCompare(gauge, "struck", 1, 3000);
+                tryCompare(arc, "gap", 0, 3000, "a struck ring is whole");
                 return;
             }
             tryCompare(gauge, "greyed", 1, 3000);
+            tryCompare(arc, "gap", 0.2, 3000, "broken into segments");
+            compare(innerArc(c).gap, 0.2);
+            compare(arc.segments(0, 100).split("M ").length - 1, 8, "eight of them");
+            compare(arc.segments(0, 95).split("M ").length - 1, 8, "the last cut short at the reading");
+            compare(arc.segments(0, 30).split("M ").length - 1, 3);
             wait(2 * Kirigami.Units.longDuration);
             compare(gauge.struck, 0, "no stroke");
             verify(!strike(c).visible);
