@@ -113,6 +113,14 @@
       <label>The logo in the Codex ring: codex, or openai for the OpenAI logo</label>
       <default>codex</default>
     </entry>
+    <entry name="claudeProgram" type="String">
+      <label>Where the claude program is, for the session starter, as shown with ~; empty finds it automatically</label>
+      <default></default>
+    </entry>
+    <entry name="codexProgram" type="String">
+      <label>Where the codex program is, as shown with ~; empty finds it automatically</label>
+      <default></default>
+    </entry>
     <entry name="knownLimits" type="String">
       <label>Per-model limits reported so far, kept for the settings pages</label>
       <default></default>

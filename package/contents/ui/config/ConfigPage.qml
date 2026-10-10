@@ -76,6 +76,10 @@ KCM.SimpleKCM {
     property string cfg_codexInnerLimitDefault
     property string cfg_codexMark
     property string cfg_codexMarkDefault
+    property string cfg_claudeProgram
+    property string cfg_claudeProgramDefault
+    property string cfg_codexProgram
+    property string cfg_codexProgramDefault
     property string cfg_knownLimits
     property string cfg_knownLimitsDefault
     property string cfg_usageStatus

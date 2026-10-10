@@ -209,8 +209,8 @@ QtObject {
 
     // Why a check failed, as a sentence, from the reason the helper gives
     // (see usage.py and code/report.js): the network, a server, a provider
-    // asking to wait, a Codex CLI that isn't installed, or the helper
-    // itself. The helper's own message, which names the Python error, is
+    // asking to wait, a Codex CLI that isn't installed or a chosen program
+    // that can't be run, or the helper itself. The helper's own message, which names the Python error, is
     // for the settings page and screen readers. Anything else, another
     // check holding the helper's lock among it, is the helper's message as
     // it gave it. A rate limit's end is left to the next check's time: the
@@ -246,6 +246,8 @@ QtObject {
                 return i18nc("@info", "Codex isn't installed; install it or turn Codex off.");
             }
             break;
+        case "program":
+            return i18nc("@info %1 is a program name such as codex", "The %1 program set in Settings can't be run.", item);
         case "missing":
             return i18nc("@info", "python3 was not found on the Plasma session's PATH.");
         case "files":
@@ -408,6 +410,10 @@ QtObject {
             if (s.reason === "not-installed") {
                 return claude ? i18nc("@info", "Can't start a session: Claude Code isn't installed.")
                               : i18nc("@info", "Can't start a week: Codex isn't installed.");
+            }
+            if (s.reason === "program") {
+                return claude ? i18nc("@info", "Can't start a session: the claude program set in Settings can't be run.")
+                              : i18nc("@info", "Can't start a week: the codex program set in Settings can't be run.");
             }
             if (s.reason === "signed-out") {
                 return claude
