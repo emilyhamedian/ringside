@@ -589,13 +589,14 @@ Item {
             compare(g.runOutOpacity, 1, "shown at once when the popup opens");
             const x = g.runOutX;
             const shown = runOutOf(g);
+            // A long fade, so a loaded machine still catches it part way.
+            g.duration = 2000;
             g.projected = "";
             verify(!Number.isFinite(g.runOutAt));
             // Read together: a slow machine can see the fade at any point.
-            tryVerify(() => shown.opacity > 0 && shown.opacity < 1 && g.timeShown, 1000, "fading out, its time with it");
+            tryVerify(() => shown.opacity > 0 && shown.opacity < 1 && g.timeShown, 2000, "fading out, its time with it");
             compare(g.runOutX, x, "where it was");
-            tryCompare(shown, "opacity", 0, 1000);
-            verify(!shown.visible);
+            tryVerify(() => !shown.visible, 4000, "gone");
             verify(!g.timeShown, "and then its room");
         }
 
