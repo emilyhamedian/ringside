@@ -109,12 +109,6 @@ Item {
         return findAll(item, test)[0] ?? null;
     }
 
-    // Texts with their digits, in any locale, as "0", so readings that
-    // differ only in their digits read the same.
-    function shape(texts) {
-        return texts.join(" ").replace(/[0-9\u0660-\u0669\u06f0-\u06f9]/g, "0");
-    }
-
     Component {
         id: monitorComponent
         FakeMonitor {}

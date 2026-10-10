@@ -107,7 +107,7 @@ GridLayout {
     readonly property real valuesWidth: drawn.room(drawn.plain, [Format.decimal(10, 1), Format.whole(100)])
     readonly property real unitsWidth: drawn.room(drawn.plain, Format.panelRateUnits(bits))
     // Horizontally each row is a ring's line; a vertical panel spaces its own.
-    readonly property real rowHeight: vertical ? -1 : drawn.lineHeight
+    readonly property real rowHeight: drawn.lineHeight
 
     columns: singleRow ? 2 : 1
     rowSpacing: vertical ? Math.round(Kirigami.Units.smallSpacing * 0.75) : 0

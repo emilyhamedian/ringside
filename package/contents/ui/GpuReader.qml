@@ -69,7 +69,6 @@ QtObject {
     // live, resting or asleep, as the leader sees it.
     readonly property string phase: !present ? "asleep" : leading ? ownPhase : leader ? leader.phase : "asleep"
     readonly property bool live: phase === "live"
-    readonly property bool resting: phase === "resting"
     // A GPU that can sleep is only subscribed on a state read after it was
     // put on a ring: an older one may predate its going to sleep.
     readonly property bool subscribed: leading && wanted && ownPhase === "live" && (!gated || pmReadAt >= wantedSince)

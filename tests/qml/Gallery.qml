@@ -121,7 +121,6 @@ Rectangle {
         gpuOuter.usage: 18
         gpuOuter.temperature: 52
         gpuOuter.vramUsed: 0.4 * integrated.gib
-        gpuOuter.vramTotal: 0.5 * integrated.gib
         gpuOuter.clock: 1200
         gpuOuter.power: NaN
         gpuOuter.history: integrated.wave(18, 12, 9)
@@ -144,7 +143,6 @@ Rectangle {
         gpuOuter.usage: 18
         gpuOuter.temperature: 52
         gpuOuter.vramUsed: 0.4 * innerAsleep.gib
-        gpuOuter.vramTotal: 0.5 * innerAsleep.gib
         gpuOuter.knownVramTotal: 0.5 * innerAsleep.gib
         gpuOuter.clock: 1200
         gpuOuter.power: NaN
@@ -164,7 +162,6 @@ Rectangle {
         gpuOuter.usage: 64
         gpuOuter.temperature: 71
         gpuOuter.vramUsed: 2.2 * intel.gib
-        gpuOuter.vramTotal: 6 * intel.gib
         gpuOuter.knownVramTotal: 6 * intel.gib
         gpuOuter.clock: 1650
         gpuOuter.power: 62
@@ -174,7 +171,6 @@ Rectangle {
         gpuInner.reportsVram: false
         gpuInner.temperature: NaN
         gpuInner.vramUsed: NaN
-        gpuInner.vramTotal: NaN
         gpuInner.knownVramTotal: NaN
         gpuInner.clock: 1100
     }

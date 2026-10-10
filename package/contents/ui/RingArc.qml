@@ -57,7 +57,6 @@ Shape {
     // The arc in Qt's angles, clockwise from three o'clock.
     readonly property real start: -90 + 3.6 * tail
     readonly property real span: 3.6 * (head - tail)
-    readonly property real end: start + span
     // Qt 6.12 can stroke the arc with its gradient, which costs a good deal
     // less to redraw as the arc moves than the filled band that draws it on
     // earlier Qt. The tests turn it off to check the band.

@@ -32,8 +32,8 @@ Item {
     property real maximum: 100
     // Whether the top is a fixed 100 % worth a labelled rule.
     property bool ceiling: true
-    property color color: Kirigami.Theme.textColor
-    property real fillOpacity: 0.15
+    readonly property color color: Kirigami.Theme.textColor
+    readonly property real fillOpacity: 0.15
 
     // The top sits where the rule would, with or without it, so a rate's
     // peak sits under the caption line as 100 % does.
