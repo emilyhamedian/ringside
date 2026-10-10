@@ -74,19 +74,15 @@ function canonical6(groups) {
 
 // An IPv4-mapped address (::ffff:a.b.c.d, in any spelling) is an IPv4
 // reply in IPv6 clothing, so it doesn't count as an IPv6 address.
-function isIPv6(text) {
-    const g = groups6(text);
-    return g !== null && !(g.slice(0, 5).every(x => x === 0) && g[5] === 0xffff);
+function isMapped(groups) {
+    return groups.slice(0, 5).every(x => x === 0) && groups[5] === 0xffff;
 }
 
 // The unspecified and loopback addresses, and the rest of 0.0.0.0/8 and
-// 127.0.0.0/8: no website sees a computer by one of these.
-function isNowhere(text, family) {
-    if (family === "v4") {
-        return /^(0|127)\./.test(text);
-    }
-    const g = groups6(text);
-    return g.slice(0, 7).every(x => x === 0) && g[7] <= 1;
+// 127.0.0.0/8: no website sees a computer by one of these. An IPv6
+// address goes by its groups, an IPv4 one, with none, by its text.
+function isNowhere(text, groups) {
+    return groups ? groups.slice(0, 7).every(x => x === 0) && groups[7] <= 1 : /^(0|127)\./.test(text);
 }
 
 // The address in a service's reply for one family ("v4" or "v6"), or ""
@@ -96,11 +92,11 @@ function isNowhere(text, family) {
 // address comes back in its canonical spelling, whatever the service's.
 function address(body, family) {
     const text = typeof body === "string" ? body.trim() : "";
-    const valid = family === "v4" ? isIPv4(text) : family === "v6" && isIPv6(text);
-    if (!valid || isNowhere(text, family)) {
-        return "";
+    if (family === "v4") {
+        return isIPv4(text) && !isNowhere(text, null) ? text : "";
     }
-    return family === "v6" ? canonical6(groups6(text)) : text;
+    const groups = family === "v6" ? groups6(text) : null;
+    return groups !== null && !isMapped(groups) && !isNowhere(text, groups) ? canonical6(groups) : "";
 }
 
 // A city or country from a JSON reply, or "": a string, with control

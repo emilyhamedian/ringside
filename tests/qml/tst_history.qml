@@ -147,15 +147,15 @@ TestCase {
     }
 
     // A temperature history keeps a missing reading as NaN, a gap, where
-    // push() would put a 0 that reads as a cold sensor.
-    function test_recordKeepsMissingReadingsAsGaps() {
-        var a = History.record([], 50, 3);
-        a = History.record(a, NaN, 3);
-        a = History.record(a, undefined, 3);
+    // the default would put a 0 that reads as a cold sensor.
+    function test_pushKeepsMissingReadingsAsGaps() {
+        var a = History.push([], 50, 3, NaN);
+        a = History.push(a, NaN, 3, NaN);
+        a = History.push(a, undefined, 3, NaN);
         compare(a.length, 3);
         compare(a[0], 50);
         verify(isNaN(a[1]) && isNaN(a[2]));
-        var b = History.record(a, 52, 3);
+        var b = History.push(a, 52, 3, NaN);
         compare(b.length, 3, "as long as asked");
         verify(isNaN(b[0]) && isNaN(b[1]));
         compare(b[2], 52);

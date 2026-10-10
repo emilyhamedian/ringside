@@ -49,10 +49,6 @@ GridLayout {
     // Two lines need room for both; otherwise they share one.
     readonly property bool twoLines: thickness >= Kirigami.Units.gridUnit * 2
 
-    function isRing(item) {
-        return Items.isRing(item);
-    }
-
     function cellAt(index) {
         const entry = cells.itemAt(index);
         return entry ? entry.cell : null; // qmllint disable missing-property
@@ -69,7 +65,7 @@ GridLayout {
 
         required property string item
         readonly property alias cell: cell
-        readonly property bool textShown: !strip.isRing(item) || !strip.vertical && !strip.ringsOnly.includes(item)
+        readonly property bool textShown: !Items.isRing(item) || !strip.vertical && !strip.ringsOnly.includes(item)
 
         Layout.fillWidth: strip.vertical
         Layout.fillHeight: !strip.vertical
@@ -104,7 +100,7 @@ GridLayout {
                  : LayoutMirroring.enabled ? Math.round(parent.width - cell.padding - width) : cell.padding
                 y: Math.round((parent.height - height) / 2)
                 sourceComponent: Items.isUsage(entry.item) ? usageContent
-                               : strip.isRing(entry.item) ? ringContent : rateContent
+                               : Items.isRing(entry.item) ? ringContent : rateContent
                 onLoaded: cell.contentItem = item
             }
 

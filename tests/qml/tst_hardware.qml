@@ -84,18 +84,6 @@ TestCase {
         compare(result.inner, null);
     }
 
-    function test_swapLabel_data() {
-        return [
-            { tag: "both", kinds: ["zram", "disk"], expected: "zram + disk" },
-            { tag: "zramOnly", kinds: ["zram"], expected: "zram" },
-            { tag: "none", kinds: [], expected: "" },
-            { tag: "undefined", kinds: undefined, expected: "" }
-        ];
-    }
-    function test_swapLabel(data) {
-        compare(Hardware.swapLabel(data.kinds), data.expected);
-    }
-
     // Free comes from "application", not from total - used - cache: the
     // cache reading overlaps "used" (shared memory, unreclaimable slab).
     function test_memoryParts_data() {

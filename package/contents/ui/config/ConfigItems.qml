@@ -50,14 +50,14 @@ ConfigPage {
         const entry = usageStatus[id];
         if (!entry || !entry.status) {
             return i18nc("@info:usagetip shown before it has been checked; %1 is a program, such as Claude Code",
-                         "Shows while %1 is signed in", Providers.facts(id).product);
+                         "Shows while %1 is signed in", Providers.FACTS[id].product);
         }
         switch (entry.status) {
         case "ok":
             return i18nc("@info:usagetip", "Signed in");
         case "signed_out":
             return i18nc("@info:usagetip %1 is a command, such as claude", "Not signed in: run %1 in a terminal",
-                         Providers.facts(id).command);
+                         Providers.FACTS[id].command);
         case "error":
         case "rate_limited":
             return String(entry.message || "");

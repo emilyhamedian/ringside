@@ -46,7 +46,7 @@ QtObject {
                          rateText(Format.rate(monitor.panel.diskRead, false)), rateText(Format.rate(monitor.panel.diskWrite, false)));
         case "claude":
         case "codex":
-            return usageText(item, nowMs ?? Date.now());
+            return usageText(item, nowMs);
         }
         return "";
     }
@@ -74,7 +74,7 @@ QtObject {
 
     // What to run to sign a provider in.
     function signInHint(item) {
-        return i18nc("@info %1 is a command, such as claude", "Run %1 in a terminal to sign in.", Providers.facts(item).command);
+        return i18nc("@info %1 is a command, such as claude", "Run %1 in a terminal to sign in.", Providers.FACTS[item].command);
     }
 
     function providerName(item) {
@@ -118,15 +118,14 @@ QtObject {
         }
         const entry = monitor.usage.entry(item);
         const weekly = entry && entry.weekly ? entry.weekly : null;
-        const now = nowMs ?? Date.now();
         // Two dashes where the figures go, in the percentage's own pattern
         // so a language's sign keeps its place, and one before the days'
         // letter.
         if (cancelled) {
             return { first: i18nc("@info:status a percentage", "%1%", "––"), off: true,
-                     second: "–" + timeParts("", "", "")[0].unit, heat: 0 };
+                     second: "–" + timeUnits()[0], heat: 0 };
         }
-        const parts = countdownParts(weekly ? weekly.resetsAt : null, now, true);
+        const parts = countdownParts(weekly ? weekly.resetsAt : null, nowMs, true);
         if (!entry || entry.lastError !== undefined) {
             return { first: percent(weekly ? weekly.percent : NaN), off: true, second: spelled(parts) || "–", heat: 0 };
         }
@@ -159,7 +158,7 @@ QtObject {
         // in two figures and its unit, "23h".
         const second = item === "cpu" || item === "gpu" ? [Format.whole(100) + "°"]
                      : item === "memory" ? memoryRoom()
-                     : timeParts(Format.whole(10), Format.whole(10), Format.whole(10)).map(part => part.value + part.unit);
+                     : timeUnits().map(unit => Format.whole(10) + unit);
         return {
             first: item === "gpu" ? [percent, i18nc("@info:status the GPU is powered down", "off")] : [percent],
             second: second
@@ -252,7 +251,7 @@ QtObject {
         case "timeout":
             // Codex is asked through its program, which names no server.
             return i18nc("@info %1 is a server, such as api.anthropic.com, or a program, such as Codex", "%1 didn't answer in time.",
-                         host || Providers.facts(item).product);
+                         host || Providers.FACTS[item].product);
         case "server":
             if (host) {
                 return i18nc("@info %1 is a server, such as api.anthropic.com", "%1 answered with an error.", host);
@@ -260,14 +259,14 @@ QtObject {
             break;
         case "rate-limited":
             return i18nc("@info %1 is a company, such as Anthropic or OpenAI", "%1 asked Ringside to wait before checking again.",
-                         Providers.facts(item).company);
+                         Providers.FACTS[item].company);
         case "not-installed":
             if (item === "codex") {
                 return i18nc("@info AI Providers and Panel Items are settings pages; OpenAI is the item's name there", "Plasma can't find Codex. Install it, set where it is under AI Providers, or turn OpenAI off in Panel Items.");
             }
             break;
         case "program":
-            return i18nc("@info %1 is a program name such as codex", "The %1 program set in Settings can't be run.", Providers.facts(item).command);
+            return i18nc("@info %1 is a program name such as codex", "The %1 program set in Settings can't be run.", Providers.FACTS[item].command);
         case "missing":
             return i18nc("@info", "python3 was not found on the Plasma session's PATH.");
         case "files":
@@ -299,12 +298,18 @@ QtObject {
         return leadingOnly ? parts.slice(0, 1) : parts;
     }
 
-    // Numbers of days, hours and minutes with their unit letters. Each unit is
-    // one message, so every countdown reads in the same notation.
+    // The unit letters after a number of days, hours and minutes left. Each
+    // is one message, so every countdown reads in the same notation.
+    function timeUnits() {
+        return [i18nc("@info unit after a number of days left, as in 5d 18h", "d"),
+                i18nc("@info unit after a number of hours left, as in 5d 18h or 5h 12m", "h"),
+                i18nc("@info unit after a number of minutes left, as in 5h 12m", "m")];
+    }
+
+    // Numbers of days, hours and minutes with their unit letters.
     function timeParts(days, hours, minutes) {
-        return [{ value: days, unit: i18nc("@info unit after a number of days left, as in 5d 18h", "d") },
-                { value: hours, unit: i18nc("@info unit after a number of hours left, as in 5d 18h or 5h 12m", "h") },
-                { value: minutes, unit: i18nc("@info unit after a number of minutes left, as in 5h 12m", "m") }];
+        const [d, h, m] = timeUnits();
+        return [{ value: days, unit: d }, { value: hours, unit: h }, { value: minutes, unit: m }];
     }
 
     // countdownParts() as one text: "5d 18h".

@@ -496,20 +496,18 @@ Item {
                 report = null;
             }
             usage.writeEvents(report?.events);
+            const failure = Report.helperFailure(data);
             if (!report?.providers && started) {
-                const failure = Report.helperFailure(data);
                 Log.write(journal, "warning", "the session starter run for " + started[1] + " failed: "
                           + usage.troubleText(failure));
                 usage.startFailed(started[1].split(","), usage.failureText(failure));
             } else if (!report?.providers && set) {
-                const failure = Report.helperFailure(data);
                 Log.write(journal, "warning", "the " + set[1] + " session starter switch wasn't saved: "
                           + usage.troubleText(failure));
                 if (settled) {
                     usage.switchRefused(settled, set[2] === "on", usage.failureText(failure));
                 }
             } else if (!report?.providers) {
-                const failure = Report.helperFailure(data);
                 usage.noteTrouble(usage.troubleText(failure));
                 usage.helperError = usage.failureText(failure);
                 // A provider still loading that this run polled fails with
@@ -529,7 +527,7 @@ Item {
                 }
                 usage.helperError = "";
                 usage.merge(report);
-                const reason = Report.helperFailure(data).detail;
+                const reason = failure.detail;
                 if (started) {
                     usage.startLeftDue(started[1].split(","), reason);
                 }

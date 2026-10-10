@@ -19,9 +19,6 @@ PopupPage {
         monitor: popup.monitor
     }
 
-    // Legend and detail text: caption-sized, set as written.
-    component Note: Caption {}
-
     // A legend entry: a sample of the line as the graph draws it, then its name.
     component Key: RowLayout {
         id: key
@@ -63,7 +60,8 @@ PopupPage {
             }
         }
 
-        Note {
+        // Caption-sized, set as written.
+        Caption {
             id: label
             text: key.text
         }
@@ -246,7 +244,7 @@ PopupPage {
                 dashed: true
             }
 
-            Note {
+            Caption {
                 readonly property var down: Format.bytes(popup.monitor.networkTotalDown)
                 readonly property var up: Format.bytes(popup.monitor.networkTotalUp)
 

@@ -27,7 +27,6 @@ PopupPage {
         property real rate: NaN
         property var history: []
         property var highs: []
-        property int length: 60
         readonly property var tops: History.tops(history, highs)
 
         Reading {
@@ -41,7 +40,7 @@ PopupPage {
             Layout.fillWidth: true
             values: tile.history
             highs: tile.highs
-            length: tile.length
+            length: tile.spans.historyLength
             // Anything under 1 MiB/s stays near the floor rather than filling the graph.
             maximum: Math.max(History.peak(tile.tops)?.value ?? 0, 1048576)
             ceiling: false
@@ -90,7 +89,6 @@ PopupPage {
             caption: i18nc("@title:group disk reads", "Read")
             spans: popup.monitor
             graphTop: words.peakText(read.tops, false)
-            length: popup.monitor.historyLength
             rate: popup.monitor.diskRead
             history: popup.monitor.diskReadHistory
             highs: popup.monitor.diskReadHighs
@@ -101,7 +99,6 @@ PopupPage {
             caption: i18nc("@title:group disk writes", "Write")
             spans: popup.monitor
             graphTop: words.peakText(write.tops, false)
-            length: popup.monitor.historyLength
             rate: popup.monitor.diskWrite
             history: popup.monitor.diskWriteHistory
             highs: popup.monitor.diskWriteHighs
