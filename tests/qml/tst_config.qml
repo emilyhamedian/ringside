@@ -217,6 +217,24 @@ Item {
         function combo(page, name) {
             return find(page, i => i.Accessible && i.Accessible.name === name);
         }
+        function findAll(item, pred, found = []) {
+            if (pred(item)) found.push(item);
+            for (let i = 0; i < item.children.length; ++i) {
+                findAll(item.children[i], pred, found);
+            }
+            return found;
+        }
+        // A form section's heading, which FormLayout draws at level 3.
+        function heading(page, text) {
+            return find(page, i => i.text === text && i.level === 3);
+        }
+        // Whether one item sits just under another: starting below it, in
+        // the same column.
+        function below(item, above) {
+            const a = above.mapToItem(null, 0, 0);
+            const b = item.mapToItem(null, 0, 0);
+            return b.y >= a.y + above.height && b.y - (a.y + above.height) < 30 && Math.abs(b.x - a.x) < 1;
+        }
 
         function test_general_data() {
             return [
@@ -960,11 +978,11 @@ Item {
             return [
                 { tag: "hiddenWithoutKnownLimits",
                   known: {}, claudeChoice: "", codexChoice: "",
-                  claudeVisible: false, codexVisible: false, noteVisible: false },
+                  claudeVisible: false, codexVisible: false },
                 { tag: "entriesFromKnownLimits",
                   known: { claude: [{ id: "opus", label: "Opus", reported: true }], codex: [] },
                   claudeChoice: "", codexChoice: "",
-                  claudeVisible: true, codexVisible: false, noteVisible: true,
+                  claudeVisible: true, codexVisible: false,
                   claudeEntries: [{ text: "Automatic", value: "" }, { text: "None", value: "none" },
                                   { text: "Opus", value: "opus" }] },
                 { tag: "eachPickerShowsItsOwnChoice",
@@ -972,22 +990,22 @@ Item {
                            codex: [{ id: "gpt5", label: "GPT-5", reported: true },
                                    { id: "spark", label: "Spark", reported: true }] },
                   claudeChoice: "opus", codexChoice: "spark",
-                  claudeVisible: true, codexVisible: true, noteVisible: true,
+                  claudeVisible: true, codexVisible: true,
                   codexEntries: [{ text: "Automatic", value: "" }, { text: "None", value: "none" },
                                  { text: "GPT-5", value: "gpt5" }, { text: "Spark", value: "spark" }] },
                 { tag: "codexOnly",
                   known: { codex: [{ id: "gpt5", label: "GPT-5", reported: true }] },
                   claudeChoice: "", codexChoice: "",
-                  claudeVisible: false, codexVisible: true, noteVisible: true },
+                  claudeVisible: false, codexVisible: true },
                 { tag: "notReportedSuffix",
                   known: { claude: [{ id: "old", label: "Old Model", reported: false }] },
                   claudeChoice: "old", codexChoice: "",
-                  claudeVisible: true, codexVisible: false, noteVisible: true,
+                  claudeVisible: true, codexVisible: false,
                   claudeEntries: [{ text: "Automatic", value: "" }, { text: "None", value: "none" },
                                   { text: "Old Model (not reported)", value: "old" }] },
                 { tag: "storedChoiceShownWithoutKnownLimits",
                   known: {}, claudeChoice: "bogus", codexChoice: "",
-                  claudeVisible: true, codexVisible: false, noteVisible: true }
+                  claudeVisible: true, codexVisible: false }
             ];
         }
         function test_innerLimitPickers(data) {
@@ -997,9 +1015,15 @@ Item {
             const codex = combo(page, "Codex inner ring");
             compare(claude.visible, data.claudeVisible);
             compare(codex.visible, data.codexVisible);
-            const note = find(page, i => typeof i.text === "string" && i.text.startsWith("Automatic shows"));
-            verify(note);
-            compare(note.visible, data.noteVisible);
+            // Each picker has its own heading and its own note under it.
+            compare(heading(page, "Claude").visible, data.claudeVisible);
+            const notes = findAll(page, i => typeof i.text === "string" && i.text.startsWith("Automatic shows") && i.visible);
+            compare(notes.length, Number(data.claudeVisible) + Number(data.codexVisible));
+            for (const [picker, shown] of [[claude, data.claudeVisible], [codex, data.codexVisible]]) {
+                if (shown) {
+                    verify(notes.some(note => below(note, picker)), picker.Accessible.name + "'s note");
+                }
+            }
             if (data.claudeEntries) {
                 compare(claude.entries.map(e => ({ text: e.text, value: e.value })), data.claudeEntries);
             }
@@ -1058,9 +1082,39 @@ Item {
             for (const text of ["Codex", "OpenAI"]) {
                 compare(logoChoice(page, text).visible, data.shown, text);
             }
-            const label = find(page, i => i.text === "Codex ring logo:");
+            const label = find(page, i => i.text === "Ring logo:");
             verify(label);
             compare(label.visible, data.shown);
+            compare(heading(page, "Codex").visible, data.shown, "the Codex heading");
+        }
+
+        // Settings for both providers come first under their own heading,
+        // then Claude's, then Codex's, each control under its own.
+        function test_providerSections() {
+            const page = make(providers, { cfg_itemOrder: ["claude", "codex"], cfg_hiddenItems: [],
+                                           knownLimits: { claude: [{ id: "opus", label: "Opus", reported: true }],
+                                                          codex: [{ id: "gpt5", label: "GPT-5", reported: true }] } });
+            const y = item => item.mapToItem(null, 0, 0).y;
+            const both = heading(page, "Claude and Codex");
+            const claude = heading(page, "Claude");
+            const codex = heading(page, "Codex");
+            for (const h of [both, claude, codex]) {
+                verify(h && h.visible, h ? h.text : "a heading");
+            }
+            const every = combo(page, "Check every");
+            const claudeRing = combo(page, "Claude inner ring");
+            const codexRing = combo(page, "Codex inner ring");
+            const logo = logoChoice(page, "Codex");
+            verify(y(both) < y(every) && y(every) < y(claude));
+            verify(y(claude) < y(claudeRing) && y(claudeRing) < y(codex));
+            verify(y(codex) < y(codexRing) && y(codexRing) < y(logo));
+            compare(findAll(page, i => i.text === "Inner ring:" && i.visible).length, 2);
+
+            // With neither provider to set, only the shared section shows.
+            const bare = make(providers);
+            verify(heading(bare, "Claude and Codex").visible);
+            verify(!heading(bare, "Claude").visible);
+            verify(!heading(bare, "Codex").visible);
         }
 
         // Codex is chosen until the setting says openai, and each choice
