@@ -39,8 +39,6 @@ QtObject {
         }
     })
     property string helperError: ""
-    // The last check's status per provider, as UsageData keeps them.
-    property var statuses: ({ claude: { status: "ok", message: "" }, codex: { status: "ok", message: "" } })
     // Stands in for claudeInnerLimit and codexInnerLimit.
     property var innerChoices: ({ claude: "", codex: "" })
     // The session starter per provider, as the helper reports it.
@@ -109,9 +107,6 @@ QtObject {
     function inner(id) {
         const e = entry(id);
         return e ? Limits.pick(e.scoped, innerChoices[id] ?? "") : null;
-    }
-
-    function refresh() {
     }
 
     // As UsageData's.

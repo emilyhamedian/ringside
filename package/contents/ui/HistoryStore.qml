@@ -54,13 +54,11 @@ QtObject {
             } else {
                 d.transaction(work);
             }
-            return true;
         } catch (err) {
             if (!failed) {
                 Log.write(journal, "warning", "the graphs' saved history can't be used: " + (err.message ?? err));
             }
             failed = true;
-            return false;
         }
     }
 

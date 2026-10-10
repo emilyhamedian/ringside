@@ -4,7 +4,6 @@
 pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Shapes
-import QtQuick.Window
 import org.kde.kirigami as Kirigami
 import "code/items.js" as Items
 import "code/marks.js" as Marks
@@ -71,7 +70,7 @@ Item {
     // much as CPU or MEM fill theirs, by the mark's own scale, kept a pixel
     // clear of the innermost ring, and none at all where there is no room.
     readonly property real markSize: Math.max(0, Math.min(Math.round(nameFont.height * 1.2 * (art.scale ?? 1)), Math.floor(room) - 2))
-    readonly property bool fits: usage ? markSize >= Kirigami.Units.iconSizes.small / 2 && markSize <= room
+    readonly property bool fits: usage ? markSize >= Kirigami.Units.iconSizes.small / 2
                                          && markSize * Screen.devicePixelRatio >= (art.minimum ?? 0)
                                        : smallest.advanceWidth <= chord
 

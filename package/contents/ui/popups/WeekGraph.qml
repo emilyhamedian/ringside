@@ -48,8 +48,8 @@ Item {
     property bool failed: false
     // The readings may be out of date: the run-out carries no alert colour.
     property bool grey: false
-    property color color: Kirigami.Theme.textColor
-    property real fillOpacity: 0.15
+    readonly property color color: Kirigami.Theme.textColor
+    readonly property real fillOpacity: 0.15
     // The series whose run-out is drawn, "main" or "second", or "" for none:
     // the limit the popup's pace sentence names, so the two agree.
     property string projected: ""

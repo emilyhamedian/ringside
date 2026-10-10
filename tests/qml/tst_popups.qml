@@ -91,7 +91,6 @@ Item {
         gpuInner.reportsVram: false
         gpuInner.temperature: NaN
         gpuInner.vramUsed: NaN
-        gpuInner.vramTotal: NaN
         gpuInner.knownVramTotal: NaN
     }
 
@@ -2529,10 +2528,6 @@ Item {
             } finally {
                 normal.chooseSpan("minute");
             }
-        }
-
-        function spanMenu(popup) {
-            return spanOf(graphs(popup)[0]).menu;
         }
 
         // The span opens its menu at a click: the three spans, the one shown

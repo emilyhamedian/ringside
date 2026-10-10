@@ -19,8 +19,8 @@ QtObject {
     property int sampleInterval: Math.min(interval, 1000)
     property int readInterval: sampleInterval - 250
     property string graphSpan: "minute"
-    property int minuteLength: Math.max(2, Math.round(60000 / sampleInterval))
-    property int historyLength: graphSpan === "hour" ? 120 : graphSpan === "day" ? 144 : minuteLength
+    property int historyLength: graphSpan === "hour" ? 120 : graphSpan === "day" ? 144
+                              : Math.max(2, Math.round(60000 / sampleInterval))
     readonly property bool bucketed: graphSpan !== "minute"
     property string widgetId: ""
     property var hardware: ({
@@ -85,7 +85,6 @@ QtObject {
         usage: live ? 12 : resting ? 0 : NaN
         temperature: awake ? 48 : NaN
         vramUsed: awake ? 1.6 * monitor.gib : NaN
-        vramTotal: live ? 8 * monitor.gib : NaN
         knownVramTotal: 8 * monitor.gib
         clock: awake ? 800 : NaN
         power: awake ? 14 : NaN
@@ -100,7 +99,6 @@ QtObject {
         usage: live ? 3 : resting ? 0 : NaN
         temperature: awake ? 41 : NaN
         vramUsed: awake ? 0.4 * monitor.gib : NaN
-        vramTotal: live ? 0.5 * monitor.gib : NaN
         knownVramTotal: 0.5 * monitor.gib
         clock: awake ? 400 : NaN
         history: monitor.slept(monitor.wave(3, 3, 4))
@@ -225,7 +223,6 @@ QtObject {
         property real usage: NaN
         property real temperature: NaN
         property real vramUsed: NaN
-        property real vramTotal: NaN
         property real knownVramTotal: NaN
         property real clock: NaN
         property real power: NaN
