@@ -55,7 +55,7 @@ Item {
     // This service's shared record (see code/publicaddress.js), or null.
     property int revision: 0
     readonly property var record: {
-        revision;
+        void revision;
         return serviceKey !== "" ? Lookup.peek(serviceKey) : null;
     }
 

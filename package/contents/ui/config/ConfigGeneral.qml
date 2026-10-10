@@ -106,18 +106,18 @@ ConfigPage {
 
         property string url
         property string name
-        readonly property alias input: input
+        readonly property alias input: textField
         readonly property string problem: page.urlProblem(url)
 
         signal edited(string text)
 
-        Kirigami.FormData.buddyFor: input
+        Kirigami.FormData.buddyFor: textField
         Layout.fillWidth: false
         Layout.preferredWidth: Kirigami.Units.gridUnit * 16
         spacing: Kirigami.Units.smallSpacing
 
         QQC2.TextField {
-            id: input
+            id: textField
             Layout.fillWidth: true
             // A URL reads left to right in any language.
             LayoutMirroring.enabled: false

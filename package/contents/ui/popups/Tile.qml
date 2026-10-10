@@ -31,8 +31,8 @@ Rectangle {
     // floor or a text's baseline, sits as far from the bottom as the
     // capitals then sit from the top. Worked out from the fonts, never from
     // the content's layout, so the tile's height can't feed back into it.
-    readonly property real topTrim: caption.visible ? Math.round((captionMetrics.ascent - capHeight) / 2) : 0
-    readonly property real inkInset: verticalPadding + (caption.visible ? captionMetrics.ascent - capHeight - topTrim : 0)
+    readonly property real topTrim: captionText.visible ? Math.round((captionMetrics.ascent - capHeight) / 2) : 0
+    readonly property real inkInset: verticalPadding + (captionText.visible ? captionMetrics.ascent - capHeight - topTrim : 0)
     readonly property real bottomPadding: Math.max(0, Math.round(inkInset - (foot ? foot.implicitHeight - foot.baselineOffset : 0)))
     // capitalHeight needs Qt 6.9; the ink of "H" stands in before that.
     readonly property real capHeight: captionMetrics.capitalHeight ?? capSample.tightBoundingRect.height // qmllint disable missing-property
@@ -45,25 +45,25 @@ Rectangle {
 
     FontMetrics {
         id: captionMetrics
-        font: caption.font
+        font: captionText.font
     }
 
     TextMetrics {
         id: capSample
-        font: caption.font
+        font: captionText.font
         text: "H"
     }
 
     // The caption's label, and an ellipsis when its detail is cut off.
     TextMetrics {
         id: labelRoom
-        font: caption.font
-        text: caption.label.toLocaleUpperCase() + (caption.detail !== "" ? "…" : "")
+        font: captionText.font
+        text: captionText.label.toLocaleUpperCase() + (captionText.detail !== "" ? "…" : "")
     }
 
     TextMetrics {
         id: space
-        font: caption.font
+        font: captionText.font
         text: " "
     }
 
@@ -90,20 +90,20 @@ Rectangle {
             readonly property real spacing: Kirigami.Units.largeSpacing
             // The dot and the span after the caption, each a space apart.
             readonly property real spanWidth: span.visible ? Math.ceil(2 * space.advanceWidth + dot.implicitWidth + span.implicitWidth) : 0
-            visible: caption.text !== ""
+            visible: captionText.text !== ""
             Layout.fillWidth: true
-            implicitWidth: caption.implicitWidth + spanWidth + (top.text !== "" ? spacing + top.implicitWidth : 0)
-            implicitHeight: caption.implicitHeight
+            implicitWidth: captionText.implicitWidth + spanWidth + (topText.text !== "" ? spacing + topText.implicitWidth : 0)
+            implicitHeight: captionText.implicitHeight
 
             Caption {
-                id: caption
+                id: captionText
                 anchors.left: parent.left
                 // With a span, as wide as its text, so the span follows it.
                 // The dot is a text of its own rather than the caption's,
                 // so it stays between the two in either direction.
                 width: span.visible
-                    ? Math.min(implicitWidth, parent.width - captionLine.spanWidth - (top.visible ? top.width + captionLine.spacing : 0))
-                    : parent.width - (top.visible ? top.width + captionLine.spacing : 0)
+                    ? Math.min(implicitWidth, parent.width - captionLine.spanWidth - (topText.visible ? topText.width + captionLine.spacing : 0))
+                    : parent.width - (topText.visible ? topText.width + captionLine.spacing : 0)
                 visible: text !== ""
                 label: tile.caption
                 detail: tile.spans !== null ? "" : tile.detail
@@ -111,13 +111,13 @@ Rectangle {
 
             Text {
                 id: dot
-                anchors.left: caption.right
+                anchors.left: captionText.right
                 anchors.leftMargin: space.advanceWidth
-                anchors.baseline: caption.baseline
+                anchors.baseline: captionText.baseline
                 visible: span.visible
                 text: "·"
-                color: caption.color
-                font: caption.font
+                color: captionText.color
+                font: captionText.font
                 textFormat: Text.PlainText
             }
 
@@ -125,7 +125,7 @@ Rectangle {
                 id: span
                 anchors.left: dot.right
                 anchors.leftMargin: space.advanceWidth
-                anchors.baseline: caption.baseline
+                anchors.baseline: captionText.baseline
                 visible: tile.spans !== null
                 monitor: tile.spans ?? ({ graphSpan: "minute" })
             }
@@ -136,7 +136,7 @@ Rectangle {
             // whole or not at all: a stub of a peak says nothing, and the
             // reading over the graph still gives the rate.
             Caption {
-                id: top
+                id: topText
                 anchors.right: parent.right
                 width: Math.max(0, Math.min(Math.ceil(implicitWidth),
                                             captionLine.width - captionLine.spacing - Math.ceil(labelRoom.advanceWidth)

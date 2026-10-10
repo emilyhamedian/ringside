@@ -228,7 +228,7 @@ ConfigPage {
                                 onActivated: index => page.cfg_ringsOnly = page.including(page.cfg_ringsOnly, entry.key, index === 1)
                             }
                             QQC2.ToolButton {
-                                id: up
+                                id: upButton
                                 icon.name: "go-up"
                                 display: QQC2.AbstractButton.IconOnly
                                 text: i18nc("@action:button %1 is a panel item", "Move %1 up", page.names[entry.key])
@@ -236,10 +236,10 @@ ConfigPage {
                                 QQC2.ToolTip.text: text
                                 QQC2.ToolTip.visible: hovered
                                 QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
-                                onClicked: entry.step(-1, up, down)
+                                onClicked: entry.step(-1, upButton, downButton)
                             }
                             QQC2.ToolButton {
-                                id: down
+                                id: downButton
                                 icon.name: "go-down"
                                 display: QQC2.AbstractButton.IconOnly
                                 text: i18nc("@action:button %1 is a panel item", "Move %1 down", page.names[entry.key])
@@ -247,7 +247,7 @@ ConfigPage {
                                 QQC2.ToolTip.text: text
                                 QQC2.ToolTip.visible: hovered
                                 QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
-                                onClicked: entry.step(1, down, up)
+                                onClicked: entry.step(1, downButton, upButton)
                             }
                         }
                     }

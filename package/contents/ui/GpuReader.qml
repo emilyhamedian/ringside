@@ -129,8 +129,8 @@ QtObject {
     function read(index) {
         // Qt 6.10 and older emit no countChanged when an Instantiator's
         // objects are recreated at the same count; modelChanged comes after.
-        sensors.model;
-        sensors.count;
+        void sensors.model;
+        void sensors.count;
         const sensor = sensors.objectAt(index) as Sensors.Sensor;
         return sensor && typeof sensor.value === "number" ? sensor.value : NaN;
     }

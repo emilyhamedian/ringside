@@ -20,9 +20,9 @@ PlasmoidItem {
     readonly property real thickness: Plasmoid.formFactor === PlasmaCore.Types.Horizontal ? height
                                     : vertical ? width : Kirigami.Units.gridUnit * 2.5
     // The items switched on that have something to show: a GPU, a signed-in CLI.
-    readonly property var items: monitor.enabledItems.filter(k => k === "gpu" ? monitor.gpuOuter.present
-                                                               : k === "claude" ? monitor.usage.claudePresent
-                                                               : k === "codex" ? monitor.usage.codexPresent
+    readonly property var items: readings.enabledItems.filter(k => k === "gpu" ? readings.gpuOuter.present
+                                                               : k === "claude" ? readings.usage.claudePresent
+                                                               : k === "codex" ? readings.usage.codexPresent
                                                                : true)
 
     // The clicked item's name and cell; the popup follows the cell.
@@ -58,7 +58,7 @@ PlasmoidItem {
         popupContent.setSource(Qt.resolvedUrl("popups/" + ({ cpu: "CpuPopup", gpu: "GpuPopup", memory: "MemoryPopup",
                                                              network: "NetworkPopup", disk: "DiskPopup",
                                                              claude: "UsagePopup", codex: "UsagePopup" })[item] + ".qml"),
-                               Items.isUsage(item) ? { monitor: monitor, item: item } : { monitor: monitor });
+                               Items.isUsage(item) ? { monitor: readings, item: item } : { monitor: readings });
         popup.visible = true;
     }
 
@@ -84,13 +84,13 @@ PlasmoidItem {
         PlasmaCore.Action {
             text: i18nc("@action", "Open System Monitor…")
             icon.name: "utilities-system-monitor"
-            visible: monitor.systemShown
+            visible: readings.systemShown
             onTriggered: root.openSystemMonitor()
         }
     ]
 
     Monitor {
-        id: monitor
+        id: readings
         config: Plasmoid.configuration
         // Keys the graphs' saved history to this widget.
         widgetId: String(Plasmoid.id)
@@ -113,7 +113,7 @@ PlasmoidItem {
         width: root.vertical ? parent.width : implicitWidth
         height: Plasmoid.formFactor === PlasmaCore.Types.Horizontal ? parent.height : implicitHeight
         visible: root.items.length > 0
-        monitor: monitor
+        monitor: readings
         items: root.items
         vertical: root.vertical
         thickness: root.thickness
