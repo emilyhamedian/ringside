@@ -187,7 +187,18 @@ class Checks(Isolated):
         cached = usage.CACHE_FILE.read_text()
         self.assertNotIn("events", cached)
         self.assertNotIn("httpStatus", cached)
-        self.assertNotIn("502", cached.replace("HTTP 502 from", ""))
+        # The status only in the message, never as a value of its own; read
+        # from the data, since a timestamp can hold the digits 502 too.
+        def values(node):
+            if isinstance(node, dict):
+                for value in node.values():
+                    yield from values(value)
+            elif isinstance(node, list):
+                for value in node:
+                    yield from values(value)
+            else:
+                yield node
+        self.assertNotIn(502, list(values(json.loads(cached))))
 
     def test_each_run_starts_with_no_events(self):
         with mock.patch.object(usage, "claude_usage", return_value=reading(5, 9)):
