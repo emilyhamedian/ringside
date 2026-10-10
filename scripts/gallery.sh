@@ -18,13 +18,10 @@ esac
 
 cd "$(dirname "$0")/.."
 
-# Arch and Debian keep the Qt 6 tools in /usr/lib/qt6/bin, Fedora and openSUSE
-# in /usr/lib64/qt6/bin; the bare qml on PATH may be Qt 5.
-if [ -z "${QML:-}" ]; then
-    for QML in /usr/lib/qt6/bin/qml /usr/lib64/qt6/bin/qml qml6; do
-        command -v "$QML" >/dev/null 2>&1 && break
-    done
-fi
+# shellcheck source=scripts/qt.sh
+. scripts/qt.sh
+# The bare qml on PATH may be Qt 5.
+QML=${QML:-$(qt_tool qml qml6)}
 
 rm -f "$out"
 # The status is kept rather than tested by set -e, so a failed load still

@@ -22,43 +22,19 @@ cd "$(dirname "$0")/.." || exit 1
 
 # Without a terminal, Qt sends its log output to the journal. tst_main
 # reads main.qml's source, which Qt allows only when asked.
-export QT_FORCE_STDERR_LOGGING=1 QT_QUICK_BACKEND=software QML_XHR_ALLOW_FILE_READ=1
+export QT_FORCE_STDERR_LOGGING=1 QML_XHR_ALLOW_FILE_READ=1
 export QML_IMPORT_PATH="$PWD/tests/floor${QML_IMPORT_PATH:+:$QML_IMPORT_PATH}"
 
-if [ -z "${QMLTESTRUNNER:-}" ]; then
-    for QMLTESTRUNNER in /usr/lib/qt6/bin/qmltestrunner /usr/lib64/qt6/bin/qmltestrunner qmltestrunner; do
-        command -v "$QMLTESTRUNNER" >/dev/null 2>&1 && break
-    done
-fi
+# shellcheck source=scripts/qt.sh
+. scripts/qt.sh
+QMLTESTRUNNER=${QMLTESTRUNNER:-$(qt_tool qmltestrunner)}
 
 failed=0
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
 
 echo "== QtTest suites ($QMLTESTRUNNER) =="
-# The graph history tests' database goes in scratch rather than the user's
-# data folder.
-for f in tests/qml/tst_*.qml; do
-    echo "-- $f --"
-    XDG_DATA_HOME=$scratch "$QMLTESTRUNNER" -platform offscreen -input "$f" || failed=1
-done
-# See scripts/test.sh.
-for lang in de_DE ar_EG; do
-    for f in tests/qml/tst_format.qml tests/qml/tst_cells.qml tests/qml/tst_usage.qml; do
-        echo "-- $f ($lang) --"
-        LANG=$lang.UTF-8 LC_ALL=$lang.UTF-8 "$QMLTESTRUNNER" -platform offscreen \
-            -input "$f" || failed=1
-    done
-done
-dialect=0
-for units in iec jedec metric; do
-    echo "-- tests/qml/units/tst_units.qml ($units) --"
-    mkdir -p "$scratch/$units"
-    printf '[Locale]\nBinaryUnitDialect=%s\n' "$dialect" > "$scratch/$units/kdeglobals"
-    XDG_CONFIG_HOME=$scratch/$units LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 LANGUAGE=en_US "$QMLTESTRUNNER" -platform offscreen \
-        -input tests/qml/units/tst_units.qml "Units::test_$units" || failed=1
-    dialect=$((dialect + 1))
-done
+qt_suites "$scratch" || failed=1
 
 echo
 echo "== scripts/gallery.sh =="
