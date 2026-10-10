@@ -8,6 +8,7 @@ sh scripts/test-floor.sh  # the tests and the gallery on Plasma 6.0, which CI ru
 sh scripts/gallery.sh     # renders every view to /tmp/ringside-gallery.png
 sh scripts/pictures.sh    # renders the README's pictures in docs/ from sample readings
 python3 scripts/logo.py   # draws the logo in docs/ and the widget's icon; needs fontTools, Nunito and rsvg-convert
+sh scripts/package.sh     # builds ringside.plasmoid from the last commit
 ```
 
 Apart from `scripts/test-floor.sh`, they need a Plasma 6.5 or later desktop
