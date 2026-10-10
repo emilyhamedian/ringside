@@ -296,7 +296,7 @@ switch in `~/.config/ringside/starter.json` and its state in
 Ringside writes what goes wrong to Plasma's journal. To see today's:
 
 ```bash
-journalctl --user -t plasmashell --grep ringside --since today
+journalctl --user --since today QT_CATEGORY=ringside.usage QT_CATEGORY=ringside.network QT_CATEGORY=ringside.gpu QT_CATEGORY=ringside.setup
 ```
 
 It records failed Claude and Codex checks and why, the session starter's
