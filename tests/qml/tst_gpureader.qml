@@ -4,6 +4,7 @@
 import QtQuick
 import QtTest
 import "../../package/contents/ui"
+import "../../package/contents/ui/code/log.js" as Log
 
 // The subscription side of the sleep gate: a GpuReader must never switch its
 // Sensors on for a GPU that may be asleep, and only one reader per GPU across
@@ -43,9 +44,72 @@ TestCase {
     readonly property var off: [false, false, false, false, false, false]
     readonly property var on: [true, true, true, true, true, true]
 
+    // What is written to the journal, as "category level text".
+    property var logged: []
+    readonly property var listener: (category, level, text) => { logged = logged.concat([category + " " + level + " " + text]); }
+
     function init() {
         ++serial;
         reader = createTemporaryObject(readerComponent, testCase, { info: discrete(true), onRing: true });
+        logged = [];
+        Log.listen(listener);
+    }
+
+    function cleanup() {
+        Log.unlisten(listener);
+    }
+
+    function above() {
+        return logged.filter(line => !/^ringside\.gpu debug /.test(line));
+    }
+
+    // Sleeping and waking, and Ringside reading the GPU and letting go,
+    // are written at info; the state found first and the gate's moves are
+    // debug.
+    function test_journalSleepAndWake() {
+        reader.takeStatus("suspended", "auto", 1000);
+        reader.tick(1500);
+        compare(logged, ["ringside.gpu debug discrete GPU 0000:ff:00.0 is asleep"]);
+        reader.takeStatus("active", "auto", 3000);
+        reader.tick(3500);
+        reader.takeStatus("suspended", "auto", 5000);
+        reader.tick(5500);
+        compare(above(), ["ringside.gpu info discrete GPU 0000:ff:00.0 woke up",
+                          "ringside.gpu info subscribed to discrete GPU 0000:ff:00.0's readings",
+                          "ringside.gpu info discrete GPU 0000:ff:00.0 went to sleep",
+                          "ringside.gpu info released discrete GPU 0000:ff:00.0's readings"]);
+        compare(logged.filter(line => / debug .*: /.test(line)),
+                ["ringside.gpu debug discrete GPU 0000:ff:00.0: awake, so reading it",
+                 "ringside.gpu debug discrete GPU 0000:ff:00.0: suspended, so not reading it"]);
+    }
+
+    // Kept awake by something else, the gate backs off to five minutes,
+    // which is said once at info; the reads and releases from then on are
+    // debug.
+    function test_journalQuietOnceSomethingElseKeepsItAwake() {
+        reader.takeStatus("active", "auto", 1000);
+        reader.tick(1500);
+        reader.gate = { phase: "resting", since: 2000, quietSince: -1, holdMs: 160000 };
+        logged = [];
+        reader.takeStatus("active", "auto", 20000);
+        reader.tick(20500);
+        compare(above(), ["ringside.gpu info discrete GPU 0000:ff:00.0: something else keeps it awake; "
+                          + "Ringside lets go every 300 s to give it a chance to suspend"]);
+        reader.gate = { phase: "resting", since: 21000, quietSince: -1, holdMs: 300000 };
+        reader.takeStatus("active", "auto", 40000);
+        reader.tick(40500);
+        compare(above().length, 1, "nothing more at info: " + logged);
+        verify(logged.includes("ringside.gpu debug released discrete GPU 0000:ff:00.0's readings"), logged);
+    }
+
+    // Only the leader writes, so two widgets showing one GPU say each thing once.
+    function test_journalOnlyFromTheLeader() {
+        const other = createTemporaryObject(readerComponent, testCase, { info: reader.info, onRing: true });
+        other.tick(500);
+        verify(!other.leading);
+        other.takeStatus("suspended", "auto", 1000);
+        other.takeStatus("active", "auto", 2000);
+        compare(logged, []);
     }
 
     function test_idsAreFixedAndIncludeBoardPower() {

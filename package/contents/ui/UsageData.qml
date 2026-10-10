@@ -6,6 +6,7 @@ import QtQuick
 import org.kde.plasma.plasma5support as P5Support
 import "code/items.js" as Items
 import "code/limits.js" as Limits
+import "code/log.js" as Log
 import "code/report.js" as Report
 import "code/reset.js" as Reset
 
@@ -24,6 +25,9 @@ import "code/reset.js" as Reset
 // It also drives the opt-in session starter: the helper reports each
 // provider's starter in every report, and the widget runs the helper with
 // --start when one is due and with --starter-set when its switch is turned.
+//
+// Each run's report carries the helper's lines for the journal, which go
+// there under ringside.usage, as does a helper run that gave no report.
 Item {
     id: usage
 
@@ -74,6 +78,15 @@ Item {
     // Per id, the switch change that didn't take: { on, error }. Shown
     // until the switch is turned again or reported where it was asked.
     property var switchFailures: ({})
+    // The helper's own failure last written to the journal, so a failure
+    // that repeats on every check is written once, and its end once.
+    property string helperTrouble: ""
+
+    LoggingCategory {
+        id: journal
+        name: "ringside.usage"
+        defaultLogLevel: LoggingCategory.Info
+    }
 
     // Windows that just started over (see code/reset.js), sent before
     // `entries` changes so a ring can play the reset from its old reading.
@@ -354,6 +367,34 @@ Item {
         writeStatus();
     }
 
+    // The helper's lines, as usage.py's event() made them.
+    function writeEvents(events) {
+        for (const e of Array.isArray(events) ? events : []) {
+            if (["debug", "info", "warning"].includes(e?.level) && typeof e.message === "string") {
+                Log.write(journal, e.level, e.message);
+            }
+        }
+    }
+
+    // A helper failure for the journal: what failed and, from the last
+    // line of a traceback, only the error's name, since its message may
+    // name anything the helper was handling.
+    function troubleText(failure) {
+        const error = /^([A-Za-z_][\w.]*)(?::|$)/.exec(failure.detail)?.[1];
+        const text = failure.reason === "missing" ? "python3 was not found on the Plasma session's PATH"
+                   : failure.reason === "crashed" ? "the usage helper crashed"
+                   : failure.reason === "unreadable" ? "the usage helper's output couldn't be read"
+                   : "the usage helper exited with code " + failure.code;
+        return error ? text + " (" + error + ")" : text;
+    }
+
+    // A failed check run, written as a warning when it starts or changes,
+    // and as debug while it repeats.
+    function noteTrouble(text) {
+        Log.write(journal, text === helperTrouble ? "debug" : "warning", text);
+        helperTrouble = text;
+    }
+
     function failureText(failure) {
         switch (failure.reason) {
         case "missing":
@@ -434,14 +475,22 @@ Item {
             } catch (err) {
                 report = null;
             }
+            usage.writeEvents(report?.events);
             if (!report?.providers && started) {
-                usage.startFailed(started[1].split(","), usage.failureText(Report.helperFailure(data)));
+                const failure = Report.helperFailure(data);
+                Log.write(journal, "warning", "the session starter run for " + started[1] + " failed: "
+                          + usage.troubleText(failure));
+                usage.startFailed(started[1].split(","), usage.failureText(failure));
             } else if (!report?.providers && set) {
+                const failure = Report.helperFailure(data);
+                Log.write(journal, "warning", "the " + set[1] + " session starter switch wasn't saved: "
+                          + usage.troubleText(failure));
                 if (settled) {
-                    usage.switchRefused(settled, set[2] === "on", usage.failureText(Report.helperFailure(data)));
+                    usage.switchRefused(settled, set[2] === "on", usage.failureText(failure));
                 }
             } else if (!report?.providers) {
                 const failure = Report.helperFailure(data);
+                usage.noteTrouble(usage.troubleText(failure));
                 usage.helperError = usage.failureText(failure);
                 // A provider still loading that this run polled fails with
                 // the rest; one that only another run polls waits for it.
@@ -454,6 +503,10 @@ Item {
                 usage.answered = usage.answered.concat(first);
                 usage.writeStatus();
             } else {
+                if (usage.helperTrouble !== "") {
+                    Log.write(journal, "info", "the usage helper reports again, after: " + usage.helperTrouble);
+                    usage.helperTrouble = "";
+                }
                 usage.helperError = "";
                 usage.merge(report);
                 const reason = Report.helperFailure(data).detail;

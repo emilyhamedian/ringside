@@ -7,6 +7,7 @@ import org.kde.ksysguard.sensors as Sensors
 import "code/format.js" as Format
 import "code/gpugate.js" as Gate
 import "code/gpushare.js" as GpuShare
+import "code/log.js" as Log
 
 // One GPU's readings. Monitor keeps one reader per GPU the helper found and
 // points the outer and inner rings at two of them. A reader's sensor ids
@@ -17,6 +18,10 @@ import "code/gpushare.js" as GpuShare
 // gpushare.js): it alone subscribes, and the others show its readings. The
 // leader reads a discrete GPU the kernel can power down only while
 // gpugate.js says so, from runtime PM states Monitor polls from sysfs.
+//
+// The leader writes to the journal, under ringside.gpu, when a discrete GPU
+// goes to sleep or wakes and when it subscribes to or releases one the
+// kernel can power down, and the gate's moves as debug.
 QtObject {
     id: reader
 
@@ -39,6 +44,8 @@ QtObject {
     property string pmControl: ""
     property real pmReadAt: -1
     property var gate: Gate.initial()
+    // The gate as it was before its last change, for the journal.
+    property var gateWas: Gate.initial()
 
     // This GPU's leader, which is this reader when it leads.
     property QtObject leader: null
@@ -158,6 +165,46 @@ QtObject {
         }
     }
 
+    property LoggingCategory journal: LoggingCategory {
+        name: "ringside.gpu"
+        defaultLogLevel: LoggingCategory.Info
+    }
+    readonly property string label: present ? kind + " GPU " + info.bdf : ""
+
+    // Once the gate has backed off as far as it goes, something else keeps
+    // the GPU awake, and its reads and releases every five minutes are
+    // debug, said once at info.
+    function noteGate() {
+        const was = gateWas;
+        gateWas = gate;
+        if (!leading || !gated || was.phase === gate.phase) {
+            return;
+        }
+        const seconds = gate.holdMs / 1000;
+        if (gate.phase === "live" && was.phase === "resting") {
+            Log.write(journal, "debug", label + ": still awake after Ringside let go, so reading it again; it lets go after "
+                      + seconds + " s idle next time");
+            if (gate.holdMs >= Gate.MAX_HOLD_MS && was.holdMs < Gate.MAX_HOLD_MS) {
+                Log.write(journal, "info", label + ": something else keeps it awake; Ringside lets go every "
+                          + seconds + " s to give it a chance to suspend");
+            }
+        } else if (gate.phase === "live") {
+            Log.write(journal, "debug", label + ": awake, so reading it");
+        } else if (gate.phase === "resting") {
+            Log.write(journal, "debug", label + ": idle for " + seconds + " s, so letting go for it to suspend");
+        } else {
+            Log.write(journal, "debug", label + ": suspended, so not reading it");
+        }
+    }
+
+    onGateChanged: noteGate()
+    onSubscribedChanged: {
+        if (present) {
+            Log.write(journal, gated && gate.holdMs < Gate.MAX_HOLD_MS ? "info" : "debug",
+                      (subscribed ? "subscribed to " : "released ") + label + "'s readings");
+        }
+    }
+
     function gateInput(now, status, statusAt) {
         return { now: now, status: status, statusAt: statusAt, usage: subscribed ? read(0) : undefined,
                  watched: anyWatched, autosuspendMs: info.autosuspendMs, vendor: vendor };
@@ -166,6 +213,13 @@ QtObject {
     // One poll runs at a time, so answers arrive in order.
     function takeStatus(status, control, readAt) {
         const wasGated = gated;
+        if (leading && kind === "discrete" && status !== ""
+            && (pmStatus === "" || Gate.sleeping(status) !== Gate.sleeping(pmStatus))) {
+            const asleep = Gate.sleeping(status);
+            Log.write(journal, pmStatus === "" ? "debug" : "info",
+                      label + (pmStatus === "" ? (asleep ? " is asleep" : " is awake")
+                                                : (asleep ? " went to sleep" : " woke up")));
+        }
         pmStatus = status;
         pmControl = control;
         pmReadAt = readAt;

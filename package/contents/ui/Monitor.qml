@@ -9,6 +9,7 @@ import "code/format.js" as Format
 import "code/hardware.js" as Hardware
 import "code/history.js" as History
 import "code/items.js" as Items
+import "code/log.js" as Log
 import "code/publicaddress.js" as Lookup
 
 // Every reading the panel and the popups show, and the only place the widget
@@ -32,8 +33,17 @@ import "code/publicaddress.js" as Lookup
 // buckets of their average and highest reading (see code/history.js). Its
 // *History and *Highs properties hold the span shown; *Highs is empty at a
 // minute, where each point is a reading.
+//
+// What keeps a reading or the saved history from working goes to the
+// journal under ringside.setup.
 Item {
     id: monitor
+
+    LoggingCategory {
+        id: journal
+        name: "ringside.setup"
+        defaultLogLevel: LoggingCategory.Info
+    }
 
     // Plasmoid.configuration, or an object with the same keys.
     required property var config
@@ -507,7 +517,8 @@ Item {
         const component = Qt.createComponent(storeUrl);
         if (component.status !== Component.Ready) {
             storeMissing = true;
-            console.warn("ringside: graph history stays in memory, as the store can't load:", component.errorString());
+            Log.write(journal, "warning", "the graphs' history stays in memory, as the store can't load: "
+                      + component.errorString().trim());
             return;
         }
         store = component.createObject(monitor, { widget: widgetId });
@@ -607,6 +618,49 @@ Item {
                 r.tick(monitor.clockMs);
             }
         }
+    }
+
+    // A sensor ksystemstats doesn't publish stays loading for good. Each
+    // minute while system items show, one enabled and loading at the check
+    // before too goes to the journal, once: a CPU without a temperature
+    // sensor, say, or Plasma before 6.2 without memory pressure. With none
+    // loaded at all, ksystemstats isn't answering.
+    property var sensorsLoading: ({})
+    property var sensorsNamed: ({})
+
+    function noteMissingSensors() {
+        const sensors = [cpuUsageSensor, coreCountSensor, memoryTotalSensor, memoryUsedSensor, memoryApplicationSensor,
+                         memoryCacheSensor, memoryBufferSensor, swapUsedSensor, swapTotalSensor, pressureSensor];
+        for (const group of [cpuTemperatureReaders, networkReaders, networkInfoReaders, diskReaders, volumeReaders,
+                             diskTemperatureReaders].concat(readers().map(r => r.sensors))) {
+            for (let i = 0; i < group.count; ++i) {
+                sensors.push(group.objectAt(i));
+            }
+        }
+        const shown = sensors.filter(s => s && s.enabled && s.sensorId !== "");
+        const loading = {};
+        for (const s of shown.filter(s => s.status === Sensors.Sensor.Loading)) {
+            loading[s.sensorId] = true;
+        }
+        const missing = Object.keys(loading).filter(id => sensorsLoading[id] && !sensorsNamed[id]);
+        sensorsLoading = loading;
+        if (missing.length > 0 && missing.length === shown.length) {
+            Log.write(journal, "warning", "no sensor has answered for a minute: is ksystemstats running?");
+        } else {
+            for (const id of missing) {
+                Log.write(journal, "info", "ksystemstats has no sensor " + id + ", so its reading stays empty");
+            }
+        }
+        for (const id of missing) {
+            sensorsNamed[id] = true;
+        }
+    }
+
+    Timer {
+        interval: 60000
+        running: monitor.systemShown
+        repeat: true
+        onTriggered: monitor.noteMissingSensors()
     }
 
     component Reader: Sensors.Sensor {
@@ -722,15 +776,14 @@ Item {
         onNewData: (source, data) => {
             disconnectSource(source);
             if (data["exit code"] !== 0) {
-                console.warn("ringside: hardware helper exited with", data["exit code"], data.stderr);
-                retry.start();
+                const said = String(data.stderr ?? "").trim().split("\n").pop();
+                retry.failed("ringside-info.sh exited with code " + data["exit code"] + (said ? ": " + said : ""));
                 return;
             }
             try {
                 monitor.hardware = JSON.parse(data.stdout);
             } catch (err) {
-                console.warn("ringside: unreadable hardware report:", err);
-                retry.start();
+                retry.failed("ringside-info.sh gave a report that couldn't be read: " + err);
                 return;
             }
             monitor.routeInterface = monitor.hardware.defaultInterface || "";
@@ -747,6 +800,11 @@ Item {
         id: retry
         property int left: 3
         interval: 5000
+        function failed(why) {
+            Log.write(journal, "warning", why + (left > 0 ? "; trying again in 5 s"
+                                                          : "; the GPU item and the hardware details stay empty"));
+            start();
+        }
         onTriggered: {
             if (left-- > 0) {
                 helper.connectSource(helper.command("static"));

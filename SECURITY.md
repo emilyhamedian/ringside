@@ -81,3 +81,9 @@ Mainly the two helpers Ringside runs:
   Claude Code or Codex CLI when a session or week ends, counted against your
   limits like any message. To choose Codex's model it reads the Codex CLI's
   model list in `~/.codex/models_cache.json`.
+- What goes wrong is written to Plasma's journal, which your user can read,
+  as can administrators and members of groups such as `systemd-journal`:
+  failed checks with their reason and the Anthropic host or public address
+  service involved, the session starter's steps, a discrete GPU's sleep and
+  wake, and sensors that don't answer. No token, address, place, account
+  name or file contents is ever written.

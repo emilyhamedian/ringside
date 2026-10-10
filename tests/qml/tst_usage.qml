@@ -7,6 +7,7 @@ import org.kde.kirigami as Kirigami
 import "../../package/contents/ui"
 import "../../package/contents/ui/popups"
 import "../../package/contents/ui/code/format.js" as Format
+import "../../package/contents/ui/code/log.js" as Log
 import "../../package/contents/ui/code/report.js" as Report
 import "../../package/contents/ui/code/style.js" as Style
 import "starterstates.js" as StarterStates
@@ -1107,6 +1108,68 @@ Item {
             usage.setStarter("codex", true);
             compare(usage.starterWanted, {}, "an unpolled provider has no switch");
             tryVerify(() => runner().connectedSources.length === 0, 10000);
+        }
+
+        // ---- The journal ----
+
+        property var logged: []
+        property var listener: null
+
+        // What is written to the journal from here on, as "category level text".
+        function journal() {
+            logged = [];
+            listener = (category, level, text) => { logged = logged.concat([category + " " + level + " " + text]); };
+            Log.listen(listener);
+        }
+
+        function cleanup() {
+            Log.unlisten(listener);
+        }
+
+        function test_writesTheHelpersLines() {
+            journal();
+            start("events");
+            compare(logged, ["ringside.usage debug Claude: checked in 412 ms",
+                             "ringside.usage info Codex: checked in 90 ms, working again after: the Codex CLI didn't answer in 20 s",
+                             "ringside.usage warning Claude: check failed after 3 ms: can't reach api.anthropic.com"]);
+        }
+
+        function test_aQuietPollWritesNothingAtInfo() {
+            journal();
+            start("quiet");
+            poll("quiet");
+            poll("ok");
+            compare(logged.filter(line => !/^ringside\.usage debug /.test(line)), []);
+            compare(logged.length, 4, "each of the helper's debug lines");
+        }
+
+        // The helper failing on every check is written once, its repeats as
+        // debug, and its end once; only the error's name goes in, never what
+        // the traceback says of it.
+        function test_aFailingHelperIsWrittenOnce() {
+            start("ok");
+            journal();
+            poll("traceback");
+            poll("traceback");
+            poll("files");
+            poll("ok");
+            poll("ok");
+            compare(logged, ["ringside.usage warning the usage helper exited with code 1 (KeyError)",
+                             "ringside.usage debug the usage helper exited with code 1 (KeyError)",
+                             "ringside.usage warning the usage helper exited with code 1 (PermissionError)",
+                             "ringside.usage info the usage helper reports again, after: the usage helper exited with code 1 (PermissionError)"]);
+            verify(logged.every(line => !line.includes("weekly") && !line.includes("/home/")), logged);
+        }
+
+        function test_aFailedStartIsWritten() {
+            start("starter-start-fails");
+            journal();
+            const due = usage.starter("claude").next;
+            tryVerify(() => Date.now() / 1000 >= due, 5000);
+            starterTick().triggered();
+            tryVerify(() => usage.starter("claude").state === "failed", 10000);
+            compare(logged, ["ringside.usage warning the session starter run for claude failed: "
+                             + "the usage helper exited with code 1 (RuntimeError)"]);
         }
     }
 

@@ -59,7 +59,7 @@ class Harness:
         self.missing = False
         self.events = []
         self.starter = usage.Starter(
-            self.record, read=self.read, check=self.check, send=self.send,
+            provider, self.record, read=self.read, check=self.check, send=self.send,
             running=usage.claude_running if provider == "claude" else usage.codex_running,
             period=SESSION if provider == "claude" else WEEK,
             persist=self.persist, clock=lambda: self.now)

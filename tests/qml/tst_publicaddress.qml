@@ -8,6 +8,7 @@ import QtTest
 import org.kde.kirigami as Kirigami
 import "../../package/contents/ui"
 import "../../package/contents/ui/config"
+import "../../package/contents/ui/code/log.js" as Log
 import "../../package/contents/ui/code/publicaddress.js" as Lookup
 
 // The public address in the network popup: the service's URLs and replies,
@@ -154,6 +155,7 @@ Item {
         property var monitors: []
 
         function cleanup() {
+            Log.unlisten(listener);
             popupMonitor.publicAddress = null;
             for (const m of monitors) {
                 m.destroy();
@@ -746,6 +748,82 @@ Item {
             set.checker.open = true;
             compare(set.made.length, 2);
             compare(set.checker.status, "checking");
+        }
+
+        // ---- The journal ----
+
+        property var logged: []
+        readonly property var listener: (category, level, text) => { logged = logged.concat([category + " " + level + " " + text]); }
+
+        function journal() {
+            logged = [];
+            Log.listen(listener);
+        }
+
+        // Each request is debug with the host asked and how long it took;
+        // neither the address nor the place it names is ever written.
+        function test_journalNamesTheHostNotTheAddress() {
+            journal();
+            const set = checker({}, own("journal"));
+            root.now += 230;
+            answer(set.made, "v4", 200, JSON.stringify({ ip: "203.0.113.7", city: "Oslo", country: "Norway" }));
+            answer(set.made, "v6", 200, "2001:db8::1c");
+            Log.unlisten(listener);
+            compare(set.checker.status, "shown");
+            compare(set.checker.record.result.places.v4.city, "Oslo");
+            compare(logged, ["ringside.network debug asked journal.example: answered after 230 ms",
+                             "ringside.network debug asked journal-6.example: answered after 230 ms"]);
+            for (const secret of ["203.0.113", "2001:db8", "Oslo", "Norway"]) {
+                verify(logged.every(line => !line.includes(secret)), secret);
+            }
+        }
+
+        // A failure is a warning when it starts or changes, debug while it
+        // repeats, and its end is info.
+        function test_journalFailureRepeatAndRecovery() {
+            journal();
+            const set = checker({}, own("journal-fails", false));
+            const again = () => {
+                root.now += 61000;
+                set.checker.retry();
+            };
+            answer(set.made, "v4", 503, "");
+            again();
+            answer(set.made, "v4", 503, "");
+            again();
+            answer(set.made, "v4", 200, "<html>203.0.113.7</html>");
+            again();
+            answer(set.made, "v4", 200, "203.0.113.7");
+            again();
+            compare(set.checker.status, "shown");
+            Log.unlisten(listener);
+            compare(logged, ["ringside.network warning asked journal-fails.example: HTTP 503 after 0 ms",
+                             "ringside.network debug asked journal-fails.example: HTTP 503 after 0 ms",
+                             "ringside.network warning asked journal-fails.example: a reply that isn't an address after 0 ms",
+                             "ringside.network info asked journal-fails.example: answered after 0 ms, working again"]);
+        }
+
+        function test_journalTimeoutAndRedirect() {
+            journal();
+            const late = checker({ clock: () => root.now, timeoutMs: 100 }, own("journal-late", false));
+            tryCompare(late.checker, "status", "failed", 2000);
+            const moved = checker({}, own("journal-moved", false));
+            answer(moved.made, "v4", 200, "203.0.113.7", "https://elsewhere.example/ip");
+            Log.unlisten(listener);
+            compare(logged, ["ringside.network warning asked journal-late.example: no answer in 0.1 s after 0 ms",
+                             "ringside.network warning asked journal-moved.example: an answer from another address after 0 ms"]);
+        }
+
+        // A custom service given as an address goes unnamed.
+        function test_journalLeavesOutAnAddressAsHost_data() {
+            return [{ tag: "IPv4", url: "https://203.0.113.50/ip" }, { tag: "IPv6", url: "https://[2001:db8::50]/ip" }];
+        }
+        function test_journalLeavesOutAnAddressAsHost(data) {
+            journal();
+            const set = checker({}, { publicAddressUrl4: data.url, publicAddressUrl6: "" });
+            answer(set.made, "v4", 503, "");
+            Log.unlisten(listener);
+            compare(logged, ["ringside.network warning asked the custom service: HTTP 503 after 0 ms"]);
         }
 
         // A clock set back reads as a long time since, not as a check to come.

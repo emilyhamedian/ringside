@@ -6,6 +6,7 @@ import QtQuick.LocalStorage as Sql
 import QtTest
 import org.kde.plasma.plasma5support as P5Support
 import "../../package/contents/ui"
+import "../../package/contents/ui/code/log.js" as Log
 
 // Monitor with a stub helper (data/fake-info.sh): its bindings evaluate
 // without script errors, the helper's report drives the GPU rings and the
@@ -432,6 +433,30 @@ TestCase {
         tryVerify(() => enabledSensors(leader).every(e => e), 5000);
         verify(enabledSensors(follower).every(e => !e));
         compare(follower.phase, leader.phase);
+    }
+
+    // What keeps the widget from its readings goes to the journal under
+    // ringside.setup: a hardware helper that fails, saying whether it is
+    // tried again, and a sensor ksystemstats doesn't publish, once.
+    function test_journalSetup() {
+        const logged = [];
+        const listener = (category, level, text) => logged.push(category + " " + level + " " + text);
+        Log.listen(listener);
+        const broken = makeMonitor({ helperPath: dataPath("no-such-helper.sh") });
+        tryVerify(() => logged.length > 0, 10000);
+        verify(/^ringside\.setup warning ringside-info\.sh exited with code \d+: .*; trying again in 5 s$/.test(logged[0]), logged[0]);
+        broken.destroy();
+        logged.length = 0;
+
+        config.cpuTemperatureSensor = "ringside/test/nothing";
+        monitor.noteMissingSensors();
+        monitor.noteMissingSensors();
+        monitor.noteMissingSensors();
+        Log.unlisten(listener);
+        const named = logged.filter(line => line === "ringside.setup info ksystemstats has no sensor ringside/test/nothing, "
+                                            + "so its reading stays empty"
+                                            || line.startsWith("ringside.setup warning no sensor has answered"));
+        compare(named.length, 1, logged);
     }
 
     // The helper prints "BDF  auto" when runtime_status can't be read: the
@@ -920,7 +945,7 @@ TestCase {
     // A saved row or series not in the store's shape, from a damaged file
     // say, is a gap, and the rest is restored.
     function test_malformedRowsAreGaps() {
-        failOnWarning(/graph history|RangeError/);
+        failOnWarning(/graphs' (saved )?history|RangeError/);
         forget();
         const hour = Math.floor(Date.now() / 30000);
         database().transaction(tx => {
@@ -942,8 +967,8 @@ TestCase {
     function test_aBrokenStoreSaysSoOnce() {
         Sql.LocalStorage.openDatabaseSync("ringside-tests-broken", "", "", 1000000)
             .transaction(tx => tx.executeSql("CREATE TABLE IF NOT EXISTS buckets (x TEXT)"));
-        ignoreWarning(/^ringside: graph history store:/);
-        failOnWarning(/graph history/);
+        ignoreWarning(/^the graphs' saved history can't be used:/);
+        failOnWarning(/graphs' (saved )?history/);
         const m = sampling(keeping("w1", true, { storeUrl: Qt.resolvedUrl("data/BrokenStore.qml") }));
         verify(m.store.failed);
         const t = tenMinutes(1);
@@ -1070,8 +1095,8 @@ TestCase {
     // Where the store can't load, Qt's LocalStorage module missing, the
     // widget still runs, keeps its history in memory and says so once.
     function test_aMissingStoreKeepsHistoryInMemory() {
-        ignoreWarning(/graph history stays in memory, as the store can't load/);
-        failOnWarning(/graph history/);
+        ignoreWarning(/^the graphs' history stays in memory, as the store can't load:/);
+        failOnWarning(/graphs' (saved )?history/);
         const m = sampling(keeping("w1", true, { storeUrl: Qt.resolvedUrl("data/MissingStore.qml") }));
         verify(m.storeMissing);
         compare(m.store, null);
