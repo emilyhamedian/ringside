@@ -104,7 +104,7 @@ ColumnLayout {
     // switch held. The checks run every 15 minutes and the helper's hold is
     // over, so the popup offers to try again.
     FakeMonitor {
-        id: failed
+        id: failedMonitor
         usage: FakeUsage {
             id: failedUsage
             refreshMinutes: 15
@@ -208,7 +208,7 @@ ColumnLayout {
 
     // The first check since the widget started, still running.
     FakeMonitor {
-        id: loading
+        id: loadingMonitor
         usage: FakeUsage {
             entries: ({})
             pending: ["claude", "codex"]
@@ -380,14 +380,14 @@ ColumnLayout {
     Panel {
         label: "Claude & Codex · panel · 46 px · Claude's checks failing for an hour (struck), Codex signed out (hidden)"
         thickness: 46
-        monitor: failed
+        monitor: failedMonitor
         items: ["cpu", "memory", "claude"]
     }
 
     Panel {
         label: "Claude & Codex · panel · 30 px · Claude's checks failing for an hour (struck)"
         thickness: 30
-        monitor: failed
+        monitor: failedMonitor
         items: ["cpu", "memory", "claude"]
     }
 
@@ -401,13 +401,13 @@ ColumnLayout {
     Panel {
         label: "Claude & Codex · panel · 46 px · the first check running (still dots; a lit dot travels after 1 s)"
         thickness: 46
-        monitor: loading
+        monitor: loadingMonitor
     }
 
     Panel {
         label: "Claude & Codex · panel · 30 px · the first check running"
         thickness: 30
-        monitor: loading
+        monitor: loadingMonitor
     }
 
     Panel {
@@ -455,7 +455,7 @@ ColumnLayout {
 
         Frame {
             label: "Claude · checks failing for an hour (struck), try again"
-            UsagePopup { monitor: failed; item: "claude" }
+            UsagePopup { monitor: failedMonitor; item: "claude" }
         }
 
         Frame {
@@ -479,7 +479,7 @@ ColumnLayout {
 
         Frame {
             label: "Claude · the first check running"
-            UsagePopup { monitor: loading; item: "claude" }
+            UsagePopup { monitor: loadingMonitor; item: "claude" }
         }
 
         Frame {
@@ -592,7 +592,7 @@ ColumnLayout {
             Panel {
                 label: "Breeze Light · Claude & Codex · panel · 46 px · the first check running"
                 thickness: 46
-                monitor: loading
+                monitor: loadingMonitor
             }
 
             Panel {
