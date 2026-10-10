@@ -223,6 +223,7 @@ GridLayout {
         Accessible.ignored: block.lines.length > 0
     }
     ColumnLayout {
+        id: publicColumn
         Layout.fillWidth: true
         spacing: 0
 
@@ -259,23 +260,41 @@ GridLayout {
         }
         // The message, the link after it and room after that, in the block's
         // direction. The link takes no more height than the line it joins, so
-        // the block keeps its size when the next check replaces it.
-        RowLayout {
+        // the block keeps its size when the next check replaces it. Placed by
+        // hand rather than by a RowLayout, so the message wraps to the room
+        // the column leaves it as soon as it shows, not when the popup lays
+        // it out: on Qt 6.6 a height that changes in the middle of laying out
+        // the popup costs it two more passes, and it gives up as a polish
+        // loop.
+        Item {
+            id: failure
+            readonly property real spacing: Kirigami.Units.largeSpacing
             visible: block.info.state === "failed"
             Layout.fillWidth: true
-            spacing: Kirigami.Units.largeSpacing
+            // On one line, so the message doesn't wrap to a column that
+            // hasn't been laid out yet.
+            implicitWidth: Math.ceil(unwrapped.advanceWidth) + retry.width + 2 * spacing
+            implicitHeight: message.implicitHeight
 
             Plain {
+                id: message
+                anchors.left: parent.left
                 // As wide as the text, so the link follows it, and no wider
-                // than the room left, so a long name wraps.
-                Layout.maximumWidth: Math.ceil(implicitWidth)
-                Layout.alignment: Qt.AlignBaseline
+                // than the room left, so a long name wraps. The text's width
+                // comes from its metrics: a wrapping Text's implicitWidth
+                // moves with its width on Qt 6.6.
+                width: Math.max(0, Math.min(Math.ceil(unwrapped.advanceWidth),
+                                            publicColumn.width - retry.width - 2 * failure.spacing))
                 color: Kirigami.Theme.textColor
                 text: i18nc("@info %1 is the service asked, such as ipify.org", "Can't reach %1", block.info.service ?? "")
             }
             Kirigami.LinkButton {
-                Layout.alignment: Qt.AlignBaseline
-                Layout.minimumWidth: implicitWidth
+                id: retry
+                // Whole pixels, so the message beside it ends on one too.
+                width: Math.ceil(implicitWidth)
+                anchors.left: message.right
+                anchors.leftMargin: failure.spacing
+                anchors.baseline: message.baseline
                 text: i18nc("@action:button asks the address service again after it couldn't be reached", "Try again")
                 font.pointSize: block.valuePointSize
                 font.underline: false
@@ -283,8 +302,10 @@ GridLayout {
                                               "Ask %1 for the public address again", block.info.service ?? "")
                 onClicked: block.retryRequested()
             }
-            Item {
-                Layout.fillWidth: true
+            TextMetrics {
+                id: unwrapped
+                font: message.font
+                text: message.text
             }
         }
         Plain {
