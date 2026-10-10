@@ -222,6 +222,10 @@ follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- The GPU popup keeps its temperature graph and span control at an hour or
+  a day while the span's first step is still being gathered, as the CPU and
+  disk popups do.
+- Screen readers hear a ring's percentage in the language's own digits.
 - Ring names and the Claude and Codex marks sit at the ring's centre. At
   scales such as 125% they could be up to a pixel off: a ring of an odd
   size was rounded to a whole pixel, the marks were snapped to the
