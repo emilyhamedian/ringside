@@ -115,8 +115,9 @@ TestCase {
     function test_ofWindow() {
         const window = { percent: 60, resetsAt: end, windowSeconds: 7 * day, history: [] };
         const at = start + 3 * day;
-        compare(Pace.ofWindow(window, at, at + 600).state, "out");
-        compare(Pace.ofWindow(window, at, at + 600).runOut, start + 5 * day);
+        const pace = Pace.ofWindow(window, at, at + 600);
+        compare(pace.state, "out");
+        compare(pace.runOut, start + 5 * day);
         compare(Pace.ofWindow(null, at, at).state, "none");
         compare(Pace.ofWindow({ percent: 60, resetsAt: null, windowSeconds: 7 * day }, at, at).state, "none");
     }
