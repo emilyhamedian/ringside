@@ -178,9 +178,12 @@ follows [Semantic Versioning](https://semver.org/).
 - The Codex ring shows the Codex mark, its cloud drawn as an outline, or the
   OpenAI logo it showed before, at its old size: choose which on AI
   Providers, where the choice appears once Codex is on or has reported.
+  With the OpenAI logo, its popup and tooltip call it ChatGPT. The settings
+  call the provider OpenAI.
 - How often Claude and Codex are checked, and which per-model limit each
   inner ring shows, moved from General and Sensors to a new AI Providers
-  page in the settings. Existing settings carry over.
+  page in the settings, with a section for each provider. Existing settings
+  carry over.
 
 ### Removed
 
