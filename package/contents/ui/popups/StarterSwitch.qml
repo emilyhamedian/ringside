@@ -44,6 +44,8 @@ ColumnLayout {
         // would otherwise widen the popup.
         Layout.preferredWidth: 0
         enabled: !row.struck
+        // Plasma's small spacing leaves the label against the knob.
+        spacing: Kirigami.Units.largeSpacing
         text: row.item === "claude" ? i18nc("@option:check", "Start a new session when one ends")
                                     : i18nc("@option:check", "Start a new week when one ends")
         // The change asked for until the helper reports, then what the

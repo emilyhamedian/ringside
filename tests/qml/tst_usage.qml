@@ -2752,6 +2752,30 @@ Item {
             compare(usage.starterRequests, [["claude", !data.on]]);
         }
 
+        // The label stands a large spacing clear of the switch, and the
+        // status under it starts where the label does, in either direction
+        // of writing.
+        function test_starterLabelHasRoom_data() {
+            return [{ tag: "left to right", mirrored: false }, { tag: "right to left", mirrored: true }];
+        }
+
+        function test_starterLabelHasRoom(data) {
+            const popup = load("claude", data.mirrored);
+            const toggle = starterSwitch(popup);
+            const status = starterStatus(popup);
+            const label = root.find(toggle.contentItem, i => i.visible && i.text === toggle.text && i.contentWidth !== undefined);
+            verify(label);
+            const x = (i, at) => i.mapToItem(popup, Qt.point(at, 0)).x;
+            const track = toggle.indicator;
+            if (data.mirrored) {
+                compare(x(track, 0) - x(label, label.width), Kirigami.Units.largeSpacing);
+                compare(x(status, status.width), x(label, label.width));
+            } else {
+                compare(x(label, 0) - x(track, track.width), Kirigami.Units.largeSpacing);
+                compare(x(status, 0), x(label, 0));
+            }
+        }
+
         function test_starterMirrors() {
             const popup = load("claude", true);
             const toggle = starterSwitch(popup);
