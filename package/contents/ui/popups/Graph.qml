@@ -107,12 +107,15 @@ Item {
         preferredRendererType: Shape.CurveRenderer
         visible: graph.second
 
+        // As strong as the first line, told from it by longer dashes.
         ShapePath {
-            strokeColor: Qt.alpha(graph.color, 0.55 * graph.color.a)
+            strokeColor: graph.color
             strokeWidth: 1.5
             strokeStyle: ShapePath.DashLine
-            dashPattern: [2, 1.33]
+            dashPattern: [3, 2]
             fillColor: "transparent"
+            joinStyle: ShapePath.RoundJoin
+            capStyle: ShapePath.FlatCap
             PathMultiline { paths: graph.drawn.secondRuns }
         }
     }
