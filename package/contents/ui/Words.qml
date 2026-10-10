@@ -134,18 +134,19 @@ QtObject {
                  second: spelled(parts) || "–", heat: parts.length > 0 && weekly.percent >= 100 ? 2 : 0 };
     }
 
-    // The memory in use as the panel can show it: up to the installed total,
-    // "31.9 GiB", and from 1 GiB, below which no desktop running Plasma
-    // gets, so a total just past a unit, "1.0 TiB", keeps room for three
-    // figures of the unit below. Every unit until the total is known.
+    // The memory in use as the panel can show it, in the units it shows: up
+    // to the installed total, "31.9 GiB", and from 1 GiB (or 1 GB), below
+    // which no desktop running Plasma gets, so a total just past a unit,
+    // "1.0 TiB", keeps room for three figures of the unit below. Every unit
+    // until the total is known.
     function memoryRoom() {
         const units = Format.panelByteUnits();
         const total = Format.panelBytes(monitor.memoryTotal);
         if (total.unit === "") {
             return units.map(unit => Format.decimal(100, 1) + " " + unit);
         }
-        const floor = units.indexOf(Format.panelBytes(Math.min(monitor.memoryTotal, 1024 * 1024 * 1024)).unit);
-        return [total.value + " " + total.unit].concat(units.slice(floor, units.indexOf(total.unit))
+        const giga = 3;
+        return [total.value + " " + total.unit].concat(units.slice(giga, units.indexOf(total.unit))
                                                             .map(unit => Format.decimal(100, 1) + " " + unit));
     }
 

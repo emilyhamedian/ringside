@@ -6,11 +6,12 @@ set -u
 
 # Runs the tests on the supported floor, Plasma 6.0 with Qt 6.6 and KF 6.0,
 # where scripts/test.sh can't: the QtTest suites under tests/qml/, tst_format,
-# tst_cells and tst_usage in German and Egyptian Arabic, the gallery, the
-# hardware helper's shell tests and the usage helper's Python tests. Qt 6.6
-# reports binding loops that later Qt doesn't, and the suites and the gallery
-# fail on them. libplasma ships an importable org.kde.plasma.plasmoid module
-# only from 6.5 on, so the stand-in in tests/floor goes on the import path.
+# tst_cells and tst_usage in German and Egyptian Arabic, tst_units in each of
+# KDE's data units, the gallery, the hardware helper's shell tests and the
+# usage helper's Python tests. Qt 6.6 reports binding loops that later Qt
+# doesn't, and the suites and the gallery fail on them. libplasma ships an
+# importable org.kde.plasma.plasmoid module only from 6.5 on, so the stand-in
+# in tests/floor goes on the import path.
 # CI runs this on Fedora 40 as released. qmltestrunner is looked for in
 # /usr/lib/qt6/bin, /usr/lib64/qt6/bin and then PATH; set QMLTESTRUNNER to use
 # another.
@@ -48,6 +49,15 @@ for lang in de_DE ar_EG; do
         LANG=$lang.UTF-8 LC_ALL=$lang.UTF-8 "$QMLTESTRUNNER" -platform offscreen \
             -input "$f" || failed=1
     done
+done
+dialect=0
+for units in iec jedec metric; do
+    echo "-- tests/qml/units/tst_units.qml ($units) --"
+    mkdir -p "$scratch/$units"
+    printf '[Locale]\nBinaryUnitDialect=%s\n' "$dialect" > "$scratch/$units/kdeglobals"
+    XDG_CONFIG_HOME=$scratch/$units LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 LANGUAGE=en_US "$QMLTESTRUNNER" -platform offscreen \
+        -input tests/qml/units/tst_units.qml "Units::test_$units" || failed=1
+    dialect=$((dialect + 1))
 done
 
 echo

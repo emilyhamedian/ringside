@@ -22,8 +22,9 @@ usage limits too.
   turn them on.
 - Click any item for a popup with graphs of the last minute, hour or day, top
   processes and more.
-- It matches your Plasma theme, and rings turn amber, then red, when
-  something runs hot or fills up.
+- It matches your Plasma theme and shows sizes in the units you chose in
+  *Region & Language*. Rings turn amber, then red, when something runs hot
+  or fills up.
 
 ![The CPU, GPU, memory, network and disk popups](docs/popups.png)
 

@@ -5,6 +5,7 @@ import QtQuick
 import QtTest
 import org.kde.kirigami as Kirigami
 import "../../package/contents/ui"
+import "../../package/contents/ui/code/format.js" as Format
 
 // The panel strip with FakeMonitor's readings: rings follow the panel's
 // thickness inside the hover wash, with the item's name inside them and their
@@ -589,6 +590,25 @@ Item {
             const disk = strip.cellAt(6).contentItem;
             compare(visibleTexts(network), network.whole ? ["25M", "1M"] : ["24.8M", "1.2M"]);
             compare(visibleTexts(disk), disk.whole ? ["R", "12M", "W", "3M"] : ["R", "12.0M", "W", "3.4M"]);
+        }
+
+        // The prefixes are the same letters whatever KDE calls the units in
+        // the user's language, as French does (o, Kio, Mio), and bytes have
+        // none.
+        function test_verticalPrefixesInAnyLanguage() {
+            Format.setByteUnits(1024, ["o", "Kio", "Mio", "Gio", "Tio", "Pio"]);
+            try {
+                monitor.networkBits = false;
+                monitor.networkDown = 500;
+                monitor.networkUp = 1023 * 1024;
+                const strip = makeStrip({ items: ["network", "disk"], vertical: true, width: 46, thickness: 46 });
+                const network = strip.cellAt(0).contentItem;
+                const disk = strip.cellAt(1).contentItem;
+                compare(visibleTexts(network), network.whole ? ["500", "1M"] : ["500", "1023K"]);
+                compare(visibleTexts(disk), disk.whole ? ["R", "12M", "W", "3M"] : ["R", "12.0M", "W", "3.4M"]);
+            } finally {
+                Format.setByteUnits(1024, ["B", "KiB", "MiB", "GiB", "TiB", "PiB"]);
+            }
         }
 
         // Names sit inside the rings beside two lines of readings, and where

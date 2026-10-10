@@ -6,6 +6,7 @@ import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls as QQC2
 import org.kde.kirigami as Kirigami
+import "../code/format.js" as Format
 import "../code/publicaddress.js" as Lookup
 
 ConfigPage {
@@ -276,7 +277,7 @@ ConfigPage {
                 onToggled: page.cfg_networkBits = checked
             }
             QQC2.RadioButton {
-                text: i18nc("@option:radio", "Bytes per second (MiB/s)")
+                text: i18nc("@option:radio %1 is a unit, e.g. MiB/s", "Bytes per second (%1)", Format.panelRateUnits(false)[1])
                 checked: !page.cfg_networkBits
                 onToggled: page.cfg_networkBits = !checked
             }

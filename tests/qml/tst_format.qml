@@ -427,4 +427,143 @@ TestCase {
         compare([wall.getDay(), wall.getDate(), wall.getHours(), wall.getMinutes()],
                 [data.day, data.date, data.hours, data.minutes]);
     }
+
+    // KDE's three choices of data units, as Monitor hands them to format.js.
+    readonly property var dialects: ({
+        iec: { base: 1024, labels: ["B", "KiB", "MiB", "GiB", "TiB", "PiB"] },
+        jedec: { base: 1024, labels: ["B", "KB", "MB", "GB", "TB", "PB"] },
+        metric: { base: 1000, labels: ["B", "kB", "MB", "GB", "TB", "PB"] }
+    })
+
+    function cleanup() {
+        Format.setByteUnits(dialects.iec.base, dialects.iec.labels);
+    }
+
+    // Every size and byte rate takes the base and the names of the units
+    // KDE is set to; bit rates stay in 1000s whatever it is.
+    function test_byteUnits_data() {
+        const gib = 1024 ** 3;
+        const mib = 1024 ** 2;
+        const rows = [];
+        const add = (what, show, expected) => {
+            for (const dialect of Object.keys(expected)) {
+                rows.push({ tag: what + " in " + dialect, dialect: dialect, show: show, expected: expected[dialect] });
+            }
+        };
+        const panelBytes = v => () => Format.panelBytes(v);
+        // The panel's memory.
+        add("9.6 GiB", panelBytes(9.6 * gib), { iec: ["9.6", "GiB"], jedec: ["9.6", "GB"], metric: ["10.3", "GB"] });
+        add("900 MiB", panelBytes(900 * mib), { iec: ["900.0", "MiB"], jedec: ["900.0", "MB"], metric: ["943.7", "MB"] });
+        // The unit steps up at 999.95 of the one shown, in either base.
+        add("999.9 million", panelBytes(999.9e6), { iec: ["953.6", "MiB"], metric: ["999.9", "MB"] });
+        add("999.96 million", panelBytes(999.96e6), { iec: ["953.6", "MiB"], metric: ["1.0", "GB"] });
+        add("999.96 MiB", panelBytes(999.96 * mib), { iec: ["1.0", "GiB"], jedec: ["1.0", "GB"], metric: ["1.0", "GB"] });
+        add("1000 bytes", panelBytes(1000), { iec: ["1.0", "KiB"], metric: ["1.0", "kB"] });
+        // A popup's sizes, and a total.
+        add("3.2 GiB", () => Format.bytes(3.2 * gib, false), { iec: ["3.2", "GiB"], jedec: ["3.2", "GB"], metric: ["3.4", "GB"] });
+        add("16 GiB trimmed", () => Format.bytes(16 * gib, true), { iec: ["16", "GiB"], jedec: ["16", "GB"], metric: ["17.2", "GB"] });
+        add("1000 bytes in a popup", () => Format.bytes(1000, false), { iec: ["1000", "B"], metric: ["1.0", "kB"] });
+        add("999.6 thousand", () => Format.bytes(999.6e3, false), { iec: ["976", "KiB"], metric: ["1.0", "MB"] });
+        add("3.2 of 16 GiB", () => { const b = Format.bytesOf(3.2 * gib, 16 * gib); return { value: b.value + "/" + b.total, unit: b.unit }; },
+            { iec: ["3.2/16", "GiB"], jedec: ["3.2/16", "GB"], metric: ["3.4/17.2", "GB"] });
+        // Disk rates, and network ones in bytes.
+        add("5.8 MiB/s", () => Format.rate(5.8 * mib, false), { iec: ["5.8", "MiB/s"], jedec: ["5.8", "MB/s"], metric: ["6.1", "MB/s"] });
+        add("no rate", () => Format.rate(NaN, false), { iec: ["–", "B/s"], metric: ["–", "B/s"] });
+        add("8.4 Mb/s", () => Format.rate(8.4e6 / 8, true), { iec: ["8.4", "Mb/s"], metric: ["8.4", "Mb/s"] });
+        add("353 KiB/s in the panel", () => Format.panelRate(353 * 1024, false),
+            { iec: ["353", "KiB/s"], jedec: ["353", "KB/s"], metric: ["361", "kB/s"] });
+        add("999.4 thousand a second in the panel", () => Format.panelRate(999.4e3, false), { iec: ["976", "KiB/s"], metric: ["999", "kB/s"] });
+        add("999.5 thousand a second in the panel", () => Format.panelRate(999.5e3, false), { iec: ["976", "KiB/s"], metric: ["1.00", "MB/s"] });
+        add("1000 KiB/s in the panel", () => Format.panelRate(1000 * 1024, false), { iec: ["0.98", "MiB/s"], metric: ["1.02", "MB/s"] });
+        add("idle in the panel", () => Format.panelRate(0, false), { iec: ["0.00", "KiB/s"], jedec: ["0.00", "KB/s"], metric: ["0.00", "kB/s"] });
+        add("8.4 Mb/s in the panel", () => Format.panelRate(8.4e6 / 8, true), { iec: ["8.40", "Mb/s"], metric: ["8.40", "Mb/s"] });
+        // Memory modules.
+        add("two 16 GiB modules", () => ({ value: Format.memoryModules({ type: "", speed: 0, modules: [16 * gib, 16 * gib] }), unit: "" }),
+            { iec: ["2 × 16 GiB", ""], jedec: ["2 × 16 GB", ""], metric: ["2 × 17.2 GB", ""] });
+        add("8 and 16 GiB modules", () => ({ value: Format.memoryModules({ type: "", speed: 0, modules: [8 * gib, 16 * gib] }), unit: "" }),
+            { iec: ["8 + 16 GiB", ""], metric: ["8.6 + 17.2 GB", ""] });
+        return rows;
+    }
+    function test_byteUnits(data) {
+        const units = dialects[data.dialect];
+        Format.setByteUnits(units.base, units.labels);
+        const result = data.show();
+        compare([result.value, result.unit], [local(data.expected[0]), data.expected[1]]);
+        if (data.expected[1].endsWith("B")) {
+            verify(units.labels.includes(result.unit));
+        }
+    }
+
+    // The panel keeps room for the units it can show, in the names shown.
+    function test_byteUnits_panelRoom_data() {
+        return Object.keys(dialects).map(dialect => ({ tag: dialect, dialect: dialect }));
+    }
+    function test_byteUnits_panelRoom(data) {
+        const units = dialects[data.dialect];
+        Format.setByteUnits(units.base, units.labels);
+        compare(Format.panelByteUnits(), units.labels);
+        compare(Format.panelRateUnits(false), units.labels.slice(1).map(label => label + "/s"));
+        compare(Format.panelRateUnits(true), ["kb/s", "Mb/s", "Gb/s", "Tb/s"]);
+        for (const v of [500, 999.4e3, 999.6e3, 5.8e6, 9.6 * 1024 ** 3, 1.2e12, 2e15]) {
+            verify(Format.panelByteUnits().includes(Format.panelBytes(v).unit), "room for " + v + " bytes");
+            verify(Format.panelRateUnits(false).includes(Format.panelRate(v, false).unit), "room for " + v + " bytes a second");
+        }
+    }
+
+    // A unit's name in KDE's words, from two sizes in it.
+    function test_unitLabel_data() {
+        return [
+            { tag: "after the number", one: "1 KiB", two: "2 KiB", label: "KiB" },
+            { tag: "French, after a no-break space", one: "1 Kio", two: "2 Kio", label: "Kio" },
+            { tag: "narrow no-break space", one: "1 MB", two: "2 MB", label: "MB" },
+            { tag: "Arabic digits and name", one: "١ ك.بايت", two: "٢ ك.بايت",
+              label: "ك.بايت" },
+            { tag: "before the number", one: "KiB 1", two: "KiB 2", label: "KiB" },
+            { tag: "before the number, Arabic digits", one: "GB ١", two: "GB ٢", label: "GB" },
+            { tag: "no unit", one: "1", two: "2", label: "" },
+            { tag: "the same text", one: "1 KiB", two: "1 KiB", label: "" },
+            { tag: "nothing", one: "", two: "", label: "" }
+        ];
+    }
+    function test_unitLabel(data) {
+        compare(Format.unitLabel(data.one, data.two), data.label);
+    }
+
+    // A stand-in for KDE's formatter: whole units, the number in `digits`,
+    // between a no-break space and the unit, or after it.
+    function kde(base, labels, digits, unitFirst) {
+        return size => {
+            let n = 0;
+            while (n < labels.length - 1 && size >= base ** (n + 1)) {
+                ++n;
+            }
+            const number = String(Math.round(size / base ** n)).replace(/[0-9]/g, d => digits[d]);
+            return unitFirst ? labels[n] + " " + number : number + " " + labels[n];
+        };
+    }
+
+    // KDE's units from its formatter: their base from whether 1000 bytes read
+    // as 1024 do, their names from pairs of sizes; nothing from a formatter
+    // that doesn't name six different units.
+    function test_byteUnitsFrom_data() {
+        const ascii = "0123456789";
+        const arabic = "٠١٢٣٤٥٦٧٨٩";
+        const french = ["o", "Kio", "Mio", "Gio", "Tio", "Pio"];
+        const metric = dialects.metric;
+        return [
+            { tag: "iec", size: kde(1024, dialects.iec.labels, ascii), expected: dialects.iec },
+            { tag: "jedec", size: kde(1024, dialects.jedec.labels, ascii), expected: dialects.jedec },
+            { tag: "metric", size: kde(1000, metric.labels, ascii), expected: metric },
+            { tag: "French", size: kde(1024, french, ascii), expected: { base: 1024, labels: french } },
+            { tag: "metric in Arabic digits", size: kde(1000, metric.labels, arabic), expected: metric },
+            { tag: "unit first", size: kde(1000, metric.labels, ascii, true), expected: metric },
+            { tag: "a number alone", size: size => String(size), expected: null },
+            { tag: "always the same", size: size => "1 KiB", expected: null },
+            { tag: "nothing", size: size => undefined, expected: null },
+            { tag: "two units named alike", size: kde(1024, ["B", "B", "MiB", "GiB", "TiB", "PiB"], ascii), expected: null }
+        ];
+    }
+    function test_byteUnitsFrom(data) {
+        compare(Format.byteUnitsFrom(data.size), data.expected);
+    }
 }
