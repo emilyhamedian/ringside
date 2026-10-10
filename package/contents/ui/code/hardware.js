@@ -28,11 +28,6 @@ function assignGpus(gpus, outerChoice, innerChoice) {
     return { outer: outer, inner: inner };
 }
 
-// "zram", "disk" or "zram + disk" for the swap tile's caption.
-function swapLabel(kinds) {
-    return (kinds || []).join(" + ");
-}
-
 // Free and cached memory from ksystemstats' physical-memory readings, such
 // that used, cached and free add up to the total (Monitor.qml says why).
 // Free is MemFree, never more than "used" leaves; cached is the rest. A

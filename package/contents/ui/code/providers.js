@@ -11,7 +11,3 @@ var FACTS = {
     claude: { company: "Anthropic", command: "claude", product: "Claude Code" },
     codex: { company: "OpenAI", command: "codex", product: "Codex" }
 };
-
-function facts(id) {
-    return FACTS[id];
-}

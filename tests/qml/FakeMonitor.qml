@@ -3,7 +3,6 @@
 
 import QtQuick
 import "../../package/contents/ui/code/format.js" as Format
-import "../../package/contents/ui/code/hardware.js" as Hardware
 
 // Fixed readings in the shape of Monitor.qml, for the preview gallery: every
 // property and function the panel and the popups read. All of them are
@@ -74,7 +73,7 @@ QtObject {
     property string memoryModules: Format.memoryModules(hardware.memory)
     property real swapUsed: 0.2 * gib
     property real swapTotal: 16 * gib
-    property string swapLabel: Hardware.swapLabel(hardware.swap)
+    property string swapLabel: "zram"
     property real memoryPressure: 0
     property var memoryHistory: slept(wave(memoryPercent, 2, 2))
     property var memoryHighs: highsOf(memoryHistory, 3, 2, 100)

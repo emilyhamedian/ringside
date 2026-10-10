@@ -6,19 +6,13 @@
 // Sample histories are plain arrays, oldest first. Each change makes a new
 // array so bindings on it re-evaluate.
 
-function push(samples, value, length) {
-    const keep = Math.max(0, length - 1);
-    const next = samples.length > keep ? samples.slice(samples.length - keep) : samples.slice();
-    next.push(typeof value === "number" && Number.isFinite(value) ? value : 0);
-    return next;
-}
-
-// Like push(), but a missing reading stays NaN, which a temperature graph
+// The newest `length` samples with `value` added. A missing reading goes in
+// as `missing`, 0 unless given; a temperature graph gives NaN, which it
 // leaves as a gap: a sleeping GPU has no temperature, and 0 would read as one.
-function record(samples, value, length) {
+function push(samples, value, length, missing) {
     const keep = Math.max(0, length - 1);
     const next = samples.length > keep ? samples.slice(samples.length - keep) : samples.slice();
-    next.push(typeof value === "number" && Number.isFinite(value) ? value : NaN);
+    next.push(typeof value === "number" && Number.isFinite(value) ? value : missing ?? 0);
     return next;
 }
 

@@ -191,8 +191,9 @@ Item {
     readonly property string memoryModules: Format.memoryModules(hardware.memory)
     readonly property real swapUsed: value(swapUsedSensor)
     readonly property real swapTotal: value(swapTotalSensor)
-    readonly property string swapLabel: Hardware.swapLabel((hardware.swap || []).map(kind =>
-        kind === "disk" ? i18nc("@info swap on a disk partition or file", "disk") : kind))
+    // "zram", "disk" or "zram + disk" for the swap tile's caption.
+    readonly property string swapLabel: (hardware.swap || []).map(kind =>
+        kind === "disk" ? i18nc("@info swap on a disk partition or file", "disk") : kind).join(" + ")
     // Plasma 6.2 and later; NaN before.
     readonly property real memoryPressure: value(pressureSensor)
     property var memoryHistory: []
@@ -333,12 +334,17 @@ Item {
         const bdfs = readers().filter(r => r.kind === "discrete" && (r.leading || r.leader === null))
             .map(r => r.info.bdf);
         if (bdfs.length > 0) {
-            // Two turns flush previously queued source notifications even
-            // when a callLater tick is already waiting.
             Qt.callLater(monitor.deferPowerPoll, helper.command("pm " + bdfs.join(" ")));
         }
     }
 
+    // The second of two callLater hops before a poll starts. When the last
+    // poll's source goes, powerStates.onSourceRemoved clears pendingSource
+    // in a callLater of its own, since the engine erases the source only
+    // after that signal. A poll asked for in the same turn would run in the
+    // same callLater pass, possibly before that clearing, find the old
+    // source still pending and be dropped until the next tick; one more
+    // hop lets the clearing run first.
     function deferPowerPoll(command) {
         Qt.callLater(monitor.startPowerPoll, command);
     }
@@ -393,8 +399,7 @@ Item {
         const closed = { hour: [], day: [] };
         for (const entry of readings()) {
             const s = seriesOf(entry.key);
-            s.minute = entry.gaps ? History.record(s.minute, entry.minute, minuteLength)
-                                  : History.push(s.minute, entry.minute, minuteLength);
+            s.minute = History.push(s.minute, entry.minute, minuteLength, entry.gaps ? NaN : 0);
             const ended = {};
             for (const name of ["hour", "day"]) {
                 const bucket = History.add(s[name], entry.kept ?? entry.minute, now);
