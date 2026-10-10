@@ -35,17 +35,21 @@ class CoverageTests(unittest.TestCase):
                 self.assertEqual(self.mode(["README.md"], ref=ref), "full")
                 self.assertFalse(development("push", EVENT, ref))
 
-    def test_draft_and_fork_pr_use_merge_diff(self):
-        for draft in (False, True):
-            event = {**EVENT, "pull_request": {"draft": draft,
-                "head": {"ref": "fix/checks", "sha": "c" * 40, "repo": {"full_name": "fork/repo"}},
-                "base": {"ref": "main", "sha": "b" * 40}}}
-            def diff(before, after):
-                self.assertEqual((before, after), ("b" * 40, SHA))
-                return ["README.md"]
-            self.assertEqual(coverage("pull_request", event, "refs/pull/2/merge", SHA, diff), "docs")
-            event["pull_request"]["base"]["ref"] = "release/1"
-            self.assertEqual(self.mode(["README.md"], event, "refs/pull/2/merge", "pull_request"), "full")
+    def test_draft_ready_and_release_prs(self):
+        def forbidden(*_):
+            self.fail("PR readiness must not depend on diff classification")
+        for branch in ("fix/checks", "unknown"):
+            for action in ("opened", "synchronize", "reopened", "ready_for_review", "converted_to_draft", "edited"):
+                for draft in (False, True):
+                    event = {**EVENT, "action": action, "pull_request": {"draft": draft,
+                        "head": {"ref": branch, "sha": "c" * 40, "repo": {"full_name": "fork/repo"}},
+                        "base": {"ref": "main", "sha": "b" * 40}}}
+                    with self.subTest(branch=branch, action=action, draft=draft):
+                        self.assertEqual(coverage("pull_request", event, "refs/pull/2/merge", SHA,
+                                                  forbidden), "draft" if draft else "full")
+                        event["pull_request"]["base"]["ref"] = "release/1"
+                        self.assertEqual(coverage("pull_request", event, "refs/pull/2/merge", SHA,
+                                                  forbidden), "full")
 
     def test_empty_or_missing_comparison_is_full(self):
         self.assertEqual(self.mode([]), "full")
@@ -104,7 +108,7 @@ class CoverageTests(unittest.TestCase):
 
 class PullRequestCoverageTests(unittest.TestCase):
     def setUp(self):
-        self.pr = {"number": 2, "state": "open", "draft": True,
+        self.pr = {"number": 2, "state": "open", "draft": False,
                    "head": {"sha": SHA, "ref": "fix/checks", "repo": {"full_name": "owner/ringside"}},
                    "base": {"ref": "main", "sha": "b" * 40}, "mergeable": True, "merge_commit_sha": "c" * 40}
         self.run = {"id": 10, "event": "pull_request", "status": "in_progress", "conclusion": None,
@@ -128,9 +132,20 @@ class PullRequestCoverageTests(unittest.TestCase):
             return self.pr if current is None else current
         return pr_covers_push(EVENT, "refs/heads/fix/checks", SHA, "owner/ringside", "test-token", get)
 
-    def test_exact_same_repo_mergeable_draft_is_covered(self):
+    def test_exact_same_repo_ready_pr_is_covered(self):
         self.assertTrue(self.covered())
         self.assertFalse(self.covered(listing=[]))
+
+    def test_exact_draft_push_defers_without_merge_or_run_evidence(self):
+        for mergeable in (True, False, None):
+            current = {**self.pr, "draft": True, "mergeable": mergeable, "merge_commit_sha": None}
+            self.assertTrue(self.covered(current=current, runs=[], steps=[]))
+        self.assertFalse(self.covered(current={**self.pr, "draft": True,
+                                               "head": {**self.pr["head"], "sha": "d" * 40}}, runs=[]))
+
+    def test_ready_pr_cannot_reuse_draft_classification(self):
+        self.assertFalse(self.covered(steps=[{
+            "name": "Choose coverage for " + "c" * 40 + " (draft)", "conclusion": "success"}]))
 
     def test_mergeability_without_matching_run_keeps_branch_checks(self):
         self.assertFalse(self.covered(runs=[]))
