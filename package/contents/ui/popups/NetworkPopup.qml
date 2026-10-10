@@ -4,6 +4,7 @@
 pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Layouts
+import QtQuick.Shapes
 import org.kde.kirigami as Kirigami
 import "../code/format.js" as Format
 import "../code/history.js" as History
@@ -20,6 +21,53 @@ PopupPage {
 
     // Legend and detail text: caption-sized, set as written.
     component Note: Caption {}
+
+    // A legend entry: a sample of the line as the graph draws it, then its name.
+    component Key: RowLayout {
+        id: key
+
+        property string text
+        property color color
+        property bool dashed: false
+        property bool area: false
+        readonly property alias label: label
+
+        Layout.minimumWidth: implicitWidth
+        spacing: Kirigami.Units.smallSpacing
+
+        Shape {
+            Layout.preferredWidth: Math.round(Kirigami.Units.gridUnit * 0.9)
+            Layout.preferredHeight: label.implicitHeight
+            preferredRendererType: Shape.CurveRenderer
+
+            ShapePath {
+                strokeColor: "transparent"
+                fillColor: key.area ? Qt.alpha(key.color, 0.15 * key.color.a) : "transparent"
+                startX: 0
+                startY: label.implicitHeight / 2
+                PathLine { x: Math.round(Kirigami.Units.gridUnit * 0.9); y: label.implicitHeight / 2 }
+                PathLine { x: Math.round(Kirigami.Units.gridUnit * 0.9); y: label.implicitHeight * 0.8 }
+                PathLine { x: 0; y: label.implicitHeight * 0.8 }
+            }
+
+            ShapePath {
+                strokeColor: key.color
+                strokeWidth: 1.5
+                strokeStyle: key.dashed ? ShapePath.DashLine : ShapePath.SolidLine
+                dashPattern: [3, 2]
+                capStyle: ShapePath.FlatCap
+                fillColor: "transparent"
+                startX: 0
+                startY: label.implicitHeight / 2
+                PathLine { x: Math.round(Kirigami.Units.gridUnit * 0.9); y: label.implicitHeight / 2 }
+            }
+        }
+
+        Note {
+            id: label
+            text: key.text
+        }
+    }
 
     // The public address lookup (PublicAddress.qml), or null where the
     // monitor has none, which reads as switched off.
@@ -166,7 +214,7 @@ PopupPage {
         caption: i18nc("@title:group", "Throughput")
         spans: popup.monitor
         graphTop: words.peakText(throughput.tops, popup.monitor.networkBits)
-        foot: downNote
+        foot: downKey.label
 
         Graph {
             Layout.fillWidth: true
@@ -185,15 +233,17 @@ PopupPage {
             Layout.topMargin: Math.round(Kirigami.Units.smallSpacing / 2)
             spacing: Math.round(Kirigami.Units.largeSpacing * 1.75)
 
-            Note {
-                id: downNote
-                Layout.minimumWidth: implicitWidth
-                text: i18nc("@label graph legend, the solid line", "— Down")
+            Key {
+                id: downKey
+                text: i18nc("@label graph legend, beside a sample of the solid line", "Down")
+                color: Kirigami.Theme.textColor
+                area: true
             }
 
-            Note {
-                Layout.minimumWidth: implicitWidth
-                text: i18nc("@label graph legend, the dashed line", "- - Up")
+            Key {
+                text: i18nc("@label graph legend, beside a sample of the dashed line", "Up")
+                color: Kirigami.Theme.textColor
+                dashed: true
             }
 
             Note {

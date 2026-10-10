@@ -2388,6 +2388,27 @@ Item {
             }
         }
 
+        // Upload is as strong as download and told from it by longer
+        // dashes, and the legend draws a sample of each line by its name.
+        function test_uploadLineAndLegend() {
+            const popup = load("NetworkPopup", normal, false, Kirigami.Units.gridUnit * 30);
+            const g = graphs(popup)[0];
+            const dashed = [];
+            for (const shape of all(g, i => i.preferredRendererType !== undefined)) {
+                for (const path of shape.data) {
+                    if (path.strokeStyle === ShapePath.DashLine) {
+                        dashed.push(path);
+                    }
+                }
+            }
+            compare(dashed.length, 1, "the upload alone is dashed");
+            compare(dashed[0].strokeColor, g.color, "at full strength");
+            compare([...dashed[0].dashPattern], [3, 2]);
+            const keys = all(popup, i => i.visible && i.dashed !== undefined && i.area !== undefined);
+            compare(keys.map(k => [k.text, k.dashed, k.area]), [["Down", false, true], ["Up", true, false]]);
+            keys.forEach(k => verify(all(k, i => i.preferredRendererType !== undefined)[0].width > 0, k.text + " has a sample"));
+        }
+
         // A bucket alone between gaps, a GPU awake for ten minutes say, is a
         // level mark at least 3 px across rather than a speck, at an hour or
         // a day; at a minute a lone reading still draws nothing.
