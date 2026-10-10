@@ -86,8 +86,8 @@ def pr_run_exists(pr, repository, token, get):
 
 
 def pr_covers_push(event, ref, sha, repository, token, get=api_get):
-    # Same-repository PRs need no fork approval. Conflicted, stale or unknown
-    # merge state keeps the branch checks; a draft still runs the PR workflow.
+    # Exact same-repository draft heads defer duplicate pushes too.
+    # Ready PRs need successful classification of their current merge commit.
     if not repository or not token:
         return False
     branch = ref.removeprefix("refs/heads/")
@@ -106,6 +106,9 @@ def pr_covers_push(event, ref, sha, repository, token, get=api_get):
             if not matches(pr):
                 continue
             current = get(prefix + "/" + str(int(pr["number"])), token)
+            if matches(current) and current.get("draft") is True:
+                print(f"PR #{pr['number']} is a draft at this exact head; deferring branch checks.")
+                return True
             if (matches(current) and current.get("mergeable") is True
                     and re.fullmatch(r"[0-9a-f]{40}", current.get("merge_commit_sha") or "")
                     and pr_run_exists(current, repository, token, get)):
@@ -119,6 +122,11 @@ def pr_covers_push(event, ref, sha, repository, token, get=api_get):
 
 def coverage(event_name, event, ref, sha, diff=changed_paths, base=push_base,
              repository="", token="", covered=pr_covers_push):
+    if event_name == "pull_request":
+        # A ready PR must validate its final merge head, including docs changes.
+        if event["pull_request"]["base"]["ref"] == event["repository"]["default_branch"]:
+            return "draft" if event["pull_request"].get("draft") is True else "full"
+        return "full"
     if not development(event_name, event, ref):
         return "full"
     if event_name == "push" and covered(event, ref, sha, repository, token):
