@@ -29,33 +29,43 @@ GPL-3.0-or-later.
 
 ## Direction
 
-- Plasma 6.0 and later on any distribution; no Plasma 5. Keep
-  `X-Plasma-API-Minimum-Version` at "6.0" (Add Widgets rejects 6.7 and up).
-  Nothing newer than Qt 6.6 and KF 6.0 without a guarded fallback. Qt's
-  JavaScript engine lacks some built-ins (`Array.prototype.flatMap`), and
-  casts to inline components fail on Qt 6.6.
-- No compiled code and no new runtime dependencies. System readings come from
-  ksystemstats through libksysguard's QML modules; anything else from the
-  POSIX sh helper, reading /proc, /sys and udev as the user. Python 3.11
-  (stdlib only) is used only by the opt-in Claude and Codex items.
-- One Sensor per ksystemstats id in a widget, and one reader per GPU across
-  widgets (`code/gpushare.js`): duplicate subscriptions leak in ksystemstats
-  and keep a discrete GPU awake. Never subscribe a suspended GPU.
-- Private by default. A fresh install contacts nothing beyond this machine.
-  Anything that reaches the internet is the user's choice: off until they
-  turn it on, plain about what it sends and to whom, sending no more than it
-  needs and as rarely as it can, and keeping what it learns on the machine.
+In this file, must and must not are requirements, should is the expected way
+unless there's a good reason to differ, and may is allowed but optional.
+
+- Ringside must support Plasma 6.0 and later on any distribution, and not
+  Plasma 5. `X-Plasma-API-Minimum-Version` must stay at "6.0" (Add Widgets
+  rejects 6.7 and up). Nothing newer than Qt 6.6 and KF 6.0 may be used
+  without a guarded fallback. Qt's JavaScript engine lacks some built-ins
+  (`Array.prototype.flatMap`), and casts to inline components fail on Qt 6.6.
+- There must be no compiled code and no new runtime dependencies. System
+  readings must come from ksystemstats through libksysguard's QML modules;
+  anything else from the POSIX sh helper, reading /proc, /sys and udev as the
+  user. Python 3.11 (stdlib only) must be used only by the opt-in Claude and
+  Codex items.
+- A widget must have one Sensor per ksystemstats id, and there must be one
+  reader per GPU across widgets (`code/gpushare.js`): duplicate subscriptions
+  leak in ksystemstats and keep a discrete GPU awake. A suspended GPU must
+  not be subscribed.
+- Private by default. A fresh install must contact nothing beyond this
+  machine. Anything that reaches the internet must be the user's choice: off
+  until they turn it on, plain about what it sends and to whom, sending no
+  more than it needs and as rarely as it can, and keeping what it learns on
+  the machine.
 - A guest in the user's Claude and Codex accounts. Their own tools share the
-  same logins and limits, so Ringside never costs them a sign-in, a rate
-  limit or usage they didn't ask for, and anything that spends usage is a
-  switch only the user turns on.
-- Numbers go through `code/format.js` (locale digits, binary units);
+  same logins and limits, so Ringside must never cost them a sign-in, a rate
+  limit or usage they didn't ask for, and anything that spends usage must be
+  a switch only the user turns on.
+- Numbers must go through `code/format.js` (locale digits, binary units), and
   user-visible strings through `i18nc` in QML, since `.pragma library` files
-  can't translate. Colours come from the Plasma theme.
-- Comments explain intent in plain sentences. The README is for people
-  installing the widget: short, plain, no filler.
-- The rings hide an easter egg (`ui/Egg.qml`). Keep it out of everything
+  can't translate. Colours must come from the Plasma theme.
+- Comments should explain intent in plain sentences. The README should serve
+  people installing the widget: short, plain, no filler.
+- The rings hide an easter egg (`ui/Egg.qml`). It must not appear in anything
   users read: README, CHANGELOG, release notes, PR text and settings.
+- The widget's runtime logging (what Ringside writes to the user's journal
+  under `ringside.*` categories) should record failures and state changes by
+  default and per-check detail only at debug. It must never include tokens,
+  account details, addresses, cities or file contents.
 
 ## Checks
 
@@ -68,7 +78,7 @@ GPL-3.0-or-later.
 
 ## Git
 
-See CONTRIBUTING.md for the checks, style and required approval. Work on a
-branch. Each change lands as one squashed commit: `main` is what people
-install from. Releases
-are tagged on `main` and carry `ringside.plasmoid` from `scripts/package.sh`.
+See CONTRIBUTING.md for the checks, style and required approval. Work must
+happen on a branch. Each change must land as one squashed commit: `main` is
+what people install from. Releases must be tagged on `main` and carry
+`ringside.plasmoid` from `scripts/package.sh`.
