@@ -83,6 +83,7 @@ GridLayout {
             item: entry.item
             open: strip.openItem === entry.item
             vertical: strip.vertical
+            codexMark: strip.monitor.codexMark
             onActivated: strip.activated(entry.item, cell)
 
             // Along a horizontal panel the content keeps to the cell's start,

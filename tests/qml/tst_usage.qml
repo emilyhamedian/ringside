@@ -2089,6 +2089,13 @@ Item {
             verify(shown.includes("Codex") && shown.includes("Weekly limit"), JSON.stringify(shown));
             compare(countdown(popup).map(r => r.value + r.unit), ["5d", "4h"].map(root.localized));
             verify(!shown.some(t => t.startsWith("- - ")), "no dashed series without an inner ring");
+            monitor.codexMark = "openai";
+            try {
+                verify(root.texts(popup).includes("ChatGPT"), "named for the OpenAI logo");
+                verify(!root.texts(popup).includes("Codex"));
+            } finally {
+                monitor.codexMark = "codex";
+            }
         }
 
         // One limit has no bars: the header's ring says the same number, and

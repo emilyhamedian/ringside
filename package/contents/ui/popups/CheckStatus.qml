@@ -71,9 +71,8 @@ GridLayout {
             Layout.alignment: Qt.AlignBaseline
             text: i18nc("@action:button checks the Claude or Codex limits again now", "Try again")
             font.underline: false
-            Accessible.description: status.item === "claude"
-                ? i18nc("@info accessible", "Check Claude's limits now")
-                : i18nc("@info accessible", "Check Codex's limits now")
+            Accessible.description: i18nc("@info accessible; %1 is Claude, Codex or ChatGPT", "Check %1's limits now",
+                                          status.texts.providerName(status.item))
             onClicked: status.usage.checkNow()
         }
     }
