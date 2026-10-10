@@ -31,6 +31,12 @@ Item {
     function i18np(s, p, n, ...args) { return substitute(n === 1 ? s : p, [n].concat(args)); }
     function i18ncp(c, s, p, n, ...args) { return substitute(n === 1 ? s : p, [n].concat(args)); }
 
+    // Whether an epoch falls on the day of nowMs, where the words for a
+    // time leave the date out.
+    function sameDay(epoch, nowMs) {
+        return new Date(epoch * 1000).toDateString() === new Date(nowMs).toDateString();
+    }
+
     // A C-locale expectation in the digits and decimal mark Format uses
     // for the test's locale: "52%" is "٥٢%" under Arabic.
     function localized(text) {
@@ -1668,7 +1674,8 @@ Item {
             const w = wordsOf(c);
             const next = usage.nextCheck("claude");
             verify(c.accessibleDescription.endsWith("\n" + nextCheckAt(c)), c.accessibleDescription);
-            verify(next !== usage.lastRun && nextCheckAt(c).includes(w.timeOfDay(next, c.nowMs)));
+            verify(next !== usage.lastRun && nextCheckAt(c).includes(root.sameDay(next, c.nowMs) ? w.timeOfDay(next, c.nowMs)
+                                                                                         : w.weekdayTime(next, null)));
             usage.lastRun = c.nowMs / 1000 + 86400 - 300;
             const tomorrow = usage.nextCheck("claude");
             verify(c.accessibleDescription.endsWith("\nNext check at " + w.weekdayTime(tomorrow, null) + "."), c.accessibleDescription);
@@ -2861,7 +2868,9 @@ Item {
             const said = "<b>HTTP Error 500</b>. The readings below are from " + w.timeOfDay(e.fetchedAt, popup.nowMs) + ". "
                 + w.nextCheckText("claude", popup.nowMs);
             verify(shown.includes(said), JSON.stringify(shown) + " lacks " + said);
-            verify(w.nextCheckText("claude", popup.nowMs).includes(w.timeOfDay(monitor.usage.nextCheck("claude"), popup.nowMs)));
+            const next = monitor.usage.nextCheck("claude");
+            verify(w.nextCheckText("claude", popup.nowMs).includes(root.sameDay(next, popup.nowMs) ? w.timeOfDay(next, popup.nowMs)
+                                                                                              : w.weekdayTime(next, null)));
             verify(root.find(status, i => i.text === said).textFormat === Text.PlainText);
             const sign = root.find(status, i => i.outerTone !== undefined);
             verify(sign.cancelled && sign.struck === 1 && sign.Accessible.ignored, "the panel's sign, struck");
