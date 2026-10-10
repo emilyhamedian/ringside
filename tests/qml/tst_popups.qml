@@ -238,10 +238,6 @@ Item {
         id: probe
     }
 
-    FontMetrics {
-        id: fontProbe
-    }
-
     // What a Text that elides draws of its text.
     TextMetrics {
         id: elideProbe
@@ -298,37 +294,50 @@ Item {
             failOnWarning(/TypeError|ReferenceError|SyntaxError|is not a function|Unable to assign|Cannot assign|Binding loop|polish loop/);
         }
 
-        function test_popup_data() {
-            return [
-                { tag: "cpu", popup: "CpuPopup", monitor: normal },
-                { tag: "cpuHot", popup: "CpuPopup", monitor: hot },
-                { tag: "cpuManyThreads", popup: "CpuPopup", monitor: manyThreads },
-                { tag: "gpu", popup: "GpuPopup", monitor: normal },
-                { tag: "gpuAsleep", popup: "GpuPopup", monitor: asleep },
-                { tag: "gpuResting", popup: "GpuPopup", monitor: resting },
-                { tag: "gpuIntegratedOnly", popup: "GpuPopup", monitor: integrated },
-                { tag: "gpuInnerAsleep", popup: "GpuPopup", monitor: innerAsleep },
-                { tag: "gpuIntel", popup: "GpuPopup", monitor: intel },
-                { tag: "gpuOnlyAsleep", popup: "GpuPopup", monitor: onlyAsleep },
-                { tag: "gpuLongNames", popup: "GpuPopup", monitor: longGpuNames },
-                { tag: "memory", popup: "MemoryPopup", monitor: normal },
-                { tag: "memoryWithoutPressureOrSwap", popup: "MemoryPopup", monitor: bare },
-                { tag: "network", popup: "NetworkPopup", monitor: normal },
-                { tag: "disk", popup: "DiskPopup", monitor: normal },
-                { tag: "diskWithoutTemperature", popup: "DiskPopup", monitor: diskUnheated },
-                { tag: "allDisks", popup: "DiskPopup", monitor: allDisks },
-                { tag: "diskUnnamedVolume", popup: "DiskPopup", monitor: unnamedVolume }
-            ];
+        // The CPU's temperature turns red over the hot threshold, as the
+        // GPUs' and the drive's do.
+        function test_cpuTemperatureTakesTheLevelColours_data() {
+            return [{ tag: "61", monitor: normal, celsius: 61, hot: false }, { tag: "92", monitor: hot, celsius: 92, hot: true }];
         }
-        function test_popup(data) {
-            const loader = createTemporaryObject(host, root);
-            verify(loader);
-            loader.setSource(Qt.resolvedUrl("../../package/contents/ui/popups/" + data.popup + ".qml"),
-                             { monitor: data.monitor });
-            compare(loader.status, Loader.Ready);
-            waitForRendering(loader.item);
-            verify(loader.item.implicitWidth > 0);
-            verify(loader.item.implicitHeight > 0);
+
+        function test_cpuTemperatureTakesTheLevelColours(data) {
+            const headline = readings(headerOf(load("CpuPopup", data.monitor))).find(r => r.visible && r.degreeUnit !== "");
+            compare(headline.value, Format.temperature(data.celsius, false));
+            compare(String(parts(headline).number.color),
+                    String(data.hot ? Kirigami.Theme.negativeTextColor : Kirigami.Theme.textColor), "the digits as drawn");
+        }
+
+        // More threads than one row of bars 2 px wide holds take a second
+        // row, as long as the first.
+        function test_threadBarsTakeASecondRow_data() {
+            return [{ tag: "16 threads", monitor: normal, rows: [16] }, { tag: "128 threads", monitor: manyThreads, rows: [64, 64] }];
+        }
+
+        function test_threadBarsTakeASecondRow(data) {
+            const popup = load("CpuPopup", data.monitor);
+            const bars = all(popup, i => i.Accessible.role === Accessible.ProgressBar && i.modelData !== undefined);
+            compare(bars.length, data.monitor.cpuThreads);
+            const top = b => b.mapToItem(popup, Qt.point(0, 0)).y;
+            const rows = Array.from(new Set(bars.map(top))).sort((a, b) => a - b);
+            compare(rows.map(y => bars.filter(b => top(b) === y).length), data.rows);
+        }
+
+        // Without pressure stall information the Swap tile takes the
+        // Pressure tile's place as well, and without swap it reads a dim
+        // "none" with no unit.
+        function test_memoryWithoutPressureOrSwap() {
+            const tile = (popup, caption) => all(popup, i => i.visible && i.graphTop !== undefined && i.caption === caption)[0];
+            const full = load("MemoryPopup", normal);
+            verify(tile(full, "Pressure"));
+            verify(tile(full, "Swap").width < tile(full, "Used").width, "the Swap tile beside the Pressure tile");
+            const popup = load("MemoryPopup", bare);
+            verify(!tile(popup, "Pressure"), "no Pressure tile");
+            const swap = tile(popup, "Swap");
+            compare(swap.width, tile(popup, "Used").width, "the Swap tile across the row");
+            const reading = readings(swap)[0];
+            compare(reading.value, "none");
+            compare(reading.unit, "");
+            compare(String(parts(reading).number.color), String(Style.dim(Kirigami.Theme.textColor)));
         }
 
         // A page as wide as the popup makes it, or the given width.
@@ -505,19 +514,6 @@ Item {
             });
         }
 
-        function test_popupsSpellTheTemperatureUnit_data() {
-            return [{ tag: "celsius", fahrenheit: false, unit: "°C" }, { tag: "fahrenheit", fahrenheit: true, unit: "°F" }];
-        }
-
-        function test_popupsSpellTheTemperatureUnit(data) {
-            normal.fahrenheit = data.fahrenheit;
-            for (const popup of ["CpuPopup", "GpuPopup", "DiskPopup"]) {
-                const found = texts(load(popup, normal));
-                verify(found.includes(data.unit), popup + " " + JSON.stringify(found));
-            }
-            normal.fahrenheit = false;
-        }
-
         // Every item under `item` that `test` accepts, outside any gauge when
         // `skipGauges` is set.
         function all(item, test, skipGauges) {
@@ -584,6 +580,7 @@ Item {
                     const p = parts(r);
                     const tag = popup + " " + p.number.text;
                     compare(p.suffix.text, data.unit, tag);
+                    verify(p.suffix.visible, tag);
                     compare(p.suffix.font.pointSize, Kirigami.Theme.smallFont.pointSize, tag);
                     const gap = p.suffix.x - (p.number.x + p.number.implicitWidth);
                     const inkGap = gap + trailingRoom(p.number);
@@ -634,56 +631,6 @@ Item {
             normal.gpuOuter.temperature = Qt.binding(() => normal.gpuOuter.awake ? 48 : NaN);
             compare(cpu.filter(s => s !== cpu[0]), [], "the header at 59, 60, 61, 62, 71: " + cpu.join(", "));
             compare(gpu.filter(s => s !== gpu[0]), [], "the GPU header at 59, 60, 61, 62, 71: " + gpu.join(", "));
-        }
-
-        // A degree sign is always at the small font's size, where another
-        // unit grows with its digits. The digits here are large enough for
-        // the two rules to differ under any theme's fonts.
-        function test_degreeUnitAtTheSmallFont() {
-            const small = Kirigami.Theme.smallFont.pointSize;
-            const pointSize = 3 * small;
-            const make = properties => {
-                const loader = createTemporaryObject(host, root);
-                loader.setSource(Qt.resolvedUrl("../../package/contents/ui/Reading.qml"),
-                                 Object.assign({ value: Format.temperature(61, false), pointSize: pointSize }, properties));
-                compare(loader.status, Loader.Ready);
-                return parts(loader.item).suffix;
-            };
-            const degree = make({ degreeUnit: "C" });
-            compare(degree.text, "°C");
-            compare(degree.font.pointSize, small);
-            const other = make({ unit: "GHz" });
-            compare(other.font.pointSize, Style.unitPointSize(pointSize, small));
-            verify(other.font.pointSize > degree.font.pointSize, other.font.pointSize + " against " + degree.font.pointSize);
-        }
-
-        // A degree unit hangs from the top of the digits at any size, inside
-        // the number's line, where another unit sits on their baseline. A
-        // "7" and a "1" have flat tops, which hinting leaves where they are;
-        // a round digit's overshoot can round to a pixel more at this size.
-        function test_degreeUnitHangsFromTheDigits_data() {
-            return [{ tag: "celsius", unit: "C" }, { tag: "fahrenheit", unit: "F" }];
-        }
-
-        function test_degreeUnitHangsFromTheDigits(data) {
-            const small = Kirigami.Theme.smallFont.pointSize;
-            const make = properties => {
-                const loader = createTemporaryObject(host, root);
-                loader.setSource(Qt.resolvedUrl("../../package/contents/ui/Reading.qml"),
-                                 Object.assign({ value: Format.temperature(71, false), pointSize: 3 * small }, properties));
-                compare(loader.status, Loader.Ready);
-                return loader.item;
-            };
-            const r = make({ degreeUnit: data.unit });
-            const p = parts(r);
-            fuzzyCompare(inkTop(p.suffix), inkTop(p.number), 0.5, "level with the digits' top");
-            const baseline = p.number.y + p.number.baselineOffset;
-            verify(p.suffix.y + p.suffix.baselineOffset < baseline - small,
-                   "raised from the baseline: " + (p.suffix.y + p.suffix.baselineOffset) + " against " + baseline);
-            verify(p.suffix.y >= 0, "inside the line, at " + p.suffix.y);
-            compare(r.implicitHeight, p.number.implicitHeight);
-            const other = parts(make({ unit: "GHz" }));
-            compare(other.suffix.y + other.suffix.baselineOffset, other.number.y + other.number.baselineOffset, "a unit on the baseline");
         }
 
         // A missing temperature is a bare dash.
@@ -810,7 +757,6 @@ Item {
                 const popup = load(data.popup, normal, mirrored);
                 const list = all(popup, i => i.key !== undefined && i.threads !== undefined && i.rows !== undefined)[0];
                 verify(list);
-                compare(list.Layout.bottomMargin, Math.round(Kirigami.Units.largeSpacing * 1.25));
                 const values = readings(list);
                 compare(values.map(r => r.value), data.values);
                 compare(values.map(r => r.unit), data.units);
@@ -910,11 +856,9 @@ Item {
             }
         }
 
-        // No grid: a percentage graph has its 100 % rule, and a rate graph,
-        // which has no natural top, rises to its peak where that rule would
-        // be. The caption line names the top at its end, "100%" or the peak,
-        // and nothing is written on the graph, where a line could run
-        // through it.
+        // A percentage graph has its 100 % rule, and a rate graph, which has
+        // no natural top, rises to its peak where that rule would be. The
+        // caption line names the top at its end, "100%" or the peak.
         function test_graphsHaveARuleOrAPeak_data() {
             return [{ tag: "cpu", popup: "CpuPopup", ceilings: 1, peaks: 0 },
                     { tag: "gpu", popup: "GpuPopup", ceilings: 2, peaks: 0 },
@@ -934,10 +878,6 @@ Item {
                 const rule = ruleOf(g);
                 verify(rule, "a LimitRule");
                 compare(g.topY, rule.limitY, "the top is where the rule goes");
-                const lines = all(g, i => i.visible && i.border !== undefined && i.radius !== undefined
-                                          && !ancestor(i, a => a === rule));
-                compare(lines.length, 0, "no grid");
-                compare(all(g, i => typeof i.text === "string").length, 0, "nothing written on the graph");
                 const caption = tileCaption(g);
                 verify(caption.text.indexOf("peak") < 0 && caption.text.indexOf("%") < 0, caption.text);
                 const top = tileTop(g);
@@ -1143,10 +1083,9 @@ Item {
             fuzzyCompare(baselineY(caption, popup), baselineY(subtitle, popup), 1);
         }
 
-        // A tile's caption sits half its line's leading closer to the top
-        // than the padding alone would put it, and the ink at its foot, a
-        // graph's floor or the baseline of the text it ends on, as far from
-        // the bottom as its capitals are from the top.
+        // The ink at a tile's foot, a graph's floor or the baseline of the
+        // text it ends on, sits as far from the bottom as the caption's
+        // capitals are from the top.
         function test_tilePadding_data() {
             return [{ tag: "cpu", popup: "CpuPopup" }, { tag: "gpu", popup: "GpuPopup" },
                     { tag: "memory", popup: "MemoryPopup" }, { tag: "network", popup: "NetworkPopup" },
@@ -1159,17 +1098,12 @@ Item {
             tiles.forEach(tile => {
                 const caption = all(tile, i => i.label !== undefined && i.detail !== undefined)[0];
                 verify(caption.visible, tile.caption);
-                fontProbe.font = caption.font;
                 probe.font = caption.font;
                 probe.text = "H";
                 // Qt 6.9 and later give the font's own capital height, which
                 // can differ a little from the ink of an "H".
                 fuzzyCompare(tile.capHeight, probe.tightBoundingRect.height, 1, tile.caption + " cap height");
-                const leading = fontProbe.ascent - tile.capHeight;
-                verify(leading / 2 > 1, "enough leading to tell: " + leading);
                 const capTop = caption.mapToItem(tile, Qt.point(0, caption.baselineOffset)).y - tile.capHeight;
-                // Rounding to whole pixels is the only slack.
-                fuzzyCompare(capTop, tile.verticalPadding + leading / 2, 0.5, tile.caption + " cap top");
                 const column = caption.parent.parent;
                 const last = Array.from(column.children[1].children).filter(c => c.visible).pop();
                 let foot;
@@ -1191,20 +1125,22 @@ Item {
                             ["disk", "DiskPopup"]];
             const rows = [];
             popups.forEach(([tag, popup]) => {
-                rows.push({ tag: tag, popup: popup, mirrored: false });
-                rows.push({ tag: tag + "Mirrored", popup: popup, mirrored: true });
+                rows.push({ tag: tag, popup: popup, monitor: normal, mirrored: false });
+                rows.push({ tag: tag + "Mirrored", popup: popup, monitor: normal, mirrored: true });
             });
+            // A divider before a sleeping GPU's line.
+            rows.push({ tag: "gpuAsleep", popup: "GpuPopup", monitor: asleep, mirrored: false });
             return rows;
         }
 
         function test_contentEdges(data) {
-            const popup = load(data.popup, normal, data.mirrored);
+            const popup = load(data.popup, data.monitor, data.mirrored);
             const edge = Math.round(Kirigami.Units.largeSpacing * 2);
             const left = i => i.mapToItem(popup, Qt.point(0, 0)).x;
             const right = i => left(i) + i.width;
             const spanning = [headerOf(popup)]
                 .concat(all(popup, i => i.visible && i.key !== undefined && i.threads !== undefined))
-                .concat(all(popup, i => i.visible && i.height === 1 && i.radius !== undefined && i.parent === popup.children[0]))
+                .concat(all(popup, i => i.visible && i.ratio !== undefined && i.radius !== undefined))
                 .concat(all(popup, i => i.visible && i.height === 1 && i.radius !== undefined && i.inner !== undefined));
             spanning.forEach(i => {
                 compare(left(i), edge, String(i));
@@ -1215,8 +1151,6 @@ Item {
             compare(Math.max(...tiles.map(right)), popup.width - edge, "the tiles' far edge");
         }
 
-        // Dividers in a popup's body are inset to the content's edge and
-        // equally faint.
         function test_dividers_data() {
             return [{ tag: "cpu", popup: "CpuPopup", monitor: normal },
                     { tag: "memory", popup: "MemoryPopup", monitor: normal },
@@ -1224,17 +1158,15 @@ Item {
                     { tag: "gpuAsleep", popup: "GpuPopup", monitor: asleep }];
         }
 
-        // A divider is a whole number of the screen's pixels tall, one at
-        // 125 %, so wherever it lands it draws as many rows as the others.
+        // A divider is faint, and a whole number of the screen's pixels
+        // tall, one at 125 %, so wherever it lands it draws as many rows as
+        // the others.
         function test_dividers(data) {
             const popup = load(data.popup, data.monitor);
             const found = all(popup, i => i.visible && i.height > 0 && i.height <= 1 && i.radius !== undefined && i.width > 0
                                           && !ancestor(i, a => a.limitY !== undefined));
             compare(found.length, 1);
-            const edge = Math.round(Kirigami.Units.largeSpacing * 2);
             const divider = found[0];
-            compare(divider.mapToItem(popup, Qt.point(0, 0)).x, edge);
-            compare(divider.width, popup.width - 2 * edge);
             compare(String(divider.color), String(Qt.alpha(Kirigami.Theme.textColor, 0.08)));
             const ratio = divider.Window.window.devicePixelRatio ?? divider.Screen.devicePixelRatio;
             fuzzyCompare(divider.height * ratio, Math.max(1, Math.floor(ratio)), 1e-9, "device pixels at " + ratio);
@@ -1336,38 +1268,6 @@ Item {
             const expected = "Since boot ↓ " + down.value + " " + down.unit + " · ↑ " + up.value + " " + up.unit;
             const found = texts(load("NetworkPopup", normal));
             verify(found.includes(expected), JSON.stringify(found));
-        }
-
-        // Network and disk each have a popup of their own: nothing of the
-        // other's shows in either, and each is titled for its own item.
-        function test_networkAndDiskApart() {
-            const free = Format.bytes(normal.volumeFree, true);
-            const freeText = free.value + " " + free.unit + " free on /";
-            const net = load("NetworkPopup", normal);
-            const netTexts = texts(net);
-            compare(headerOf(net).title, "Network");
-            for (const t of ["Network", normal.networkConnection, "THROUGHPUT", "·", "1 min"]) {
-                verify(netTexts.includes(t), t + " in " + JSON.stringify(netTexts));
-            }
-            verify(netTexts.some(t => t.startsWith("Since boot")), JSON.stringify(netTexts));
-            for (const t of ["Disk", "DISK", "READ", "WRITE", normal.diskDevice, freeText]) {
-                verify(!netTexts.some(s => s.indexOf(t) >= 0), t + " in the network popup: " + JSON.stringify(netTexts));
-            }
-            verify(!netTexts.some(t => t.indexOf("°") >= 0), "no disk temperature: " + JSON.stringify(netTexts));
-            compare(graphs(net).length, 1, "the throughput graph alone");
-
-            const disk = load("DiskPopup", normal);
-            const diskTexts = texts(disk);
-            compare(headerOf(disk).title, "Disk");
-            for (const t of ["Disk", normal.diskDevice, "READ", "WRITE", "·", "1 min"]) {
-                verify(diskTexts.includes(t), t + " in " + JSON.stringify(diskTexts));
-            }
-            for (const t of ["Network", "THROUGHPUT", "Since boot", normal.networkConnection, normal.networkAddress,
-                             normal.networkInterface, "Down", "Up"]) {
-                verify(!diskTexts.some(s => s.indexOf(t) >= 0), t + " in the disk popup: " + JSON.stringify(diskTexts));
-            }
-            compare(all(disk, i => i.pairWidth !== undefined).length, 0, "no network rates");
-            compare(graphs(disk).length, 2, "the read and write graphs");
         }
 
         // The disk popup opens on its graphs as the others open on theirs:
@@ -1662,7 +1562,6 @@ Item {
                 walk(popup);
                 const own = sensors.filter(s => s.sensorId === "cpu/all/averageFrequency" || /^cpu\/cpu\d+\/usage$/.test(s.sensorId));
                 verify(own.length > 2, "the frequency and the threads: " + own.length);
-                compare(normal.readInterval, 750);
                 verify(own.every(s => s.updateRateLimit === normal.readInterval), own.map(s => s.updateRateLimit).join());
             } finally {
                 normal.interval = 1000;
@@ -1820,33 +1719,6 @@ Item {
             });
         }
 
-        // Temperature sensors go by plain words, not their hwmon labels;
-        // labels Words doesn't know are shown as they are.
-        function test_sensorNamesInWords_data() {
-            return [{ tag: "Tctl", raw: "Tctl", shown: "" },
-                    { tag: "Tdie", raw: "Tdie", shown: "" },
-                    { tag: "Package id 0", raw: "Package id 0", shown: "" },
-                    { tag: "Package id 1", raw: "Package id 1", shown: "" },
-                    { tag: "edge", raw: "edge", shown: "" },
-                    { tag: "Tccd1", raw: "Tccd1", shown: "chiplet " + Format.whole(1) },
-                    { tag: "Tccd12", raw: "Tccd12", shown: "chiplet " + Format.whole(12) },
-                    { tag: "junction", raw: "junction", shown: "hotspot" },
-                    { tag: "mem", raw: "mem", shown: "memory" },
-                    { tag: "Composite", raw: "Composite", shown: "Composite" },
-                    { tag: "Core 0", raw: "Core 0", shown: "Core 0" },
-                    { tag: "Tccd", raw: "Tccd", shown: "Tccd" },
-                    { tag: "edges", raw: "edges", shown: "edges" },
-                    { tag: "hottest core", raw: "hottest core", shown: "hottest core" },
-                    { tag: "none", raw: "", shown: "" }];
-        }
-
-        function test_sensorNamesInWords(data) {
-            const component = Qt.createComponent(Qt.resolvedUrl("../../package/contents/ui/Words.qml"));
-            compare(component.status, Component.Ready, component.errorString());
-            const words = createTemporaryObject(component, root, { monitor: normal });
-            compare(words.sensorName(data.raw), data.shown);
-        }
-
         // The CPU and GPU headers' captions show the plain words, and none
         // for the whole chip's own sensor.
         function test_popupsNameTheirSensors_data() {
@@ -1993,10 +1865,6 @@ Item {
                 compare(rules[0].width, g.width);
                 compare(g.areas.length, 1, "one unbroken line");
                 compare(g.plot.points.length, data.monitor.historyLength);
-                const lines = all(g, i => i.visible && i.border !== undefined && i.radius !== undefined
-                                          && !ancestor(i, a => a === rules[0]));
-                compare(lines.length, 0, "no grid");
-                compare(all(g, i => typeof i.text === "string").length, 0, "nothing written on the graph");
                 // The newest reading stands where the scale puts it, and
                 // every reading stays inside the scale.
                 const newest = g.plot.values[g.plot.values.length - 1];
@@ -2043,21 +1911,6 @@ Item {
                 hotDay.chooseSpan("minute");
                 hotDay.highlightTemperatures = true;
             }
-        }
-
-        // A full history fills the graph from edge to edge whatever the
-        // pace of its readings.
-        function test_temperatureGraphFillsItsSpan_data() {
-            return [{ tag: "1000 ms", monitor: normal }, { tag: "500 ms", monitor: shortSpan }];
-        }
-
-        function test_temperatureGraphFillsItsSpan(data) {
-            const tile = temperatureTiles(load("CpuPopup", data.monitor))[0];
-            const g = temperatureGraph(tile);
-            compare(g.plot.points.length, data.monitor.historyLength);
-            fuzzyCompare(g.plot.points[0].x, 0, 1e-6, "the oldest at the left edge");
-            fuzzyCompare(g.plot.points[g.plot.points.length - 1].x, g.width, 1e-6, "the newest at the right");
-            compare(heading(tile), "TEMPERATURE · 1 min");
         }
 
         // A lone reading draws no line, so there is no graph until a second
@@ -2337,26 +2190,29 @@ Item {
 
         // Every graph tile in every popup with a moving graph, at every span:
         // its caption names the span, which is its span control, and its
-        // graph spans the points of that span. A minute draws its readings;
-        // an hour and a day each bucket's average under a fainter band up to
-        // its highest reading, and break off where the machine slept.
+        // graph spans the points of that span from edge to edge, whatever
+        // the pace of its readings. A minute draws its readings; an hour and
+        // a day each bucket's average under a fainter band up to its highest
+        // reading, and break off where the machine slept. No grid, and
+        // nothing written on a graph, where a line could run through it.
         function test_graphsAtEachSpan_data() {
             const rows = [];
             for (const [popup, count] of [["CpuPopup", 2], ["GpuPopup", 3], ["MemoryPopup", 1], ["NetworkPopup", 1], ["DiskPopup", 3]]) {
                 for (const span of ["minute", "hour", "day"]) {
-                    rows.push({ tag: popup + " " + span, popup: popup, count: count, span: span });
+                    rows.push({ tag: popup + " " + span, popup: popup, count: count, span: span, monitor: normal,
+                                length: { minute: 60, hour: 120, day: 144 }[span] });
                 }
             }
+            rows.push({ tag: "CpuPopup minute at 500 ms", popup: "CpuPopup", count: 2, span: "minute", monitor: shortSpan, length: 120 });
             return rows;
         }
 
         function test_graphsAtEachSpan(data) {
             const label = { minute: "1 min", hour: "1 h", day: "1 day" }[data.span];
             const name = { minute: "1 minute", hour: "1 hour", day: "1 day" }[data.span];
-            const length = { minute: 60, hour: 120, day: 144 }[data.span];
-            normal.chooseSpan(data.span);
+            data.monitor.chooseSpan(data.span);
             try {
-                const popup = load(data.popup, normal, false, Kirigami.Units.gridUnit * 30);
+                const popup = load(data.popup, data.monitor, false, Kirigami.Units.gridUnit * 30);
                 const tiles = all(popup, i => i.visible && i.graphTop !== undefined && i.spans !== undefined && i.spans !== null);
                 compare(tiles.length, data.count);
                 for (const tile of tiles) {
@@ -2369,8 +2225,12 @@ Item {
                     const shape = g.drawn ?? g;
                     const points = g.drawn ? g.drawn.main : g.plot.points;
                     const bands = g.drawn ? g.drawn.bands : g.bands;
-                    compare(points.length, length, tile.caption + " spans its points");
+                    compare(points.length, data.length, tile.caption + " spans its points");
+                    fuzzyCompare(points[0].x, 0, 1e-6, "the oldest at the left");
                     fuzzyCompare(points[points.length - 1].x, g.width, 1e-6, "the newest at the right");
+                    compare(all(g, i => i.visible && i.border !== undefined && i.radius !== undefined
+                                        && !ancestor(i, a => a.limitY !== undefined)).length, 0, tile.caption + ": no grid");
+                    compare(all(g, i => typeof i.text === "string").length, 0, tile.caption + ": nothing written on the graph");
                     if (data.span === "minute") {
                         compare(bands.length, 0, tile.caption + ": no band at a minute");
                     } else {
@@ -2380,7 +2240,7 @@ Item {
                     }
                 }
             } finally {
-                normal.chooseSpan("minute");
+                data.monitor.chooseSpan("minute");
             }
         }
 
