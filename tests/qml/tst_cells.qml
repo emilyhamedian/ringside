@@ -752,10 +752,10 @@ Item {
                 { tag: "cpu no reading", item: "cpu", set: { cpuUsage: NaN, cpuTemperature: NaN }, lines: ["–", "–"], tones: ["text", "dim"] },
                 { tag: "fahrenheit", item: "cpu", set: { fahrenheit: true, cpuTemperature: 38 }, lines: [percent(23), degrees(100)], tones: ["text", "dim"] },
                 { tag: "fahrenheit hot", item: "cpu", set: { fahrenheit: true, cpuTemperature: 95 }, lines: [percent(23), degrees(203)], tones: ["text", "negative"] },
-                { tag: "memory", item: "memory", lines: [percent(42), decimal(13.4) + "G"], tones: ["text", "dim"] },
-                { tag: "memory 77 %", item: "memory", set: { memoryPercent: 77 }, lines: [percent(77), decimal(13.4) + "G"], tones: ["neutral", "dim"] },
-                { tag: "memory in MiB", item: "memory", set: { memoryUsed: 900 * mib, memoryPercent: 3 }, lines: [percent(3), digits(900) + "M"], tones: ["text", "dim"] },
-                { tag: "memory in three figures", item: "memory", set: { memoryUsed: 9.6 * gib, memoryPercent: 60 }, lines: [percent(60), fixed(9.6, 2) + "G"],
+                { tag: "memory", item: "memory", lines: [percent(42), decimal(13.4) + " GiB"], tones: ["text", "dim"] },
+                { tag: "memory 77 %", item: "memory", set: { memoryPercent: 77 }, lines: [percent(77), decimal(13.4) + " GiB"], tones: ["neutral", "dim"] },
+                { tag: "memory in MiB", item: "memory", set: { memoryUsed: 900 * mib, memoryPercent: 3 }, lines: [percent(3), decimal(900) + " MiB"], tones: ["text", "dim"] },
+                { tag: "memory to one decimal", item: "memory", set: { memoryUsed: 9.64 * gib, memoryPercent: 60 }, lines: [percent(60), decimal(9.6) + " GiB"],
                   tones: ["text", "dim"] },
                 { tag: "dual gpu", item: "gpu", lines: [percent(12), degrees(48)], tones: ["text", "dim"], absent: degrees(41) },
                 { tag: "dual gpu hot", item: "gpu", outer: { usage: 90, temperature: 92 }, lines: [percent(90), degrees(92)], tones: ["negative", "negative"] },
@@ -784,7 +784,7 @@ Item {
 
         // The ring's own reading, heavier and in the ring's colour, over a
         // dimmer one in its own heat colour. A countdown keeps to its largest
-        // unit, and memory to three figures.
+        // unit, and memory to one decimal and its unit.
         function test_lines(data) {
             apply(data.item, data);
             const c = cell(data.item);
@@ -806,7 +806,7 @@ Item {
         function test_panelShowsItsHeldReadings_data() {
             return [
                 { tag: "cpu", item: "cpu", ring: 40, texts: [percent(40), degrees(70)], words: "Usage " + percent(40) },
-                { tag: "memory", item: "memory", ring: 60, texts: [percent(60), decimal(20.0) + "G"], words: percent(60) },
+                { tag: "memory", item: "memory", ring: 60, texts: [percent(60), decimal(20.0) + " GiB"], words: percent(60) },
                 { tag: "gpu", item: "gpu", ring: 55, inner: 7, texts: [percent(55), degrees(66)], words: "Usage " + percent(55) },
                 { tag: "network", item: "network", texts: [decimal(64.0), decimal(16.0)], words: "Down " + decimal(64.0) + " Mb/s" },
                 { tag: "disk", item: "disk", texts: [decimal(50.0), fixed(1, 2)], words: "Read " + decimal(50.0) + " MiB/s" }
@@ -870,7 +870,7 @@ Item {
         function test_thinPanelIsOneLine_data() {
             return [
                 { tag: "cpu", item: "cpu", texts: [percent(23), "·", degrees(61)] },
-                { tag: "memory", item: "memory", texts: [percent(42), "·", decimal(13.4) + "G"] },
+                { tag: "memory", item: "memory", texts: [percent(42), "·", decimal(13.4) + " GiB"] },
                 { tag: "claude", item: "claude", texts: [percent(52), "·", digits(2) + "d"] },
                 { tag: "claude last day", item: "claude", week: [52, 5 * 3600 + 12 * 60], texts: [percent(52), "·", digits(5) + "h"] },
                 { tag: "gpu asleep", item: "gpu", asleep: true, texts: ["off"] }
@@ -912,7 +912,7 @@ Item {
         }
 
         // A countdown is plain text in the face of the other second lines,
-        // its largest unit alone, as large as its digits, as in "11.2G" or
+        // its largest unit alone, as large as its digits, as in "11.2 GiB" or
         // "61°", mirrored or not. Its room is that of two of the widest
         // digits and the widest unit, whatever it reads.
         function test_countdownText(data) {
@@ -944,12 +944,12 @@ Item {
                       { set: { cpuUsage: NaN, cpuTemperature: NaN }, shows: ["–"] },
                       { set: { fahrenheit: true, cpuUsage: 100, cpuTemperature: 149 }, shows: ["100%", "300°"] },
                       { set: { fahrenheit: false, cpuUsage: 11, cpuTemperature: 48 }, shows: ["11%", "48°"] }],
-                memory: [{ set: { memoryPercent: 0, memoryUsed: 0 }, shows: ["0%", "0B"] },
-                         { set: { memoryPercent: 1, memoryUsed: 999 * mib }, shows: ["1%", "999M"] },
-                         { set: { memoryPercent: 6, memoryUsed: 1000 * mib }, shows: ["6%", "0.98G"] },
-                         { set: { memoryPercent: 60, memoryUsed: 9.6 * gib }, shows: ["60%", "9.60G"] },
-                         { set: { memoryPercent: 88, memoryUsed: 13.4 * gib }, shows: ["88%", "13.4G"] },
-                         { set: { memoryPercent: 100, memoryUsed: 1023 * gib }, shows: ["100%", "1.00T"] },
+                memory: [{ set: { memoryPercent: 0, memoryUsed: 0 }, shows: ["0%", "0 B"] },
+                         { set: { memoryPercent: 1, memoryUsed: 999 * mib }, shows: ["1%", "999.0 MiB"] },
+                         { set: { memoryPercent: 6, memoryUsed: 1000 * mib }, shows: ["6%", "1.0 GiB"] },
+                         { set: { memoryPercent: 60, memoryUsed: 9.6 * gib }, shows: ["60%", "9.6 GiB"] },
+                         { set: { memoryPercent: 88, memoryUsed: 13.4 * gib }, shows: ["88%", "13.4 GiB"] },
+                         { set: { memoryPercent: 100, memoryUsed: 1023 * gib }, shows: ["100%", "1.0 TiB"] },
                          { set: { memoryPercent: NaN, memoryUsed: NaN }, shows: ["–"] }],
                 gpu: [{ outer: { usage: 0, temperature: 9 }, shows: ["0%", "9°"] },
                       { outer: { usage: 100, temperature: 105 }, shows: ["100%", "105°"] },
@@ -994,7 +994,7 @@ Item {
 
         // A cell keeps one width whatever its readings: each line takes the
         // room of the widest text it can show, "100%" for every ring and
-        // "off" too for the GPU, three figures for memory and the rates, and
+        // "off" too for the GPU, one decimal and a unit for memory, three figures for the rates, and
         // two for a countdown, so no text in it moves or overruns its box
         // from 0 to 100 %, 9 to 105 degrees, an idle link to 1023 GiB/s, a
         // GPU asleep or handing over, or a countdown from 6d to its reset.
@@ -1018,7 +1018,7 @@ Item {
                 const percent = root.percent(100);
                 const firsts = data.item === "gpu" ? [percent, "off"] : [percent];
                 const seconds = data.item === "cpu" || data.item === "gpu" ? [root.degrees(100)]
-                              : data.item === "memory" ? [root.decimal(10) + "M", root.digits(100) + "M"]
+                              : data.item === "memory" ? ["B", "KiB", "MiB", "GiB", "TiB", "PiB"].map(unit => root.decimal(100) + " " + unit)
                               : ["d", "h", "m"].map(unit => root.digits(10) + unit);
                 compare(readout.rooms[0], face.room(face.strong, firsts), "the first line keeps room for " + firsts.join(", "));
                 verify(readout.rooms[1] >= face.room(face.plain, seconds), "the second line keeps room for " + seconds.join(", "));
