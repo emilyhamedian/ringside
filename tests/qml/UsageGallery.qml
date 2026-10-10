@@ -5,10 +5,8 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
-import org.kde.ksvg as KSvg
 import "../../package/contents/ui"
 import "../../package/contents/ui/popups"
-import "../../package/contents/ui/code/style.js" as Style
 import "starterstates.js" as StarterStates
 
 // A section of Gallery.qml: Claude and Codex in the panel beside two system
@@ -263,95 +261,9 @@ ColumnLayout {
         return footers;
     }
 
-    component Note: Text {
-        color: Style.dim(Kirigami.Theme.textColor)
-        font.pointSize: Kirigami.Theme.smallFont.pointSize
-        textFormat: Text.PlainText
-    }
-
-    // The strip on a stretch of panel whose thickness the outline marks.
-    // Breeze's panel keeps 4 px of margin either side of an applet.
-    component Panel: ColumnLayout {
-        id: panel
-
-        required property string label
-        required property real thickness
-        property var monitor: section.monitor
-        property var items: ["cpu", "memory", "claude", "codex"]
-
-        spacing: Kirigami.Units.smallSpacing
-
-        Note {
-            text: panel.label
-        }
-
-        Rectangle {
-            color: "transparent"
-            border.color: Qt.alpha(Kirigami.Theme.textColor, 0.12)
-            Layout.preferredWidth: strip.implicitWidth + 4 * Kirigami.Units.gridUnit
-            Layout.preferredHeight: panel.thickness
-
-            Strip {
-                id: strip
-                anchors.centerIn: parent
-                height: panel.thickness - 8
-                monitor: panel.monitor
-                items: panel.items
-                vertical: false
-                thickness: panel.thickness - 8
-                ringsOnly: []
-            }
-        }
-    }
-
-    // A popup on the dialog background, or on a flat one where the colours
-    // are overridden (the dialog SVG follows the system scheme).
-    component Frame: ColumnLayout {
-        id: frame
-
-        required property string label
-        property bool flat: false
-        default property alias page: holder.data
-
-        Layout.alignment: Qt.AlignTop
-        spacing: Kirigami.Units.smallSpacing
-
-        Note {
-            text: frame.label
-        }
-
-        Item {
-            id: dialog
-
-            readonly property var margin: frame.flat
-                ? { left: Kirigami.Units.smallSpacing, top: Kirigami.Units.smallSpacing,
-                    right: Kirigami.Units.smallSpacing, bottom: Kirigami.Units.smallSpacing }
-                : background.fixedMargins
-
-            Layout.preferredWidth: holder.childrenRect.width + margin.left + margin.right
-            Layout.preferredHeight: holder.childrenRect.height + margin.top + margin.bottom
-
-            KSvg.FrameSvgItem {
-                id: background
-                anchors.fill: parent
-                visible: !frame.flat
-                imagePath: "dialogs/background"
-            }
-
-            Rectangle {
-                anchors.fill: parent
-                visible: frame.flat
-                color: Kirigami.Theme.backgroundColor
-                border.color: Qt.alpha(Kirigami.Theme.textColor, 0.2)
-                radius: Kirigami.Units.smallSpacing
-            }
-
-            Item {
-                id: holder
-                x: dialog.margin.left
-                y: dialog.margin.top
-            }
-        }
+    component Panel: GalleryPanel {
+        monitor: section.monitor
+        items: ["cpu", "memory", "claude", "codex"]
     }
 
     Panel {
@@ -419,22 +331,22 @@ ColumnLayout {
     RowLayout {
         spacing: 2 * Kirigami.Units.gridUnit
 
-        Frame {
+        GalleryFrame {
             label: "Claude · Fable on the inner ring, on pace to run out"
             UsagePopup { monitor: section.monitor; item: "claude" }
         }
 
-        Frame {
+        GalleryFrame {
             label: "Codex · one limit, lasts to the reset"
             UsagePopup { monitor: section.monitor; item: "codex" }
         }
 
-        Frame {
+        GalleryFrame {
             label: "Claude · two model limits, none picked, amber, both last"
             UsagePopup { monitor: several; item: "claude" }
         }
 
-        Frame {
+        GalleryFrame {
             label: "Claude · 91 % (red), an hour left"
             UsagePopup { monitor: fullWeek; item: "claude" }
         }
@@ -443,22 +355,22 @@ ColumnLayout {
     RowLayout {
         spacing: 2 * Kirigami.Units.gridUnit
 
-        Frame {
+        GalleryFrame {
             label: "Claude · 81 % (amber, on pace to run out), Fable 93 % (red)"
             UsagePopup { monitor: hot; item: "claude" }
         }
 
-        Frame {
+        GalleryFrame {
             label: "Codex · at its limit"
             UsagePopup { monitor: hot; item: "codex" }
         }
 
-        Frame {
+        GalleryFrame {
             label: "Claude · checks failing for an hour (struck), try again"
             UsagePopup { monitor: failedMonitor; item: "claude" }
         }
 
-        Frame {
+        GalleryFrame {
             label: "Codex · signed out"
             UsagePopup { monitor: signedOut; item: "codex" }
         }
@@ -467,22 +379,22 @@ ColumnLayout {
     RowLayout {
         spacing: 2 * Kirigami.Units.gridUnit
 
-        Frame {
+        GalleryFrame {
             label: "Claude · first failed check, rate limited, the reading in grey"
             UsagePopup { monitor: justFailed; item: "claude" }
         }
 
-        Frame {
+        GalleryFrame {
             label: "Claude · the helper failed through the week's reset"
             UsagePopup { monitor: failedPastReset; item: "claude" }
         }
 
-        Frame {
+        GalleryFrame {
             label: "Claude · the first check running"
             UsagePopup { monitor: loadingMonitor; item: "claude" }
         }
 
-        Frame {
+        GalleryFrame {
             label: "Codex · the first check failed, no CLI"
             UsagePopup { monitor: firstFailed; item: "codex" }
         }
@@ -491,22 +403,22 @@ ColumnLayout {
     RowLayout {
         spacing: 2 * Kirigami.Units.gridUnit
 
-        Frame {
+        GalleryFrame {
             label: "Claude · 25 %, Fable 55 % (on pace to run out, not coloured)"
             UsagePopup { monitor: fablePace; item: "claude" }
         }
 
-        Frame {
+        GalleryFrame {
             label: "Codex · one limit at 40 %, on pace to run out"
             UsagePopup { monitor: codexPace; item: "codex" }
         }
 
-        Frame {
+        GalleryFrame {
             label: "Claude · session starter on, waiting"
             UsagePopup { monitor: starting; item: "claude" }
         }
 
-        Frame {
+        GalleryFrame {
             label: "Codex · week starter can't run: signed out (full text)"
             UsagePopup { monitor: starting; item: "codex" }
         }
@@ -521,7 +433,7 @@ ColumnLayout {
         Repeater {
             model: section.starterFooters
 
-            delegate: Frame {
+            delegate: GalleryFrame {
                 id: starterFrame
 
                 required property var modelData
@@ -548,85 +460,57 @@ ColumnLayout {
         }
     }
 
-    // Breeze Light's colours, for the contrast of dim text and level colours
-    // on a light scheme.
-    Rectangle {
-        Layout.fillWidth: true
-        implicitWidth: light.implicitWidth + 2 * light.x
-        implicitHeight: light.implicitHeight + 2 * light.y
-        color: Kirigami.Theme.backgroundColor
+    GalleryLight {
+        Panel {
+            label: "Breeze Light · Claude & Codex · panel · 46 px · Claude 81 % (amber), Codex 100 % (red)"
+            thickness: 46
+            monitor: hot
+        }
 
-        Kirigami.Theme.inherit: false
-        Kirigami.Theme.textColor: "#232629"
-        Kirigami.Theme.disabledTextColor: "#707d8a"
-        Kirigami.Theme.backgroundColor: "#eff0f1"
-        Kirigami.Theme.alternateBackgroundColor: "#e3e5e7"
-        Kirigami.Theme.highlightColor: "#3daee9"
-        Kirigami.Theme.highlightedTextColor: "#ffffff"
-        Kirigami.Theme.linkColor: "#2980b9"
-        Kirigami.Theme.visitedLinkColor: "#9b59b6"
-        Kirigami.Theme.negativeTextColor: "#da4453"
-        Kirigami.Theme.neutralTextColor: "#f67400"
-        Kirigami.Theme.positiveTextColor: "#27ae60"
+        Panel {
+            label: "Breeze Light · Claude · panel · 46 px · Claude 77 % (amber), lasts to the reset"
+            thickness: 46
+            monitor: several
+            items: ["cpu", "memory", "claude"]
+        }
 
-        ColumnLayout {
-            id: light
+        Panel {
+            label: "Breeze Light · Claude & Codex · panel · 46 px · the first check running"
+            thickness: 46
+            monitor: loadingMonitor
+        }
 
-            x: 2 * Kirigami.Units.gridUnit
-            y: x
+        Panel {
+            label: "Breeze Light · Claude & Codex · panel · 46 px · the first check failed (struck)"
+            thickness: 46
+            monitor: firstFailed
+        }
+
+        RowLayout {
             spacing: 2 * Kirigami.Units.gridUnit
 
-            Panel {
-                label: "Breeze Light · Claude & Codex · panel · 46 px · Claude 81 % (amber), Codex 100 % (red)"
-                thickness: 46
-                monitor: hot
+            GalleryFrame {
+                label: "Breeze Light · Claude · the pace sentence on Fable"
+                flat: true
+                UsagePopup { monitor: section.monitor; item: "claude" }
             }
 
-            Panel {
-                label: "Breeze Light · Claude · panel · 46 px · Claude 77 % (amber), lasts to the reset"
-                thickness: 46
-                monitor: several
-                items: ["cpu", "memory", "claude"]
+            GalleryFrame {
+                label: "Breeze Light · Codex · one limit, the pace sentence"
+                flat: true
+                UsagePopup { monitor: codexPace; item: "codex" }
             }
 
-            Panel {
-                label: "Breeze Light · Claude & Codex · panel · 46 px · the first check running"
-                thickness: 46
-                monitor: loadingMonitor
+            GalleryFrame {
+                label: "Breeze Light · Claude · session starter on, waiting (dim)"
+                flat: true
+                UsagePopup { monitor: starting; item: "claude" }
             }
 
-            Panel {
-                label: "Breeze Light · Claude & Codex · panel · 46 px · the first check failed (struck)"
-                thickness: 46
-                monitor: firstFailed
-            }
-
-            RowLayout {
-                spacing: 2 * Kirigami.Units.gridUnit
-
-                Frame {
-                    label: "Breeze Light · Claude · the pace sentence on Fable"
-                    flat: true
-                    UsagePopup { monitor: section.monitor; item: "claude" }
-                }
-
-                Frame {
-                    label: "Breeze Light · Codex · one limit, the pace sentence"
-                    flat: true
-                    UsagePopup { monitor: codexPace; item: "codex" }
-                }
-
-                Frame {
-                    label: "Breeze Light · Claude · session starter on, waiting (dim)"
-                    flat: true
-                    UsagePopup { monitor: starting; item: "claude" }
-                }
-
-                Frame {
-                    label: "Breeze Light · Codex · week starter signed out (full)"
-                    flat: true
-                    UsagePopup { monitor: starting; item: "codex" }
-                }
+            GalleryFrame {
+                label: "Breeze Light · Codex · week starter signed out (full)"
+                flat: true
+                UsagePopup { monitor: starting; item: "codex" }
             }
         }
     }
