@@ -121,6 +121,12 @@ follows [Semantic Versioning](https://semver.org/).
   `ringside.*.debug=true` adds every check and public address request with
   its timing. No tokens, addresses, places, account names or file contents
   are written. See "When something looks wrong" in the README.
+- *AI Providers* can say where the `claude` and `codex` programs are, for
+  when Plasma's PATH doesn't reach them, as with an npm, bun or nvm install.
+  A *Program* field shows under OpenAI when Codex can't be found, and under
+  Claude when the session starter is on and can't find `claude`, or wherever
+  a path is set. A note under it says when a path can't be run, and the
+  popup says so too. An empty field finds the program as before.
 
 ### Changed
 

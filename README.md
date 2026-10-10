@@ -143,7 +143,9 @@ under *Panel Items* says why.
   renews it the way Claude Code does and saves it back, so Claude Code stays
   signed in.
 - **Codex** needs the [Codex CLI](https://github.com/openai/codex) signed in.
-  Ringside runs `codex app-server` to ask for the limits.
+  Ringside runs `codex app-server` to ask for the limits. If Plasma doesn't
+  find `codex`, as when npm, bun or nvm put it where only your shell looks,
+  set where it is under *AI Providers*.
 
 The ring shows the weekly limit for all models, over the time left until it
 resets in its largest unit, such as "6d", "23h" or "59m"; the popup and the
@@ -256,8 +258,9 @@ Right-click the widget and choose *Configure Ringside…*.
 - **Sensors**: the CPU temperature source, which GPU goes on which ring, the
   network interface, the disk and volume, and the disk temperature sensor.
 - **AI Providers**: how often Claude and OpenAI are checked, which per-model
-  limit each inner ring shows, and whether the OpenAI ring shows the Codex
-  mark or the OpenAI logo, which also names it Codex or ChatGPT.
+  limit each inner ring shows, whether the OpenAI ring shows the Codex
+  mark or the OpenAI logo, which also names it Codex or ChatGPT, and where
+  the `claude` and `codex` programs are when Plasma doesn't find them.
 
 ## What it reads
 
@@ -287,7 +290,8 @@ The Claude and Codex items run
 only to Anthropic (`api.anthropic.com`, and `platform.claude.com` to renew it),
 and asks the Codex CLI on your machine for Codex. It keeps the last readings
 and the week's history in `~/.cache/ringside/`. With the session starter on,
-it also runs `claude` and `codex` from `~/.local/bin` or your PATH, keeps the
+it also runs `claude` and `codex`, from where *AI Providers* says or else
+from `~/.local/bin` or your PATH, keeps the
 switch in `~/.config/ringside/starter.json` and its state in
 `~/.local/state/ringside/`.
 

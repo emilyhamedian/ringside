@@ -20,6 +20,10 @@ Mainly the two helpers Ringside runs:
   on. Before running `claude` it may renew Claude Code's login as polling
   does, holding the same lock, so the two never race on the single-use
   refresh token.
+- A `claude` or `codex` program chosen under *AI Providers* is run as your
+  user in place of the one found in `~/.local/bin` or on PATH, for Codex's
+  check and for the session starter, in the same way. Ringside checks only
+  that it is a file marked executable; whatever is at that path runs.
 - `package/contents/code/ringside-info.sh` reads `/proc`, `/sys` and udev's
   database as your user. Every 3 seconds while the network popup shows the
   public address it runs `ip route get` and `ip -6 route get` for a fixed public address, a lookup
@@ -86,4 +90,6 @@ Mainly the two helpers Ringside runs:
   failed checks with their reason and the Anthropic host or public address
   service involved, the session starter's steps, a discrete GPU's sleep and
   wake, and sensors that don't answer. No token, address, place, account
-  name or file contents is ever written.
+  name or file contents is ever written. The Codex CLI a check runs, and a
+  program chosen under *AI Providers* that can't run, are named by their
+  path, with your home folder as `~`.
