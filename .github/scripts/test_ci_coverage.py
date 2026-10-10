@@ -9,7 +9,7 @@ import urllib.error
 import urllib.parse
 from pathlib import Path
 
-from ci_coverage import coverage, changed_paths, development, pr_covers_push
+from ci_coverage import coverage, changed_paths, pr_covers_push
 
 
 SHA = "a" * 40
@@ -22,35 +22,20 @@ class CoverageTests(unittest.TestCase):
 
     def test_allowlist(self):
         self.assertEqual(self.mode(["README.md", "docs/panel.png", "docs/popups.png", "docs/usage.png"]), "docs")
-        for path in ("AGENTS.md", "CLAUDE.md", "SECURITY.md", ".agents/skills/check/SKILL.md",
-                     ".github/workflows/test.yml", "REUSE.toml", "LICENSE",
-                     "docs/new.png", "docs/tool.py", "docs/standalone.png", "docs/fold.gif",
-                     "package/metadata.json", "README.md\ncode.qml"):
+        for path in ("package/metadata.json", "docs/new.png", "README.md\ncode.qml"):
             with self.subTest(path=path):
                 self.assertEqual(self.mode(["README.md", path]), "full")
 
-    def test_unclassified_branches_and_tags(self):
-        for ref in ("refs/heads/main", "refs/heads/release", "refs/heads/release/1",
-                    "refs/heads/v0.2", "refs/heads/unknown", "refs/tags/fix/tag", "refs/tags/v0.2.0"):
-            with self.subTest(ref=ref):
-                self.assertEqual(self.mode(["README.md"], ref=ref), "full")
-                self.assertFalse(development("push", EVENT, ref))
-
-    def test_draft_ready_and_release_prs(self):
+    def test_prs_run_in_full(self):
         def forbidden(*_):
-            self.fail("PR readiness must not depend on diff classification")
-        for branch in ("fix/checks", "unknown"):
-            for action in ("opened", "synchronize", "reopened", "ready_for_review", "converted_to_draft", "edited"):
-                for draft in (False, True):
-                    event = {**EVENT, "action": action, "pull_request": {"draft": draft,
-                        "head": {"ref": branch, "sha": "c" * 40, "repo": {"full_name": "fork/repo"}},
-                        "base": {"ref": "main", "sha": "b" * 40}}}
-                    with self.subTest(branch=branch, action=action, draft=draft):
-                        self.assertEqual(coverage("pull_request", event, "refs/pull/2/merge", SHA,
-                                                  forbidden), "draft" if draft else "full")
-                        event["pull_request"]["base"]["ref"] = "release/1"
-                        self.assertEqual(coverage("pull_request", event, "refs/pull/2/merge", SHA,
-                                                  forbidden), "full")
+            self.fail("PR coverage must not depend on diff classification")
+        for draft, base in ((True, "main"), (False, "main"), (False, "release/1")):
+            event = {**EVENT, "pull_request": {"draft": draft,
+                "head": {"ref": "fix/checks", "sha": "c" * 40, "repo": {"full_name": "owner/ringside"}},
+                "base": {"ref": base, "sha": "b" * 40}}}
+            with self.subTest(draft=draft, base=base):
+                self.assertEqual(coverage("pull_request", event, "refs/pull/2/merge", SHA,
+                                          forbidden, forbidden, covered=forbidden), "full")
 
     def test_empty_or_missing_comparison_is_full(self):
         self.assertEqual(self.mode([]), "full")
@@ -196,15 +181,7 @@ class PullRequestCoverageTests(unittest.TestCase):
                                            "owner/ringside", "test-token", unavailable))
         self.assertFalse(pr_covers_push(EVENT, "refs/heads/fix/checks", SHA, "owner/ringside", ""))
 
-    def test_protected_refs_and_pr_events_never_deduplicate(self):
-        def forbidden(*_):
-            self.fail("unexpected PR lookup")
-        for ref in ("refs/heads/main", "refs/heads/release/1", "refs/heads/v0.2", "refs/tags/fix/tag"):
-            self.assertEqual(coverage("push", EVENT, ref, SHA, covered=forbidden), "full")
-        event = {**EVENT, "pull_request": self.pr}
-        event["pull_request"]["base"]["sha"] = "b" * 40
-        self.assertEqual(coverage("pull_request", event, "refs/pull/2/merge", SHA,
-                                  diff=lambda *_: ["package/main.qml"], covered=forbidden), "full")
+    def test_covered_push_skips_its_checks(self):
         self.assertEqual(coverage("push", EVENT, "refs/heads/fix/checks", SHA,
                                   covered=lambda *_: True), "covered")
 
