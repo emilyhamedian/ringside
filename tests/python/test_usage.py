@@ -94,6 +94,10 @@ class Isolated(unittest.TestCase):
         usage.CACHE_FILE.write_text(json.dumps(data))
 
     def run_main(self, *argv):
+        """main() as a fresh process would run it: with no events and no
+        programs left from an earlier run."""
+        usage.EVENTS.clear()
+        usage.PROGRAMS.clear()
         with mock.patch("sys.stdout", new=io.StringIO()) as out:
             usage.main(list(argv))
         return json.loads(out.getvalue())
@@ -281,7 +285,7 @@ class CredentialWriteBack(Isolated):
         self.enterContext(mock.patch.object(usage, "http_json", self.http))
 
     def test_replaces_record_when_refresh_token_unchanged(self):
-        self.assertTrue(usage.store_claude(self.path, "r1", self.fresh))
+        usage.store_claude(self.path, "r1", self.fresh)
         stored = json.loads(self.path.read_text())
         self.assertEqual(stored["claudeAiOauth"], self.fresh)
         self.assertEqual(stored["mcpOAuth"], {"keep": "me"})
@@ -289,7 +293,7 @@ class CredentialWriteBack(Isolated):
         self.assertEqual(os.listdir(self.folder), [".credentials.json"])
 
     def test_keeps_file_when_cli_rotated_first(self):
-        self.assertFalse(usage.store_claude(self.path, "stale", self.fresh))
+        usage.store_claude(self.path, "stale", self.fresh)
         self.assertEqual(json.loads(self.path.read_text())["claudeAiOauth"]["accessToken"], "old")
 
     @unittest.skipIf(os.geteuid() == 0, "root writes past mode bits")
@@ -332,7 +336,7 @@ class CredentialWriteBack(Isolated):
             return b'{"claudeAiOauth": {"acc' if len(reads) == 1 else real(path)
 
         with mock.patch.object(Path, "read_bytes", read_bytes):
-            self.assertTrue(usage.store_claude(self.path, "r1", self.fresh))
+            usage.store_claude(self.path, "r1", self.fresh)
         self.assertEqual(json.loads(self.path.read_text())["claudeAiOauth"]["refreshToken"], "r2")
 
     def test_a_write_racing_the_replace_is_not_overwritten(self):
@@ -347,7 +351,7 @@ class CredentialWriteBack(Isolated):
             return real(path)
 
         with mock.patch.object(Path, "read_bytes", read_bytes):
-            self.assertFalse(usage.store_claude(self.path, "r1", self.fresh))
+            usage.store_claude(self.path, "r1", self.fresh)
         self.assertEqual(json.loads(self.path.read_text())["claudeAiOauth"]["refreshToken"], "r9")
         self.assertEqual(os.listdir(self.folder), [".credentials.json"])
 

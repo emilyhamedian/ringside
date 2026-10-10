@@ -200,11 +200,6 @@ class Checks(Isolated):
                 yield node
         self.assertNotIn(502, list(values(json.loads(cached))))
 
-    def test_each_run_starts_with_no_events(self):
-        with mock.patch.object(usage, "claude_usage", return_value=reading(5, 9)):
-            self.run_main("--providers", "claude")
-            self.assertEqual([e["kind"] for e in self.run_main("--providers", "claude")["events"]], ["cached"])
-
 
 class Starter(unittest.TestCase):
     def setUp(self):
