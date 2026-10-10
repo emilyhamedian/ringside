@@ -3,8 +3,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 # Draws the logo: the panel's gauge ring over "Ringside" in Nunito, outlined
-# so the files need no font. Writes docs/logo.svg and docs/logo-dark.svg for
-# the README, docs/social-preview.png for GitHub's social preview, and
+# so the files need no font. Writes docs/logo.svg for the README, docs/social-preview.png for GitHub's social preview, and
 # package/contents/icons/ringside.svg for the widget's icon.
 #
 # Needs fontTools, Nunito (ttf-nunito on Arch, fonts-nunito elsewhere, or set
@@ -24,6 +23,9 @@ from fontTools.ttLib import TTFont
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 BLUE, AMBER, DARK, LIGHT = "#3daee9", "#f67400", "#232629", "#fcfcfc"
+# The README's wordmark: a grey that reads on GitHub's light and dark pages
+# alike, since not every viewer says which it shows.
+MUTED = "#7d8590"
 HEADER = """<!--
 SPDX-FileCopyrightText: 2026 Emily Hamedian <me@emily.dev>
 SPDX-License-Identifier: GPL-3.0-or-later
@@ -91,9 +93,9 @@ def ring(cx, cy, size, track):
             f'<path d="M{at(50, 24)} A{26 * s:.2f},{26 * s:.2f} 0 0 1 {at(72.5, 63)}" fill="none" stroke="{AMBER}" stroke-width="{7 * s:.2f}" stroke-linecap="round"/>')
 
 
-def track(text):
+def track(text, alpha=0.22):
     r, g, b = (int(text[i:i + 2], 16) for i in (1, 3, 5))
-    return f"rgba({r},{g},{b},0.22)"
+    return f"rgba({r},{g},{b},{alpha})"
 
 
 def write(path, body):
@@ -106,18 +108,17 @@ def write(path, body):
 word, word_width, word_left = outline("Ringside", "SemiBold", 100, -0.03)
 
 
-def stacked(text):
+def stacked(text, alpha):
     """The mark over the wordmark, for the README."""
     width, mark, word_w = 400, 120, 240
     s = word_w / word_width
     height = 10 + mark + 12 + 95 * s + 10
     return (f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height:.0f}" viewBox="0 0 {width} {height:.0f}" role="img" aria-label="Ringside">\n'
-            + ring(width / 2, 10 + mark / 2, mark, track(text))
+            + ring(width / 2, 10 + mark / 2, mark, track(text, alpha))
             + f'\n<path fill="{text}" transform="translate({(width - word_w) / 2 - word_left * s:.2f},{10 + mark + 12 + 75 * s:.2f}) scale({s:.4f})" d="{word}"/>\n</svg>\n')
 
 
-write("docs/logo.svg", stacked(DARK))
-write("docs/logo-dark.svg", stacked(LIGHT))
+write("docs/logo.svg", stacked(MUTED, 0.30))
 # The icon's track is a fixed grey, since it sits on light and dark panels alike.
 write("package/contents/icons/ringside.svg",
       '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100">\n'
