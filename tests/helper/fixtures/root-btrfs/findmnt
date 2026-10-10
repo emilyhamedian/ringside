@@ -1,0 +1,11 @@
+#!/bin/sh
+# SPDX-FileCopyrightText: 2026 Emily Hamedian <me@emily.dev>
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+# Fake findmnt: the root file system is a btrfs subvolume, which findmnt
+# names after its source as /dev/nvme0n1p2[/@].
+case "$*" in
+    "-no UUID /") echo "9c0d1e2f-3a4b-4c5d-8e6f-7a8b9c0d1e2f" ;;
+    "-no SOURCE /") echo "/dev/nvme0n1p2[/@]" ;;
+    *) echo "fake findmnt: unexpected arguments: $*" >&2; exit 1 ;;
+esac

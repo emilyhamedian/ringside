@@ -1,0 +1,3 @@
+Whole disks from a fake lsblk on a board with an eMMC: the eMMC's boot and
+RPMB partitions are left out by name, the eMMC itself, the SD card and the
+SATA disk stay. The rest reuses the no-gpu machine.

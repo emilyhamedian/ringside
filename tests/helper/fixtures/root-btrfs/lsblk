@@ -1,0 +1,11 @@
+#!/bin/sh
+# SPDX-FileCopyrightText: 2026 Emily Hamedian <me@emily.dev>
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+# Fake lsblk: answers only the walk from the root partition up to its disk,
+# "lsblk -s -n -r -o NAME,TYPE /dev/nvme0n1p2", so a source with the
+# subvolume still attached fails here as it would with the real lsblk.
+case "$*" in
+    "-s -n -r -o NAME,TYPE /dev/nvme0n1p2") printf '%s\n' 'nvme0n1p2 part' 'nvme0n1 disk' ;;
+    *) echo "fake lsblk: unexpected arguments: $*" >&2; exit 1 ;;
+esac

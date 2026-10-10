@@ -1,2 +1,5 @@
-Intel iGPU at 0000:00:02.0 + NVIDIA dGPU, disk swap (not zram), coretemp,
-no known root-disk temperature sensor.
+Intel iGPU at 0000:00:02.0 + NVIDIA dGPU at 2d:00.0 behind root port 00:01.0,
+disk swap (not zram), coretemp, no known root-disk temperature sensor. On
+Plasma 6.7.5 the ids follow ksystemstats, which enumerates PCI display
+devices through libudev, in sysfs path order: the dGPU under 00:01.0 comes
+before the iGPU at 00:02.0, so it is gpu0.

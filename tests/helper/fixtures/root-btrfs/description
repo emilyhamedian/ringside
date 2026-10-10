@@ -1,0 +1,3 @@
+The laptop with the root disk found the way the helper does without the
+RINGSIDE_ROOT_* overrides: findmnt names a btrfs subvolume, /dev/nvme0n1p2[/@],
+the subvolume is stripped, and lsblk walks the partition up to its disk.

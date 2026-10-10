@@ -1,2 +1,2 @@
-Interface names Linux would not allow are dropped: one over 15
-characters, and one with a slash.
+A name over 15 characters is no interface name Linux allows and is
+dropped; loopback counts as no route.

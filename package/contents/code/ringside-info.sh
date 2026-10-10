@@ -26,6 +26,7 @@ sys=${RINGSIDE_SYSFS:-/sys}
 proc=${RINGSIDE_PROCFS:-/proc}
 udevadm=${RINGSIDE_UDEVADM:-udevadm}
 lsblk=${RINGSIDE_LSBLK:-lsblk}
+findmnt=${RINGSIDE_FINDMNT:-findmnt}
 ip=${RINGSIDE_IP:-ip}
 
 # A JSON string literal: control characters dropped, backslashes and quotes escaped.
@@ -132,7 +133,9 @@ version_number() {
 }
 
 # ksystemstats numbered GPUs after their DRM card before Plasma 6.6.90 (the
-# 6.7 beta), and by PCI topology order since. It only counts AMD, NVIDIA and
+# 6.7 beta), and since then in the order libudev enumerates PCI display
+# devices: by sysfs path, so a discrete GPU behind root port 00:01.0 comes
+# before an integrated one at 00:02.0. It only counts AMD, NVIDIA and
 # Intel display devices, but reads Intel only from 6.3.90 (the 6.4 beta) on,
 # and Intel on the xe driver only from 6.7.90 (the 6.8 beta) on. An unknown
 # version gets the newest behaviour.
@@ -229,7 +232,7 @@ egress() {
         else
             dev=$(egress_dev -6 route get 2606:4700:4700::1111)
         fi
-        case $dev in lo|.|..|*/*|*:*|*[[:space:]]*) dev="" ;; esac
+        case $dev in lo|.|..|*/*|*:*) dev="" ;; esac
         [ "${#dev}" -le 15 ] || dev=""
         tunnel=0
         if [ -n "$dev" ] && { [ "$(first_line "$sys/class/net/$dev/type")" = 65534 ] ||
@@ -242,7 +245,9 @@ egress() {
 
 # Whole disks, so that I/O can be summed without counting a partition, LUKS,
 # LVM or RAID device on top of the disk under it. /sys/block is the fallback
-# when lsblk is missing; there, virtual devices have no device link.
+# when lsblk is missing; there, virtual devices have no device link. An
+# eMMC's boot and RPMB partitions are block devices of their own, which
+# lsblk calls disks; they are left out by name.
 disks_json() {
     printf '"disks":['
     {
@@ -258,7 +263,7 @@ disks_json() {
     } | {
         sep=""
         while IFS= read -r d; do
-            case $d in ''|zram*|loop*|sr*|ram*|nbd*) continue ;; esac
+            case $d in ''|zram*|loop*|sr*|ram*|nbd*|mmcblk*boot*|mmcblk*rpmb) continue ;; esac
             printf '%s%s' "$sep" "$(str "$d")"
             sep=,
         done
@@ -269,8 +274,9 @@ disks_json() {
 # The disk holding / and its temperature sensor, named the way libsensors
 # names chips: nvme-pci-<domain, bus, device and function packed in hex>.
 root_json() {
-    uuid=${RINGSIDE_ROOT_UUID-$(findmnt -no UUID / 2>/dev/null)}
-    disk=${RINGSIDE_ROOT_DISK-$("$lsblk" -s -n -r -o NAME,TYPE "$(findmnt -no SOURCE / 2>/dev/null | sed 's/\[.*//')" 2>/dev/null |
+    uuid=${RINGSIDE_ROOT_UUID-$("$findmnt" -no UUID / 2>/dev/null)}
+    # btrfs names its subvolume after the source, /dev/nvme0n1p2[/@].
+    disk=${RINGSIDE_ROOT_DISK-$("$lsblk" -s -n -r -o NAME,TYPE "$("$findmnt" -no SOURCE / 2>/dev/null | sed 's/\[.*//')" 2>/dev/null |
         awk '$2 == "disk" { print $1; exit }')}
     temp=""
     if [ -n "$disk" ]; then

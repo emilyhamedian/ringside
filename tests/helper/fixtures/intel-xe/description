@@ -1,4 +1,5 @@
-Intel iGPU bound to the xe driver at 0000:00:02.0 + NVIDIA dGPU at 01:00.0, on
-Plasma 6.7.5, whose ksystemstats can't read xe. The Intel GPU is left out, but
-it still takes PCI index 0 as it does in ksystemstats, so NVIDIA stays gpu1.
-Borrows the desktop's procfs and DMI data.
+Intel iGPU bound to the xe driver at 0000:00:02.0 + NVIDIA dGPU at 01:00.0
+behind root port 00:01.0, on Plasma 6.7.5, whose ksystemstats can't read xe.
+The Intel GPU is left out, but it still takes a PCI index as it does in
+ksystemstats; the dGPU sorts first in libudev's sysfs path order, so it is
+gpu0. Borrows the desktop's procfs and DMI data.
