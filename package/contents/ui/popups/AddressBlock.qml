@@ -337,7 +337,7 @@ GridLayout {
 
         // The places and the note, set apart from the addresses as one.
         Item {
-            visible: block.places.length > 0 || block.info.note ? true : false
+            visible: block.places.length > 0 || Boolean(block.info.note)
             implicitHeight: Math.round(Kirigami.Units.smallSpacing / 2)
         }
 
@@ -357,7 +357,7 @@ GridLayout {
         }
 
         RowLayout {
-            visible: block.info.note ? true : false
+            visible: Boolean(block.info.note)
             spacing: Kirigami.Units.smallSpacing
             Kirigami.Icon {
                 visible: block.info.note?.warn ?? false

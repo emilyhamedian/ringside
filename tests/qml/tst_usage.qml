@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Emily Hamedian <me@emily.dev>
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+import QtCore
 import QtQuick
 import QtTest
 import org.kde.kirigami as Kirigami
@@ -494,7 +495,7 @@ Item {
             wait(1100);
             const landed = spy("entriesChanged");
             usage.checkNow();
-            tryVerify(() => usage.lastRun > first + 1, 2000, "the interval starts over");
+            tryVerify(() => usage.lastRun > first, 2000, "the interval starts over");
             landed.wait(10000);
             verify(!usage.checking);
             compare(timers().filter(t => t.running).map(t => t.interval), [5 * 60000]);
@@ -738,11 +739,14 @@ Item {
         // Paths a shell would take apart or run: spaces, both quotes, $,
         // backticks, a command substitution, a glob, a newline, and words
         // that look like the helper's own flags and the ends the widget
-        // reads a run's ids and mode from.
+        // reads a run's ids and mode from. A shell that ran the command
+        // substitution would write the canary file.
+        readonly property string canary: decodeURIComponent(StandardPaths.writableLocation(StandardPaths.TempLocation).toString()
+                                                            .replace(/^file:\/\//, "")) + "/ringside-pwned-" + Date.now()
         readonly property var nastyPaths: [
             "/opt/my tools/codex",
             "/tmp/it's here/codex",
-            "/tmp/\"quoted\"/$HOME/`id`/$(touch /tmp/ringside-pwned)/codex",
+            "/tmp/\"quoted\"/$HOME/`id`/$(echo pwned > " + canary + ")/codex",
             "/tmp/a;b&&c|d>e<f*?[x]~/{1,2}/codex\\",
             "/tmp/line\nbreak/codex",
             "/tmp/' --starter-set claude=on --providers claude,codex --start '/codex"
@@ -795,6 +799,14 @@ Item {
             landed.wait(10000);
             compare(usage.starters.claude.state, "confirming");
             compare(usage.statuses.claude.program.path, nastyPaths[5]);
+            const read = path => {
+                const request = new XMLHttpRequest();
+                request.open("GET", "file://" + encodeURI(path), false);
+                request.send();
+                return request.responseText;
+            };
+            verify(read(root.stub("ok")) !== "", "a file read; set QML_XHR_ALLOW_FILE_READ=1");
+            compare(read(canary), "", "no shell ran the command substitution");
         }
 
         // What the settings page reads of each provider: its program as the

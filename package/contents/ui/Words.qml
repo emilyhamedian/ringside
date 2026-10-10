@@ -97,23 +97,25 @@ QtObject {
         const percent = value => Number.isFinite(value) ? i18nc("@info:status a percentage", "%1%", Format.percent(value)) : "–";
         const temperature = celsius => Format.temperatureValid(celsius)
             ? Format.temperature(celsius, monitor.fahrenheit) + "°" : "–";
+        // Every key, whatever the item.
+        const lines = (first, level, off, second, heat) => ({ first: first, level: level, off: off, second: second, heat: heat });
         switch (item) {
         case "cpu":
-            return { first: percent(monitor.panel.cpuUsage), level: Format.level(monitor.panel.cpuUsage),
-                     second: temperature(monitor.panel.cpuTemperature), heat: monitor.heat(monitor.panel.cpuTemperature) };
+            return lines(percent(monitor.panel.cpuUsage), Format.level(monitor.panel.cpuUsage), false,
+                         temperature(monitor.panel.cpuTemperature), monitor.heat(monitor.panel.cpuTemperature));
         case "gpu": {
             const gpu = Hardware.gpuView(monitor.gpuOuter, monitor.gpuInner).primary;
             if (gpu.phase === "asleep") {
-                return { first: i18nc("@info:status the GPU is powered down", "off"), off: true, second: "" };
+                return lines(i18nc("@info:status the GPU is powered down", "off"), 0, true, "", 0);
             }
-            return { first: percent(gpu.panelUsage), level: Format.level(gpu.panelUsage),
-                     second: gpu.reportsTemperature ? temperature(gpu.panelTemperature) : "",
-                     heat: gpu.reportsTemperature ? monitor.heat(gpu.panelTemperature) : 0 };
+            return lines(percent(gpu.panelUsage), Format.level(gpu.panelUsage), false,
+                         gpu.reportsTemperature ? temperature(gpu.panelTemperature) : "",
+                         gpu.reportsTemperature ? monitor.heat(gpu.panelTemperature) : 0);
         }
         case "memory": {
             const used = Format.panelBytes(monitor.panel.memoryUsed);
-            return { first: percent(monitor.panel.memoryPercent), level: Format.level(monitor.panel.memoryPercent),
-                     second: used.unit === "" ? used.value : used.value + " " + used.unit };
+            return lines(percent(monitor.panel.memoryPercent), Format.level(monitor.panel.memoryPercent), false,
+                         used.unit === "" ? used.value : used.value + " " + used.unit, 0);
         }
         }
         const entry = monitor.usage.entry(item);
@@ -122,15 +124,12 @@ QtObject {
         // so a language's sign keeps its place, and one before the days'
         // letter.
         if (cancelled) {
-            return { first: i18nc("@info:status a percentage", "%1%", "––"), off: true,
-                     second: "–" + timeUnits()[0], heat: 0 };
+            return lines(i18nc("@info:status a percentage", "%1%", "––"), 0, true, "–" + timeUnits()[0], 0);
         }
-        const parts = countdownParts(weekly ? weekly.resetsAt : null, nowMs, true);
-        if (!entry || entry.lastError !== undefined) {
-            return { first: percent(weekly ? weekly.percent : NaN), off: true, second: spelled(parts) || "–", heat: 0 };
-        }
-        return { first: percent(weekly ? weekly.percent : NaN), level: Format.level(weekly ? weekly.percent : NaN),
-                 second: spelled(parts) || "–", heat: 0 };
+        const used = weekly ? weekly.percent : NaN;
+        const left = spelled(countdownParts(weekly ? weekly.resetsAt : null, nowMs, true)) || "–";
+        const failed = !entry || entry.lastError !== undefined;
+        return lines(percent(used), failed ? 0 : Format.level(used), failed, left, 0);
     }
 
     // The memory in use as the panel can show it, in the units it shows: up

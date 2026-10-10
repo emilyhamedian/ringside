@@ -370,7 +370,7 @@ Item {
     implicitHeight: implicitWidth
 
     Accessible.role: Accessible.ProgressBar
-    Accessible.description: hasValue ? i18nc("@info:status a percentage", "%1%", Math.round(value))
+    Accessible.description: hasValue ? i18nc("@info:status a percentage", "%1%", Format.percent(value))
                           : loading ? i18nc("@info:status waiting for a first reading", "checking")
                                     : i18nc("@info:status no reading", "unavailable")
 

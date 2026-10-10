@@ -44,7 +44,7 @@ Item {
     readonly property var lines: words.readout(item)
     readonly property string described: describes()
     // The readings shown: set rather than bound, so a fade can hold them.
-    property var shownLines: ({ first: "", level: 0, second: "" })
+    property var shownLines: ({ first: "", level: 0, off: false, second: "", heat: 0 })
     property string shownDescribed: ""
     property bool fading: false
     property bool ready: false
