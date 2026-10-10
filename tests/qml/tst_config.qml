@@ -481,8 +481,8 @@ Item {
         // Plasma's dialog warns about every key a page lacks, so each page
         // declares all of them, and their Defaults, through ConfigPage: typed
         // as main.xml types them, nothing main.xml lacks, and no declaration
-        // of a page's own. Each setting is then edited by one page, and the
-        // reports and the graphs' span by none.
+        // of a page's own. Each setting is then assigned by one page, and the
+        // reports and the graphs' span by none; another page may read it.
         function test_everyPageDeclaresEverySetting() {
             const types = { Int: "int", Bool: "bool", Double: "real", String: "string", StringList: "var" };
             const expected = {};
@@ -518,7 +518,7 @@ Item {
             // The graphs' span is chosen on a graph's caption, not here.
             const unedited = reports().concat(["graphSpan"]);
             for (const entry of entries()) {
-                const owners = pages().filter(source => new RegExp("\\bcfg_" + entry.name + "\\b").test(texts[source]));
+                const owners = pages().filter(source => new RegExp("\\bcfg_" + entry.name + "\\s*=(?!=)").test(texts[source]));
                 compare(owners.length, unedited.includes(entry.name) ? 0 : 1, entry.name + " is edited by " + JSON.stringify(owners));
             }
         }
@@ -665,7 +665,8 @@ Item {
                   value: "https://ip.example.org/" },
                 { tag: "Items", source: "config/ConfigItems.qml", key: "ringsOnly", value: ["cpu"] },
                 { tag: "Sensors", source: "config/ConfigSensors.qml", key: "diskDevice", value: "sda" },
-                { tag: "Providers", source: "config/ConfigProviders.qml", key: "usageRefreshMinutes", value: 10 }
+                { tag: "Providers", source: "config/ConfigProviders.qml", key: "usageRefreshMinutes", value: 10 },
+                { tag: "ProvidersCodexMark", source: "config/ConfigProviders.qml", key: "codexMark", value: "openai" }
             ]);
         }
         function test_applySavesTheChange(data) {
@@ -1032,6 +1033,54 @@ Item {
             picker.activated(index);
             compare(page[data.key], data.value);
             compare(page[data.other], "");
+        }
+
+        function logoChoice(page, text) {
+            return find(page, i => i.text === text && i.autoExclusive !== undefined);
+        }
+
+        // The Codex ring's logo is offered while Codex is on in Panel Items
+        // or has reported its limits, and not for a Codex never switched on.
+        function test_codexLogoShown_data() {
+            return [
+                { tag: "defaults", order: ["cpu", "gpu", "memory", "network", "disk"], hidden: ["disk"], known: {}, shown: false },
+                { tag: "claudeOnly", order: ["cpu", "claude"], hidden: [], known: {}, shown: false },
+                { tag: "codexOn", order: ["cpu", "codex"], hidden: [], known: {}, shown: true },
+                { tag: "codexSwitchedOff", order: ["cpu", "codex"], hidden: ["codex"], known: {}, shown: false },
+                { tag: "codexReported", order: ["cpu"], hidden: [],
+                  known: { codex: [{ id: "gpt5", label: "GPT-5", reported: true }] }, shown: true },
+                { tag: "claudeReported", order: ["cpu"], hidden: [],
+                  known: { claude: [{ id: "opus", label: "Opus", reported: true }] }, shown: false }
+            ];
+        }
+        function test_codexLogoShown(data) {
+            const page = make(providers, { cfg_itemOrder: data.order, cfg_hiddenItems: data.hidden, knownLimits: data.known });
+            for (const text of ["Codex", "OpenAI"]) {
+                compare(logoChoice(page, text).visible, data.shown, text);
+            }
+            const label = find(page, i => i.text === "Codex ring logo:");
+            verify(label);
+            compare(label.visible, data.shown);
+        }
+
+        // Codex is chosen until the setting says openai, and each choice
+        // writes its own value.
+        function test_choosingTheCodexLogo() {
+            const page = make(providers, { cfg_itemOrder: ["codex"], cfg_hiddenItems: [] });
+            const codex = logoChoice(page, "Codex");
+            const openai = logoChoice(page, "OpenAI");
+            verify(codex.checked);
+            verify(!openai.checked);
+            mouseClick(openai);
+            compare(page.cfg_codexMark, "openai");
+            verify(!codex.checked);
+            mouseClick(codex);
+            compare(page.cfg_codexMark, "codex");
+            verify(!openai.checked);
+
+            const stored = make(providers, { cfg_itemOrder: ["codex"], cfg_hiddenItems: [], cfg_codexMark: "openai" });
+            verify(logoChoice(stored, "OpenAI").checked);
+            verify(!logoChoice(stored, "Codex").checked);
         }
     }
 }

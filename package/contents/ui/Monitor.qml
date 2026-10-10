@@ -98,6 +98,8 @@ Item {
 
     // Claude and Codex readings; see UsageData.qml.
     readonly property alias usage: usageData
+    // The mark in the Codex ring: "codex", or "openai" for the OpenAI logo.
+    readonly property string codexMark: config.codexMark === "openai" ? "openai" : "codex"
     // The Claude and Codex helper; the tests swap in a stub.
     property alias usageHelperPath: usageData.helperPath
 

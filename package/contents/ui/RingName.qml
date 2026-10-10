@@ -10,8 +10,8 @@ import "code/items.js" as Items
 import "code/marks.js" as Marks
 import "code/style.js" as Style
 
-// An item's name inside its ring: CPU, GPU or MEM, or the Claude or Codex
-// mark. It sits in the clear middle, inside the inner ring when one is drawn,
+// An item's name inside its ring: CPU, GPU or MEM, or the Claude, Codex or
+// OpenAI mark. It sits in the clear middle, inside the inner ring when one is drawn,
 // the name shrinking to fit. Where even its smallest readable size would not
 // fit, or the caller turns it off, it is left out; the tooltip and the popup
 // still name the item. As an inner ring comes or goes, the name eases from
@@ -21,6 +21,9 @@ Item {
     id: name
 
     required property string item
+    // The mark a Claude or Codex ring draws: "claude", "codex", or "openai"
+    // for the Codex ring with the OpenAI logo.
+    property string mark: item
     // RingGauge.centreWidth: the clear width inside the innermost ring.
     required property real room
     // Scales the name's font. The package never sets it: the tests do, to
@@ -63,7 +66,7 @@ Item {
     // The middle is round, so a name's ink has less room than the middle's
     // width: only the chord at its cap height.
     readonly property real chord: 2 * Math.sqrt(Math.max(0, room * room / 4 - smallest.tightBoundingRect.height ** 2 / 4))
-    readonly property var art: item === "claude" ? Marks.CLAUDE : Marks.CODEX
+    readonly property var art: mark === "claude" ? Marks.CLAUDE : mark === "openai" ? Marks.OPENAI : Marks.CODEX
     // A little taller than a name's line, so a mark fills its ring about as
     // much as CPU or MEM fill theirs, by the mark's own scale, kept a pixel
     // clear of the innermost ring, and none at all where there is no room.
@@ -114,7 +117,7 @@ Item {
             id: mark
 
             // Names the mark for the tests, which can't read a path.
-            readonly property string markName: name.item
+            readonly property string markName: name.mark
             readonly property var art: name.art
             // Scene pixels per viewBox unit.
             readonly property real unit: name.markSize / art.box[2]

@@ -4,7 +4,9 @@
 pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls as QQC2
+import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
+import "../code/items.js" as Items
 
 // The settings for the Claude and Codex items. Switching the items on and
 // ordering them stays on Panel Items.
@@ -19,6 +21,9 @@ ConfigPage {
     // sequence, not a JS Array.
     readonly property bool claudeHasLimits: Array.from(knownLimits.claude || []).length > 0 || cfg_claudeInnerLimit !== ""
     readonly property bool codexHasLimits: Array.from(knownLimits.codex || []).length > 0 || cfg_codexInnerLimit !== ""
+    // The Codex ring's logo is offered while the item is on or Codex has
+    // reported its limits.
+    readonly property bool codexShown: Items.enabled(cfg_itemOrder, cfg_hiddenItems).includes("codex") || codexHasLimits
 
     // Automatic, none, then each limit reported for this provider so far. A
     // limit that was picked but is no longer reported still shows, as "…
@@ -81,6 +86,29 @@ ConfigPage {
         Note {
             visible: page.claudeHasLimits || page.codexHasLimits
             text: i18nc("@info", "Automatic shows the per-model limit when your plan has just one. With more than one, pick it here.")
+        }
+
+        Item {
+            Kirigami.FormData.isSection: true
+            visible: page.codexShown
+        }
+
+        ColumnLayout {
+            visible: page.codexShown
+            Kirigami.FormData.label: i18nc("@label", "Codex ring logo:")
+            Kirigami.FormData.buddyFor: codexLogo
+
+            QQC2.RadioButton {
+                id: codexLogo
+                text: i18nc("@option:radio the logo in the Codex ring", "Codex")
+                checked: page.cfg_codexMark !== "openai"
+                onToggled: page.cfg_codexMark = "codex"
+            }
+            QQC2.RadioButton {
+                text: i18nc("@option:radio the logo in the Codex ring", "OpenAI")
+                checked: page.cfg_codexMark === "openai"
+                onToggled: page.cfg_codexMark = "openai"
+            }
         }
     }
 }

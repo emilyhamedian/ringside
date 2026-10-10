@@ -179,6 +179,12 @@ Rectangle {
         gpuInner.clock: 1100
     }
 
+    // The Codex ring with the OpenAI logo.
+    FakeMonitor {
+        id: openaiMark
+        codexMark: "openai"
+    }
+
     // Every ring past a threshold: hot, warm, full, nearly out.
     FakeMonitor {
         id: alert
@@ -309,6 +315,7 @@ Rectangle {
         required property string label
         required property real thickness
         property var monitor: normal
+        property var items: ["cpu", "gpu", "memory", "claude", "network", "disk"]
         property var ringsOnly: []
         // Right to left, as main.qml lays the strip out in such a locale.
         property bool mirrored: false
@@ -331,7 +338,7 @@ Rectangle {
                 anchors.centerIn: parent
                 height: panel.thickness - 8
                 monitor: panel.monitor
-                items: ["cpu", "gpu", "memory", "claude", "network", "disk"]
+                items: panel.items
                 vertical: false
                 thickness: panel.thickness - 8
                 ringsOnly: panel.ringsOnly
@@ -478,6 +485,19 @@ Rectangle {
         Panel {
             label: "Panel · 72 px"
             thickness: 72
+        }
+
+        Panel {
+            label: "Panel · 46 px · Claude and Codex"
+            thickness: 46
+            items: ["claude", "codex"]
+        }
+
+        Panel {
+            label: "Panel · 46 px · Codex with the OpenAI logo"
+            thickness: 46
+            monitor: openaiMark
+            items: ["claude", "codex"]
         }
 
         Panel {
