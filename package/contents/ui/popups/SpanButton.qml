@@ -39,15 +39,15 @@ T.AbstractButton {
         day: i18nc("@item:inmenu a graph's span; %1 is 1", "%1 day", one)
     })
     readonly property string span: spans.includes(monitor.graphSpan) ? monitor.graphSpan : "minute"
-    readonly property alias menu: menu
+    readonly property alias menu: spanMenu
     // Room round the text for the wash, outside the button's own box, so
     // the caption line doesn't move to make room for it.
     readonly property real washX: Math.round(Kirigami.Units.smallSpacing * 1.25)
     readonly property real washY: Math.round(Kirigami.Units.smallSpacing / 2)
 
     function openMenu() {
-        if (!menu.visible) {
-            menu.open();
+        if (!spanMenu.visible) {
+            spanMenu.open();
         }
     }
 
@@ -65,7 +65,7 @@ T.AbstractButton {
                            "Graph span: %1", names[span])
     Accessible.onPressAction: openMenu()
 
-    onClicked: menu.visible ? menu.close() : menu.open()
+    onClicked: spanMenu.visible ? spanMenu.close() : spanMenu.open()
     Keys.onPressed: event => {
         if ([Qt.Key_Return, Qt.Key_Enter, Qt.Key_Down].includes(event.key)) {
             openMenu();
@@ -121,15 +121,15 @@ T.AbstractButton {
             width: parent.width + 2 * button.washX
             height: parent.height + 2 * button.washY
             radius: Kirigami.Units.smallSpacing / 2
-            color: Qt.alpha(Kirigami.Theme.textColor, button.down || menu.visible ? 0.14 : 0.08)
+            color: Qt.alpha(Kirigami.Theme.textColor, button.down || spanMenu.visible ? 0.14 : 0.08)
             border.width: button.visualFocus ? 1 : 0
             border.color: Kirigami.Theme.focusColor
-            visible: button.hovered || button.down || menu.visible || button.visualFocus
+            visible: button.hovered || button.down || spanMenu.visible || button.visualFocus
         }
     }
 
     PlasmaComponents.Menu {
-        id: menu
+        id: spanMenu
 
         // Opened from the keyboard, it starts on the span shown, so the
         // arrows move from there, and on closing gives the focus back with

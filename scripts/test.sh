@@ -41,7 +41,9 @@ version=$("$QMLLINT" --version 2>&1)
 if ! printf '%s\n' "$version" | grep -q '^qmllint 6\.'; then
     fail "need the Qt 6 qmllint, but $QMLLINT --version says: ${version:-nothing}. Set QMLLINT to it."
 else
-    qml_files=$(find package/contents/ui tests/qml -name '*.qml' | sort)
+    # fakeplasmoid stands in for Plasma's own module, and qmllint 6.12 says
+    # its singleton is undeclared even though its qmldir declares it.
+    qml_files=$(find package/contents/ui tests/qml -path tests/qml/fakeplasmoid -prune -o -name '*.qml' -print | sort)
     # shellcheck disable=SC2086
     lint_out=$("$QMLLINT" $qml_files 2>&1)
     lint_rc=$?

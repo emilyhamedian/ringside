@@ -24,10 +24,10 @@ GridLayout {
     // Words.widest(): { first, second }, the texts each line keeps room for.
     required property var widest
     // The room each line takes.
-    readonly property var rooms: [face.room(face.strong, widest.first), face.room(face.plain, widest.second)]
+    readonly property var rooms: [readoutFace.room(readoutFace.strong, widest.first), readoutFace.room(readoutFace.plain, widest.second)]
     property bool oneLine: false
-    readonly property alias face: face
-    readonly property real dotRoom: face.room(face.plain, ["·"])
+    readonly property alias face: readoutFace
+    readonly property real dotRoom: readoutFace.room(readoutFace.plain, ["·"])
     // The width the readings take, from the rooms rather than the layout,
     // which follows them a frame later.
     readonly property real textWidth: !oneLine ? Math.max(rooms[0], rooms[1]) : rooms[0] + dotRoom + rooms[1] + 2 * columnSpacing
@@ -37,13 +37,13 @@ GridLayout {
     columnSpacing: oneLine ? Math.round(Kirigami.Units.smallSpacing * 0.75) : 0
 
     ReadoutFont {
-        id: face
+        id: readoutFace
     }
 
     Text {
         objectName: "first"
         Layout.preferredWidth: readout.rooms[0]
-        Layout.preferredHeight: face.lineHeight
+        Layout.preferredHeight: readoutFace.lineHeight
         Layout.fillWidth: !readout.oneLine
         horizontalAlignment: readout.oneLine ? Text.AlignRight : Text.AlignLeft
         text: readout.lines.first
@@ -51,7 +51,7 @@ GridLayout {
              : readout.lines.level === 2 ? Kirigami.Theme.negativeTextColor
              : readout.lines.level === 1 ? Kirigami.Theme.neutralTextColor
              : Kirigami.Theme.textColor
-        font: face.strong.font
+        font: readoutFace.strong.font
         textFormat: Text.PlainText
         Accessible.ignored: true
     }
@@ -59,11 +59,11 @@ GridLayout {
     Text {
         visible: readout.oneLine
         Layout.preferredWidth: readout.dotRoom
-        Layout.preferredHeight: face.lineHeight
+        Layout.preferredHeight: readoutFace.lineHeight
         horizontalAlignment: Text.AlignHCenter
         text: readout.lines.second !== "" ? "·" : ""
         color: Style.dim(Kirigami.Theme.textColor)
-        font: face.plain.font
+        font: readoutFace.plain.font
         textFormat: Text.PlainText
         Accessible.ignored: true
     }
@@ -71,14 +71,14 @@ GridLayout {
     Text {
         objectName: "second"
         Layout.preferredWidth: readout.rooms[1]
-        Layout.preferredHeight: face.lineHeight
+        Layout.preferredHeight: readoutFace.lineHeight
         Layout.fillWidth: !readout.oneLine
         horizontalAlignment: Text.AlignLeft
         text: readout.lines.second
         color: readout.lines.heat === 2 ? Kirigami.Theme.negativeTextColor
              : readout.lines.heat === 1 ? Kirigami.Theme.neutralTextColor
              : Style.dim(Kirigami.Theme.textColor)
-        font: face.plain.font
+        font: readoutFace.plain.font
         textFormat: Text.PlainText
         Accessible.ignored: true
     }
