@@ -54,6 +54,8 @@ GPL-3.0-or-later.
   can't translate. Colours come from the Plasma theme.
 - Comments explain intent in plain sentences. The README is for people
   installing the widget: short, plain, no filler.
+- The rings hide an easter egg (`ui/Egg.qml`). Keep it out of everything
+  users read: README, CHANGELOG, release notes, PR text and settings.
 
 ## Checks
 
