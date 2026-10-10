@@ -2779,9 +2779,7 @@ Item {
         }
 
         // The same while struck, where the switch is disabled, for the
-        // status in two lines and in one. The popup opens struck: one struck
-        // while open is rebuilt by its header, for which Qt 6.6 reports a
-        // polish loop, with or without the footer.
+        // status in two lines and in one.
         function test_starterFooterIsCentredWhileStruck(data) {
             failOnFooterLoops();
             setStarter("claude", { enabled: true, state: "waiting", next: monitor.usage.createdAt + 3600 });
@@ -3101,6 +3099,32 @@ Item {
             tryCompare(r, "text", root.localized("52%"), 3000);
             verify(g.visible && rows(popup).length === 2 && sentenceShown() && countdown(popup).length > 0, "its readings back");
             verify(!checkStatus(popup).visible);
+        }
+
+        // A fresh reading greyed or struck with the popup open, as when the
+        // machine wakes two intervals after the last good check, lays the
+        // popup out anew in one go: Qt 6.6 reports a polish loop where it
+        // can't.
+        function test_failsWhileOpen_data() {
+            return [{ tag: "grey", age: 300, struck: false }, { tag: "struck", age: 600, struck: true }];
+        }
+
+        function test_failsWhileOpen(data) {
+            failOnWarning(/polish loop|Binding loop/);
+            const popup = load("claude");
+            const r = ring(popup);
+            verify(!r.stale && !r.cancelled, "fresh");
+            failClaude(data.age);
+            compare(r.cancelled, data.struck);
+            compare(r.stale, !data.struck);
+            tryCompare(r, "struck", data.struck ? 1 : 0, 3000);
+            waitForRendering(popup);
+            compare(rows(popup).length, data.struck ? 0 : 2);
+            verify(checkStatus(popup).visible);
+            // Its reason wraps to the room the layout then gives it.
+            const reason = root.find(checkStatus(popup), i => i.wrapMode === Text.Wrap);
+            verify(reason.lineCount > 1);
+            compare(reason.width, reason.parent.width);
         }
 
         // "Try again" only when a check would really ask, and it asks.

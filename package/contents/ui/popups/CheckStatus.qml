@@ -42,6 +42,7 @@ GridLayout {
 
     // The panel's sign at the height of the line it leads.
     RingGauge {
+        id: sign
         Layout.preferredWidth: Math.round(headline.implicitHeight * 0.8)
         Layout.preferredHeight: Layout.preferredWidth
         Layout.alignment: Qt.AlignVCenter
@@ -81,33 +82,46 @@ GridLayout {
         Layout.preferredWidth: 1
     }
 
-    Text {
+    // The reason wraps to its room as soon as it shows rather than when
+    // the popup lays it out: on Qt 6.6 a height that changes in the middle
+    // of laying out the popup costs it two more passes, and it gives up as
+    // a polish loop. The room comes from the popup's body, laid out before
+    // this shows, not from this layout, which sizes it only once it shows.
+    Item {
         Layout.fillWidth: true
-        text: {
-            const e = status.entry;
-            if (!e) {
-                return "";
+        implicitHeight: reason.implicitHeight
+
+        Text {
+            id: reason
+            anchors.left: parent.left
+            width: status.parent ? status.parent.width - status.Layout.leftMargin - status.Layout.rightMargin
+                                   - sign.Layout.preferredWidth - status.columnSpacing : 0
+            text: {
+                const e = status.entry;
+                if (!e) {
+                    return "";
+                }
+                const parts = [status.texts.failureReason(status.item, e)];
+                if (status.weekly && status.weekly.resetsAt <= status.nowMs / 1000) {
+                    parts.push(i18nc("@info %1 is a weekday and time, with a time zone where the reset has one, as in Sun 7:00 AM EDT",
+                                     "The week reset at %1, with no reading since.", status.texts.resetDate(status.weekly)));
+                } else if (status.weekly) {
+                    const at = status.texts.timeOfDay(e.fetchedAt, status.nowMs);
+                    parts.push(status.struck ? i18nc("@info %1 is a time", "The last reading is from %1.", at)
+                                             : i18nc("@info %1 is a time", "The readings below are from %1.", at));
+                }
+                parts.push(status.texts.nextCheckText(status.item, status.nowMs));
+                return parts.join(" ");
             }
-            const parts = [status.texts.failureReason(status.item, e)];
-            if (status.weekly && status.weekly.resetsAt <= status.nowMs / 1000) {
-                parts.push(i18nc("@info %1 is a weekday and time, with a time zone where the reset has one, as in Sun 7:00 AM EDT",
-                                 "The week reset at %1, with no reading since.", status.texts.resetDate(status.weekly)));
-            } else if (status.weekly) {
-                const at = status.texts.timeOfDay(e.fetchedAt, status.nowMs);
-                parts.push(status.struck ? i18nc("@info %1 is a time", "The last reading is from %1.", at)
-                                         : i18nc("@info %1 is a time", "The readings below are from %1.", at));
-            }
-            parts.push(status.texts.nextCheckText(status.item, status.nowMs));
-            return parts.join(" ");
+            // The helper's own message, which names the error, for a screen
+            // reader as the settings page shows it.
+            Accessible.description: status.entry && (status.entry.reason === "files" || status.entry.reason === "helper")
+                ? status.entry.lastError : ""
+            color: Style.dim(Kirigami.Theme.textColor)
+            font.pointSize: Kirigami.Theme.smallFont.pointSize
+            wrapMode: Text.Wrap
+            textFormat: Text.PlainText
+            horizontalAlignment: Text.AlignLeft
         }
-        // The helper's own message, which names the error, for a screen
-        // reader as the settings page shows it.
-        Accessible.description: status.entry && (status.entry.reason === "files" || status.entry.reason === "helper")
-            ? status.entry.lastError : ""
-        color: Style.dim(Kirigami.Theme.textColor)
-        font.pointSize: Kirigami.Theme.smallFont.pointSize
-        wrapMode: Text.Wrap
-        textFormat: Text.PlainText
-        horizontalAlignment: Text.AlignLeft
     }
 }
