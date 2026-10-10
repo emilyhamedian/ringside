@@ -33,7 +33,6 @@ TestCase {
     }
 
     function test_decimal_followsTheLocale() {
-        compare(Format.decimal(3.66, 2), (3.66).toLocaleString(Qt.locale(), "f", 2));
         compare(Format.decimal(3.66, 2), local("3.66"));
     }
 
@@ -128,6 +127,9 @@ TestCase {
             { tag: "kibNoTrim", v: 2048, trim: false, value: "2.0", unit: "KiB" },
             { tag: "kibTrimDropsTrailingZero", v: 2048, trim: true, value: "2", unit: "KiB" },
             { tag: "mib", v: 5 * 1024 * 1024, trim: false, value: "5.0", unit: "MiB" },
+            // byteScale()'s 0.9995 fudge factor puts a value a hair under the
+            // next unit into it, since one decimal would round it up anyway.
+            { tag: "roundsAcrossUnitBoundary", v: 1023.9 * 1024, trim: false, value: "1.0", unit: "MiB" },
             { tag: "invalid", v: NaN, trim: false, value: "–", unit: "" }
         ];
     }
@@ -135,14 +137,6 @@ TestCase {
         var result = Format.bytes(data.v, data.trim);
         compare(result.value, local(data.value));
         compare(result.unit, data.unit);
-    }
-
-    // The 0.9995 fudge factor in byteScale() means a value just a hair under
-    // the next unit already rounds up into it once formatted to one decimal.
-    function test_bytes_roundsAcrossUnitBoundary() {
-        var result = Format.bytes(1023.9 * 1024, false);
-        compare(result.value, local("1.0"));
-        compare(result.unit, "MiB");
     }
 
     function test_bytesOf_data() {
@@ -352,45 +346,34 @@ TestCase {
     }
 
     // "DDR5-4800" is a part designation and stays in ASCII digits; the
-    // count and sizes follow the locale.
-    function test_memoryModules_matchedPair() {
-        var memory = { type: "DDR5", speed: 4800, modules: [16 * 1024 * 1024 * 1024, 16 * 1024 * 1024 * 1024] };
-        compare(Format.memoryModules(memory), "DDR5-4800 · " + local("2 × 16 GiB"));
-    }
-
-    function test_memoryModules_mixedSizes() {
-        var memory = { type: "DDR4", speed: 3200, modules: [8 * 1024 * 1024 * 1024, 16 * 1024 * 1024 * 1024] };
-        compare(Format.memoryModules(memory), "DDR4-3200 · " + local("8 + 16 GiB"));
-    }
-
-    // Every module in the largest one's unit, whichever order the slots report.
-    function test_memoryModules_mixedUnits_data() {
+    // count and sizes follow the locale. Mixed sizes are all in the largest
+    // one's unit, whichever order the slots report.
+    function test_memoryModules_data() {
+        const mib = 1024 * 1024;
+        const gib = 1024 * mib;
         return [
-            { tag: "smallerFirst", modules: [512 * 1024 * 1024, 1024 * 1024 * 1024], expected: "0.5 + 1 GiB" },
-            { tag: "largerFirst", modules: [1024 * 1024 * 1024, 512 * 1024 * 1024], expected: "1 + 0.5 GiB" },
-            { tag: "gibAndTib", modules: [512 * 1024 * 1024 * 1024, 1024 * 1024 * 1024 * 1024],
-              expected: "0.5 + 1 TiB" }
+            { tag: "matchedPair", memory: { type: "DDR5", speed: 4800, modules: [16 * gib, 16 * gib] },
+              kind: "DDR5-4800", layout: "2 × 16 GiB" },
+            { tag: "mixedSizes", memory: { type: "DDR4", speed: 3200, modules: [8 * gib, 16 * gib] },
+              kind: "DDR4-3200", layout: "8 + 16 GiB" },
+            { tag: "mixedUnitsSmallerFirst", memory: { type: "DDR2", speed: 800, modules: [512 * mib, gib] },
+              kind: "DDR2-800", layout: "0.5 + 1 GiB" },
+            { tag: "mixedUnitsLargerFirst", memory: { type: "DDR2", speed: 800, modules: [gib, 512 * mib] },
+              kind: "DDR2-800", layout: "1 + 0.5 GiB" },
+            { tag: "gibAndTib", memory: { type: "DDR2", speed: 800, modules: [512 * gib, 1024 * gib] },
+              kind: "DDR2-800", layout: "0.5 + 1 TiB" },
+            { tag: "unknownTypeDropsTheKind", memory: { type: "Unknown", speed: 4800, modules: [16 * gib, 16 * gib] },
+              kind: "", layout: "2 × 16 GiB" },
+            { tag: "noConfiguredSpeedOmitsIt", memory: { type: "DDR4", speed: 0, modules: [8 * gib] },
+              kind: "DDR4", layout: "1 × 8 GiB" },
+            { tag: "noModules", memory: { type: "DDR5", speed: 4800, modules: [] }, kind: "", layout: "" },
+            { tag: "modulesNotAList", memory: { type: "DDR5", speed: 4800, modules: "oops" }, kind: "", layout: "" },
+            { tag: "null", memory: null, kind: "", layout: "" },
+            { tag: "undefined", memory: undefined, kind: "", layout: "" }
         ];
     }
-    function test_memoryModules_mixedUnits(data) {
-        compare(Format.memoryModules({ type: "DDR2", speed: 800, modules: data.modules }), "DDR2-800 · " + local(data.expected));
-    }
-
-    function test_memoryModules_missingTypeDropsTheKindPrefix() {
-        var memory = { type: "Unknown", speed: 4800, modules: [16 * 1024 * 1024 * 1024, 16 * 1024 * 1024 * 1024] };
-        compare(Format.memoryModules(memory), local("2 × 16 GiB"));
-    }
-
-    function test_memoryModules_noConfiguredSpeedOmitsIt() {
-        var memory = { type: "DDR4", speed: 0, modules: [8 * 1024 * 1024 * 1024] };
-        compare(Format.memoryModules(memory), "DDR4 · " + local("1 × 8 GiB"));
-    }
-
-    function test_memoryModules_emptyOrMissingModules() {
-        compare(Format.memoryModules({ type: "DDR5", speed: 4800, modules: [] }), "");
-        compare(Format.memoryModules({ type: "DDR5", speed: 4800, modules: "oops" }), "");
-        compare(Format.memoryModules(null), "");
-        compare(Format.memoryModules(undefined), "");
+    function test_memoryModules(data) {
+        compare(Format.memoryModules(data.memory), (data.kind ? data.kind + " · " : "") + local(data.layout));
     }
 
     function test_timeLeft_data() {

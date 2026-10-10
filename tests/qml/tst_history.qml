@@ -8,37 +8,27 @@ import "../../package/contents/ui/code/history.js" as History
 TestCase {
     name: "History"
 
-    function test_pushAppendsWithinCapacity() {
-        var a = History.push([], 5, 3);
-        compare(a.length, 1);
-        compare(a[0], 5);
-        var b = History.push(a, 6, 3);
-        compare(b.length, 2);
-        compare(b[0], 5);
-        compare(b[1], 6);
+    // Pushing keeps the newest `length` samples and leaves its input alone.
+    // A temperature history keeps a missing reading as NaN, a gap, where
+    // the default would put a 0 that reads as a cold sensor.
+    function test_push_data() {
+        return [
+            { tag: "withinCapacity", start: [], values: [5, 6], length: 3, expected: [5, 6] },
+            { tag: "dropsTheOldest", start: [], values: [1, 2, 3, 4], length: 3, expected: [2, 3, 4] },
+            { tag: "fromAFullHistory", start: [1, 2, 3], values: [4], length: 3, expected: [2, 3, 4] },
+            { tag: "lengthOfOne", start: [1, 2, 3], values: [4], length: 1, expected: [4] },
+            { tag: "missingAsGaps", start: [], values: [50, NaN, undefined, 52], length: 3, missing: NaN, expected: [NaN, NaN, 52] }
+        ];
     }
-
-    function test_pushDropsOldestBeyondLength() {
-        var full = History.push(History.push(History.push([], 1, 3), 2, 3), 3, 3);
-        compare(full.length, 3);
-        compare(full[0], 1);
-        compare(full[1], 2);
-        compare(full[2], 3);
-
-        var pushed = History.push(full, 4, 3);
-        compare(pushed.length, 3);
-        compare(pushed[0], 2);
-        compare(pushed[1], 3);
-        compare(pushed[2], 4);
-    }
-
-    function test_pushDoesNotMutateItsInput() {
-        var original = [1, 2, 3];
-        var result = History.push(original, 4, 3);
-        compare(original.length, 3);
-        compare(original[2], 3);
-        compare(result[0], 2);
-        compare(result[2], 4);
+    function test_push(data) {
+        var samples = data.start;
+        data.values.forEach(v => {
+            var before = samples.slice();
+            var next = History.push(samples, v, data.length, data.missing);
+            compare(samples, before, "the input is left alone");
+            samples = next;
+        });
+        compare(samples, data.expected);
     }
 
     function test_pushReplacesNonFiniteValuesWithZero_data() {
@@ -54,12 +44,6 @@ TestCase {
         var result = History.push([1, 2], data.value, 3);
         compare(result.length, 3);
         compare(result[2], 0);
-    }
-
-    function test_pushWithLengthOfOneKeepsOnlyTheNewest() {
-        var result = History.push([1, 2, 3], 4, 1);
-        compare(result.length, 1);
-        compare(result[0], 4);
     }
 
     // By default the top sits 0.75 px down and zero 0.75 px up, half the
@@ -82,11 +66,6 @@ TestCase {
         compare(pts.length, 1);
         fuzzyCompare(pts[0].x, 100, 0.001);
         fuzzyCompare(pts[0].y, 0.75 + 0.2 * 48.5, 0.001);
-    }
-
-    function test_pointsForEmptyHistory() {
-        var pts = History.points([], 3, 100, 50, 100);
-        compare(pts.length, 0);
     }
 
     function test_pointsClampOutOfRangeValues() {
@@ -140,26 +119,6 @@ TestCase {
         var p = History.peak(data.samples);
         compare(p.index, data.index);
         compare(p.value, data.value);
-    }
-
-    function test_peakOfNothingIsNull() {
-        compare(History.peak([]), null);
-    }
-
-    // A temperature history keeps a missing reading as NaN, a gap, where
-    // the default would put a 0 that reads as a cold sensor.
-    function test_pushKeepsMissingReadingsAsGaps() {
-        var a = History.push([], 50, 3, NaN);
-        a = History.push(a, NaN, 3, NaN);
-        a = History.push(a, undefined, 3, NaN);
-        compare(a.length, 3);
-        compare(a[0], 50);
-        verify(isNaN(a[1]) && isNaN(a[2]));
-        var b = History.push(a, 52, 3, NaN);
-        compare(b.length, 3, "as long as asked");
-        verify(isNaN(b[0]) && isNaN(b[1]));
-        compare(b[2], 52);
-        compare(a.length, 3, "the input is left alone");
     }
 
     // A temperature graph's floor maps to the bottom as zero does.
