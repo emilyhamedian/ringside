@@ -6,6 +6,13 @@ follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- 2026-10-10: Draft PRs to main defer the Fedora test jobs and their exact
+  matching development pushes. Ready PRs run both full suites, including
+  docs-only changes; subsequent ready updates and base changes run them again.
+  Main, release and tag checks retain full coverage.
+
 ## [0.2.2] - 2026-10-04
 
 ### Changed

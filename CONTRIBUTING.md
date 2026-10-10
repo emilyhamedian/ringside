@@ -31,7 +31,11 @@ An exact commit with a mergeable, open PR from the same repository to main
 and a matching PR workflow keeps the PR merge checks and skips duplicate
 development push jobs. That workflow must have classified the PR's current
 merge commit successfully. Branches still run when that evidence is absent
-or unavailable. Draft PRs run the same checks.
+or unavailable. Draft PRs to main defer the Fedora jobs, as do exact matching
+development pushes while their same-repository PR is a draft. Draft classification cannot
+stand in for a tested merge commit. Marking a PR ready runs both full suites,
+even for docs-only changes, and subsequent ready PR updates run them again.
+Returning a development PR to draft cancels its superseded PR run.
 Superseded development runs are cancelled within each event type; pushes
 cannot cancel PR merge tests. PRs targeting a release branch run in full.
 
