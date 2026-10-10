@@ -171,9 +171,9 @@ Rectangle {
         Dialog {
             objectName: "usage"
             UsagePopup {
+                id: usagePopup
                 monitor: sample
                 item: "claude"
-                nowMs: pictures.now * 1000
             }
         }
     }
@@ -203,10 +203,14 @@ Rectangle {
         return null;
     }
 
-    // Long enough for the process lists' first scan.
+    // Long enough for the process lists' first scan. The usage popup steps
+    // its clock with each report, so its fixed time is set last.
     Timer {
         interval: 5000
         running: pictures.outDir !== ""
-        onTriggered: pictures.save(["panel", "popups", "usage"], Qt.quit)
+        onTriggered: {
+            usagePopup.nowMs = pictures.now * 1000;
+            pictures.save(["panel", "popups", "usage"], Qt.quit);
+        }
     }
 }
