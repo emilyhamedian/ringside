@@ -25,6 +25,8 @@ GridLayout {
     property string openItem: ""
     // Plasmoid.location, for the tooltips.
     property int location: PlasmaCore.Types.Floating
+    // The hidden animation the rings play (Egg.qml).
+    property Egg egg: null
 
     signal activated(string item, Item cell)
 
@@ -109,6 +111,7 @@ GridLayout {
                     ring: strip.ring
                     textShown: entry.textShown
                     twoLines: strip.twoLines
+                    egg: strip.egg
 
                     Binding {
                         target: cell
@@ -127,6 +130,7 @@ GridLayout {
                     ring: strip.ring
                     textShown: entry.textShown
                     twoLines: strip.twoLines
+                    egg: strip.egg
 
                     Binding {
                         target: cell

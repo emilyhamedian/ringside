@@ -338,6 +338,65 @@ Item {
             tryCompare(popup(applet), "visible", false, 2000);
         }
 
+        // The hidden animation (Egg.qml) and the keys main.qml hands it.
+        function egg(applet) {
+            return find(applet, i => i.watch !== undefined && i.code !== undefined);
+        }
+
+        function typeCode() {
+            for (const key of [Qt.Key_Up, Qt.Key_Up, Qt.Key_Down, Qt.Key_Down, Qt.Key_Left, Qt.Key_Right,
+                               Qt.Key_Left, Qt.Key_Right, Qt.Key_B, Qt.Key_A]) {
+                keyClick(key);
+            }
+        }
+
+        function test_codeOnAFocusedItem_data() {
+            return [{ tag: "horizontal", vertical: false }, { tag: "vertical", vertical: true }];
+        }
+
+        // Typed on an item in the strip, the code plays along it.
+        function test_codeOnAFocusedItem(data) {
+            const applet = panel(data.vertical, 44);
+            const e = egg(applet);
+            const cell = strip(applet).cellAt(2);
+            cell.forceActiveFocus(Qt.TabFocusReason);
+            verify(cell.activeFocus);
+            typeCode();
+            verify(e.playing);
+            compare(e.vertical, data.vertical);
+            const rings = find(applet, i => i.innerRing !== undefined && i.index === 2);
+            verify(rings, "the rings are numbered along the strip");
+            verify(!popup(applet).visible, "no popup opened");
+            tryCompare(e, "playing", false, 3000);
+        }
+
+        // In any open popup the code plays too, while the popup's controls
+        // keep their keys: Down on the span opens its menu, and an arrow it
+        // leaves still counts.
+        function test_codeInAPopup() {
+            const applet = panel(false, 44);
+            const e = egg(applet);
+            applet.toggle("cpu", strip(applet).cellAt(0));
+            settle();
+            const loader = popup(applet).mainItem;
+            tryVerify(() => loader.activeFocus, 2000, "the popup has the focus");
+            typeCode();
+            verify(e.playing, "played from the popup");
+            tryCompare(e, "playing", false, 3000);
+
+            const span = find(loader.item, i => i.objectName === "span");
+            span.forceActiveFocus(Qt.TabFocusReason);
+            verify(span.activeFocus);
+            keyClick(Qt.Key_Up);
+            compare(e.typed, 1, "an arrow the span leaves reaches the egg");
+            keyClick(Qt.Key_Down);
+            tryVerify(() => span.menu.visible, 1000, "Down still opens the span's menu");
+            compare(e.typed, 1, "and stays the span's");
+            keyClick(Qt.Key_Escape);
+            tryVerify(() => !span.menu.visible, 1000);
+            verify(popup(applet).visible, "Escape closed the menu alone");
+        }
+
         // The monitor keys the graphs' saved history to this widget.
         function test_widgetIdReachesTheMonitor() {
             compare(strip(panel(false, 44)).monitor.widgetId, String(Plasmoid.id));
