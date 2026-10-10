@@ -30,7 +30,7 @@ ConfigPage {
 
     // What the widget found on this machine, for the hints.
     readonly property var hardware: page.report("detectedHardware")
-    // Not readonly: tests substitute a fixed status here.
+    // The widget's last status per provider. A test seam.
     property var usageStatus: page.report("usageStatus")
     readonly property var hints: ({
         cpu: hardware.cpu ? Format.cpuModel(hardware.cpu.model) : "",

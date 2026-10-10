@@ -7,10 +7,10 @@ import org.kde.kirigami as Kirigami
 import "../../package/contents/ui"
 import "../../package/contents/ui/popups"
 import "../../package/contents/ui/code/format.js" as Format
-import "../../package/contents/ui/code/log.js" as Log
 import "../../package/contents/ui/code/report.js" as Report
 import "../../package/contents/ui/code/style.js" as Style
 import "starterstates.js" as StarterStates
+import "journal.js" as Journal
 
 // The Claude and Codex items. UsageData runs the stub scenarios in data/
 // (fake-usage-*.py) in place of usage.py, so no credentials are read and no
@@ -1200,11 +1200,11 @@ Item {
         function journal() {
             logged = [];
             listener = (category, level, text) => { logged = logged.concat([category + " " + level + " " + text]); };
-            Log.listen(listener);
+            Journal.listen(listener);
         }
 
         function cleanup() {
-            Log.unlisten(listener);
+            Journal.unlisten();
         }
 
         function test_writesTheHelpersLines() {
@@ -1290,7 +1290,7 @@ Item {
 
         // The Claude or Codex mark inside the ring.
         function mark(cell) {
-            return root.find(cell.children[0], i => i.markName !== undefined);
+            return root.find(cell.children[0], i => i.art !== undefined && i.unit !== undefined);
         }
 
         // Claude at `percent` with no model limit, resetting in `left` seconds.
@@ -1321,7 +1321,7 @@ Item {
             compare(gauge.text, "", "no percentage inside the ring");
             const m = mark(c);
             verify(m.visible, "the mark shows");
-            compare(m.markName, data.tag);
+            compare(root.find(c, i => i.markSize !== undefined).mark, data.tag);
             verify(m.width > 0 && m.width <= gauge.centreWidth, m.width + " in " + gauge.centreWidth);
         }
 

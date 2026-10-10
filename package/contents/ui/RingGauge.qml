@@ -259,7 +259,8 @@ Item {
         NumberAnimation { duration: Kirigami.Units.longDuration; easing.type: Easing.InOutCubic }
     }
 
-    // How far the outer ring reaches from the middle.
+    // How far the outer ring reaches from the middle. With outerTone and
+    // innerTone, a test seam: nothing in the package reads them.
     readonly property real reach: outer.radius + strokeWidth / 2
     // The clear width in the middle, a pixel in from the innermost ring, for
     // a name or mark there: inside the inner ring while it is held, so a
@@ -267,7 +268,7 @@ Item {
     // struck ring keeps the room, so its mark stays the size it was.
     readonly property real centreWidth: Math.max(0, 2 * ((inner || innerHeld ? innerRadius - innerStrokeWidth / 2
                                                                     : outer.radius - strokeWidth / 2) - 1))
-    // The readings' colours, for the readings beside the ring.
+    // The readings' colours.
     readonly property color outerTone: tone(Math.max(Format.level(outerValue), minimumLevel))
     readonly property color innerTone: tone(Format.level(innerValue))
     // The outer reading as drawn, for a number in the middle that counts

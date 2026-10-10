@@ -19,8 +19,7 @@ QtObject {
     id: store
 
     required property string widget
-    // The database's name, which Qt hashes into the file's; the tests use
-    // their own.
+    // The database's name, which Qt hashes into the file's. A test seam.
     property string name: "ringside"
 
     property var db: null

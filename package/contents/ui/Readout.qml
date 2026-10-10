@@ -26,7 +26,6 @@ GridLayout {
     // The room each line takes.
     readonly property var rooms: [readoutFace.room(readoutFace.strong, widest.first), readoutFace.room(readoutFace.plain, widest.second)]
     property bool oneLine: false
-    readonly property alias face: readoutFace
     readonly property real dotRoom: readoutFace.room(readoutFace.plain, ["·"])
     // The width the readings take, from the rooms rather than the layout,
     // which follows them a frame later.

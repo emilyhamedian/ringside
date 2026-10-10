@@ -18,7 +18,7 @@ RowLayout {
     id: row
 
     required property string item
-    // UsageData, or FakeUsage in the tests.
+    // UsageData, or anything shaped like it.
     required property var usage
     required property real nowMs
     required property Words texts

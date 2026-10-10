@@ -339,10 +339,3 @@ function abandon(key) {
     r.asking = null;
     notify();
 }
-
-// Forgets every check, so the gallery can show each state from a clean start.
-function forget() {
-    for (const key of Object.keys(records)) {
-        delete records[key];
-    }
-}

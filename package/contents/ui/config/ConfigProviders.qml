@@ -16,23 +16,20 @@ import "../code/style.js" as Style
 ConfigPage {
     id: page
 
-    // The per-model limits the widget has reported so far. Not readonly:
-    // tests substitute a fixed set here.
+    // The per-model limits the widget has reported so far. With
+    // usageStatus, a test seam.
     property var knownLimits: page.report("knownLimits")
-    // Array.from rather than Array.isArray: a value crossing from outside
-    // the QML/JS engine (a test's initial property) arrives as a Qt
-    // sequence, not a JS Array.
+    // Array.from: the lists may be Qt sequences.
     readonly property bool claudeHasLimits: Array.from(knownLimits.claude || []).length > 0 || cfg_claudeInnerLimit !== ""
     readonly property bool codexHasLimits: Array.from(knownLimits.codex || []).length > 0 || cfg_codexInnerLimit !== ""
     // The Codex ring's logo is offered while the item is on or Codex has
     // reported its limits.
     readonly property bool codexShown: Items.enabled(cfg_itemOrder, cfg_hiddenItems).includes("codex") || codexHasLimits
 
-    // The widget's last status per provider (see UsageData.merge()). Not
-    // readonly: tests substitute a fixed one. Each provider carries
-    // program: { path, chosen, problem }, path being where the helper found
-    // the program or the chosen path with ~ expanded, and starter, whether
-    // the session starter is on.
+    // The widget's last status per provider (see UsageData.merge()). Each
+    // carries program: { path, chosen, problem }, path being where the
+    // helper found the program or the chosen path with ~ expanded, and
+    // starter, whether the session starter is on.
     property var usageStatus: page.report("usageStatus")
     readonly property bool claudeOn: Items.enabled(cfg_itemOrder, cfg_hiddenItems).includes("claude")
     readonly property string home: decodeURIComponent(StandardPaths.writableLocation(StandardPaths.HomeLocation)

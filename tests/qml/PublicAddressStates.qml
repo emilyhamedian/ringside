@@ -40,7 +40,9 @@ QtObject {
     // body] (none: never answered), a minute apart, the step `last` one at
     // `at`, and keeps what the checker shows after the last step.
     function run(steps, config, last) {
-        Lookup.forget();
+        for (const key of Object.keys(Lookup.records)) {
+            delete Lookup.records[key];
+        }
         let now = states.at - 61000 * (last ?? steps.length - 1);
         let replies = {};
         const make = () => ({

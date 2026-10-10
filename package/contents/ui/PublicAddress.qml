@@ -36,7 +36,7 @@ Item {
     property string version: ""
     readonly property string userAgent: version !== "" ? "ringside/" + version : "ringside"
 
-    // For the tests: how a request is made, the clock, and the two waits.
+    // Test seams: how a request is made, the clock, and the two waits.
     property var makeRequest: () => new XMLHttpRequest()
     property var clock: () => Date.now()
     property int floorMs: 60000

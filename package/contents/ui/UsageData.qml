@@ -37,7 +37,7 @@ Item {
     required property var config
     // Ids to poll, e.g. ["claude", "codex"].
     property var providers: []
-    // The helper; the tests swap in a stub.
+    // The helper. A test seam.
     property string helperPath: decodeURIComponent(Qt.resolvedUrl("../code/usage.py").toString()
                                                    .replace(/^file:\/\//, ""))
     // The merged entry per polled id, in the helper's shape (see usage.py).

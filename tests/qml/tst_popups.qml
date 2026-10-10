@@ -844,7 +844,7 @@ Item {
         }
 
         function graphs(item) {
-            return all(item, i => i.ceiling !== undefined && i.mainPoints !== undefined);
+            return all(item, i => i.ceiling !== undefined && i.drawn !== undefined);
         }
 
         function ruleOf(graph) {
@@ -947,7 +947,7 @@ Item {
                     compare(top.text, localized("100%"));
                 } else {
                     verify(!rule.visible);
-                    const peak = g.mainPoints.concat(g.secondPoints).reduce((m, p) => Math.min(m, p.y), Infinity);
+                    const peak = g.drawn.main.concat(g.drawn.second).reduce((m, p) => Math.min(m, p.y), Infinity);
                     fuzzyCompare(peak, g.topY, 0.001, "the peak lands where 100 % would");
                     verify(/^peak \S+ \S+$/.test(top.text), top.text);
                 }
@@ -998,9 +998,9 @@ Item {
             verify(up > Math.max(...uploading.networkDownHistory), "the upload peaks higher");
             const g = graphs(load("NetworkPopup", uploading))[0];
             compare(g.maximum, up);
-            const top = g.secondPoints.reduce((m, p) => Math.min(m, p.y), Infinity);
+            const top = g.drawn.second.reduce((m, p) => Math.min(m, p.y), Infinity);
             fuzzyCompare(top, g.topY, 0.001, "the upload's peak lands at the top");
-            verify(g.mainPoints.every(p => p.y > top), "the download stays under it");
+            verify(g.drawn.main.every(p => p.y > top), "the download stays under it");
             const r = Format.rate(up, uploading.networkBits);
             compare(tileTop(g).text, "peak " + r.value + " " + r.unit);
         }
@@ -1080,7 +1080,7 @@ Item {
             const found = graphs(load("NetworkPopup", idle)).concat(graphs(load("DiskPopup", idle)));
             compare(found.map(g => g.maximum), [125000, 1048576, 1048576]);
             found.forEach(g => {
-                const top = g.mainPoints.concat(g.secondPoints).reduce((m, p) => Math.min(m, p.y), Infinity);
+                const top = g.drawn.main.concat(g.drawn.second).reduce((m, p) => Math.min(m, p.y), Infinity);
                 verify(top > g.topY + (g.height - g.topY) / 2, "the line keeps low: " + top + " of " + g.height);
             });
         }
@@ -2370,7 +2370,7 @@ Item {
                     compare(span.Accessible.name, "Graph span: " + name);
                     const g = graphs(tile)[0] ?? temperatureGraph(tile);
                     const shape = g.drawn ?? g;
-                    const points = g.mainPoints ?? g.plot.points;
+                    const points = g.drawn ? g.drawn.main : g.plot.points;
                     const bands = g.drawn ? g.drawn.bands : g.bands;
                     compare(points.length, length, tile.caption + " spans its points");
                     fuzzyCompare(points[points.length - 1].x, g.width, 1e-6, "the newest at the right");

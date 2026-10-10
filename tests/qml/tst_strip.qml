@@ -210,8 +210,8 @@ Item {
                        item + " holds " + JSON.stringify(inside));
                 let shown;
                 if (item === "claude" || item === "codex") {
-                    shown = find(name, m => m.markName !== undefined);
-                    compare(shown.markName, item);
+                    shown = find(name, m => m.art !== undefined && m.unit !== undefined);
+                    compare(name.mark, item);
                     compare(shown.visible, active, item + "'s mark");
                     compare(name.visible, active, item + "'s mark");
                 } else {
@@ -231,7 +231,7 @@ Item {
                     // space after its last glyph.
                     // Mapped as a point: Qt 6.6 drops the fraction of an x and y
                     // given apart.
-                    const drawn = shown.markName !== undefined
+                    const drawn = shown.art !== undefined
                         ? shown.mapToItem(strip, Qt.point(shown.art.box[0] + shown.art.box[2] / 2,
                                                           shown.art.box[1] + shown.art.box[2] / 2))
                         : shown.mapToItem(strip, Qt.point(shown.width / 2 - shown.font.letterSpacing / 2,
@@ -403,7 +403,8 @@ Item {
             check("Claude's text back", () => { strip.ringsOnly = []; }, [2]);
 
             const readout = find(strip.cellAt(0).contentItem, r => r.textWidth !== undefined);
-            const cpu = check("a larger font for the CPU", () => { readout.face.pointSize = readout.face.panelPointSize * 1.5; }, [0]);
+            const face = Array.from(readout.resources).find(o => o.drawnSize !== undefined);
+            const cpu = check("a larger font for the CPU", () => { face.pointSize = face.panelPointSize * 1.5; }, [0]);
             verify(cpu.now[0] > cpu.before[0], "wider");
             const faces = rateFaces(3);
             compare(faces.length, 2, "the disk measures at its base size and as drawn");
@@ -760,9 +761,9 @@ Item {
             strip.monitor.codexMark = "codex";
             verify(/^24% used, resets in 5 days [34] hours$/.test(strip.cellAt(2).Accessible.description),
                    strip.cellAt(2).Accessible.description);
-            const mark = find(gaugeAt(1), i => i.markName !== undefined);
-            compare(mark.markName, "claude");
-            verify(mark.visible, "the Claude mark");
+            const name = find(gaugeAt(1), n => n.markSize !== undefined);
+            compare(name.mark, "claude");
+            verify(find(name, m => m.art !== undefined && m.unit !== undefined).visible, "the Claude mark");
             verify(!visibleTexts(strip).includes("CLAUDE"), JSON.stringify(visibleTexts(strip)));
             compare([line(1, "first").text, line(1, "second").text], ["52%", "2d"]);
             compare([line(2, "first").text, line(2, "second").text], ["24%", "5d"]);

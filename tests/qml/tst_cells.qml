@@ -109,6 +109,11 @@ Item {
         return findAll(item, test)[0] ?? null;
     }
 
+    // The face a Readout sets its lines in.
+    function faceOf(readout) {
+        return Array.from(readout.resources).find(o => o.drawnSize !== undefined);
+    }
+
     Component {
         id: monitorComponent
         FakeMonitor {}
@@ -351,7 +356,7 @@ Item {
 
         // The Claude or Codex mark, loaded for those items alone.
         function mark(name) {
-            return root.find(name, i => i.markName !== undefined);
+            return root.find(name, i => i.art !== undefined && i.unit !== undefined);
         }
 
         function line(c, which) {
@@ -507,7 +512,7 @@ Item {
                 compare(String(label(name).color), root.tone("dim"));
                 verify(!mark(name), "a system ring loads no mark");
             } else {
-                compare(mark(name).markName, data.mark);
+                compare(name.mark, data.mark);
                 compare(mark(name).visible, data.shown);
                 verify(!label(name).visible);
             }
@@ -582,12 +587,12 @@ Item {
             const c = breezeSized(cell("codex", { ring: 46, textShown: true, twoLines: true }));
             const codex = nameIn(c);
             const claude = nameIn(breezeSized(cell("claude", { ring: 46, textShown: true, twoLines: true })));
-            compare(mark(codex).markName, "codex");
+            compare(codex.mark, "codex");
             monitor.codexMark = "openai";
             settle();
-            compare(mark(codex).markName, "openai");
+            compare(codex.mark, "openai");
             compare(mark(codex).art.box, [178, 178, 360]);
-            compare(mark(claude).markName, "claude");
+            compare(claude.mark, "claude");
             verify(codex.visible);
             const g = gauge(c);
             const art = mark(codex).art;
@@ -607,7 +612,7 @@ Item {
             verify(differ, "the logo draws");
             monitor.codexMark = "codex";
             settle();
-            compare(mark(codex).markName, "codex");
+            compare(codex.mark, "codex");
         }
 
         function test_openaiLogoAtItsOldSize_data() {
@@ -628,7 +633,7 @@ Item {
             const star = nameIn(breezeSized(cell("claude", { ring: data.ring, textShown: false })));
             const metrics = createTemporaryObject(metricsComponent, root, { font: label(name).font });
             const size = Math.max(0, Math.min(Math.round(metrics.height * 1.2), Math.floor(name.room) - 2));
-            compare(mark(name).markName, "openai");
+            compare(name.mark, "openai");
             compare(name.markSize, size);
             compare(name.visible, size >= Kirigami.Units.iconSizes.small / 2 && size <= name.room);
             if (name.room === star.room) {
@@ -995,10 +1000,11 @@ Item {
             verify(second.contentWidth <= second.width, second.contentWidth + " in " + second.width);
 
             const readout = root.find(c, i => i.textWidth !== undefined);
-            const face = readout.face.plain.font;
-            compare([second.font.family, second.font.pointSize, second.font.weight], [face.family, face.pointSize, face.weight],
+            const face = root.faceOf(readout);
+            const font = face.plain.font;
+            compare([second.font.family, second.font.pointSize, second.font.weight], [font.family, font.pointSize, font.weight],
                     "the face of a temperature or memory line");
-            compare(readout.rooms[1], readout.face.room(readout.face.plain, ["d", "h", "m"].map(unit => root.digits(10) + unit)),
+            compare(readout.rooms[1], face.room(face.plain, ["d", "h", "m"].map(unit => root.digits(10) + unit)),
                     "the room of two figures and a unit");
             compare(root.findAll(readout, i => i.textFormat !== undefined).length, 3, "the two lines and the dot, nothing hidden to measure");
         }
@@ -1137,7 +1143,7 @@ Item {
             }
             const readout = root.find(c, i => i.textWidth !== undefined);
             if (readout) {
-                const face = readout.face;
+                const face = root.faceOf(readout);
                 const percent = root.percent(100);
                 const firsts = data.item === "gpu" ? [percent, "off"] : [percent];
                 const seconds = data.item === "cpu" || data.item === "gpu" ? [root.degrees(100)]
@@ -1191,7 +1197,8 @@ Item {
             c.animated = false;
             const readout = root.find(c, i => i.textWidth !== undefined);
             const width = c.implicitWidth;
-            verify(readout.rooms[0] >= readout.face.room(readout.face.strong, ["ausgeschaltet"]), "room for the translation");
+            const face = root.faceOf(readout);
+            verify(readout.rooms[0] >= face.room(face.strong, ["ausgeschaltet"]), "room for the translation");
             monitor.gpuOuter.phase = "asleep";
             settle();
             compare(line(c, "first").text, "ausgeschaltet");

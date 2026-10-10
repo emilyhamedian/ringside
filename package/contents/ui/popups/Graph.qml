@@ -42,7 +42,8 @@ Item {
     // Every shape from the same samples in one go: bindings reading them
     // apart could see a new span's samples with the last span's points. A
     // lone point draws nothing at a minute, and a short level line at an
-    // hour or a day, where it stands for a whole bucket.
+    // hour or a day, where it stands for a whole bucket. Its main and
+    // second, every sample's point, are a test seam.
     readonly property var drawn: {
         const half = bucketed ? History.loneHalf(length, width) : 0;
         const main = History.points(values, length, width, height, maximum, topY);
@@ -57,8 +58,6 @@ Item {
             bands: tops ? History.bands(values, highs, main, tops, half).map(run => run.map(qt)) : []
         };
     }
-    readonly property var mainPoints: drawn.main
-    readonly property var secondPoints: drawn.second
 
     function qt(p) {
         return Qt.point(p.x, p.y);
