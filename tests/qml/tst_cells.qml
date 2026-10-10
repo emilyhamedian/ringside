@@ -1007,12 +1007,11 @@ Item {
                       { set: { cpuUsage: NaN, cpuTemperature: NaN }, shows: ["–"] },
                       { set: { fahrenheit: true, cpuUsage: 100, cpuTemperature: 149 }, shows: ["100%", "300°"] },
                       { set: { fahrenheit: false, cpuUsage: 11, cpuTemperature: 48 }, shows: ["11%", "48°"] }],
-                memory: [{ set: { memoryPercent: 0, memoryUsed: 0 }, shows: ["0%", "0 B"] },
-                         { set: { memoryPercent: 1, memoryUsed: 999 * mib }, shows: ["1%", "999.0 MiB"] },
-                         { set: { memoryPercent: 6, memoryUsed: 1000 * mib }, shows: ["6%", "1.0 GiB"] },
-                         { set: { memoryPercent: 60, memoryUsed: 9.6 * gib }, shows: ["60%", "9.6 GiB"] },
-                         { set: { memoryPercent: 88, memoryUsed: 13.4 * gib }, shows: ["88%", "13.4 GiB"] },
-                         { set: { memoryPercent: 100, memoryUsed: 1023 * gib }, shows: ["100%", "1.0 TiB"] },
+                // From 1 GiB to the fake's 31.9 GiB installed.
+                memory: [{ set: { memoryPercent: 3, memoryUsed: 1000 * mib }, shows: ["3%", "1.0 GiB"] },
+                         { set: { memoryPercent: 30, memoryUsed: 9.6 * gib }, shows: ["30%", "9.6 GiB"] },
+                         { set: { memoryPercent: 42, memoryUsed: 13.4 * gib }, shows: ["42%", "13.4 GiB"] },
+                         { set: { memoryPercent: 100, memoryUsed: 31.9 * gib }, shows: ["100%", "31.9 GiB"] },
                          { set: { memoryPercent: NaN, memoryUsed: NaN }, shows: ["–"] }],
                 gpu: [{ outer: { usage: 0, temperature: 9 }, shows: ["0%", "9°"] },
                       { outer: { usage: 100, temperature: 105 }, shows: ["100%", "105°"] },
@@ -1041,6 +1040,27 @@ Item {
             };
         }
 
+        // Memory keeps room for readings from 1 GiB up to the installed
+        // total, so a total just past a unit keeps three figures of the unit
+        // below; until the total is known, for every unit.
+        function test_memoryRoom_data() {
+            return [{ tag: "31.9 GiB", total: 31.9 * gib, room: [root.decimal(31.9) + " GiB"] },
+                    { tag: "1.0 TiB", total: 1024 * gib, room: [root.decimal(1) + " TiB", root.decimal(100) + " GiB"] },
+                    { tag: "512 MiB", total: 512 * mib, room: [root.decimal(512) + " MiB"] },
+                    { tag: "unknown", total: NaN, room: ["B", "KiB", "MiB", "GiB", "TiB", "PiB"].map(unit => root.decimal(100) + " " + unit) }];
+        }
+
+        function test_memoryRoom(data) {
+            const total = monitor.memoryTotal;
+            monitor.memoryTotal = data.total;
+            try {
+                const c = keep(ringComponent.createObject(root, { monitor: monitor, item: "memory", twoLines: true, ring: 34 }));
+                compare(root.find(c, i => i.textWidth !== undefined).widest.second, data.room);
+            } finally {
+                monitor.memoryTotal = total;
+            }
+        }
+
         function test_widthIsFixed_data() {
             const rows = [];
             const states = extremes();
@@ -1057,9 +1077,10 @@ Item {
 
         // A cell keeps one width whatever its readings: each line takes the
         // room of the widest text it can show, "100%" for every ring and
-        // "off" too for the GPU, one decimal and a unit for memory, three figures for the rates, and
-        // two for a countdown, so no text in it moves or overruns its box
-        // from 0 to 100 %, 9 to 105 degrees, an idle link to 1023 GiB/s, a
+        // "off" too for the GPU, memory as the installed total reads, three
+        // figures for the rates, and two for a countdown, so no text in it
+        // moves or overruns its box from 0 to 100 %, 9 to 105 degrees, 1 GiB
+        // to all the memory there is, an idle link to 1023 GiB/s, a
         // GPU asleep or handing over, or a countdown from 6d to its reset.
         function test_widthIsFixed(data) {
             const rate = data.item === "network" || data.item === "disk";
@@ -1081,7 +1102,7 @@ Item {
                 const percent = root.percent(100);
                 const firsts = data.item === "gpu" ? [percent, "off"] : [percent];
                 const seconds = data.item === "cpu" || data.item === "gpu" ? [root.degrees(100)]
-                              : data.item === "memory" ? ["B", "KiB", "MiB", "GiB", "TiB", "PiB"].map(unit => root.decimal(100) + " " + unit)
+                              : data.item === "memory" ? [root.decimal(31.9) + " GiB"]
                               : ["d", "h", "m"].map(unit => root.digits(10) + unit);
                 compare(readout.rooms[0], face.room(face.strong, firsts), "the first line keeps room for " + firsts.join(", "));
                 verify(readout.rooms[1] >= face.room(face.plain, seconds), "the second line keeps room for " + seconds.join(", "));
