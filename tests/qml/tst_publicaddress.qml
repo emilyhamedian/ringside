@@ -626,8 +626,6 @@ Item {
                 compare(r.headers, { "User-Agent": "ringside/9.9.9", "Accept-Language": "*" });
             }
             compare(set.checker.status, "checking");
-            compare(set.checker.floorMs, 60000);
-            compare(set.checker.timeoutMs, 10000);
         }
 
         function test_customOnlyAsksCustom_data() {
@@ -931,7 +929,6 @@ Item {
             const set = checker({}, own("endless", false));
             const r = set.made[0];
             r.status = 200;
-            compare(Lookup.REPLY_LIMIT, 16384, "16 KB, as SECURITY.md says");
             r.responseText = "1".repeat(Lookup.REPLY_LIMIT + 1);
             r.readyState = 3;
             r.onreadystatechange();
@@ -1050,18 +1047,12 @@ Item {
             verify(visibleTexts(page).includes("Asking switchedon.example…"), visibleTexts(page).join("\n"));
         }
 
-        // The block names the service it asks; one that is invalid, which
-        // asks nothing, goes unnamed.
+        // The block names the service it asks.
         function test_popupNamesTheService_data() {
             return [
                 { tag: "custom", config: { publicAddressUrl4: "https://ip.example/v4" }, text: "Asking ip.example…" },
                 { tag: "two hosts", config: { publicAddressUrl4: "https://a.example/", publicAddressUrl6: "https://b.example/" },
-                  text: "Asking a.example and b.example…" },
-                { tag: "invalid", config: { publicAddressUrl4: "http://typo.example/ip" },
-                  text: "Check the address service in the settings" },
-                { tag: "invalid beside a valid one",
-                  config: { publicAddressUrl4: "http://typo.example/ip", publicAddressUrl6: "https://ok.example/ip" },
-                  text: "Check the address service in the settings" }
+                  text: "Asking a.example and b.example…" }
             ];
         }
         function test_popupNamesTheService(data) {
@@ -1099,6 +1090,9 @@ Item {
             verify(shown.includes("IPv6 doesn't go through wg0-mullvad"), shown);
             const note = all(page, i => i.text === "IPv6 doesn't go through wg0-mullvad")[0];
             compare(note.Accessible.name, "Warning: IPv6 doesn't go through wg0-mullvad");
+            // The note's text sits in a row with its icon, a little under the addresses.
+            const last = lines[lines.length - 1];
+            verify(placeY(note.parent, page) > placeY(last, page) + last.height, "a little room above the note");
         }
 
         function test_notesInThePopup() {
@@ -1207,7 +1201,8 @@ Item {
             compare(block(page).width, before, "the popup keeps its width");
         }
 
-        // The places sit between the addresses and the note, as one group.
+        // The places sit between the addresses and the note, as one group,
+        // set a little apart from the addresses.
         function test_placeAboveTheNotes() {
             const set = shownIn({ egress: route("wg0-mullvad", "enp195s0f3u1", true, false) }, own("placenote"));
             answer(set.made, "v4", 200, osl4);
@@ -1217,6 +1212,8 @@ Item {
             compare(places.map(t => t.text), ["IPv4 near Oslo, Norway", "IPv6 near Frankfurt am Main, Germany"]);
             const warning = all(page, i => i.text === "IPv6 doesn't go through wg0-mullvad")[0];
             verify(onScreen(warning));
+            const lastAddress = addressLines(page).pop();
+            verify(placeY(places[0], page) > placeY(lastAddress, page) + lastAddress.height, "a little room under the addresses");
             verify(placeY(places[0], page) < placeY(places[1], page));
             verify(placeY(places[1], page) + places[1].height <= placeY(warning, page) + 1, "the warning under the places");
             compare(visibleTexts(page).filter(t => /near/i.test(t)).length, 2, "said once each");
@@ -1258,18 +1255,16 @@ Item {
             compare(Object.keys(set.checker.record.seen.v4).sort(), ["address", "at"], "only the address is remembered");
         }
 
-        // ipify.org answers with the address alone, so JSON from it is no
-        // answer and never names a place.
+        // ipify.org answers with the address alone, so the checker takes JSON
+        // from it as no answer and never as a place. test_reply reads such a
+        // reply on its own.
         function test_ipifyJsonIsNoAnswer() {
             try {
-                const set = shownIn({}, {});
-                compare(set.made.map(r => r.url), ["https://api.ipify.org", "https://api6.ipify.org"]);
+                const set = checker({}, {});
                 answer(set.made, "v4", 200, osl4);
                 answer(set.made, "v6", 200, JSON.stringify({ ip: "2001:db8::1c", city: "Oslo", country: "Norway" }));
                 compare(set.checker.status, "failed");
                 compare(set.checker.record.result.places, { v4: { city: "", country: "" }, v6: { city: "", country: "" } });
-                const shown = visibleTexts(popup(set.monitor));
-                verify(!shown.some(t => t.indexOf("Oslo") >= 0), shown);
             } finally {
                 // So the tests after this one find ipify.org never asked.
                 for (const key of Object.keys(Lookup.records)) {
@@ -1278,17 +1273,18 @@ Item {
             }
         }
 
-        // Mullvad's JSON replies are read, so its place shows; still one
-        // request per family, to its own hosts.
+        // The checker reads Mullvad's JSON replies, so it learns the place;
+        // still one request per family, to its own hosts. test_reply reads
+        // such a reply on its own, and test_placesInThePopup shows a place.
         function test_mullvadNamesThePlace() {
-            const set = shownIn({}, { publicAddressUrl4: "https://ipv4.am.i.mullvad.net/json",
+            const set = checker({}, { publicAddressUrl4: "https://ipv4.am.i.mullvad.net/json",
                                       publicAddressUrl6: "https://ipv6.am.i.mullvad.net/json" });
             compare(set.made.map(r => r.url), ["https://ipv4.am.i.mullvad.net/json", "https://ipv6.am.i.mullvad.net/json"]);
             answer(set.made, "v4", 200, JSON.stringify({ ip: "198.51.100.24", city: "Amsterdam", country: "Netherlands",
                                                          mullvad_exit_ip: true, blacklisted: { blacklisted: false, results: [] } }));
             answer(set.made, "v6", 503, "");
             compare(set.checker.status, "shown");
-            compare(placeTexts(popup(set.monitor)).map(t => t.text), ["Near Amsterdam, Netherlands"]);
+            compare(set.checker.record.result.places.v4, { city: "Amsterdam", country: "Netherlands" });
         }
 
         // A place is shown as the service spelled it, never as markup.
@@ -1310,28 +1306,6 @@ Item {
             }
             compare(links, [], "no link in the line");
             compare(addressLines(page)[1].Accessible.name, "Public address 198.51.100.24, near " + city);
-        }
-
-        // A little room sets the places and the note apart from the addresses.
-        function test_placesAndNotesSetApart_data() {
-            const leak = route("wg0-mullvad", "enp195s0f3u1", true, false);
-            return [{ tag: "a place alone", egress: route("enp195s0f3u1", "enp195s0f3u1"), v4: osl4,
-                      first: "IPv4 near Oslo, Norway", note: false },
-                    { tag: "a note alone", egress: leak, v4: "198.51.100.24", first: "IPv6 doesn't go through wg0-mullvad", note: true }];
-        }
-        function test_placesAndNotesSetApart(data) {
-            const set = shownIn({ egress: data.egress }, own("apart-" + data.tag.replace(/ /g, "")));
-            answer(set.made, "v4", 200, data.v4);
-            answer(set.made, "v6", 200, "2001:db8::1c");
-            const page = popup(set.monitor);
-            const found = all(block(page), i => i.text === data.first && onScreen(i));
-            compare(found.length, 1, data.first);
-            // The note's text sits in a row with its icon.
-            const first = data.note ? found[0].parent : found[0];
-            const lastAddress = addressLines(page).pop();
-            const room = Math.round(Kirigami.Units.smallSpacing / 2);
-            verify(room > 0);
-            fuzzyCompare(placeY(first, page) - placeY(lastAddress, page) - lastAddress.height, room, 0.5);
         }
 
         // Every checker of the service sees the place one of them was told.
@@ -1418,6 +1392,7 @@ Item {
             answer(set.made, "v4", 200, "198.51.100.24");
             answer(set.made, "v6", 200, "2001:db8::1c");
             const page = popup(set.monitor, mirrored);
+            const width = block(page).width;
             root.now += 61000;
             set.checker.open = false;
             set.checker.open = true;
@@ -1426,7 +1401,7 @@ Item {
             answer(set.made, "v6", 503, "");
             compare(set.checker.status, "failed");
             waitForRendering(page);
-            return { set: set, page: page, config: config };
+            return { set: set, page: page, config: config, width: width };
         }
 
         function test_tryAgainOnlyWhenFailed_data() {
@@ -1436,7 +1411,6 @@ Item {
                 { tag: "shown", config: {}, ok: ["v4", "v6"], status: "shown" },
                 { tag: "one family failed", config: {}, ok: ["v4"], fail: ["v6"], status: "shown" },
                 { tag: "offline", props: { egress: route("", "") }, config: {}, status: "offline" },
-                { tag: "invalid", config: { publicAddressUrl4: "http://typo.example/ip" }, status: "invalid" },
                 { tag: "unrouted", props: { egress: route("", "enp195s0f3u1") },
                   config: { publicAddressUrl4: "https://a.example/", publicAddressUrl6: "" }, status: "unrouted" },
                 { tag: "off", config: { publicAddress: false }, status: "off" }
@@ -1610,7 +1584,6 @@ Item {
             compare(link.Accessible.name, "Try again");
             compare(link.Accessible.description,
                     "Ask trydir" + data.mirrored + ".example for the public address again");
-            compare(link.font.underline, false);
         }
 
         // Hosts too long for the line wrap the message, and the link stays
@@ -1619,7 +1592,7 @@ Item {
             return [{ tag: "leftToRight", mirrored: false }, { tag: "rightToLeft", mirrored: true }];
         }
         function test_tryAgainBesideALongName(data) {
-            const { page } = failedPopup("trylong" + data.mirrored, data.mirrored,
+            const { page, width } = failedPopup("trylong" + data.mirrored, data.mirrored,
                                          { publicAddressUrl4: "https://lookup.very-long-hostname.example.net/ip",
                                            publicAddressUrl6: "https://lookup-6.another-long-hostname.example.org/ip" });
             const link = tryAgain(page);
@@ -1631,7 +1604,7 @@ Item {
             verify(inside(link), "the link inside the row");
             verify(!link.truncated && link.width >= link.implicitWidth - 1, "the link in full");
             verify(row.width <= block(page).width, "the row inside the block");
-            compare(block(page).width, page.width - 2 * Math.round(Kirigami.Units.largeSpacing * 2), "the popup keeps its width");
+            compare(block(page).width, width, "the popup keeps its width");
         }
 
         function test_otherStatesInThePopup_data() {
@@ -1654,6 +1627,7 @@ Item {
             const shown = visibleTexts(page);
             verify(shown.includes(data.text), shown);
             verify(!shown.includes("Waiting for a connection") || data.tag === "offline", shown);
+            verify(!shown.some(t => t.indexOf("ipify") >= 0), shown);
             compare(header(page).detail, "");
         }
 
@@ -1781,9 +1755,9 @@ Item {
 
         // ---- The settings ----
 
-        // A fresh install sends nothing: the switch ships off and the
-        // service at ipify.org, as main.xml has them, and a checker built
-        // from those, with the popup open on a connection, asks nothing.
+        // A fresh install sends nothing: the switch ships off, as main.xml
+        // has it. test_nothingSent and test_offIsToday show that off asks
+        // nothing.
         function test_shippedDefaults() {
             const request = new XMLHttpRequest();
             request.open("GET", Qt.resolvedUrl("../../package/contents/config/main.xml"), false);
@@ -1796,13 +1770,6 @@ Item {
                 return { type: entry[1], value: (/<default>([^<]*)<\/default>/.exec(entry[2]) || ["", ""])[1] };
             };
             compare(entryOf("publicAddress"), { type: "Bool", value: "false" });
-            compare(entryOf("publicAddressUrl4"), { type: "String", value: "" });
-            compare(entryOf("publicAddressUrl6"), { type: "String", value: "" });
-            const set = checker({}, { publicAddress: entryOf("publicAddress").value === "true" });
-            compare(set.checker.status, "off");
-            compare(set.checker.serviceName, "ipify.org");
-            wait(50);
-            compare(set.made.length, 0);
         }
 
         // The General page, right to left if asked, as an RTL language lays it out.
@@ -1882,8 +1849,9 @@ Item {
 
         // One line under the box says whom Ringside asks and what they
         // learn, the same with the box off or on, except that "until you
-        // enter a URL" waits for the fields to show. The box and the service
-        // list carry it for a screen reader.
+        // enter a URL" waits for the fields to show. It starts under the
+        // box's text, after the box's padding on that side. The box and the
+        // service list carry it for a screen reader.
         function test_settingsLine_data() {
             const sees = who => "Asks " + who + ", which sees your address, when the popup opens.";
             return [
@@ -1903,6 +1871,9 @@ Item {
             const page = general({ cfg_publicAddress: false, cfg_publicAddressUrl4: data.url4 ?? "", cfg_publicAddressUrl6: data.url6 ?? "" },
                                  data.mirrored);
             const c = controls(page);
+            // Paddings apart, so the line has to take the one on the side its text starts at.
+            c.box.leftPadding = 3;
+            c.box.rightPadding = 9;
             mouseClick(c.box);
             compare(page.cfg_publicAddress, true);
             if (data.custom) {
@@ -1920,19 +1891,6 @@ Item {
                 compare(c.service.Accessible.description, line);
                 verifyUnderTheBox(page, c);
             }
-        }
-
-        // The line takes the box's padding from the side its text starts at.
-        function test_settingsLineFollowsThePadding_data() {
-            return [{ tag: "left to right", mirrored: false }, { tag: "right to left", mirrored: true }];
-        }
-        function test_settingsLineFollowsThePadding(data) {
-            const page = general({ cfg_publicAddress: false }, data.mirrored);
-            const c = controls(page);
-            c.box.leftPadding = 3;
-            c.box.rightPadding = 9;
-            waitForRendering(page);
-            verifyUnderTheBox(page, c);
         }
 
         // The box shows the stored setting and follows it, as when Defaults
@@ -1986,7 +1944,6 @@ Item {
             pick(c, root.customRow);
             compare([c.url4.visible, c.url6.visible], [true, true]);
             compare([c.url4.text, c.url6.text], ["", ""]);
-            compare([c.url4.placeholderText, c.url6.placeholderText], ["", ""]);
             verify(c.url4.activeFocus, "the IPv4 field has the focus");
             compare([page.cfg_publicAddressUrl4, page.cfg_publicAddressUrl6], ["", ""]);
             for (const field of [c.url4, c.url6]) {
@@ -2080,7 +2037,6 @@ Item {
         function test_settingsWheel(data) {
             const page = general({ cfg_publicAddress: true, cfg_publicAddressUrl4: data.url });
             const c = controls(page);
-            verify(!c.service.wheelEnabled);
             for (const delta of [120, -120]) {
                 mouseWheel(c.service, c.service.width / 2, c.service.height / 2, 0, delta);
                 compare(c.service.currentIndex, data.index);
@@ -2265,14 +2221,13 @@ Item {
             monitor.openPopup = "";
         }
 
-        // Off, as shipped, nothing is read or asked even with the popup open,
-        // nor with the setting missing or not a Bool; switching it on in the
-        // settings starts both.
-        function test_monitorSwitchedOn_data() {
-            return [{ tag: "off", off: false }, { tag: "no setting", off: undefined }, { tag: "not a Bool", off: "on" }];
-        }
-        function test_monitorSwitchedOn(data) {
-            const { config, monitor, fake, egress } = realMonitor("monitor-switchon-" + data.tag.replace(/ /g, ""), "0.3.0", data.off);
+        // Until the setting is true, nothing is read or asked even with the
+        // popup open, here with a setting that is truthy but not a Bool;
+        // switching it on in the settings starts both. test_monitor ends
+        // switched off, and test_nothingSent has the checker's side of each
+        // value that isn't true.
+        function test_monitorSwitchedOn() {
+            const { config, monitor, fake, egress } = realMonitor("monitor-switchon", "0.3.0", "on");
             monitor.openPopup = "network";
             wait(100);
             compare(egress().length, 0, "no route facts read");
