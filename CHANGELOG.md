@@ -72,12 +72,13 @@ follows [Semantic Versioning](https://semver.org/).
   the grey of its track, and the numbers read "––%" over "–d" until a check
   succeeds. The tooltip, which screen readers also read, says when and why
   the check failed, the last reading and its time, and when the next check
-  runs, even with the ring's text shown. The popup keeps the last reading
-  in grey under the same status, hatches the week graph from it to now,
-  drops the pace once the reading is two hours old, and shows a week that
-  reset with no reading since as last week's. *Try again* appears only when
-  a check would really ask. This replaces the fade, which looked like a
-  sleeping GPU.
+  runs, even with the ring's text shown. While the ring is grey the popup
+  keeps the last reading in grey under the same status and hatches the week
+  graph from it to now. Once the ring is struck the popup strikes its own
+  and shows only the status, with no numbers, bars, pace or graph, and the
+  session starter's switch keeps its place but can't be turned until a
+  check succeeds. *Try again* appears only when a check would really ask.
+  This replaces the fade, which looked like a sleeping GPU.
 - Claude and Codex show from the moment the widget starts. While their
   first check runs, the ring is a circle of still dots with the mark dimmed
   and a dim dash over a dash beside it; after a second a lit dot travels
@@ -95,8 +96,9 @@ follows [Semantic Versioning](https://semver.org/).
   Claude session or Codex week as soon as the last one ends, by sending one
   word through the Claude Code or Codex CLI, so a window is always running
   instead of waiting for your next message. The line under the switch says
-  when the next one starts, or why it can't. See "Starting the next session"
-  in the README.
+  when the next one starts, or why it can't. While failed checks have the
+  ring struck through, the switch can't be turned. See "Starting the next
+  session" in the README.
 - Readings move into place instead of jumping. A ring sweeps to each new
   reading and turns amber or red as it passes 75% or 90%, and the number in
   a popup's ring counts along with it; the Claude and Codex bars do the

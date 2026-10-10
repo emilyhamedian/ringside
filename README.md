@@ -157,11 +157,13 @@ When a check fails, the ring keeps its last reading in grey, broken into
 segments, until that reading is two checks old. After that, or once the week has reset, the ring
 is struck through and its numbers turn to dashes until a check succeeds. The
 tooltip and the popup say when and why the check failed, when the last
-reading was taken and when the next check runs. The popup keeps the last
-reading in grey and offers *Try again* when asking again would help: not
-while Ringside is waiting out a failure or a request from Anthropic or OpenAI
-to wait, not while a check is running or the next one is a minute away, and
-not when python3 is missing or the helper can't use its files.
+reading was taken and when the next check runs. While the ring is grey the
+popup keeps the last reading in grey; once it is struck, the popup shows only
+the failure, with no numbers or graph. It offers *Try again* when asking
+again would help: not while Ringside is waiting out a failure or a request
+from Anthropic or OpenAI to wait, not while a check is running or the next
+one is a minute away, and not when python3 is missing or the helper can't use
+its files.
 
 The popup lists every weekly limit and when each resets, and a graph of the
 week so far, which fills in as Ringside keeps checking. The graph has a line
@@ -187,7 +189,8 @@ its lightest effort. Five minutes later Ringside checks the limits to see that
 a new session or week started. It waits while one is running, and while the
 weekly limit is reached it waits for the reset. If it can't confirm two starts
 in a row, it stops for five hours. The line under the switch says when the
-next one starts, or why it can't. It works only while Ringside is running;
+next one starts, or why it can't. While failed checks have the ring struck
+through, the switch can't be turned. It works only while Ringside is running;
 after sleep or a login it catches up at once.
 
 Each message counts toward your limits like any other: a few hundred tokens,

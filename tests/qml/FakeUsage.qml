@@ -99,6 +99,13 @@ QtObject {
         return e !== null && e.lastError !== undefined;
     }
 
+    // As UsageData's.
+    function struck(id, nowMs) {
+        const e = entry(id);
+        const now = nowMs / 1000;
+        return degraded(id) && !(e.weekly && e.weekly.resetsAt > now && now - e.fetchedAt < 2 * refreshMinutes * 60);
+    }
+
     function inner(id) {
         const e = entry(id);
         return e ? Limits.pick(e.scoped, innerChoices[id] ?? "") : null;

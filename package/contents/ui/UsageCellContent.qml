@@ -38,8 +38,7 @@ Item {
             arrival.restart();
         }
     }
-    readonly property bool staleShown: failed && weekly !== null && weekly.resetsAt > nowMs / 1000
-        && nowMs / 1000 - entry.fetchedAt < 2 * usage.refreshMinutes * 60
+    readonly property bool staleShown: failed && !usage.struck(item, nowMs)
     // Dashes while the ring is struck, coming and going with its stroke.
     readonly property var lines: words.readout(item, nowMs, gauge.dashed)
 

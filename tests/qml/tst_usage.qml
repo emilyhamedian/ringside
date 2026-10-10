@@ -585,6 +585,42 @@ Item {
             compare(fake.canRetry("claude", now * 1000), data.can, "the tests' stand-in agrees");
         }
 
+        // A failed check's reading is kept, in grey, while it is under two
+        // check intervals old and its week runs; then it is struck, as is
+        // a first check that failed with no reading. Nothing that hasn't
+        // failed is struck.
+        function test_struck_data() {
+            return [
+                { tag: "first failure", age: 60, minutes: 5, struck: false },
+                { tag: "under two intervals", age: 599, minutes: 5, struck: false },
+                { tag: "two intervals", age: 600, minutes: 5, struck: true },
+                { tag: "under two longer intervals", age: 7199, minutes: 60, struck: false },
+                { tag: "two longer intervals", age: 7200, minutes: 60, struck: true },
+                { tag: "the week has reset", age: 60, minutes: 5, reset: true, struck: true },
+                { tag: "no reading", minutes: 5, struck: true },
+                { tag: "not failed", age: 3600, minutes: 5, ok: true, struck: false }
+            ];
+        }
+
+        function test_struck(data) {
+            make("ok", []);
+            const now = Math.floor(Date.now() / 1000);
+            config.usageRefreshMinutes = data.minutes;
+            const entry = { status: data.age === undefined ? "error" : "ok" };
+            if (data.age !== undefined) {
+                Object.assign(entry, { fetchedAt: now - data.age, scoped: [],
+                                       weekly: { percent: 52, resetsAt: now + (data.reset ? -60 : 86400), windowSeconds: 7 * 86400 } });
+            }
+            if (!data.ok) {
+                Object.assign(entry, { lastError: "x", lastErrorAt: now, reason: "offline", retryAt: now + 300 });
+            }
+            usage.entries = { claude: entry };
+            compare(usage.struck("claude", now * 1000), data.struck);
+            compare(usage.struck("codex", now * 1000), false, "no entry, nothing struck");
+            const fake = createTemporaryObject(fakeUsageComponent, root, { refreshMinutes: data.minutes, entries: usage.entries });
+            compare(fake.struck("claude", now * 1000), data.struck, "the tests' stand-in agrees");
+        }
+
         // Shown from the start, while loading, so the first report changes
         // nothing.
         function test_presentNotifiesOnlyWhenItFlips() {
@@ -2366,9 +2402,11 @@ Item {
                   scoped: [{ id: "Fable", label: "Fable", w: window(20, 3 * day, [[4, 0], [0.0625, 20]]) }],
                   expect: u => "All models may already have run out "
                       + wallClock(u, u.createdAt - 4 * day + (4 * day - 5400) * 100 / 99, 600) },
-                // A reading over two hours old says nothing of the pace.
-                { tag: "staleOverTwoHours", row: -1, ago: 7260,
-                  weekly: window(99, 3 * day, [[4, 0], [7260 / day, 99]]), scoped: [], expect: u => "" },
+                // At the longest interval a reading just under two hours
+                // old is still grey and says the pace; at two hours it is
+                // struck, and nothing of it is shown.
+                { tag: "staleTwoHours", row: -1, ago: 7200,
+                  weekly: window(99, 3 * day, [[4, 0], [7200 / day, 99]]), scoped: [], expect: u => "" },
                 { tag: "staleUnderTwoHours", row: 0, ago: 7140,
                   weekly: window(60, 3 * day, [[4, 0], [7140 / day, 60]]), scoped: [],
                   expect: u => "The weekly limit is on pace to run out "
@@ -2391,6 +2429,8 @@ Item {
                                                                     usage.window(s.w.percent, s.w.left, s.w.points)));
             }
             if (data.ago !== undefined) {
+                // Checks an hour apart keep a reading in grey for two hours.
+                usage.refreshMinutes = 60;
                 Object.assign(changes, { fetchedAt: usage.createdAt - data.ago, lastError: "HTTP Error 500",
                                          lastErrorAt: usage.createdAt - 600 });
             }
@@ -2671,6 +2711,47 @@ Item {
             tryVerify(() => tip.visible, 5000);
         }
 
+        // While Claude is struck its switch stays where the user put it but
+        // can't be turned, by pointer or keys, and the line under it says
+        // why. While the reading is grey, and once a check succeeds, it
+        // works as before. Codex's is its own.
+        function test_starterHeldWhileStruck_data() {
+            return [{ tag: "on", on: true }, { tag: "off", on: false }];
+        }
+
+        function test_starterHeldWhileStruck(data) {
+            const usage = monitor.usage;
+            setStarter("claude", data.on ? { enabled: true, state: "waiting", next: usage.createdAt + 3600 } : { enabled: false, state: "off" });
+            failClaude(300);
+            const popup = load("claude");
+            const toggle = starterSwitch(popup);
+            const status = starterStatus(popup);
+            const own = () => toggle.parent.texts.starterStatus("claude", usage.starter("claude"), popup.nowMs);
+            verify(toggle.enabled, "a grey reading keeps it");
+            compare(status.text, own());
+
+            failClaude(600);
+            verify(!toggle.enabled);
+            compare(toggle.checked, data.on, "where the user put it");
+            const said = "Can be changed once Ringside can check your usage again.";
+            compare(status.text, said);
+            compare(String(status.color), String(Style.dim(Kirigami.Theme.textColor)));
+            compare(toggle.Accessible.description, said);
+            mouseClick(toggle);
+            toggle.forceActiveFocus();
+            keyClick(Qt.Key_Space);
+            keyClick(Qt.Key_Return);
+            compare(usage.starterRequests, [], "nothing sent");
+            compare(toggle.checked, data.on);
+            verify(starterSwitch(load("codex")).enabled, "Codex's own works");
+
+            setClaude({ lastError: undefined, fetchedAt: Date.now() / 1000 });
+            verify(toggle.enabled, "back with a good check");
+            compare(status.text, own());
+            mouseClick(toggle);
+            compare(usage.starterRequests, [["claude", !data.on]]);
+        }
+
         function test_starterMirrors() {
             const popup = load("claude", true);
             const toggle = starterSwitch(popup);
@@ -2745,7 +2826,7 @@ Item {
         // never as markup. The readings stay, in grey: the header's ring,
         // the bars and their numbers, with no lone dash for the countdown.
         function test_failedCheckGreysTheReading() {
-            failClaude(1200, { lastError: "<b>HTTP Error 500</b>", reason: "other" });
+            failClaude(300, { lastError: "<b>HTTP Error 500</b>", reason: "other" });
             const popup = load("claude");
             const status = checkStatus(popup);
             verify(status.visible);
@@ -2780,16 +2861,18 @@ Item {
             verify(g.failed && g.grey);
         }
 
-        // The hatching runs from the last reading to now.
+        // The hatching runs from the last reading to now. Checks an hour
+        // apart keep a reading in grey for the longest, two hours, a few
+        // pixels of the week.
         function test_failedGraphHatchesTheGap() {
-            failClaude(6 * 3600);
+            monitor.usage.refreshMinutes = 60;
+            failClaude(7140);
             const popup = load("claude");
             const g = graph(popup);
             const gap = root.find(g, i => i.from !== undefined && i.clip === true);
             verify(gap.visible && gap.width >= 2, "hatched: " + gap.width);
             compare(gap.x, Math.round(g.xAt(popup.pollAt)));
             compare(gap.x + gap.width, g.markerShownX);
-            verify(g.stale, "with the marker for now");
             setClaude({ lastError: undefined });
             verify(!gap.visible, "gone with the next good check");
         }
@@ -2803,9 +2886,9 @@ Item {
             verify(!shown.some(t => t.startsWith("LAST WEEK")), JSON.stringify(shown));
         }
 
-        // A reading from a week that has since reset says nothing of this
-        // one: the header's ring is struck, the bars go, the graph stays as
-        // last week's, and the status says the week reset.
+        // A reading from a week that has since reset is struck whatever its
+        // age: nothing of that week is shown, and the status says the week
+        // reset.
         function test_failedPastTheReset() {
             const usage = monitor.usage;
             failClaude(8 * 3600, { weekly: usage.window(52, -2 * 3600, [[4, 0], [0.4, 52]]) });
@@ -2815,14 +2898,56 @@ Item {
             compare(r.struck, 1, "struck as it opens");
             compare(r.text, "");
             compare(rows(popup).length, 0);
+            verify(!graph(popup).visible, "no graph of last week either");
             const shown = root.texts(popup);
-            const tile = shown.find(t => /^LAST WEEK · reset .+$/.test(t));
-            verify(tile !== undefined, JSON.stringify(shown));
-            // When it reset, as the tile says it.
-            const when = tile.replace(/^LAST WEEK · reset /, "");
-            verify(shown.some(t => t.includes("The week reset at " + when + ", with no reading since.")), JSON.stringify(shown));
+            verify(!shown.some(t => /WEEK/.test(t)), JSON.stringify(shown));
+            const w = checkStatus(popup).texts;
+            verify(shown.some(t => t.includes("The week reset at " + w.resetDate(popup.weekly) + ", with no reading since.")),
+                   JSON.stringify(shown));
             compare(header(popup).subtitle, "Weekly limits", "as many as the reading had");
-            verify(!graph(popup).failed, "nothing to hatch in a week that is over");
+        }
+
+        // Once the reading is two check intervals old the popup strikes it
+        // as the panel does, and shows nothing of it: the header's ring is
+        // struck with no number, and the countdown, the bars, the pace
+        // sentence and the graph go. The status under the header stays,
+        // saying when the last reading was taken. The check that finds the
+        // reading too old strikes it with the popup open, and the next good
+        // check brings it all back.
+        function test_struckHidesTheReadings() {
+            failClaude(300);
+            const popup = load("claude");
+            const r = ring(popup);
+            const g = graph(popup);
+            const sentenceShown = () => rows(popup).some(row => sentence(row).visible);
+            verify(r.stale && !r.cancelled, "grey first");
+            verify(g.visible && rows(popup).length === 2 && sentenceShown() && countdown(popup).length > 0, "with its readings");
+
+            failClaude(600);
+            verify(r.cancelled && !r.stale);
+            tryCompare(r, "struck", 1, 3000);
+            compare(r.text, "");
+            compare(rows(popup).length, 0);
+            verify(!g.visible, "no graph");
+            compare(countdown(popup).length, 0);
+            const shown = root.texts(popup);
+            verify(!shown.some(t => /%|until reset|WEEK|pace|run out|^–$/.test(t)), JSON.stringify(shown));
+            compare(header(popup).subtitle, "Weekly limits", "as many as the reading had");
+            const status = checkStatus(popup);
+            verify(status.visible);
+            const w = status.texts;
+            const e = popup.entry;
+            verify(shown.includes("Last check failed at " + w.timeOfDay(e.lastErrorAt, popup.nowMs)), JSON.stringify(shown));
+            const said = "Can't reach api.anthropic.com. The last reading is from " + w.timeOfDay(e.fetchedAt, popup.nowMs) + ". "
+                + w.nextCheckText("claude", popup.nowMs);
+            verify(shown.includes(said), JSON.stringify(shown) + " lacks " + said);
+
+            setClaude({ lastError: undefined, fetchedAt: Date.now() / 1000 });
+            verify(!r.cancelled && !r.stale);
+            tryCompare(r, "struck", 0, 3000);
+            tryCompare(r, "text", root.localized("52%"), 3000);
+            verify(g.visible && rows(popup).length === 2 && sentenceShown() && countdown(popup).length > 0, "its readings back");
+            verify(!checkStatus(popup).visible);
         }
 
         // "Try again" only when a check would really ask, and it asks.
