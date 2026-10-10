@@ -25,6 +25,9 @@ ConfigPage {
     // reported its limits.
     readonly property bool codexShown: Items.enabled(cfg_itemOrder, cfg_hiddenItems).includes("codex") || codexHasLimits
 
+    // Under each inner ring picker.
+    readonly property string automaticLine: i18nc("@info", "Automatic shows the per-model limit when your plan has just one. With more than one, pick it here.")
+
     // Automatic, none, then each limit reported for this provider so far. A
     // limit that was picked but is no longer reported still shows, as "…
     // (not reported)", so choosing it back off is possible.
@@ -42,6 +45,11 @@ ConfigPage {
     }
 
     Kirigami.FormLayout {
+        Item {
+            Kirigami.FormData.isSection: true
+            Kirigami.FormData.label: i18nc("@title:group settings that apply to both Claude and Codex", "Claude and Codex")
+        }
+
         QQC2.SpinBox {
             Kirigami.FormData.label: i18nc("@label:spinbox", "Check every:")
             from: 5
@@ -60,23 +68,36 @@ ConfigPage {
             text: i18nc("@info", "Applies while the Claude or Codex item is on in Panel Items.")
         }
 
+        // Each provider's section shows only while it has something to set.
         Item {
             Kirigami.FormData.isSection: true
-            visible: page.claudeHasLimits || page.codexHasLimits
+            Kirigami.FormData.label: i18nc("@title:group settings for the Claude item", "Claude")
+            visible: page.claudeHasLimits
         }
 
         Picker {
             visible: page.claudeHasLimits
-            Kirigami.FormData.label: i18nc("@label:listbox", "Claude inner ring:")
+            Kirigami.FormData.label: i18nc("@label:listbox which per-model limit the inner ring shows, under a Claude or Codex heading", "Inner ring:")
             Accessible.name: i18nc("@label:listbox", "Claude inner ring")
             current: page.cfg_claudeInnerLimit
             choices: page.limitChoices("claude")
             onPicked: value => page.cfg_claudeInnerLimit = value
         }
 
+        Note {
+            visible: page.claudeHasLimits
+            text: page.automaticLine
+        }
+
+        Item {
+            Kirigami.FormData.isSection: true
+            Kirigami.FormData.label: i18nc("@title:group settings for the Codex item", "Codex")
+            visible: page.codexShown
+        }
+
         Picker {
             visible: page.codexHasLimits
-            Kirigami.FormData.label: i18nc("@label:listbox", "Codex inner ring:")
+            Kirigami.FormData.label: i18nc("@label:listbox which per-model limit the inner ring shows, under a Claude or Codex heading", "Inner ring:")
             Accessible.name: i18nc("@label:listbox", "Codex inner ring")
             current: page.cfg_codexInnerLimit
             choices: page.limitChoices("codex")
@@ -84,18 +105,13 @@ ConfigPage {
         }
 
         Note {
-            visible: page.claudeHasLimits || page.codexHasLimits
-            text: i18nc("@info", "Automatic shows the per-model limit when your plan has just one. With more than one, pick it here.")
-        }
-
-        Item {
-            Kirigami.FormData.isSection: true
-            visible: page.codexShown
+            visible: page.codexHasLimits
+            text: page.automaticLine
         }
 
         ColumnLayout {
             visible: page.codexShown
-            Kirigami.FormData.label: i18nc("@label", "Codex ring logo:")
+            Kirigami.FormData.label: i18nc("@label the logo in the Codex ring, under a Codex heading", "Ring logo:")
             Kirigami.FormData.buddyFor: codexLogo
 
             QQC2.RadioButton {
