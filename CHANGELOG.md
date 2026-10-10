@@ -152,8 +152,8 @@ follows [Semantic Versioning](https://semver.org/).
   between a ring and its readings, so each item's readings read as its own
   ring's.
 - The panel countdown shows only its largest unit: "6d", "23h" or "59m";
-  the popup and the tooltip keep the full time. It turns red at 100%, where
-  it says how long the limit stays reached.
+  the popup and the tooltip keep the full time. It stays plain at every
+  level; the ring and the percentage carry the colour.
 - Top processes show a busy indicator until they are read, in the popup's
   dim text colour like its captions rather than the theme's accent. The CPU
   list, which needs two scans, fills in about two seconds after its popup
