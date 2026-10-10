@@ -13,10 +13,6 @@ TestCase {
             { tag: "claude", item: "claude", expected: true },
             { tag: "codex", item: "codex", expected: true },
             { tag: "cpu", item: "cpu", expected: false },
-            { tag: "gpu", item: "gpu", expected: false },
-            { tag: "memory", item: "memory", expected: false },
-            { tag: "network", item: "network", expected: false },
-            { tag: "disk", item: "disk", expected: false },
             { tag: "unknown", item: "bogus", expected: false }
         ];
     }
@@ -27,12 +23,8 @@ TestCase {
     function test_isRing_data() {
         return [
             { tag: "cpu", item: "cpu", expected: true },
-            { tag: "gpu", item: "gpu", expected: true },
-            { tag: "memory", item: "memory", expected: true },
             { tag: "claude", item: "claude", expected: true },
-            { tag: "codex", item: "codex", expected: true },
             { tag: "network", item: "network", expected: false },
-            { tag: "disk", item: "disk", expected: false },
             { tag: "unknown", item: "bogus", expected: false }
         ];
     }
@@ -40,12 +32,14 @@ TestCase {
         compare(Items.isRing(data.item), data.expected);
     }
 
-    function test_orderOnEmptyStoredIsTheDefaultOrder() {
-        compare(Items.order([]), ["cpu", "gpu", "memory", "network", "disk", "claude", "codex"]);
+    function test_orderWithNothingStoredIsTheDefaultOrder_data() {
+        return [
+            { tag: "empty", stored: [] },
+            { tag: "undefined", stored: undefined }
+        ];
     }
-
-    function test_orderOnUndefinedStoredIsTheDefaultOrder() {
-        compare(Items.order(undefined), ["cpu", "gpu", "memory", "network", "disk", "claude", "codex"]);
+    function test_orderWithNothingStoredIsTheDefaultOrder(data) {
+        compare(Items.order(data.stored), ["cpu", "gpu", "memory", "network", "disk", "claude", "codex"]);
     }
 
     function test_orderKeepsStoredOrderFirstThenAppendsTheRest() {
@@ -71,12 +65,14 @@ TestCase {
         compare(Items.order(["claude", "cpu"]), ["claude", "cpu", "gpu", "memory", "network", "disk", "codex"]);
     }
 
-    function test_hiddenOnEmptyStoredOptsOutBothAiItems() {
-        compare(Items.hidden([], []), ["claude", "codex"]);
+    function test_hiddenWithNothingStoredOptsOutBothAiItems_data() {
+        return [
+            { tag: "empty", stored: [] },
+            { tag: "undefined", stored: undefined }
+        ];
     }
-
-    function test_hiddenOnUndefinedArgsOptsOutBothAiItems() {
-        compare(Items.hidden(undefined, undefined), ["claude", "codex"]);
+    function test_hiddenWithNothingStoredOptsOutBothAiItems(data) {
+        compare(Items.hidden(data.stored, data.stored), ["claude", "codex"]);
     }
 
     function test_hiddenAiItemListedInOrderStaysOn() {

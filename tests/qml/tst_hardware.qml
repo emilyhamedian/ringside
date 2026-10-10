@@ -8,78 +8,37 @@ import "../../package/contents/ui/code/hardware.js" as Hardware
 TestCase {
     name: "Hardware"
 
-    function gpu(id, kind) {
-        return { id: id, kind: kind };
+    // A choice is a ksystemstats id, "none", or "" for automatic. Turning
+    // the outer ring off keeps the GPU that automatic would put inside,
+    // which then takes the only ring rather than sit inside nothing.
+    function test_assignGpus_data() {
+        const discrete0 = { id: "gpu0", kind: "discrete" };
+        const integrated0 = { id: "gpu0", kind: "integrated" };
+        const discrete1 = { id: "gpu1", kind: "discrete" };
+        const integrated1 = { id: "gpu1", kind: "integrated" };
+        return [
+            { tag: "discreteOutsideIntegratedInside", gpus: [integrated0, discrete1], outer: "", inner: "",
+              expected: ["gpu1", "gpu0"] },
+            { tag: "singleGpuHasNoInner", gpus: [discrete0], outer: "", inner: "", expected: ["gpu0", null] },
+            { tag: "explicitIds", gpus: [discrete0, integrated1], outer: "gpu1", inner: "gpu0", expected: ["gpu1", "gpu0"] },
+            { tag: "noneOnOuterKeepsTheInnerGpu", gpus: [discrete0, integrated1], outer: "none", inner: "",
+              expected: ["gpu1", null] },
+            // Two of a kind keep their order, so the second is the inner one.
+            { tag: "noneOnOuterWithTwoDiscrete", gpus: [discrete0, discrete1], outer: "none", inner: "",
+              expected: ["gpu1", null] },
+            { tag: "noneOnOuterWithASingleGpu", gpus: [discrete0], outer: "none", inner: "", expected: [null, null] },
+            { tag: "noneOnInnerLeavesOuterAlone", gpus: [discrete0, integrated1], outer: "", inner: "none",
+              expected: ["gpu0", null] },
+            { tag: "sameIdTwiceDropsTheInner", gpus: [discrete0, integrated1], outer: "gpu0", inner: "gpu0",
+              expected: ["gpu0", null] },
+            { tag: "unknownIdFallsBackToAVisibleGpu", gpus: [discrete0], outer: "bogus", inner: "", expected: ["gpu0", null] },
+            { tag: "noGpus", gpus: [], outer: "", inner: "", expected: [null, null] },
+            { tag: "undefinedListIsEmpty", gpus: undefined, outer: "", inner: "", expected: [null, null] }
+        ];
     }
-
-    function test_assignGpusPutsDiscreteOutsideAndIntegratedInside() {
-        var result = Hardware.assignGpus([gpu("gpu0", "integrated"), gpu("gpu1", "discrete")], "", "");
-        compare(result.outer.id, "gpu1");
-        compare(result.outer.kind, "discrete");
-        compare(result.inner.id, "gpu0");
-        compare(result.inner.kind, "integrated");
-    }
-
-    function test_assignGpusSingleGpuHasNoInner() {
-        var result = Hardware.assignGpus([gpu("gpu0", "discrete")], "", "");
-        compare(result.outer.id, "gpu0");
-        compare(result.inner, null);
-    }
-
-    function test_assignGpusHonoursExplicitIds() {
-        var result = Hardware.assignGpus([gpu("gpu0", "discrete"), gpu("gpu1", "integrated")], "gpu1", "gpu0");
-        compare(result.outer.id, "gpu1");
-        compare(result.inner.id, "gpu0");
-    }
-
-    // Turning the outer ring off keeps the GPU that automatic would put
-    // inside, which then takes the only ring rather than sit inside nothing.
-    function test_assignGpusNoneOnOuterKeepsTheInnerGpu() {
-        var result = Hardware.assignGpus([gpu("gpu0", "discrete"), gpu("gpu1", "integrated")], "none", "");
-        compare(result.outer.id, "gpu1");
-        compare(result.inner, null);
-    }
-
-    function test_assignGpusNoneOnOuterWithTwoDiscreteGpus() {
-        var result = Hardware.assignGpus([gpu("gpu0", "discrete"), gpu("gpu1", "discrete")], "none", "");
-        compare(result.outer.id, "gpu1");
-        compare(result.inner, null);
-    }
-
-    function test_assignGpusNoneOnOuterWithASingleGpu() {
-        var result = Hardware.assignGpus([gpu("gpu0", "discrete")], "none", "");
-        compare(result.outer, null);
-        compare(result.inner, null);
-    }
-
-    function test_assignGpusNoneOnInnerLeavesOuterAlone() {
-        var result = Hardware.assignGpus([gpu("gpu0", "discrete"), gpu("gpu1", "integrated")], "", "none");
-        compare(result.outer.id, "gpu0");
-        compare(result.inner, null);
-    }
-
-    function test_assignGpusSameIdChosenTwiceDropsTheInner() {
-        var result = Hardware.assignGpus([gpu("gpu0", "discrete"), gpu("gpu1", "integrated")], "gpu0", "gpu0");
-        compare(result.outer.id, "gpu0");
-        compare(result.inner, null);
-    }
-
-    function test_assignGpusUnknownIdFallsBackToAVisibleGpu() {
-        var result = Hardware.assignGpus([gpu("gpu0", "discrete")], "bogus", "");
-        compare(result.outer.id, "gpu0");
-        compare(result.inner, null);
-    }
-
-    function test_assignGpusNoGpusAtAll() {
-        var result = Hardware.assignGpus([], "", "");
-        compare(result.outer, null);
-        compare(result.inner, null);
-    }
-
-    function test_assignGpusUndefinedListIsTreatedAsEmpty() {
-        var result = Hardware.assignGpus(undefined, "", "");
-        compare(result.outer, null);
-        compare(result.inner, null);
+    function test_assignGpus(data) {
+        const result = Hardware.assignGpus(data.gpus, data.outer, data.inner);
+        compare([result.outer, result.inner].map(g => g ? g.id : null), data.expected);
     }
 
     // Free comes from "application", not from total - used - cache: the
