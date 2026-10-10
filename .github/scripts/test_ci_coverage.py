@@ -1,189 +1,81 @@
 # SPDX-FileCopyrightText: 2026 Emily Hamedian <me@emily.dev>
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-import copy
+import os
 import subprocess
 import tempfile
 import unittest
-import urllib.error
-import urllib.parse
 from pathlib import Path
 
-from ci_coverage import coverage, changed_paths, pr_covers_push
+from ci_coverage import changed_paths, docs_only
 
 
 SHA = "a" * 40
-EVENT = {"repository": {"default_branch": "main"}, "before": "b" * 40}
 
 
-class CoverageTests(unittest.TestCase):
-    def mode(self, paths, event=EVENT, ref="refs/heads/fix/checks", name="push"):
-        return coverage(name, event, ref, SHA, lambda *_: paths, lambda *_: "b" * 40)
+def event(base="b" * 40, head=SHA):
+    return {"pull_request": {"base": {"sha": base}, "head": {"sha": head}}}
 
+
+class DocsOnlyTests(unittest.TestCase):
     def test_allowlist(self):
-        self.assertEqual(self.mode(["README.md", "docs/panel.png", "docs/popups.png", "docs/usage.png"]), "docs")
+        docs = ["README.md", "CONTRIBUTING.md", "CHANGELOG.md",
+                "docs/panel.png", "docs/popups.png", "docs/usage.png"]
+        self.assertTrue(docs_only(event(), lambda *_: docs))
         for path in ("package/metadata.json", "docs/new.png", "README.md\ncode.qml"):
             with self.subTest(path=path):
-                self.assertEqual(self.mode(["README.md", path]), "full")
+                self.assertFalse(docs_only(event(), lambda *_, path=path: ["README.md", path]))
 
-    def test_prs_run_in_full(self):
-        def forbidden(*_):
-            self.fail("PR coverage must not depend on diff classification")
-        for draft, base in ((True, "main"), (False, "main"), (False, "release/1")):
-            event = {**EVENT, "pull_request": {"draft": draft,
-                "head": {"ref": "fix/checks", "sha": "c" * 40, "repo": {"full_name": "owner/ringside"}},
-                "base": {"ref": base, "sha": "b" * 40}}}
-            with self.subTest(draft=draft, base=base):
-                self.assertEqual(coverage("pull_request", event, "refs/pull/2/merge", SHA,
-                                          forbidden, forbidden, covered=forbidden), "full")
+    def test_compares_the_prs_base_and_head(self):
+        seen = []
+        docs_only(event(base="c" * 40, head="d" * 40), lambda *shas: seen.append(shas) or ["README.md"])
+        self.assertEqual(seen, [("c" * 40, "d" * 40)])
 
-    def test_empty_or_missing_comparison_is_full(self):
-        self.assertEqual(self.mode([]), "full")
+    def test_empty_or_missing_comparison_runs_the_checks(self):
+        self.assertFalse(docs_only(event(), lambda *_: []))
         def unavailable(*_):
             raise ValueError("missing commit")
-        self.assertEqual(coverage("push", EVENT, "refs/heads/fix/checks", SHA,
-                                  unavailable, lambda *_: "b" * 40), "full")
-        self.assertEqual(coverage("push", EVENT, "refs/heads/fix/checks", SHA,
-                                  lambda *_: ["README.md"], unavailable), "full")
-        for before in ("0" * 40, "", "--help"):
-            with self.assertRaises(ValueError):
-                changed_paths(before, SHA)
+        self.assertFalse(docs_only(event(), unavailable))
+        for sha in ("0" * 40, "", "--help", None):
+            with self.subTest(sha=sha), self.assertRaises(ValueError):
+                changed_paths(sha, SHA)
 
-    def test_real_diff_keeps_renames_and_unusual_names(self):
-        # A rename from code to an allowed document must still run full checks.
+    def test_real_diff(self):
         with tempfile.TemporaryDirectory() as folder:
             def git(*args):
                 return subprocess.check_output(["git", "-c", "commit.gpgsign=false", "-C", folder, *args],
                                                stderr=subprocess.DEVNULL).decode().strip()
-            git("init")
+            def commit(message):
+                git("add", "-A")
+                git("commit", "-q", "-m", message)
+                return git("rev-parse", "HEAD")
+            git("init", "-q")
             git("config", "user.name", "CI test")
             git("config", "user.email", "ci@example.invalid")
             Path(folder, "code.qml").write_text("test")
-            git("add", ".")
-            git("commit", "-m", "before")
-            before = git("rev-parse", "HEAD")
-            git("update-ref", "refs/remotes/origin/main", before)
-            # A code push cancelled by a docs push must still get full coverage.
-            Path(folder, "code.qml").write_text("changed code")
-            git("add", ".")
-            git("commit", "-m", "code push")
-            code_push = git("rev-parse", "HEAD")
+            start = commit("start")
+            # Code that lands on the base after the branch left it isn't
+            # the PR's change.
+            Path(folder, "code.qml").write_text("changed on main")
+            base = commit("main moves on")
+            git("checkout", "-q", "-b", "fix/readme", start)
             Path(folder, "README.md").write_text("docs")
-            git("add", ".")
-            git("commit", "-m", "docs push")
-            docs_push = git("rev-parse", "HEAD")
+            readme = commit("docs")
+            # A rename from code to an allowed document must run the checks.
             Path(folder, "README.md").unlink()
             Path(folder, "code.qml").rename(Path(folder, "README.md"))
             Path(folder, "docs\ncode.qml").write_text("test")
-            git("add", ".")
-            git("commit", "-m", "after")
-            after = git("rev-parse", "HEAD")
-            import os
+            renamed = commit("rename")
             original = os.getcwd()
             try:
                 os.chdir(folder)
-                self.assertEqual(changed_paths(code_push, docs_push), ["README.md"])
-                self.assertEqual(coverage("push", {**EVENT, "before": code_push},
-                                          "refs/heads/fix/checks", docs_push), "full")
-                paths = changed_paths(before, after)
+                self.assertEqual(changed_paths(base, readme), ["README.md"])
+                self.assertTrue(docs_only(event(base, readme)))
+                paths = changed_paths(base, renamed)
+                self.assertFalse(docs_only(event(base, renamed)))
             finally:
                 os.chdir(original)
             self.assertEqual(set(paths), {"code.qml", "README.md", "docs\ncode.qml"})
-            self.assertEqual(self.mode(paths), "full")
-
-
-class PullRequestCoverageTests(unittest.TestCase):
-    def setUp(self):
-        self.pr = {"number": 2, "state": "open", "draft": False,
-                   "head": {"sha": SHA, "ref": "fix/checks", "repo": {"full_name": "owner/ringside"}},
-                   "base": {"ref": "main", "sha": "b" * 40}, "mergeable": True, "merge_commit_sha": "c" * 40}
-        self.run = {"id": 10, "event": "pull_request", "status": "in_progress", "conclusion": None,
-                    "head_sha": SHA, "head_repository": {"full_name": "owner/ringside"},
-                    "pull_requests": [{"number": 2, "head": {"sha": SHA}, "base": {"sha": "b" * 40}}]}
-
-    def covered(self, current=None, listing=None, runs=None, steps=None):
-        def get(path, token):
-            self.assertEqual(token, "test-token")
-            self.assertTrue(path.startswith("/repos/owner/ringside/"))
-            if path.endswith("/jobs"):
-                return {"jobs": [{"steps": [{"name": "Choose coverage for " + "c" * 40,
-                                            "conclusion": "success"}] if steps is None else steps}]}
-            if "/actions/" in path:
-                return {"workflow_runs": [self.run] if runs is None else runs}
-            if "?" in path:
-                query = urllib.parse.parse_qs(urllib.parse.urlsplit(path).query)
-                self.assertEqual(query["head"], ["owner:fix/checks"])
-                return [self.pr] if listing is None else listing
-            self.assertTrue(path.endswith("/2"))
-            return self.pr if current is None else current
-        return pr_covers_push(EVENT, "refs/heads/fix/checks", SHA, "owner/ringside", "test-token", get)
-
-    def test_exact_same_repo_ready_pr_is_covered(self):
-        self.assertTrue(self.covered())
-        self.assertFalse(self.covered(listing=[]))
-
-    def test_exact_draft_push_defers_without_merge_or_run_evidence(self):
-        for mergeable in (True, False, None):
-            current = {**self.pr, "draft": True, "mergeable": mergeable, "merge_commit_sha": None}
-            self.assertTrue(self.covered(current=current, runs=[], steps=[]))
-        self.assertFalse(self.covered(current={**self.pr, "draft": True,
-                                               "head": {**self.pr["head"], "sha": "d" * 40}}, runs=[]))
-
-    def test_ready_pr_cannot_reuse_draft_classification(self):
-        self.assertFalse(self.covered(steps=[{
-            "name": "Choose coverage for " + "c" * 40 + " (draft)", "conclusion": "success"}]))
-
-    def test_mergeability_without_matching_run_keeps_branch_checks(self):
-        self.assertFalse(self.covered(runs=[]))
-        self.assertFalse(self.covered(steps=[]))
-        self.assertFalse(self.covered(steps=[{"name": "Choose coverage for " + "d" * 40, "conclusion": "success"}]))
-        self.assertFalse(self.covered(steps=[{"name": "Choose coverage for " + "c" * 40, "conclusion": None}]))
-        mutations = (
-            lambda run: run.update(event="push"),
-            lambda run: run.update(status="waiting"),
-            lambda run: run.update(status="completed", conclusion="cancelled"),
-            lambda run: run.update(status="completed", conclusion="failure"),
-            lambda run: run.update(head_sha="d" * 40),
-            lambda run: run["head_repository"].update(full_name="fork/ringside"),
-            lambda run: run.update(pull_requests=[]),
-            lambda run: run["pull_requests"][0].update(number=3),
-            lambda run: run["pull_requests"][0]["base"].update(sha="d" * 40),
-        )
-        for mutate in mutations:
-            run = copy.deepcopy(self.run)
-            mutate(run)
-            self.assertFalse(self.covered(runs=[run]))
-        passed = {**self.run, "status": "completed", "conclusion": "success"}
-        self.assertTrue(self.covered(runs=[passed]))
-
-    def test_stale_fork_conflicted_closed_unknown_or_release_pr_keeps_checks(self):
-        mutations = (
-            lambda pr: pr.update(state="closed"),
-            lambda pr: pr["head"].update(sha="d" * 40),
-            lambda pr: pr["head"].update(ref="fix/other"),
-            lambda pr: pr["head"]["repo"].update(full_name="fork/ringside"),
-            lambda pr: pr["base"].update(ref="release/1"),
-            lambda pr: pr.update(mergeable=False),
-            lambda pr: pr.update(mergeable=None),
-            lambda pr: pr.update(merge_commit_sha=None),
-        )
-        for mutate in mutations:
-            current = copy.deepcopy(self.pr)
-            mutate(current)
-            with self.subTest(current=current):
-                self.assertFalse(self.covered(current=current))
-
-    def test_lookup_failure_or_missing_token_keeps_checks(self):
-        for error in (urllib.error.URLError("denied"), TimeoutError(), ValueError(), TypeError(), KeyError()):
-            def unavailable(*_, error=error):
-                raise error
-            self.assertFalse(pr_covers_push(EVENT, "refs/heads/fix/checks", SHA,
-                                           "owner/ringside", "test-token", unavailable))
-        self.assertFalse(pr_covers_push(EVENT, "refs/heads/fix/checks", SHA, "owner/ringside", ""))
-
-    def test_covered_push_skips_its_checks(self):
-        self.assertEqual(coverage("push", EVENT, "refs/heads/fix/checks", SHA,
-                                  covered=lambda *_: True), "covered")
 
 
 if __name__ == "__main__":
