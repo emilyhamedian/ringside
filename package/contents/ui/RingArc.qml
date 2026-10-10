@@ -7,7 +7,8 @@ import org.kde.kirigami as Kirigami
 
 // A circular track with a progress arc on top, starting at twelve o'clock.
 // The arc can also play the two ways a Claude or Codex weekly window starts
-// over.
+// over, and break with its track into eight segments for a reading that may
+// be out of date.
 Shape {
     id: arc
 
@@ -25,6 +26,9 @@ Shape {
     // How much of the track is drawn, 0 to 1 clockwise from twelve: less
     // than all while it fills in over a waiting ring's dots (RingGauge).
     property real trackSweep: 1
+    // The share of each eighth of the ring left open, track and arc alike;
+    // 0 draws them whole.
+    property real gap: 0
 
     // What is actually drawn. These normally track the properties above; a
     // reset animation drives them directly and rebinds them when it ends, so
@@ -47,6 +51,25 @@ Shape {
     function mix(from, to, amount) {
         return Qt.rgba(from.r + (to.r - from.r) * amount, from.g + (to.g - from.g) * amount,
                        from.b + (to.b - from.b) * amount, from.a + (to.a - from.a) * amount);
+    }
+
+    // SVG path data for the segments between two points, in percent from
+    // twelve, which may run past 100 as a rollover's head does.
+    function segments(from, to) {
+        const slot = 100 / 8;
+        const point = p => {
+            const angle = 2 * Math.PI * p / 100;
+            return (width / 2 + radius * Math.sin(angle)) + " " + (height / 2 - radius * Math.cos(angle));
+        };
+        let d = "";
+        for (let i = Math.floor(from / slot); i * slot < to; ++i) {
+            const a = Math.max(from, i * slot);
+            const b = Math.min(to, (i + 1 - gap) * slot);
+            if (b > a) {
+                d += "M " + point(a) + " A " + radius + " " + radius + " 0 0 1 " + point(b) + " ";
+            }
+        }
+        return d;
     }
 
     function rest() {
@@ -100,7 +123,7 @@ Shape {
 
     ShapePath {
         fillColor: "transparent"
-        strokeColor: arc.trackSweep > 0 ? arc.mix(arc.trackColor, arc.turnTone, arc.lift) : "transparent"
+        strokeColor: arc.trackSweep > 0 && arc.gap === 0 ? arc.mix(arc.trackColor, arc.turnTone, arc.lift) : "transparent"
         strokeWidth: arc.strokeWidth
         // A part track ends square where the dots take over.
         capStyle: arc.trackSweep < 1 ? ShapePath.FlatCap : ShapePath.SquareCap
@@ -118,7 +141,7 @@ Shape {
     ShapePath {
         fillColor: "transparent"
         // A zero-length arc with round caps would still draw a dot.
-        strokeColor: arc.drawn ? arc.mix(arc.drawColor, arc.turnTone, arc.lift) : "transparent"
+        strokeColor: arc.drawn && arc.gap === 0 ? arc.mix(arc.drawColor, arc.turnTone, arc.lift) : "transparent"
         strokeWidth: arc.strokeWidth
         capStyle: ShapePath.RoundCap
 
@@ -130,6 +153,29 @@ Shape {
             radiusY: arc.radius
             startAngle: -90 + 3.6 * arc.tail
             sweepAngle: 3.6 * (arc.head - arc.tail)
+        }
+    }
+
+    // The broken ring: flat ends, so each gap shows as cut.
+    ShapePath {
+        fillColor: "transparent"
+        strokeColor: arc.gap > 0 && arc.trackSweep > 0 ? arc.mix(arc.trackColor, arc.turnTone, arc.lift) : "transparent"
+        strokeWidth: arc.strokeWidth
+        capStyle: ShapePath.FlatCap
+
+        PathSvg {
+            path: arc.gap > 0 ? arc.segments(0, 100 * arc.trackSweep) : ""
+        }
+    }
+
+    ShapePath {
+        fillColor: "transparent"
+        strokeColor: arc.gap > 0 && arc.drawn ? arc.mix(arc.drawColor, arc.turnTone, arc.lift) : "transparent"
+        strokeWidth: arc.strokeWidth
+        capStyle: ShapePath.FlatCap
+
+        PathSvg {
+            path: arc.gap > 0 && arc.drawn ? arc.segments(arc.tail, arc.head) : ""
         }
     }
 }
