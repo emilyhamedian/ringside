@@ -204,9 +204,13 @@ class Busy(RuntimeError):
         super().__init__("another usage check is still running")
 
 
+def rate_limited_message(seconds):
+    return f"rate limited, retrying in {seconds} s"
+
+
 class RateLimited(Exception):
     def __init__(self, retry_after, host=""):
-        super().__init__(f"rate limited, retrying in {retry_after} s")
+        super().__init__(rate_limited_message(retry_after))
         self.retry_after = retry_after
         self.host = host
 
@@ -546,14 +550,24 @@ def parse_codex(result):
     return {"weekly": codex_window(window), "scoped": scoped}
 
 
+def cli_or_reason(name):
+    """The provider's program as (binary, reason): the program to run and
+    "", or "" and why there is none, "program" for a chosen one that can't
+    run or "not-installed"."""
+    binary, problem = find_cli(name, PROGRAMS.get(name, ""))
+    if problem:
+        return "", "program"
+    return binary, "" if binary else "not-installed"
+
+
 def codex_usage():
     if not CODEX_AUTH.exists():
         raise SignedOut()
-    binary, problem = find_cli("codex", PROGRAMS.get("codex", ""))
-    if problem:
-        raise CheckFailed("the codex program set in Settings can't be run", "program")
-    if not binary:
-        raise CheckFailed("codex CLI not found", "not-installed")
+    binary, reason = cli_or_reason("codex")
+    if reason == "program":
+        raise CheckFailed("the codex program set in Settings can't be run", reason)
+    if reason:
+        raise CheckFailed("codex CLI not found", reason)
     event("debug", "codex", "cli", cli=shown_path(binary))
     try:
         result = codex_rate_limits(binary)
@@ -968,14 +982,16 @@ def locked():
     leaves behind cannot keep holding the lock after this run exits.
     """
     CACHE_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
-    return flocked(LOCK_FILE, LOCK_WAIT)
+    return flocked(LOCK_FILE)
 
 
 @contextlib.contextmanager
-def flocked(path, wait):
+def flocked(path):
+    """Hold an exclusive lock on path until the block ends, waiting up to
+    LOCK_WAIT seconds for it."""
     fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o600)
     try:
-        deadline = time.monotonic() + wait
+        deadline = time.monotonic() + LOCK_WAIT
         while True:
             try:
                 fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -1075,7 +1091,7 @@ def replay(entry, wait, now):
     host = entry.get("host") if isinstance(entry.get("host"), str) else ""
     failure = {"reason": reason, "host": host, "retryAt": now + wait}
     if entry["status"] == "rate_limited":
-        return {"status": "rate_limited", "retryAfter": wait, "message": str(RateLimited(wait)), **failure}
+        return {"status": "rate_limited", "retryAfter": wait, "message": rate_limited_message(wait), **failure}
     return {"status": "error", "message": entry["message"], **failure}
 
 
@@ -1391,7 +1407,7 @@ def set_switches(changes):
     own keeps two widgets from losing each other's change without waiting
     for a send. Each switch that turns goes to the journal."""
     private_state_dir()
-    with flocked(SWITCH_LOCK, LOCK_WAIT):
+    with flocked(SWITCH_LOCK):
         try:
             data = read_json(STARTER_FILE)
         except (OSError, ValueError):
@@ -1598,11 +1614,9 @@ def starter_read(name, now, not_before):
 
 
 def installed(name):
-    binary, problem = find_cli(name, PROGRAMS.get(name, ""))
-    if problem:
-        raise Failed("program")
-    if not binary:
-        raise Failed("not-installed")
+    binary, reason = cli_or_reason(name)
+    if reason:
+        raise Failed(reason)
     return binary
 
 
@@ -1773,10 +1787,12 @@ def fetchers():
     return {"claude": claude_usage, "codex": codex_usage}
 
 
-# Each provider's session starter: how it sends its message, and whether a
-# reading shows the session or week it asked for running.
+# Each provider's session starter: how it sends its message, whether a
+# reading shows the session or week it asked for running, and that
+# window's length.
 def starters():
-    return {"claude": (send_claude, claude_running), "codex": (send_codex, codex_running)}
+    return {"claude": (send_claude, claude_running, SESSION_SECONDS),
+            "codex": (send_codex, codex_running, WEEK_SECONDS)}
 
 
 def run_starter(name):
@@ -1798,13 +1814,12 @@ def run_starter(name):
             private_state_dir()
             write_private(STARTER_STATE, states)
 
-        sender, running = starters()[name]
+        sender, running, period = starters()[name]
         Starter(name, record,
                 read=lambda not_before: starter_read(name, int(time.time()), not_before),
                 check=lambda: installed(name),
                 send=lambda binary: sender(binary, lambda: name in read_switches()),
-                running=running,
-                period=SESSION_SECONDS if name == "claude" else WEEK_SECONDS,
+                running=running, period=period,
                 persist=persist, clock=lambda: int(time.time())).step()
         if record["next"] is not None:
             event("debug", name, "starter-next", state=record["state"],
