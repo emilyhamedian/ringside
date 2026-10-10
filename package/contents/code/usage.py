@@ -240,6 +240,8 @@ class CheckFailed(RuntimeError):
 EVENTS = []
 
 NAMES = {"claude": "Claude", "codex": "Codex"}
+# What signs a provider in, as the journal names it.
+PRODUCTS = {"claude": "Claude Code", "codex": "the Codex CLI"}
 # Who asks Ringside to wait, when the refusal names no host.
 COMPANIES = {"claude": "Anthropic", "codex": "OpenAI"}
 WINDOWS = {"claude": "session", "codex": "week"}
@@ -301,7 +303,7 @@ def failure_why(name, failure, asked=None, hold=None):
     host = own_host(failure.get("host"))
     reason = failure.get("reason")
     if failure.get("status") == "signed_out":
-        return "Claude Code is signed out" if name == "claude" else "the Codex CLI is signed out"
+        return f"{PRODUCTS[name]} is signed out"
     if failure.get("status") == "rate_limited":
         why = f"{host or COMPANIES[name]} asked Ringside to wait"
         if type(asked) is int:
@@ -1758,6 +1760,12 @@ def fetchers():
     return {"claude": claude_usage, "codex": codex_usage}
 
 
+# Each provider's session starter: how it sends its message, and whether a
+# reading shows the session or week it asked for running.
+def starters():
+    return {"claude": (send_claude, claude_running), "codex": (send_codex, codex_running)}
+
+
 def run_starter(name):
     """Run the provider's starter step if its switch is on, holding
     usage.lock from the switch check to the last write, so no poll runs
@@ -1777,12 +1785,12 @@ def run_starter(name):
             private_state_dir()
             write_private(STARTER_STATE, states)
 
-        sender = send_claude if name == "claude" else send_codex
+        sender, running = starters()[name]
         Starter(name, record,
                 read=lambda not_before: starter_read(name, int(time.time()), not_before),
                 check=lambda: installed(name),
                 send=lambda binary: sender(binary, lambda: name in read_switches()),
-                running=claude_running if name == "claude" else codex_running,
+                running=running,
                 period=SESSION_SECONDS if name == "claude" else WEEK_SECONDS,
                 persist=persist, clock=lambda: int(time.time())).step()
         if record["next"] is not None:

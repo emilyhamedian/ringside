@@ -3,6 +3,7 @@
 
 import QtQuick
 import "code/format.js" as Format
+import "code/providers.js" as Providers
 import "code/hardware.js" as Hardware
 import "code/history.js" as History
 
@@ -53,6 +54,29 @@ QtObject {
     // A provider's name as its popup and tooltip give it: the OpenAI item is
     // ChatGPT while its ring shows the OpenAI logo, and Codex with the Codex
     // mark.
+    // An item's name as the panel's tooltip and screen readers give it.
+    function title(item) {
+        switch (item) {
+        case "cpu":
+            return i18nc("@info:tooltip", "Processor");
+        case "gpu":
+            return i18nc("@info:tooltip", "Graphics");
+        case "memory":
+            return i18nc("@info:tooltip", "Memory");
+        case "network":
+            return i18nc("@info:tooltip", "Network");
+        case "disk":
+            return i18nc("@info:tooltip", "Disk activity");
+        default:
+            return providerName(item);
+        }
+    }
+
+    // What to run to sign a provider in.
+    function signInHint(item) {
+        return i18nc("@info %1 is a command, such as claude", "Run %1 in a terminal to sign in.", Providers.facts(item).command);
+    }
+
     function providerName(item) {
         return item === "claude" ? i18nc("@title", "Claude")
              : monitor.codexMark === "openai" ? i18nc("@title the OpenAI weekly limits, with the OpenAI logo chosen for their ring", "ChatGPT")
@@ -225,29 +249,24 @@ QtObject {
             }
             break;
         case "timeout":
-            if (host) {
-                return i18nc("@info %1 is a server, such as api.anthropic.com", "%1 didn't answer in time.", host);
-            }
-            if (item === "codex") {
-                return i18nc("@info", "Codex didn't answer in time.");
-            }
-            break;
+            // Codex is asked through its program, which names no server.
+            return i18nc("@info %1 is a server, such as api.anthropic.com, or a program, such as Codex", "%1 didn't answer in time.",
+                         host || Providers.facts(item).product);
         case "server":
             if (host) {
                 return i18nc("@info %1 is a server, such as api.anthropic.com", "%1 answered with an error.", host);
             }
             break;
         case "rate-limited":
-            return item === "claude"
-                ? i18nc("@info", "Anthropic asked Ringside to wait before checking again.")
-                : i18nc("@info", "OpenAI asked Ringside to wait before checking again.");
+            return i18nc("@info %1 is a company, such as Anthropic or OpenAI", "%1 asked Ringside to wait before checking again.",
+                         Providers.facts(item).company);
         case "not-installed":
             if (item === "codex") {
                 return i18nc("@info AI Providers and Panel Items are settings pages; OpenAI is the item's name there", "Plasma can't find Codex. Install it, set where it is under AI Providers, or turn OpenAI off in Panel Items.");
             }
             break;
         case "program":
-            return i18nc("@info %1 is a program name such as codex", "The %1 program set in Settings can't be run.", item);
+            return i18nc("@info %1 is a program name such as codex", "The %1 program set in Settings can't be run.", Providers.facts(item).command);
         case "missing":
             return i18nc("@info", "python3 was not found on the Plasma session's PATH.");
         case "files":
