@@ -51,7 +51,7 @@ Item {
     readonly property int refreshMinutes: config.usageRefreshMinutes
     // A check is running, and when the timer's current interval started:
     // its last tick, or a change of interval, which starts it over. In
-    // epoch seconds.
+    // whole epoch seconds, as every time here.
     property bool checking: false
     property real lastRun: NaN
 
@@ -99,6 +99,28 @@ Item {
 
     function entry(id) {
         return entries[id] ?? null;
+    }
+
+    // The time in whole epoch seconds, as the helper gives its times.
+    function nowSeconds() {
+        return Math.floor(Date.now() / 1000);
+    }
+
+    // What a helper run is for, read from the end of its command (see
+    // helperCommand()): the switch it sets, as { id, on }, or null;
+    function starterSet(source) {
+        const set = / --starter-set (\w+)=(on|off)$/.exec(source);
+        return set ? { id: set[1], on: set[2] === "on" } : null;
+    }
+
+    // the ids a check polls, none for any other run;
+    function polledIds(source) {
+        return / --providers ([\w,]+)$/.exec(source)?.[1].split(",") ?? [];
+    }
+
+    // and the ids a --start runs for, none for any other run.
+    function startedIds(source) {
+        return / --providers ([\w,]+) --start$/.exec(source)?.[1].split(",") ?? [];
     }
 
     // Text as one sh word: in single quotes, where nothing is special, with
@@ -151,7 +173,7 @@ Item {
     // One --starter-set at a time, so a quick on and off land in order.
     function writeStarter() {
         const id = Object.keys(starterWanted)[0];
-        if (id !== undefined && !runner.connectedSources.some(s => / --starter-set \w+=(on|off)$/.test(s))) {
+        if (id !== undefined && !runner.connectedSources.some(s => starterSet(s) !== null)) {
             runner.connectSource(helperCommand(ids, " --starter-set " + id + "=" + (starterWanted[id] ? "on" : "off")));
         }
     }
@@ -164,8 +186,8 @@ Item {
     // A switch turned off while a --start runs is the helper's to catch: it
     // reads the switch again just before it sends.
     function startDue() {
-        const busy = runner.connectedSources.some(s => s.endsWith(" --start") || / --starter-set \w+=(on|off)$/.test(s));
-        const now = Date.now() / 1000;
+        const busy = runner.connectedSources.some(s => startedIds(s).length > 0 || starterSet(s) !== null);
+        const now = nowSeconds();
         // A switch the user turned off and the helper couldn't write starts
         // nothing either, until it is turned again.
         const due = ids.filter(id => {
@@ -182,7 +204,7 @@ Item {
     // repeat, and a helper that dies after sending would send again. The
     // readings it left untouched keep no failure.
     function startFailed(failedIds, error) {
-        const now = Math.floor(Date.now() / 1000);
+        const now = nowSeconds();
         const failures = Object.assign({}, startFailures);
         failedIds.forEach(id => {
             const count = (failures[id]?.count ?? 0) + 1;
@@ -195,9 +217,9 @@ Item {
     // A --start that reported but left a starter due, or didn't report it,
     // would run again on every tick, so it backs off as a failed one does,
     // with what the helper said on stderr as the error.
-    function startLeftDue(startedIds, error) {
-        const now = Date.now() / 1000;
-        const due = startedIds.filter(id => {
+    function startLeftDue(started, error) {
+        const now = nowSeconds();
+        const due = started.filter(id => {
             const s = starters[id];
             return s?.enabled === true && Number.isFinite(s.next) && s.next <= now;
         });
@@ -295,20 +317,10 @@ Item {
             ids.filter(id => map[id] !== undefined).forEach(id => { kept[id] = map[id]; });
             return kept;
         };
-        if (Object.keys(entries).some(id => !ids.includes(id))) {
-            entries = only(entries);
-        }
-        if (Object.keys(starters).some(id => !ids.includes(id))) {
-            starters = only(starters);
-        }
-        if (Object.keys(starterWanted).some(id => !ids.includes(id))) {
-            starterWanted = only(starterWanted);
-        }
-        if (Object.keys(startFailures).some(id => !ids.includes(id))) {
-            startFailures = only(startFailures);
-        }
-        if (Object.keys(switchFailures).some(id => !ids.includes(id))) {
-            switchFailures = only(switchFailures);
+        for (const name of ["entries", "starters", "starterWanted", "startFailures", "switchFailures"]) {
+            if (Object.keys(usage[name]).some(id => !ids.includes(id))) {
+                usage[name] = only(usage[name]);
+            }
         }
         if (answered.some(id => !ids.includes(id))) {
             answered = answered.filter(id => ids.includes(id));
@@ -323,7 +335,8 @@ Item {
     }
 
     function merge(report) {
-        const at = report.fetchedAt ?? Math.floor(Date.now() / 1000);
+        const now = nowSeconds();
+        const at = report.fetchedAt ?? now;
         const merged = {};
         const latest = {};
         const starting = Object.assign({}, starters);
@@ -372,7 +385,6 @@ Item {
         // every starter due at once, keeps its back-off. So does one the
         // helper claimed five minutes for before the --start died, which
         // reports its old state with that claim as next.
-        const now = Date.now() / 1000;
         const failures = {};
         for (const id in startFailures) {
             const s = starting[id];
@@ -479,16 +491,16 @@ Item {
         onNewData: (source, data) => {
             disconnectSource(source);
             // The source may still be listed until this handler returns.
-            usage.checking = connectedSources.some(s => s !== source && / --providers [\w,]+$/.test(s));
+            usage.checking = connectedSources.some(s => s !== source && usage.polledIds(s).length > 0);
             // A switch change is settled by this run's report, or by its
             // failure, which leaves the switch where it was reported and,
             // like a failed --start, says so only under the switch. So does
             // a report that shows the switch unchanged with the reason the
             // helper couldn't write it on stderr; without one, another
             // widget's change came first, and that is no failure.
-            const set = / --starter-set (\w+)=(on|off)$/.exec(source);
-            const started = / --providers ([\w,]+) --start$/.exec(source);
-            const settled = set && usage.starterWanted[set[1]] === (set[2] === "on") ? set[1] : "";
+            const set = usage.starterSet(source);
+            const started = usage.startedIds(source);
+            const settled = set && usage.starterWanted[set.id] === set.on ? set.id : "";
             let report = null;
             try {
                 report = JSON.parse(data.stdout);
@@ -497,26 +509,26 @@ Item {
             }
             usage.writeEvents(report?.events);
             const failure = Report.helperFailure(data);
-            if (!report?.providers && started) {
-                Log.write(journal, "warning", "the session starter run for " + started[1] + " failed: "
+            if (!report?.providers && started.length > 0) {
+                Log.write(journal, "warning", "the session starter run for " + started.join(",") + " failed: "
                           + usage.troubleText(failure));
-                usage.startFailed(started[1].split(","), usage.failureText(failure));
+                usage.startFailed(started, usage.failureText(failure));
             } else if (!report?.providers && set) {
-                Log.write(journal, "warning", "the " + set[1] + " session starter switch wasn't saved: "
+                Log.write(journal, "warning", "the " + set.id + " session starter switch wasn't saved: "
                           + usage.troubleText(failure));
                 if (settled) {
-                    usage.switchRefused(settled, set[2] === "on", usage.failureText(failure));
+                    usage.switchRefused(settled, set.on, usage.failureText(failure));
                 }
             } else if (!report?.providers) {
                 usage.noteTrouble(usage.troubleText(failure));
                 usage.helperError = usage.failureText(failure);
                 // A provider still loading that this run polled fails with
                 // the rest; one that only another run polls waits for it.
-                const polled = (/ --providers ([\w,]+)$/.exec(source)?.[1] ?? "").split(",");
+                const polled = usage.polledIds(source);
                 const first = usage.ids.filter(id => polled.includes(id) && usage.loading(id));
                 const loaded = Object.assign({}, usage.entries);
                 first.forEach(id => { loaded[id] = { status: "error" }; });
-                usage.entries = Report.markFailed(loaded, usage.helperError, Math.floor(Date.now() / 1000),
+                usage.entries = Report.markFailed(loaded, usage.helperError, usage.nowSeconds(),
                                                   Report.failureReason(failure));
                 usage.answered = usage.answered.concat(first);
                 usage.writeStatus();
@@ -528,12 +540,12 @@ Item {
                 usage.helperError = "";
                 usage.merge(report);
                 const reason = failure.detail;
-                if (started) {
-                    usage.startLeftDue(started[1].split(","), reason);
+                if (started.length > 0) {
+                    usage.startLeftDue(started, reason);
                 }
                 if (settled && reason !== "" && report.providers[settled]?.starter
-                    && report.providers[settled].starter.enabled !== (set[2] === "on")) {
-                    usage.switchRefused(settled, set[2] === "on", reason);
+                    && report.providers[settled].starter.enabled !== set.on) {
+                    usage.switchRefused(settled, set.on, reason);
                 }
             }
             if (settled) {
@@ -555,10 +567,10 @@ Item {
         repeat: true
         triggeredOnStart: true
         onTriggered: {
-            usage.lastRun = Date.now() / 1000;
+            usage.lastRun = usage.nowSeconds();
             usage.refresh();
         }
-        onIntervalChanged: usage.lastRun = Date.now() / 1000
+        onIntervalChanged: usage.lastRun = usage.nowSeconds()
     }
 
     // The poller counts time the machine is awake, so after a suspend its
@@ -573,7 +585,7 @@ Item {
         running: usage.ids.some(id => usage.degraded(id))
         repeat: true
         onTriggered: {
-            if (Date.now() / 1000 - usage.lastRun > usage.refreshMinutes * 60 + 60) {
+            if (usage.nowSeconds() - usage.lastRun > usage.refreshMinutes * 60 + 60) {
                 poller.restart();
             }
         }

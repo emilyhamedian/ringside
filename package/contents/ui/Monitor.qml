@@ -838,7 +838,9 @@ Item {
         function failed(why) {
             Log.write(journal, "warning", why + (left > 0 ? "; trying again in 5 s"
                                                           : "; the GPU item and the hardware details stay empty"));
-            start();
+            if (left > 0) {
+                start();
+            }
         }
         onTriggered: {
             if (left-- > 0) {

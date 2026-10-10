@@ -480,6 +480,15 @@ Item {
             verify(!inside.some(text => number.test(text)), JSON.stringify(inside));
         }
 
+        // The ring speaks its reading as the readings beside it show it: in
+        // the locale's digits, and no more than 100%.
+        function test_ringSpeaksItsPercentage() {
+            const g = gauge(cell("cpu"));
+            compare(g.Accessible.description, root.percent(23));
+            monitor.cpuUsage = 104;
+            compare(g.Accessible.description, root.percent(100));
+        }
+
         function test_nameInsideTheRing_data() {
             const names = [{ item: "cpu", text: "CPU" }, { item: "memory", text: "MEM" }, { item: "gpu", text: "GPU" },
                            { item: "claude", mark: "claude" }, { item: "codex", mark: "codex" }];
