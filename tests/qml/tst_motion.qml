@@ -1389,7 +1389,9 @@ Item {
             const g = c.children[0];
             const seen = record(c);
             const start = Date.now();
-            wait(800);
+            // Well inside the second, so a slow run still checks the shots
+            // before the lit dot is due.
+            wait(600);
             verify(seen.length > 10 && seen.every(f => !f.moving && f.motion === 0 && f.dots === 1 && f.sweep === 0),
                    JSON.stringify(seen.slice(-3)));
             const still = shot(c);
