@@ -23,19 +23,10 @@ import "../../package/contents/ui/code/items.js" as Items
 // udisks and the network the tests run with. One test reads the real tree,
 // and skips where it lists nothing to read.
 
-Item {
+TestRoot {
     id: root
     width: 660
     height: 560
-
-    // A bare qml runtime has no KI18n; the pages find these on the root.
-    function substitute(text, args) {
-        return text.replace(/%(\d+)/g, (m, n) => n <= args.length ? String(args[n - 1]) : m);
-    }
-    function i18n(text, ...args) { return substitute(text, args); }
-    function i18nc(context, text, ...args) { return substitute(text, args); }
-    function i18np(s, p, n, ...args) { return substitute(n === 1 ? s : p, [n].concat(args)); }
-    function i18ncp(c, s, p, n, ...args) { return substitute(n === 1 ? s : p, [n].concat(args)); }
 
     Component {
         id: general
@@ -78,13 +69,10 @@ Item {
         property alias page: page
         property bool mirrored
 
-        function i18n(text, ...args) { return stretch(root.i18n(text, ...args)); }
-        function i18nc(context, text, ...args) { return stretch(root.i18nc(context, text, ...args)); }
-        function i18np(s, p, n, ...args) { return stretch(root.i18np(s, p, n, ...args)); }
-        function i18ncp(c, s, p, n, ...args) { return stretch(root.i18ncp(c, s, p, n, ...args)); }
-        function stretch(s) {
-            return s + "ß".repeat(Math.round(s.length * 0.35));
-        }
+        function i18n(text, ...args) { return root.stretch(root.i18n(text, ...args)); }
+        function i18nc(context, text, ...args) { return root.stretch(root.i18nc(context, text, ...args)); }
+        function i18np(s, p, n, ...args) { return root.stretch(root.i18np(s, p, n, ...args)); }
+        function i18ncp(c, s, p, n, ...args) { return root.stretch(root.i18ncp(c, s, p, n, ...args)); }
 
         LayoutMirroring.enabled: mirrored
         LayoutMirroring.childrenInherit: true
@@ -196,23 +184,8 @@ Item {
             return page;
         }
 
-        function find(item, pred) {
-            if (pred(item)) return item;
-            for (let i = 0; i < item.children.length; ++i) {
-                const r = find(item.children[i], pred);
-                if (r) return r;
-            }
-            return null;
-        }
         function combo(page, name) {
             return find(page, i => i.Accessible && i.Accessible.name === name);
-        }
-        function findAll(item, pred, found = []) {
-            if (pred(item)) found.push(item);
-            for (let i = 0; i < item.children.length; ++i) {
-                findAll(item.children[i], pred, found);
-            }
-            return found;
         }
         // A form section's heading, which FormLayout draws at level 3.
         function heading(page, text) {
@@ -824,14 +797,14 @@ Item {
             verify(note.lineCount > 1, "the inner rings' note wraps");
             for (const name of ["Check every", "Claude inner ring", "OpenAI inner ring", "Path to claude", "Path to codex",
                                 "Choose where claude is", "Choose where codex is"]) {
-                const control = combo(page, host.stretch(name));
+                const control = combo(page, root.stretch(name));
                 verify(control && control.visible, name);
                 verify(within(page, control), name + " runs off the page");
             }
             const form = find(page, i => i.wideMode !== undefined);
             if (form.wideMode) {
                 const label = texts.find(t => t.text.startsWith("Check every:"));
-                const field = combo(page, host.stretch("Check every"));
+                const field = combo(page, root.stretch("Check every"));
                 const labelX = label.mapToItem(page, 0, 0).x;
                 const fieldX = field.mapToItem(page, 0, 0).x;
                 if (data.mirrored) {
@@ -951,11 +924,11 @@ Item {
                 }
             }
             compare(combo(page, "OpenAI inner ring").visible, data.ring, "the OpenAI inner ring");
-            compare(findAll(page, i => i.text === page.automaticLine && i.visible).length, 1 + Number(data.ring),
+            compare(all(page, i => i.text === page.automaticLine && i.visible).length, 1 + Number(data.ring),
                     "the inner rings' notes");
             compare(logoChoice(page, "Codex").visible, data.logo, "the ring logo");
             compare(heading(page, "OpenAI").visible, data.openai, "the OpenAI heading");
-            compare(findAll(page, i => i.text === "Program:" && i.visible).length,
+            compare(all(page, i => i.text === "Program:" && i.visible).length,
                     Number(data.claude !== null) + Number(data.codex !== null), "Program: labels");
         }
 
@@ -1094,12 +1067,12 @@ Item {
             const page = host.page;
             showPrograms(page, "custom");
             waitForRendering(host);
-            const f = combo(page, host.stretch("Path to codex"));
-            const button = combo(page, host.stretch("Choose where codex is"));
+            const f = combo(page, root.stretch("Path to codex"));
+            const button = combo(page, root.stretch("Choose where codex is"));
             compare(f.effectiveHorizontalAlignment, TextInput.AlignLeft);
             fuzzyCompare(f.width + button.width + f.parent.spacing, f.parent.width, 1, "the field fills the row");
             verify(button.mapToItem(page, 0, 0).x + button.width <= f.mapToItem(page, 0, 0).x, "the button sits left of the field");
-            const label = findAll(page, i => i.text === host.stretch("Program:") && i.visible)[0];
+            const label = all(page, i => i.text === root.stretch("Program:") && i.visible)[0];
             verify(label.mapToItem(page, 0, 0).x >= f.mapToItem(page, 0, 0).x + f.width, "the label sits right of the field");
         }
 
@@ -1257,7 +1230,7 @@ Item {
             compare(codex.visible, data.codexVisible);
             // Each picker has its own heading and its own note under it.
             compare(heading(page, "Claude").visible, data.claudeVisible);
-            const notes = findAll(page, i => typeof i.text === "string" && i.text.startsWith("Automatic shows") && i.visible);
+            const notes = all(page, i => typeof i.text === "string" && i.text.startsWith("Automatic shows") && i.visible);
             compare(notes.length, Number(data.claudeVisible) + Number(data.codexVisible));
             for (const [picker, shown] of [[claude, data.claudeVisible], [codex, data.codexVisible]]) {
                 if (shown) {
@@ -1348,7 +1321,7 @@ Item {
             verify(y(both) < y(every) && y(every) < y(claude));
             verify(y(claude) < y(claudeRing) && y(claudeRing) < y(codex));
             verify(y(codex) < y(codexRing) && y(codexRing) < y(logo));
-            compare(findAll(page, i => i.text === "Inner ring:" && i.visible).length, 2);
+            compare(all(page, i => i.text === "Inner ring:" && i.visible).length, 2);
 
             // With neither provider to set, only the shared section shows.
             const bare = make(providers);

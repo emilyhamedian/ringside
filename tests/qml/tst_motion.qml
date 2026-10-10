@@ -25,36 +25,14 @@ import "../../package/contents/ui/code/history.js" as History
 // duration of 0, as Plasma's Instant animation speed gives, puts everything
 // in place at once.
 // The test runner's Kirigami units are the defaults, at speed 1.
-Item {
+TestRoot {
     id: root
     width: 600
     height: 400
 
-    // A bare qml runtime has no KI18n; the views find these on the root.
-    function substitute(text, args) {
-        return text.replace(/%(\d+)/g, (m, n) => n <= args.length ? String(args[n - 1]) : m);
-    }
-    function i18n(text, ...args) { return substitute(text, args); }
-    function i18nc(context, text, ...args) { return substitute(text, args); }
-    function i18np(s, p, n, ...args) { return substitute(n === 1 ? s : p, [n].concat(args)); }
-    function i18ncp(c, s, p, n, ...args) { return substitute(n === 1 ? s : p, [n].concat(args)); }
-
     function tone(level) {
         return level === 2 ? Kirigami.Theme.negativeTextColor
              : level === 1 ? Kirigami.Theme.neutralTextColor : Kirigami.Theme.textColor;
-    }
-
-    // Every item under `item`, itself included, that `test` accepts.
-    function all(item, test) {
-        const found = [];
-        const collect = i => {
-            if (test(i)) {
-                found.push(i);
-            }
-            Array.from(i.children).forEach(collect);
-        };
-        collect(item);
-        return found;
     }
 
     Component {
@@ -1023,12 +1001,6 @@ Item {
             return root.all(popup, i => i.awake !== undefined && i.first !== undefined);
         }
 
-        function visibleTexts(popup) {
-            return root.all(popup, i => typeof i.text === "string" && i.text !== "" && i.visible
-                            && (function () { for (let p = i; p; p = p.parent) { if (!p.visible) return false; } return true; })())
-                .map(i => i.text);
-        }
-
         // A GPU going to sleep fades its section out with its last readings,
         // then gives way to its line at the end: the popup changes height
         // once. Waking, the section opens at once below the integrated GPU's
@@ -1043,13 +1015,13 @@ Item {
             monitor.gpuOuter.phase = "asleep";
             verify(outer.visible);
             verify(outer.slot.usage === 12, "keeping its last reading");
-            verify(!visibleTexts(popup).some(t => t.endsWith(" · off")), "no line yet");
+            verify(!texts(popup).some(t => t.endsWith(" · off")), "no line yet");
             tryVerify(() => outer.opacity < 1, 1000, "fading out");
             compare(outer.slot.temperature, 48);
             const temperatureGraph = root.all(outer, i => i.hasReading !== undefined)[0];
             verify(temperatureGraph.visible, "its temperature graph fades out with it");
             tryCompare(outer, "visible", false, 1000);
-            verify(visibleTexts(popup).includes("AMD Radeon RX 7700S · off"));
+            verify(texts(popup).includes("AMD Radeon RX 7700S · off"));
             verify(inner.first, "the integrated GPU's section still opens the page");
             // The height follows at the layout's next polish.
             tryVerify(() => heights.length > 0, 1000, "the popup's height changes");
@@ -1060,7 +1032,7 @@ Item {
             verify(outer.visible, "open at once");
             verify(outer.opacity < 1, "and fading in");
             verify(inner.first && !outer.first, "below the integrated GPU's");
-            verify(!visibleTexts(popup).some(t => t.endsWith(" · off")));
+            verify(!texts(popup).some(t => t.endsWith(" · off")));
             tryCompare(outer, "opacity", 1, 1000);
             compare(popup.implicitHeight, before);
             compare(heights.length, 1, "one change of height: " + JSON.stringify(heights));
@@ -1087,7 +1059,7 @@ Item {
             const outer = sections(popup)[1];
             monitor.gpuOuter.phase = "asleep";
             verify(!outer.visible);
-            verify(visibleTexts(popup).includes("AMD Radeon RX 7700S · off"));
+            verify(texts(popup).includes("AMD Radeon RX 7700S · off"));
         }
     }
 

@@ -14,7 +14,7 @@ import "../../package/contents/ui/code/style.js" as Style
 // settings and the font take effect at once; a thin vertical panel's rates
 // fit, mirrored layouts read right to left, and every cell describes its
 // readings in words.
-Item {
+TestRoot {
     id: root
     width: 1200
     height: 600
@@ -22,16 +22,6 @@ Item {
     readonly property color hotColor: Kirigami.Theme.negativeTextColor
     readonly property var ringItems: ["cpu", "gpu", "memory", "claude", "codex"]
     readonly property var names: ({ cpu: "CPU", gpu: "GPU", memory: "MEM" })
-
-    function substitute(text, args) {
-        return text.replace(/%(\d+)/g, (match, n) => n <= args.length ? String(args[n - 1]) : match);
-    }
-    function i18nc(context, text, ...args) {
-        return substitute(text, args);
-    }
-    function i18ncp(context, singular, plural, n, ...args) {
-        return substitute(n === 1 ? singular : plural, [n].concat(args));
-    }
 
     Component {
         id: monitorComponent
@@ -97,35 +87,6 @@ Item {
             change();
             waitForRendering(strip);
             return { width: strip.implicitWidth, height: strip.implicitHeight };
-        }
-
-        function visibleTexts(item) {
-            const texts = [];
-            const collect = i => {
-                if (i.visible && i.text !== undefined && i.text !== "") {
-                    texts.push(i.text);
-                }
-                Array.from(i.children).forEach(collect);
-            };
-            collect(item);
-            return texts;
-        }
-
-        // Every item under `item`, itself included, that `test` accepts.
-        function all(item, test) {
-            const found = [];
-            const collect = i => {
-                if (test(i)) {
-                    found.push(i);
-                }
-                Array.from(i.children).forEach(collect);
-            };
-            collect(item);
-            return found;
-        }
-
-        function find(item, test) {
-            return all(item, test)[0] ?? null;
         }
 
         // Only a Rectangle has both; a RingArc has a radius and no border.
@@ -194,7 +155,7 @@ Item {
                 const hole = gauge.centreWidth;
                 const centre = box(gauge);
                 compare(gauge.text, "", item + " has no percentage inside");
-                const inside = visibleTexts(gauge);
+                const inside = texts(gauge);
                 verify(inside.length === 0 || inside.length === 1 && inside[0] === root.names[item],
                        item + " holds " + JSON.stringify(inside));
                 compare(name.visible, shown.includes(item), item + "'s name across " + hole);
@@ -336,9 +297,9 @@ Item {
             for (const step of extremeSteps()) {
                 sizeAfter(strip, step.change);
                 checkFits(step.what);
-                const texts = visibleTexts(strip);
+                const onScreen = texts(strip);
                 for (const text of step.shows) {
-                    verify(texts.includes(text), step.what + " shows " + text + ": " + JSON.stringify(texts));
+                    verify(onScreen.includes(text), step.what + " shows " + text + ": " + JSON.stringify(onScreen));
                 }
                 compare(geometry(), at, step.what + ": every item where it was");
                 adjacent(step.what);
@@ -524,7 +485,7 @@ Item {
         // A vertical rate cell's texts with `width` to draw in.
         function textsAt(rates, width) {
             rates.availableWidth = width;
-            return visibleTexts(rates);
+            return texts(rates);
         }
 
         // A vertical panel shows rings with their names, and the readings
@@ -605,9 +566,9 @@ Item {
             compare(content.primary.name, data.shown);
             compare(line(0, "first").text, data.usage);
             compare(line(0, "second").text, data.temp);
-            const texts = visibleTexts(strip);
-            verify(!texts.includes(data.other), JSON.stringify(texts));
-            verify(!texts.includes("off"), JSON.stringify(texts));
+            const onScreen = texts(strip);
+            verify(!onScreen.includes(data.other), JSON.stringify(onScreen));
+            verify(!onScreen.includes("off"), JSON.stringify(onScreen));
             verify(strip.cellAt(0).description.indexOf("\n") < 0, "one GPU described");
         }
 
@@ -617,8 +578,8 @@ Item {
             monitor.gpuInner.present = false;
             monitor.gpuOuter.phase = "asleep";
             const strip = makeStrip({ items: ["cpu", "gpu"] });
-            verify(visibleTexts(strip).includes("off"));
-            verify(!visibleTexts(strip).includes("off°"));
+            verify(texts(strip).includes("off"));
+            verify(!texts(strip).includes("off°"));
             compare(line(1, "first").text, "off");
             compare(line(1, "second").text, "");
             for (const which of ["first", "second"]) {
@@ -633,9 +594,9 @@ Item {
         function test_integratedTemperatureStaysInWords() {
             const strip = makeStrip({ items: ["gpu"] });
             verify(strip.cellAt(0).contentItem.dual);
-            const texts = visibleTexts(strip);
-            verify(texts.includes("12%") && texts.includes("48°"), JSON.stringify(texts));
-            verify(!texts.includes("3%") && !texts.includes("41°"), JSON.stringify(texts));
+            const onScreen = texts(strip);
+            verify(onScreen.includes("12%") && onScreen.includes("48°"), JSON.stringify(onScreen));
+            verify(!onScreen.includes("3%") && !onScreen.includes("41°"), JSON.stringify(onScreen));
             compare(gaugeAt(0).innerValue, 3);
             compare(strip.cellAt(0).description.split("\n")[1], "AMD Radeon 780M Graphics: Usage 3%, temperature 41 °C");
         }
@@ -710,7 +671,7 @@ Item {
             const name = find(gaugeAt(1), n => n.markSize !== undefined);
             compare(name.mark, "claude");
             verify(find(name, m => m.art !== undefined && m.unit !== undefined).visible, "the Claude mark");
-            verify(!visibleTexts(strip).includes("CLAUDE"), JSON.stringify(visibleTexts(strip)));
+            verify(!texts(strip).includes("CLAUDE"), JSON.stringify(texts(strip)));
             compare([line(1, "first").text, line(1, "second").text], ["52%", "2d"]);
             compare([line(2, "first").text, line(2, "second").text], ["24%", "5d"]);
 
@@ -806,8 +767,8 @@ Item {
             }
             compare([line(0, "first").text, line(0, "second").text], ["23%", "61°"]);
             compare([line(2, "first").text, line(2, "second").text], ["42%", "13.4 GiB"]);
-            const texts = visibleTexts(strip);
-            verify(!texts.includes("%") && !texts.includes("°"), JSON.stringify(texts));
+            const onScreen = texts(strip);
+            verify(!onScreen.includes("%") && !onScreen.includes("°"), JSON.stringify(onScreen));
         }
 
         function test_hiddenTextShowsTooltipAndHeat() {

@@ -12,20 +12,10 @@ import "../../package/contents/ui"
 // goes back to its own binding; the outer arc keeps following its reading,
 // a ring without an inner ring never gains one, and everything a ring does
 // besides still works after it.
-Item {
+TestRoot {
     id: root
     width: 1200
     height: 600
-
-    function substitute(text, args) {
-        return text.replace(/%(\d+)/g, (match, n) => n <= args.length ? String(args[n - 1]) : match);
-    }
-    function i18nc(context, text, ...args) {
-        return substitute(text, args);
-    }
-    function i18ncp(context, singular, plural, n, ...args) {
-        return substitute(n === 1 ? singular : plural, [n].concat(args));
-    }
 
     readonly property var konami: [Qt.Key_Up, Qt.Key_Up, Qt.Key_Down, Qt.Key_Down, Qt.Key_Left, Qt.Key_Right,
                                    Qt.Key_Left, Qt.Key_Right, Qt.Key_B, Qt.Key_A]
@@ -109,18 +99,6 @@ Item {
             monitor.destroy();
             strip = null;
             egg = null;
-        }
-
-        function all(item, test) {
-            const found = [];
-            const collect = i => {
-                if (test(i)) {
-                    found.push(i);
-                }
-                Array.from(i.children).forEach(collect);
-            };
-            collect(item);
-            return found;
         }
 
         function makeStrip(vertical) {

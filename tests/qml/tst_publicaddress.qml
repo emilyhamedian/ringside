@@ -18,19 +18,10 @@ import "journal.js" as Journal
 // asked and answer when a test says so: nothing here reaches a network.
 // Each test that keeps results asks a service of its own, since checkers
 // share their records through code/publicaddress.js.
-Item {
+TestRoot {
     id: root
     width: 800
     height: 900
-
-    // A bare qml runtime has no KI18n; the views find these on the root.
-    function substitute(text, args) {
-        return text.replace(/%(\d+)/g, (m, n) => n <= args.length ? String(args[n - 1]) : m);
-    }
-    function i18n(text, ...args) { return substitute(text, args); }
-    function i18nc(context, text, ...args) { return substitute(text, args); }
-    function i18np(s, p, n, ...args) { return substitute(n === 1 ? s : p, [n].concat(args)); }
-    function i18ncp(c, s, p, n, ...args) { return substitute(n === 1 ? s : p, [n].concat(args)); }
 
     // The checkers' clock, moved on by the tests.
     property real now: 1.8e12
@@ -251,31 +242,6 @@ Item {
             return Array.from(object.data).find(o => o && o.objectName === name);
         }
 
-        function find(item, test) {
-            if (test(item)) {
-                return item;
-            }
-            for (const child of item.children) {
-                const found = find(child, test);
-                if (found) {
-                    return found;
-                }
-            }
-            return null;
-        }
-
-        function all(item, test) {
-            const found = [];
-            const collect = i => {
-                if (test(i)) {
-                    found.push(i);
-                }
-                i.children.forEach(collect);
-            };
-            collect(item);
-            return found;
-        }
-
         function popup(monitor, mirrored) {
             const loader = createTemporaryObject(mirrored ? mirroredHost : host, root);
             loader.setSource(Qt.resolvedUrl("../../package/contents/ui/popups/NetworkPopup.qml"), { monitor: monitor });
@@ -296,16 +262,9 @@ Item {
             return all(page, i => i.spoken !== undefined && i.visible);
         }
 
+        // The texts shown, less the address lines' own.
         function visibleTexts(item) {
             return all(item, i => i.visible && typeof i.text === "string" && i.text !== "" && i.spoken === undefined)
-                .filter(i => {
-                    for (let p = i; p; p = p.parent) {
-                        if (!p.visible) {
-                            return false;
-                        }
-                    }
-                    return true;
-                })
                 .map(i => i.text);
         }
 

@@ -13,7 +13,7 @@ import "../../package/contents/ui"
 // round-capped stroke's it replaced, from no arc to a whole ring. Each
 // check that draws runs on the filled band, and on Qt 6.12 and later also
 // on the stroke that carries the gradient there.
-Item {
+TestRoot {
     id: root
     width: 400
     height: 400
@@ -22,10 +22,6 @@ Item {
     Rectangle {
         anchors.fill: parent
         color: "black"
-    }
-
-    function i18nc(context, text, ...args) {
-        return text.replace(/%(\d+)/g, (m, n) => n <= args.length ? String(args[n - 1]) : m);
     }
 
     Component {

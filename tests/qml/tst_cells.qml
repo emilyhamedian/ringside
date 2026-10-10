@@ -15,27 +15,10 @@ import "../../package/contents/ui/code/style.js" as Style
 // popups' Reading, a number and its unit. It names no Strip, popup or
 // settings page, so it loads on Plasma 6.0, and it runs again in German and
 // Egyptian Arabic.
-Item {
+TestRoot {
     id: root
     width: 800
     height: 600
-
-    // Source text to translated text, for a test that needs a long one, and
-    // source text to the context the views gave translators with it.
-    property var translations: ({})
-    property var contexts: ({})
-
-    // A bare qml runtime has no KI18n; the views find these on the root.
-    function substitute(text, args) {
-        return text.replace(/%(\d+)/g, (m, n) => n <= args.length ? String(args[n - 1]) : m);
-    }
-    function i18n(text, ...args) { return substitute(root.translations[text] ?? text, args); }
-    function i18nc(context, text, ...args) {
-        root.contexts[text] = context;
-        return substitute(root.translations[text] ?? text, args);
-    }
-    function i18np(s, p, n, ...args) { return substitute(n === 1 ? s : p, [n].concat(args)); }
-    function i18ncp(c, s, p, n, ...args) { return substitute(n === 1 ? s : p, [n].concat(args)); }
 
     readonly property real gib: 1073741824
     readonly property real mib: 1048576
@@ -79,36 +62,6 @@ Item {
                     : name === "neutral" ? Kirigami.Theme.neutralTextColor
                     : name === "dim" ? Style.dim(Kirigami.Theme.textColor)
                     : Kirigami.Theme.textColor);
-    }
-
-    // Every visible text under an item.
-    function texts(item) {
-        const found = [];
-        const collect = i => {
-            if (i.visible && typeof i.text === "string" && i.text !== "") {
-                found.push(i.text);
-            }
-            i.children.forEach(collect);
-        };
-        collect(item);
-        return found;
-    }
-
-    // Every item under `item`, itself included, that `test` accepts.
-    function findAll(item, test) {
-        const found = [];
-        const collect = i => {
-            if (test(i)) {
-                found.push(i);
-            }
-            i.children.forEach(collect);
-        };
-        collect(item);
-        return found;
-    }
-
-    function find(item, test) {
-        return findAll(item, test)[0] ?? null;
     }
 
     // The face a Readout sets its lines in.
@@ -406,7 +359,7 @@ Item {
                 }
                 return false;
             };
-            return root.findAll(c, i => i.visible && typeof i.text === "string" && i.text !== "" && !inRing(i));
+            return root.all(c, i => i.visible && typeof i.text === "string" && i.text !== "" && !inRing(i));
         }
 
         function centreY(item, c) {
@@ -441,7 +394,7 @@ Item {
             compare(g.height, data.ring);
             compare(g.strokeWidth, data.stroke);
             compare(g.inner, data.inner);
-            const arcs = root.findAll(g, i => i.animating !== undefined && i.visible);
+            const arcs = root.all(g, i => i.animating !== undefined && i.visible);
             compare(arcs.length, data.inner ? 2 : 1);
             arcs.forEach(arc => verify(arc.radius + arc.strokeWidth / 2 <= data.ring / 2, "the ring stays in its square"));
             const hole = Math.min(...arcs.map(arc => arc.radius - arc.strokeWidth / 2));
@@ -706,7 +659,7 @@ Item {
             const g = keep(gaugeComponent.createObject(root, { width: data.size, height: data.size, inner: data.inner,
                                                                value: 40, innerValue: 20 }));
             waitForRendering(g);
-            const arcs = root.findAll(g, i => i.animating !== undefined && i.visible);
+            const arcs = root.all(g, i => i.animating !== undefined && i.visible);
             compare(arcs.length, data.inner ? 2 : 1);
             for (const arc of arcs) {
                 const middle = arc.mapToItem(g, Qt.point(arc.width / 2, arc.height / 2));
@@ -978,7 +931,7 @@ Item {
             compare(root.texts(c), data.texts);
             verify(!nameIn(c).visible);
             const middle = centreY(gauge(c), c);
-            const shown = root.findAll(c, i => i.visible && typeof i.text === "string" && i.text !== "");
+            const shown = root.all(c, i => i.visible && typeof i.text === "string" && i.text !== "");
             shown.forEach(t => verify(Math.abs(centreY(t, c) - middle) <= 0.5, t.text + " at " + centreY(t, c) + ", ring at " + middle));
             const dot = shown.find(t => t.text === "·");
             if (dot) {
@@ -1021,7 +974,7 @@ Item {
                     "the face of a temperature or memory line");
             compare(readout.rooms[1], face.room(face.plain, ["d", "h", "m"].map(unit => root.digits(10) + unit)),
                     "the room of two figures and a unit");
-            compare(root.findAll(readout, i => i.textFormat !== undefined).length, 3, "the two lines and the dot, nothing hidden to measure");
+            compare(root.all(readout, i => i.textFormat !== undefined).length, 3, "the two lines and the dot, nothing hidden to measure");
         }
 
         // Readings at their extremes, item by item, sizes in `units` (see
@@ -1270,7 +1223,7 @@ Item {
                     "the units' column");
             const x = i => i.mapToItem(c, Qt.point(0, 0)).x;
             const right = i => i.mapToItem(c, Qt.point(i.width, 0)).x;
-            const rates = root.findAll(c, i => i.index !== undefined && i.reading !== undefined).sort((a, b) => a.index - b.index);
+            const rates = root.all(c, i => i.index !== undefined && i.reading !== undefined).sort((a, b) => a.index - b.index);
             compare(rates.length, 2);
             const values = rates.map(r => root.find(r, i => i.horizontalAlignment === Text.AlignRight && i.text !== undefined));
             const units = rates.map(r => root.find(r, i => i.text !== undefined && i !== values[rates.indexOf(r)] && i.visible
@@ -1324,7 +1277,7 @@ Item {
             const rates = pair.rates;
             // Row by row, then left to right: down before up.
             const inOrder = (a, b) => baselineIn(a, pair) - baselineIn(b, pair) || a.mapToItem(pair, Qt.point(0, 0)).x - b.mapToItem(pair, Qt.point(0, 0)).x;
-            const shown = root.findAll(rates, i => i.visible && typeof i.text === "string" && i.text !== "");
+            const shown = root.all(rates, i => i.visible && typeof i.text === "string" && i.text !== "");
             const values = shown.filter(t => t.horizontalAlignment === Text.AlignRight).sort(inOrder);
             const units = shown.filter(t => t.horizontalAlignment !== Text.AlignRight).sort(inOrder);
             compare(values.map(t => t.text), rates.lines.map(reading => reading.value));

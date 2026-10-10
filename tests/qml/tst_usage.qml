@@ -18,21 +18,10 @@ import "journal.js" as Journal
 // (fake-usage-*.py) in place of usage.py, so no credentials are read and no
 // service is called. The cell, the popup and the week graph read FakeUsage
 // through FakeMonitor.
-Item {
+TestRoot {
     id: root
     width: 800
     height: 900
-
-    // A bare qml runtime has no KI18n; the views find these on the root.
-    function substitute(text, args) {
-        return text.replace(/%(\d+)/g, (m, n) => n <= args.length ? String(args[n - 1]) : m);
-    }
-    function i18n(text, ...args) { return substitute(text, args); }
-    function i18nc(context, text, ...args) { return substitute(translations[text] ?? text, args); }
-    // Stand-in translations a test can set, by the English text.
-    property var translations: ({})
-    function i18np(s, p, n, ...args) { return substitute(n === 1 ? s : p, [n].concat(args)); }
-    function i18ncp(c, s, p, n, ...args) { return substitute(n === 1 ? s : p, [n].concat(args)); }
 
     // Whether an epoch falls on the day of nowMs, where the words for a
     // time leave the date out.
@@ -48,33 +37,6 @@ Item {
 
     function stub(scenario) {
         return decodeURIComponent(Qt.resolvedUrl("data/fake-usage-" + scenario + ".py").toString().replace(/^file:\/\//, ""));
-    }
-
-    // Every visible text under an item.
-    function texts(item) {
-        const found = [];
-        const collect = i => {
-            if (i.visible && typeof i.text === "string" && i.text !== "") {
-                found.push(i.text);
-            }
-            i.children.forEach(collect);
-        };
-        collect(item);
-        return found;
-    }
-
-    // The first item under `item`, itself included, that `test` accepts.
-    function find(item, test) {
-        if (test(item)) {
-            return item;
-        }
-        for (const child of item.children) {
-            const hit = find(child, test);
-            if (hit) {
-                return hit;
-            }
-        }
-        return null;
     }
 
     // The width of a space in a text's font.
