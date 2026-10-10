@@ -36,6 +36,8 @@ Tile {
     // [coolest, hottest] across the three spans (Monitor's *Extent), or
     // empty, when the scale comes from the history alone.
     property var extent: []
+    // False leaves the graph out whatever it has read.
+    property bool graphed: true
 
     readonly property bool fahrenheit: monitor.fahrenheit
     // Samples and thresholds in the unit shown, so the floor is a round
@@ -67,7 +69,7 @@ Tile {
     // At an hour or a day the tile stays while the sensor has read
     // anything, its first bucket still open say, so switching spans
     // doesn't take away the tile, and the span control in it.
-    visible: hasReading || monitor.graphSpan !== "minute" && extent.length > 0
+    visible: graphed && (hasReading || monitor.graphSpan !== "minute" && extent.length > 0)
     caption: i18nc("@title:group", "Temperature")
     spans: monitor
     graphTop: {

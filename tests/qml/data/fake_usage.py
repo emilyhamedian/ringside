@@ -15,10 +15,11 @@ waiting and due now) unless the scenario passes sticks=False, which says
 why on stderr as usage.py does when it can't write the switch. --start
 reports each listed starter as confirming, as a send would: the widget runs
 --start only for starters that are switched on and due, so the fake checks
-neither. --program <id>=<path> comes back as that provider's program, chosen
-and fine, exactly as it arrived. Nothing is remembered between runs. A
-scenario may give the journal lines the report carries as events, none by
-default.
+neither. Every entry carries the program usage.py would find,
+/usr/bin/<id>, unless the scenario gives one; --program <id>=<path> comes
+back as that provider's program, chosen and fine, exactly as it arrived.
+Nothing is remembered between runs. A scenario may give the journal lines
+the report carries as events, none by default.
 """
 
 import json
@@ -72,8 +73,9 @@ def values(flag):
 def report(sticks=True, events=(), **entries):
     requested = sys.argv[sys.argv.index("--providers") + 1].split(",")
     providers = {k: v for k, v in entries.items() if k in requested}
-    for entry in providers.values():
+    for name, entry in providers.items():
         entry.setdefault("starter", starter())
+        entry.setdefault("program", {"path": "/usr/bin/" + name, "chosen": False, "problem": ""})
     if not sticks and values("--starter-set"):
         print(SWITCH_REFUSED, file=sys.stderr)
     for change in values("--starter-set"):

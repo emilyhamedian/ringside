@@ -2,7 +2,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 # Claude is signed out; the codex CLI isn't installed.
-from fake_usage import report
+from fake_usage import NOW, report
 
 report(claude={"status": "signed_out"},
-       codex={"status": "error", "message": "codex CLI not found", "reason": "not-installed", "host": ""})
+       codex={"status": "error", "message": "codex CLI not found", "reason": "not-installed", "host": "",
+              "retryAt": NOW + 300, "program": {"path": "", "chosen": False, "problem": ""}})
