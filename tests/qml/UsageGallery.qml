@@ -100,9 +100,9 @@ ColumnLayout {
     }
 
     // Checks have failed for an hour since the one that worked: the panel
-    // strikes the ring, and the popup keeps the readings in grey. The
-    // checks run every 15 minutes and the helper's hold is over, so the
-    // popup offers to try again. At this pace both last the week.
+    // strikes the ring, and the popup shows the status alone, its starter
+    // switch held. The checks run every 15 minutes and the helper's hold is
+    // over, so the popup offers to try again.
     FakeMonitor {
         id: failed
         usage: FakeUsage {
@@ -454,7 +454,7 @@ ColumnLayout {
         }
 
         Frame {
-            label: "Claude · checks failing for an hour, try again"
+            label: "Claude · checks failing for an hour (struck), try again"
             UsagePopup { monitor: failed; item: "claude" }
         }
 

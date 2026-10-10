@@ -10,7 +10,10 @@ import ".."
 
 // The footer's switch that starts Claude's next session, or Codex's next
 // week, as soon as the last one ends, with what the starter is doing under
-// its label. The switch is per user: every widget shows the same one.
+// its label. The switch is per user: every widget shows the same one. While
+// the item is struck (see UsageData.struck()) the switch keeps its position
+// but can't be turned, and the line under it says so; the starter itself
+// runs as it would.
 ColumnLayout {
     id: row
 
@@ -21,10 +24,14 @@ ColumnLayout {
     required property Words texts
 
     readonly property var starter: usage.starter(item)
-    readonly property string status: texts.starterStatus(item, starter, nowMs)
+    readonly property bool struck: usage.struck(item, nowMs)
+    readonly property string status: struck
+        ? i18nc("@info under the session starter's switch, which can't be turned while the Claude or Codex limits can't be checked",
+                "Can be changed once Ringside can check your usage again.")
+        : texts.starterStatus(item, starter, nowMs)
     // Something the user has to fix, or a send that didn't take, rather than
     // the starter holding as planned.
-    readonly property bool failed: ["failed", "retrying", "paused"].includes(starter?.state)
+    readonly property bool failed: !struck && ["failed", "retrying", "paused"].includes(starter?.state)
 
     spacing: 0
 
@@ -36,6 +43,7 @@ ColumnLayout {
         // Takes the footer's width rather than setting it: a long label
         // would otherwise widen the popup.
         Layout.preferredWidth: 0
+        enabled: !row.struck
         text: row.item === "claude" ? i18nc("@option:check", "Start a new session when one ends")
                                     : i18nc("@option:check", "Start a new week when one ends")
         // The change asked for until the helper reports, then what the

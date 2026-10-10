@@ -10,14 +10,17 @@ import ".."
 
 // A failed Claude or Codex check, under the popup's header: a small struck
 // ring beside when the check failed, with "Try again" while a check would
-// really ask (see UsageData.canRetry()), and under that why it failed, what
-// the readings below are, and when the next check runs.
+// really ask (see UsageData.canRetry()), and under that why it failed, when
+// the readings below were taken, or once they are struck the last one, and
+// when the next check runs.
 GridLayout {
     id: status
 
     required property string item
     required property var usage
     required property var entry
+    // The popup shows no reading: see UsageData.struck().
+    required property bool struck
     required property var texts
     required property real nowMs
 
@@ -91,8 +94,9 @@ GridLayout {
                 parts.push(i18nc("@info %1 is a weekday and time, with a time zone where the reset has one, as in Sun 7:00 AM EDT",
                                  "The week reset at %1, with no reading since.", status.texts.resetDate(status.weekly)));
             } else if (status.weekly) {
-                parts.push(i18nc("@info %1 is a time", "The readings below are from %1.",
-                                 status.texts.timeOfDay(e.fetchedAt, status.nowMs)));
+                const at = status.texts.timeOfDay(e.fetchedAt, status.nowMs);
+                parts.push(status.struck ? i18nc("@info %1 is a time", "The last reading is from %1.", at)
+                                         : i18nc("@info %1 is a time", "The readings below are from %1.", at));
             }
             parts.push(status.texts.nextCheckText(status.item, status.nowMs));
             return parts.join(" ");

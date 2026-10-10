@@ -204,6 +204,15 @@ Item {
         return e !== null && e.lastError !== undefined;
     }
 
+    // A failed check keeps the last reading, in grey, while it is under two
+    // check intervals old and its week runs; after that the item is struck
+    // through, and shows no reading until a check succeeds.
+    function struck(id, nowMs) {
+        const e = entry(id);
+        const now = nowMs / 1000;
+        return degraded(id) && !(e.weekly && e.weekly.resetsAt > now && now - e.fetchedAt < 2 * refreshMinutes * 60);
+    }
+
     // The limit drawn inside the weekly ring, or null.
     function inner(id) {
         const e = entry(id);
