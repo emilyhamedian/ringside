@@ -46,11 +46,11 @@ TestRoot {
         }
 
         function rowsOf(list) {
-            return all(list, c => c.entry !== undefined);
+            return root.all(list, c => c.entry !== undefined);
         }
 
         function indicatorOf(list) {
-            const found = all(list, c => c.running !== undefined);
+            const found = root.all(list, c => c.running !== undefined);
             compare(found.length, 1);
             return found[0];
         }
