@@ -4,8 +4,10 @@
 .pragma library
 
 // Where a weekly limit is heading at the rate it has been used so far, for
-// the panel's colours and the popup's pace sentence. Times are epoch seconds;
-// the words are the popup's, since a .pragma library file can't translate.
+// the popup's pace sentence and the week graph's run-out line. Colours, in
+// the panel and the popup, follow the reading alone. Times are epoch
+// seconds; the words are the popup's, since a .pragma library file can't
+// translate.
 
 // The projection of `percent`, read at `at`, in a window from `start` to
 // `end`; `history` is the window's [epoch seconds, percent] points, oldest
