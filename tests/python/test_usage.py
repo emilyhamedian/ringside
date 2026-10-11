@@ -617,15 +617,35 @@ class CodexAppServer(Isolated):
         path.chmod(0o700)
         return str(path)
 
+    # The fake checks how it was started and each message as it arrives,
+    # and answers only once all of it is right; otherwise its error names
+    # what was wrong. The answer to initialize and a notification come
+    # before the answer, to be passed over.
     def test_reads_the_answer_to_the_rate_limit_request(self):
-        binary = self.server(f"""#!{sys.executable}
+        binary = self.server("#!" + sys.executable + """
 import json, sys
-for line in sys.stdin:
-    message = json.loads(line)
-    if message.get("id") == 1:
-        version = message["params"]["clientInfo"]["version"]
-    elif message.get("id") == 2:
-        print(json.dumps({{"id": 2, "result": {{"clientVersion": version}}}}), flush=True)
+
+def answer(reply):
+    print(json.dumps(reply), flush=True)
+
+def expect(ok, what):
+    if not ok:
+        answer({"id": 2, "error": {"message": what}})
+        sys.exit(0)
+
+first = json.loads(sys.stdin.readline())
+expect(sys.argv[1:] == ["app-server", "--stdio"], "started with " + json.dumps(sys.argv[1:]))
+info = (first.get("params") or {}).get("clientInfo") or {}
+expect(first.get("id") == 1 and first.get("method") == "initialize", "first message " + json.dumps(first))
+expect(info.get("name") == "ringside" and info.get("title") == "Ringside" and isinstance(info.get("version"), str),
+       "clientInfo " + json.dumps(info))
+answer({"id": 1, "result": {"clientVersion": "not the answer"}})
+second = json.loads(sys.stdin.readline())
+expect(second == {"method": "initialized"}, "second message " + json.dumps(second))
+third = json.loads(sys.stdin.readline())
+expect(third == {"id": 2, "method": "account/rateLimits/read"}, "third message " + json.dumps(third))
+answer({"method": "account/updated", "params": {}})
+answer({"id": 2, "result": {"clientVersion": info["version"]}})
 """)
         self.assertEqual(usage.codex_rate_limits(binary), {"clientVersion": usage.VERSION})
 
