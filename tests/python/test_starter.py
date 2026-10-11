@@ -1069,39 +1069,68 @@ class StarterRuns(Isolated):
         self.assertIn("starter", report["providers"]["claude"])
         self.assertEqual(err.getvalue(), "[Errno 28] No space left on device\n")
 
+    # The send finds the lock held with a direct non-blocking flock, and the
+    # poll is seen trying it while the send runs: its own flock is refused
+    # and it waits. The send is held until then, so the order is forced,
+    # not timed; only once the send ends does the poll fetch.
     def test_the_lock_is_held_from_the_read_to_the_end_of_the_send(self):
         self.run_main("--starter-set", "claude=on")
-        sending, release = threading.Event(), threading.Event()
-        held = []
+        sending, release, refused = threading.Event(), threading.Event(), threading.Event()
+        held, polled, errors = [], [], []
+        real_flock = fcntl.flock
 
         def slow(argv, env, timeout):
             if argv[-1] == "Hi":
                 fd = os.open(usage.LOCK_FILE, os.O_RDWR)
                 try:
-                    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    real_flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
                     held.append(False)
                 except BlockingIOError:
                     held.append(True)
                 finally:
                     os.close(fd)
                 sending.set()
-                release.wait(10)
+                if not release.wait(10):
+                    raise AssertionError("the send was never released")
             return self.run_cli(argv, env, timeout)
 
-        polled = []
-        with mock.patch.object(usage, "run_cli", side_effect=slow):
-            starter = threading.Thread(target=usage.run_starter, args=("claude",))
+        def guarded(work):
+            def run():
+                try:
+                    work()
+                except Exception as err:
+                    errors.append(err)
+            return run
+
+        starter = threading.Thread(target=guarded(lambda: usage.run_starter("claude")))
+        poll = threading.Thread(target=guarded(lambda: polled.append(usage.collect(
+            {"claude": lambda: polled.append("fetched") or {"weekly": week(1, NOW), "scoped": []}},
+            int(time.time()) + usage.CACHE_TTL))))
+
+        def flock(fd, flags):
+            try:
+                real_flock(fd, flags)
+            except BlockingIOError:
+                if threading.current_thread() is poll:
+                    refused.set()
+                raise
+
+        self.addCleanup(starter.join, 10)
+        self.addCleanup(poll.join, 10)
+        self.addCleanup(release.set)
+        with mock.patch.object(usage, "run_cli", side_effect=slow), mock.patch.object(usage.fcntl, "flock", flock):
             starter.start()
             self.assertTrue(sending.wait(10))
-            poll = threading.Thread(target=lambda: polled.append(usage.collect(
-                {"claude": lambda: polled.append("fetched") or {"weekly": week(1, NOW), "scoped": []}},
-                int(time.time()) + usage.CACHE_TTL)))
             poll.start()
-            time.sleep(0.5)
+            self.assertTrue(refused.wait(5), "the poll never tried the lock while the send ran")
+            poll.join(0.5)
+            self.assertTrue(poll.is_alive())
             self.assertEqual(polled, [])
             release.set()
             starter.join(10)
             poll.join(10)
+        self.assertFalse(starter.is_alive() or poll.is_alive())
+        self.assertEqual(errors, [])
         self.assertEqual(held, [True])
         self.assertEqual(polled[0], "fetched")
 

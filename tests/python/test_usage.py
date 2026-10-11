@@ -1015,27 +1015,53 @@ class ReadingCache(Isolated):
         self.collect(1000, codex=fetch)
         self.assertEqual(held, [True])
 
+    # The second run is seen trying the lock while the first still polls:
+    # its non-blocking flock is refused and it waits. The first is held in
+    # its poll until then, so the order is forced, not timed.
     def test_a_run_that_waits_for_the_lock_reads_the_fresh_cache(self):
-        polling = threading.Event()
-        calls = []
-        results = []
+        polling, release, refused = threading.Event(), threading.Event(), threading.Event()
+        calls, results, errors = [], [], []
+        real_flock = fcntl.flock
 
         def fetch():
-            calls.append(time.monotonic())
+            calls.append(1)
             polling.set()
-            time.sleep(0.3)
+            if not release.wait(10):
+                raise AssertionError("the first run was never released")
             return reading(4, 5)
 
         def run():
-            results.append(usage.collect({"codex": fetch}, 1000))
+            try:
+                results.append(usage.collect({"codex": fetch}, 1000))
+            except Exception as err:
+                errors.append(err)
 
-        first = threading.Thread(target=run)
-        first.start()
-        self.assertTrue(polling.wait(5))
-        second = threading.Thread(target=run)
-        second.start()
-        first.join(10)
-        second.join(10)
+        first, second = threading.Thread(target=run), threading.Thread(target=run)
+
+        def flock(fd, flags):
+            try:
+                real_flock(fd, flags)
+            except BlockingIOError:
+                if threading.current_thread() is second:
+                    refused.set()
+                raise
+
+        self.addCleanup(first.join, 10)
+        self.addCleanup(second.join, 10)
+        self.addCleanup(release.set)
+        with mock.patch.object(usage.fcntl, "flock", flock):
+            first.start()
+            self.assertTrue(polling.wait(10))
+            second.start()
+            self.assertTrue(refused.wait(5), "the second run never tried the lock while the first polled")
+            second.join(0.5)
+            self.assertTrue(second.is_alive())
+            self.assertEqual(len(calls), 1)
+            release.set()
+            first.join(10)
+            second.join(10)
+        self.assertFalse(first.is_alive() or second.is_alive())
+        self.assertEqual(errors, [])
         self.assertEqual(len(calls), 1)
         self.assertEqual([r["codex"]["fetchedAt"] for r in results], [1000, 1000])
 
