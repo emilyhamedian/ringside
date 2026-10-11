@@ -155,6 +155,13 @@ Shape {
         }
     }
 
+    // Ends a reset where it is, as when Plasma's animations turn to Instant.
+    function stopReset() {
+        rollover.stop();
+        turn.stop();
+        rest();
+    }
+
     SequentialAnimation {
         id: rollover
 

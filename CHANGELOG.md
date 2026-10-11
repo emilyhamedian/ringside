@@ -247,6 +247,9 @@ follows [Semantic Versioning](https://semver.org/).
   digits, and popup percentages follow the translation's percent format.
 - Opening the settings no longer logs a warning to the system journal for
   every setting each page doesn't show.
+- With animations set to Instant, a Claude or Codex ring close to its limit
+  no longer pulses, and a week that starts over shows its new reading at
+  once. Switching to Instant stops either straight away.
 
 ## [0.2.2] - 2026-10-04
 

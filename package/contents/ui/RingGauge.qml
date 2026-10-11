@@ -41,8 +41,37 @@ Item {
     // Shown in the middle of a single ring large enough to read it.
     property string text: ""
     property real textScale: 0.33
-    // Breathes, as a Claude or Codex ring does close to its limit.
+    // Breathes, as a Claude or Codex ring does close to its limit: the face
+    // dims to half and back every two seconds, easing in and out. A breath
+    // under way when the pulse stops finishes; at Instant there is none.
     property bool pulsing: false
+    readonly property bool breathing: pulsing && !cancelled && !stale && settle > 0
+    // How far through a breath the face is, 0 to 1.
+    property real breath: 0
+    onBreathingChanged: {
+        if (breathing && !breathe.running) {
+            takeBreath();
+        }
+    }
+
+    // The rest of a breath, from where the face is.
+    function takeBreath() {
+        breathe.duration = 2000 * (1 - breath);
+        breathe.restart();
+    }
+
+    NumberAnimation {
+        id: breathe
+        target: gauge
+        property: "breath"
+        to: 1
+        onFinished: {
+            gauge.breath = 0;
+            if (gauge.breathing) {
+                gauge.takeBreath();
+            }
+        }
+    }
     // No reading to show, as for a Claude or Codex ring whose checks have
     // failed for a while: the arcs unwind to the bare track, the inner
     // track goes, anything in the middle greys out, and as the arcs reach
@@ -236,15 +265,29 @@ Item {
 
     // After the followers have taken the change, so the arcs count as moving.
     onCancelledChanged: Qt.callLater(restrike)
-    onSettleChanged: restrike()
+    // The pulse and a week's reset run on fixed durations rather than
+    // Kirigami's, so at Instant they are stopped here: the face is whole
+    // and the arcs are at their readings.
+    onSettleChanged: {
+        restrike();
+        if (!(settle > 0)) {
+            breathe.stop();
+            breath = 0;
+            outer.stopReset();
+            innerArc.stopReset();
+        }
+    }
     // A ring that starts cancelled, as a popup opening on a failed check,
     // starts struck, rather than drawing the stroke from a change of
     // `settle` while it was being made; one that starts loading starts with
-    // its dots.
+    // its dots, and one that starts near its limit breathing.
     Component.onCompleted: {
         strikeMotion.stop();
         struck = cancelled ? 1 : 0;
         settleLoading();
+        if (breathing && !breathe.running) {
+            takeBreath();
+        }
     }
 
     SequentialAnimation {
@@ -311,8 +354,11 @@ Item {
     }
 
     // Plays the windows that just started over, each { from, early } or null;
-    // see code/reset.js.
+    // see code/reset.js. At Instant the arcs simply take the new readings.
     function playResets(outerReset, innerReset) {
+        if (!(settle > 0)) {
+            return;
+        }
         if (outerReset) {
             outer.playReset(clamped(outerReset.from), tone(Math.max(Format.level(outerReset.from), minimumLevel)),
                             outerReset.early);
@@ -374,14 +420,8 @@ Item {
     Item {
         id: face
         anchors.fill: parent
-
-        SequentialAnimation on opacity {
-            running: gauge.pulsing && !gauge.cancelled && !gauge.stale
-            loops: Animation.Infinite
-            alwaysRunToEnd: true
-            NumberAnimation { to: 0.5; duration: 1000; easing.type: Easing.InOutSine }
-            NumberAnimation { to: 1; duration: 1000; easing.type: Easing.InOutSine }
-        }
+        // A sine's ease from whole to half and back, over one breath.
+        opacity: 0.75 + 0.25 * Math.cos(2 * Math.PI * gauge.breath)
 
         // The waiting ring's dots, a stroke across, ahead of the track as it
         // fills in: filled circles in one path, rather than a dashed stroke
