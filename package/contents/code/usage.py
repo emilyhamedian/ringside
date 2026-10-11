@@ -652,11 +652,10 @@ def usable(token):
 
 
 def read_oauth(path):
-    """The claudeAiOauth record and the file's bytes. A record without a
-    usable access token means signed out."""
+    """The file's claudeAiOauth record. A record without a usable access
+    token means signed out."""
     try:
-        raw = path.read_bytes()
-        data = json.loads(raw)
+        data = json.loads(path.read_bytes())
     except FileNotFoundError:
         raise SignedOut() from None
     except (OSError, ValueError):
@@ -664,7 +663,7 @@ def read_oauth(path):
     oauth = data.get("claudeAiOauth") if isinstance(data, dict) else None
     if not isinstance(oauth, dict) or not usable(oauth.get("accessToken")):
         raise SignedOut()
-    return oauth, raw
+    return oauth
 
 
 def generation(oauth):
@@ -845,7 +844,7 @@ def claude_access_token(margin=CLAUDE_EXPIRY_MARGIN):
     if not path.exists():
         raise SignedOut()
     path = path.resolve()
-    oauth, _ = read_oauth(path)
+    oauth = read_oauth(path)
     if not expired(oauth, margin):
         return oauth["accessToken"]
     if not usable(oauth.get("refreshToken")):
@@ -854,7 +853,7 @@ def claude_access_token(margin=CLAUDE_EXPIRY_MARGIN):
     # would sign Claude Code out, so check the write can happen first, then
     # read the file once more in case the CLI renewed it meanwhile.
     check_writable(path)
-    current, _ = read_oauth(path)
+    current = read_oauth(path)
     if generation(current) != generation(oauth):
         if not expired(current, margin):
             return current["accessToken"]
@@ -863,7 +862,7 @@ def claude_access_token(margin=CLAUDE_EXPIRY_MARGIN):
     try:
         fresh = refresh_claude(current)
     except Exception:
-        latest, _ = read_oauth(path)
+        latest = read_oauth(path)
         if generation(latest) != generation(current) and not expired(latest, margin):
             return latest["accessToken"]
         raise
