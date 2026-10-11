@@ -285,8 +285,7 @@ TestRoot {
             egg.animated = true;
             typeCode();
             verify(egg.playing);
-            wait(300);
-            verify(rings().some(r => wheelOf(r).visible), "the band shows");
+            tryVerify(() => rings().some(r => wheelOf(r).visible), 1000, "the band shows");
             egg.animated = false;
             compare(egg.playing, false);
             verify(rings().every(r => !wheelOf(r).visible));

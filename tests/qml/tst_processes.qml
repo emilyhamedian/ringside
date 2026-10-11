@@ -101,7 +101,7 @@ TestRoot {
         // with a value, as "memory" is from 6.3. Private memory can come out
         // negative on 6.0, where it is resident less shared.
         function test_readingPicksMemoryAsLibksysguard63Does() {
-            var columns = ["name", "usage", "vmPSS", "vmURSS", "vmRSS"];
+            const columns = ["name", "usage", "vmPSS", "vmURSS", "vmRSS"];
             compare(Processes.reading(columns, ["a", 0, 300, 200, 400]).memory, 300 * 1024);
             compare(Processes.reading(columns, ["a", 0, 0, 200, 400]).memory, 200 * 1024);
             compare(Processes.reading(columns, ["a", 0, 0, -16, 400]).memory, 400 * 1024);
@@ -115,7 +115,7 @@ TestRoot {
         // scan, so the list has it as soon as it is made.
         function test_listReadsTheProcessModel() {
             failOnWarning(/QModelIndex/);
-            var list = createTemporaryObject(liveList, root);
+            const list = createTemporaryObject(liveList, root);
             verify(list);
             verify(list.rows.length > 0, "read as the list is made");
             verify(!list.loading);
@@ -277,12 +277,12 @@ TestRoot {
         }
 
         function test_topGroupsRowsSharingAName() {
-            var rows = [
+            const rows = [
                 { name: "chrome", usage: 10, memory: 100 },
                 { name: "chrome", usage: 5, memory: 50 },
                 { name: "firefox", usage: 20, memory: 80 }
             ];
-            var result = Processes.top(rows, "usage", 5);
+            const result = Processes.top(rows, "usage", 5);
             compare(result.length, 2);
             compare(result[0].name, "firefox");
             compare(result[0].usage, 20);
@@ -298,11 +298,11 @@ TestRoot {
         }
 
         function test_topBreaksTiesAlphabeticallyByName() {
-            var rows = [
+            const rows = [
                 { name: "zed", usage: 10, memory: 1 },
                 { name: "alpha", usage: 10, memory: 1 }
             ];
-            var result = Processes.top(rows, "usage", 5);
+            const result = Processes.top(rows, "usage", 5);
             compare(result[0].name, "alpha");
             compare(result[1].name, "zed");
         }
@@ -310,30 +310,30 @@ TestRoot {
         // A process using no CPU but real memory should still show in the memory
         // list, just not in the usage list.
         function test_topFiltersOutZeroOnlyForTheChosenKey() {
-            var rows = [{ name: "idle", usage: 0, memory: 50 }];
+            const rows = [{ name: "idle", usage: 0, memory: 50 }];
             compare(Processes.top(rows, "usage", 5).length, 0);
-            var byMemory = Processes.top(rows, "memory", 5);
+            const byMemory = Processes.top(rows, "memory", 5);
             compare(byMemory.length, 1);
             compare(byMemory[0].name, "idle");
         }
 
         function test_topSkipsRowsWithoutAName() {
-            var rows = [
+            const rows = [
                 { name: "", usage: 10, memory: 10 },
                 { usage: 5, memory: 5 },
                 { name: "real", usage: 1, memory: 1 }
             ];
-            var result = Processes.top(rows, "usage", 5);
+            const result = Processes.top(rows, "usage", 5);
             compare(result.length, 1);
             compare(result[0].name, "real");
         }
 
         function test_topTreatsNonFiniteUsageAndMemoryAsZero() {
-            var rows = [
+            const rows = [
                 { name: "flaky", usage: NaN, memory: 20 },
                 { name: "flaky", usage: 5, memory: Infinity }
             ];
-            var result = Processes.top(rows, "usage", 5);
+            const result = Processes.top(rows, "usage", 5);
             compare(result.length, 1);
             compare(result[0].usage, 5); // NaN contributed 0, not NaN
             compare(result[0].memory, 20); // Infinity contributed 0, not Infinity

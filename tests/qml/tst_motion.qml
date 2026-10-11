@@ -1358,6 +1358,26 @@ TestRoot {
             return grabImage(c.children[0]);
         }
 
+        // The timer that holds the dots still for a loading ring's first
+        // second.
+        function second(c) {
+            return c.children[0].resources.find(r => r.interval === 1000);
+        }
+
+        // Ends the first second at once, so the dot travels; only
+        // test_beadTravels waits it out. The ring sets its waiting look up
+        // on a later turn of the event loop, which starts the second over,
+        // so that turn comes first.
+        function endTheSecond(c) {
+            const g = c.children[0];
+            const timer = second(c);
+            tryVerify(() => timer.running && g.dotsShown === 1 && g.sweep === 0, 1000, "waiting its second");
+            wait(0);
+            timer.triggered();
+            wait(0);
+            verify(g.waited && !timer.running);
+        }
+
         // For the first second the dots stand still, so a reply within it
         // only fills the ring in: nothing ever moves.
         function test_stillForASecond() {
@@ -1365,21 +1385,21 @@ TestRoot {
             const g = c.children[0];
             const seen = record(c);
             const start = Date.now();
-            // Well inside the second, so a slow run still checks the shots
-            // before the lit dot is due.
-            wait(600);
-            verify(seen.length > 10 && seen.every(f => !f.moving && f.motion === 0 && f.dots === 1 && f.sweep === 0),
+            tryVerify(() => seen.length > 10, 1000, "sampled");
+            verify(seen.every(f => !f.moving && f.motion === 0 && f.dots === 1 && f.sweep === 0),
                    JSON.stringify(seen.slice(-3)));
             const still = shot(c);
-            wait(100);
+            const frames = seen.length;
+            tryVerify(() => seen.length > frames + 5, 1000);
             verify(still.equals(shot(c)), "nothing moves");
+            // Checked inside the second, before the lit dot is due.
             verify(Date.now() - start < 1000);
+            verify(second(c).running && !g.waited, "still within its second");
             setClaude(okClaude());
             tryCompare(g, "dotsShown", 0, 3000);
             compare(g.sweep, 1);
-            wait(1200);
+            verify(!second(c).running && !g.waited, "the reading ends the wait, so the dot never comes");
             verify(seen.every(f => !f.moving && f.motion === 0), "nothing ever moved");
-            verify(!g.waited);
         }
 
         // After a second a lit dot travels round the still dots, fading
@@ -1394,8 +1414,7 @@ TestRoot {
             tryCompare(g, "motion", 1, 1000);
             verify(bead(c).visible);
             const a = shot(c);
-            wait(250);
-            verify(!a.equals(shot(c)), "the dot travels");
+            tryVerify(() => !a.equals(shot(c)), 1000, "the dot travels");
             compare(g.dotsShown, 1, "the dots stay");
 
             const cap = g.resources.find(r => r.interval === 30000);
@@ -1413,10 +1432,12 @@ TestRoot {
         // Started where the clock says, two rings travel in step.
         function test_inStep() {
             const one = cell();
+            endTheSecond(one);
             wait(700);
             const two = cell();
+            endTheSecond(two);
             const [g1, g2] = [one.children[0], two.children[0]];
-            tryCompare(g2, "moving", true, 3000);
+            verify(g1.moving && g2.moving);
             wait(300);
             g1.capped = true;
             g2.capped = true;
@@ -1430,7 +1451,8 @@ TestRoot {
             const c = usageCellComponent.createObject(w.contentItem, { monitor: monitor });
             made.push(c);
             const g = c.children[0];
-            tryCompare(g, "moving", true, 3000);
+            endTheSecond(c);
+            verify(g.moving);
             w.visible = false;
             verify(!g.moving, "stopped while hidden");
             w.visible = true;
@@ -1442,7 +1464,8 @@ TestRoot {
         function test_stopsWhileInvisible() {
             const c = cell();
             const g = c.children[0];
-            tryCompare(g, "motion", 1, 3000);
+            endTheSecond(c);
+            tryCompare(g, "motion", 1, 1000);
             c.visible = false;
             verify(!g.moving, "stopped while invisible");
             tryCompare(g, "motion", 0, 1000);
@@ -1455,13 +1478,16 @@ TestRoot {
         function test_waitingAgainAfterTheStop() {
             const c = cell();
             const g = c.children[0];
-            tryCompare(g, "moving", true, 3000);
+            endTheSecond(c);
+            verify(g.moving);
             g.resources.find(r => r.interval === 30000).triggered();
             verify(g.capped && !g.moving);
             monitor.usage.pending = [];
             wait(50);
             monitor.usage.pending = ["claude"];
-            tryCompare(g, "moving", true, 3000, "moving again");
+            tryVerify(() => !g.capped && !g.waited, 1000, "waiting again");
+            endTheSecond(c);
+            verify(g.moving, "moving again");
         }
 
         // At Instant nothing moves: the dots stay still, and the reading
@@ -1470,8 +1496,10 @@ TestRoot {
             const c = cell(0);
             const g = c.children[0];
             const seen = record(c);
-            wait(1300);
-            verify(g.waited && !g.moving);
+            endTheSecond(c);
+            const frames = seen.length;
+            tryVerify(() => seen.length > frames + 5, 1000);
+            verify(!g.moving);
             verify(seen.every(f => f.motion === 0), "never moves");
             setClaude(okClaude());
             waitForRendering(c);
@@ -1487,7 +1515,8 @@ TestRoot {
         function test_arrival() {
             const c = cell();
             const g = c.children[0];
-            tryCompare(g, "motion", 1, 3000);
+            endTheSecond(c);
+            tryCompare(g, "motion", 1, 1000);
             const seen = record(c);
             const start = Date.now();
             setClaude(okClaude());
@@ -1524,7 +1553,8 @@ TestRoot {
         function test_failure() {
             const c = cell();
             const g = c.children[0];
-            tryCompare(g, "motion", 1, 3000);
+            endTheSecond(c);
+            tryCompare(g, "motion", 1, 1000);
             const seen = record(c);
             setClaude(failedClaude());
             tryCompare(g, "struck", 1, 3000);

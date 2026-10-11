@@ -134,8 +134,8 @@ TestRoot {
             verify(outer.animating && inner.animating);
             // The spent arc starts from the old reading in its old colour.
             compare(outer.drawColor, Kirigami.Theme.neutralTextColor);
-            wait(300);
-            verify(outer.head > 78 && outer.head <= 100, "running out through twelve o'clock: " + outer.head);
+            tryVerify(() => outer.head > 78, 2000, "running out");
+            verify(outer.head <= 100, "running out through twelve o'clock: " + outer.head);
             compare(outer.lift, 0);
             settled(gauge);
         }
@@ -146,8 +146,7 @@ TestRoot {
             gauge.playResets({ from: 78, early: true }, null);
             const [outer, inner] = arcs(gauge);
             verify(outer.animating && !inner.animating, "only the window that reset plays");
-            wait(200);
-            verify(outer.lift > 0, "dissolving: " + outer.lift);
+            tryVerify(() => outer.lift > 0, 2000, "dissolving");
             compare(outer.tail, 0);
             settled(gauge);
         }
