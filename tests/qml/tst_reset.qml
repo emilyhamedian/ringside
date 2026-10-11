@@ -42,6 +42,27 @@ TestRoot {
         readonly property real week: 7 * 86400
         readonly property var weekly: ({ percent: 50, resetsAt: now + 86400 })
 
+        // The weekly window's early reset first, else the first model's,
+        // while it lasts and is newer than the last one shown.
+        function test_notice() {
+            const early = (at, until) => ({ at: at, from: 50, until: until ?? at + 86400 });
+            const fable = { id: "Fable", label: "Fable", percent: 2, earlyReset: early(now - 30) };
+            const sonnet = { id: "Sonnet", label: "Sonnet", percent: 1, earlyReset: early(now - 20) };
+            const both = { weekly: Object.assign({}, weekly, { earlyReset: early(now - 60) }), scoped: [fable, sonnet] };
+            compare(Reset.notice(both, 0, now), both.weekly);
+            compare(Reset.notice({ weekly: weekly, scoped: [fable, sonnet] }, 0, now), fable);
+            compare(Reset.notice(both, now - 60, now), fable, "the weekly one was shown");
+            compare(Reset.notice(both, now - 20, now), null, "all were shown");
+            compare(Reset.notice({ weekly: Object.assign({}, weekly, { earlyReset: early(now - 86400, now) }) }, 0, now), null,
+                    "over");
+            compare(Reset.notice({ weekly: weekly, scoped: [] }, 0, now), null);
+            compare(Reset.notice({ status: "signed_out" }, 0, now), null);
+            compare(Reset.notice(null, 0, now), null);
+            compare(Reset.newest(both), now - 20);
+            compare(Reset.newest({ weekly: weekly }), 0);
+            compare(Reset.newest(null), 0);
+        }
+
         function test_detect_data() {
             return [
                 // Seven days elapsed: the old window had already run out.

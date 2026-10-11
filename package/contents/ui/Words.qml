@@ -348,6 +348,22 @@ QtObject {
              : minutes;
     }
 
+    // How long ago `epoch` was, by its largest unit in the panel's letters:
+    // "3h ago", "12m ago", or "just now" under a minute. The time since it
+    // is the time left until as far ahead of now.
+    function ago(epoch, nowMs) {
+        const parts = countdownParts(2 * nowMs / 1000 - epoch, nowMs, true);
+        return parts.length > 0 ? i18nc("@info how long ago something happened, e.g. 3h ago", "%1 ago", spelled(parts))
+                                : i18nc("@info something happened under a minute ago", "just now");
+    }
+
+    // ago() spelled out for screen readers: "3 hours 10 minutes ago".
+    function agoSpoken(epoch, nowMs) {
+        const since = duration(2 * nowMs / 1000 - epoch, nowMs);
+        return since ? i18nc("@info:accessible how long ago something happened, e.g. 3 hours 10 minutes ago", "%1 ago", since)
+                     : i18nc("@info something happened under a minute ago", "just now");
+    }
+
     // When a window resets, in the user's locale: "Sun 7:00 AM EDT" in the
     // desktop clock's zone when the helper passes one, else "Sun 7:00 AM" in
     // system time.

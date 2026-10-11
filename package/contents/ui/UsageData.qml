@@ -29,12 +29,15 @@ import "code/shell.js" as Shell
 //
 // Each run's report carries the helper's lines for the journal, which go
 // there under ringside.usage, as does a helper run that gave no report.
+//
+// A window that started over early tells of it in its popup for a day, or
+// until the popup that showed it closes (see earlyReset()).
 Item {
     id: usage
 
     // Plasmoid.configuration, or an object with the keys usageRefreshMinutes,
-    // claudeInnerLimit, codexInnerLimit, knownLimits and usageStatus, and
-    // optionally claudeProgram and codexProgram.
+    // claudeInnerLimit, codexInnerLimit, knownLimits, usageStatus and
+    // seenResets, and optionally claudeProgram and codexProgram.
     required property var config
     // Ids to poll, e.g. ["claude", "codex"].
     property var providers: []
@@ -86,6 +89,10 @@ Item {
     // The helper's own failure last written to the journal, so a failure
     // that repeats on every check is written once, and its end once.
     property string helperTrouble: ""
+    // The popup open now, from Monitor.openPopup, and the one open before,
+    // so an early reset it told of counts as seen once it closes.
+    property string openPopup: ""
+    property string lastPopup: ""
 
     LoggingCategory {
         id: journal
@@ -256,6 +263,27 @@ Item {
         const e = entry(id);
         const now = nowMs / 1000;
         return degraded(id) && !(e.weekly && e.weekly.resetsAt > now && now - e.fetchedAt < 2 * refreshMinutes * 60);
+    }
+
+    // The window whose early reset the popup tells of (see code/reset.js),
+    // beside a reading from a check that worked, or null.
+    function earlyReset(id, nowMs) {
+        return degraded(id) ? null : Reset.notice(entry(id), seenResets()[id] ?? 0, nowMs / 1000);
+    }
+
+    function seenResets() {
+        try {
+            return JSON.parse(config.seenResets || "{}") ?? {};
+        } catch (err) {
+            return {};
+        }
+    }
+
+    // A popup that closes with an early reset in it has shown it.
+    function markSeen(id) {
+        if (earlyReset(id, Date.now()) !== null) {
+            config.seenResets = JSON.stringify(Object.assign(seenResets(), { [id]: Reset.newest(entry(id)) }));
+        }
     }
 
     // The limit drawn inside the weekly ring, or null.
@@ -469,6 +497,13 @@ Item {
         if (Object.keys(entries).length > 0) {
             rememberLimits();
         }
+    }
+
+    onOpenPopupChanged: {
+        if (ids.includes(lastPopup)) {
+            markSeen(lastPopup);
+        }
+        lastPopup = openPopup;
     }
 
     // A changed list polls at once; ids no longer polled go straight away.

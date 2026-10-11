@@ -37,5 +37,6 @@ QtObject {
     property string codexProgram: ""
     property string knownLimits: ""
     property string usageStatus: ""
+    property string seenResets: ""
     property string detectedHardware: ""
 }

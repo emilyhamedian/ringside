@@ -211,6 +211,47 @@ TestRoot {
             return usage.resources.filter(r => r.triggeredOnStart !== undefined);
         }
 
+        // A popup that closes having shown an early reset remembers the
+        // newest one, there or under another limit, so it shows once; one
+        // that showed none writes nothing. A later reset shows again.
+        function test_earlyResetSeenOnClose() {
+            start("ok");
+            const now = Math.floor(Date.now() / 1000);
+            usage.openPopup = "claude";
+            usage.openPopup = "";
+            compare(config.seenResets, "");
+            const early = at => ({ at: at, from: 62, until: at + 86400 });
+            const resetAt = at => {
+                const claude = usage.entries.claude;
+                usage.entries = Object.assign({}, usage.entries, { claude: Object.assign({}, claude, {
+                    weekly: Object.assign({}, claude.weekly, { earlyReset: early(at) }),
+                    scoped: claude.scoped.map(s => Object.assign({}, s, { earlyReset: early(at + 5) })) }) });
+            };
+            resetAt(now - 600);
+            verify(usage.earlyReset("claude", Date.now()) === usage.entries.claude.weekly);
+            compare(usage.earlyReset("claude", (now - 595 + 86400) * 1000), null, "over after a day");
+            usage.openPopup = "claude";
+            verify(usage.earlyReset("claude", Date.now()) !== null, "shown while the popup is open");
+            usage.openPopup = "codex";
+            compare(JSON.parse(config.seenResets), { claude: now - 595 });
+            compare(usage.earlyReset("claude", Date.now()), null);
+            usage.openPopup = "";
+            compare(JSON.parse(config.seenResets), { claude: now - 595 });
+            resetAt(now - 60);
+            verify(usage.earlyReset("claude", Date.now()) !== null);
+            // Beside a failed check it isn't shown, so closing doesn't see it.
+            const claude = usage.entries.claude;
+            usage.entries = Object.assign({}, usage.entries, { claude: Object.assign({}, claude, {
+                lastError: "can't reach api.anthropic.com", lastErrorAt: now, reason: "offline", host: "", retryAt: now }) });
+            compare(usage.earlyReset("claude", Date.now()), null);
+            usage.openPopup = "claude";
+            usage.openPopup = "";
+            compare(JSON.parse(config.seenResets), { claude: now - 595 });
+            config.seenResets = "{not json";
+            usage.entries = Object.assign({}, usage.entries, { claude: claude });
+            verify(usage.earlyReset("claude", Date.now()) !== null, "an unreadable record counts as none seen");
+        }
+
         function test_okReport() {
             start("ok");
             compare(usage.entry("claude").weekly.percent, 52);
@@ -1892,6 +1933,39 @@ TestRoot {
         function setClaude(changes) {
             const entries = monitor.usage.entries;
             monitor.usage.entries = Object.assign({}, entries, { claude: Object.assign({}, entries.claude, changes) });
+        }
+
+        function resetNotice(popup) {
+            return root.find(popup, i => i.early !== undefined && i.window !== undefined);
+        }
+
+        // A limit that started over early is told under the header, without
+        // saying who reset it, while the reading carries it and the popup
+        // hasn't shown it before, and never beside a failed check.
+        function test_earlyResetNotice() {
+            const now = Date.now() / 1000;
+            const early = (at, from) => ({ at: Math.floor(at), from: from, until: Math.floor(at) + 86400 });
+            const entry = monitor.usage.entries.claude;
+            setClaude({ weekly: Object.assign({}, entry.weekly, { earlyReset: early(now - 3 * 3600 - 600, 62) }) });
+            const popup = load("claude");
+            const notice = resetNotice(popup);
+            verify(notice.visible);
+            compare(root.texts(notice), ["You got an early reset", root.localized("3h ago"),
+                                         root.localized("Your weekly limit started over before it was due. The 62% you had used is back.")]);
+            const ago = root.find(notice, i => i.text === root.localized("3h ago"));
+            verify(/^\S+ hours \S+ minutes ago$/.test(ago.Accessible.name), ago.Accessible.name);
+            verify(root.all(notice, i => i.textFormat !== undefined).every(t => t.textFormat === Text.PlainText));
+
+            setClaude({ weekly: entry.weekly,
+                        scoped: [Object.assign({}, entry.scoped[0], { earlyReset: early(now - 20, 81) })] });
+            compare(root.texts(notice), ["You got an early reset", "just now",
+                                         root.localized("Your Fable limit started over before it was due. The 81% you had used is back.")]);
+            monitor.usage.seenResets = { claude: Math.floor(now - 20) };
+            verify(!notice.visible);
+            monitor.usage.seenResets = {};
+            verify(notice.visible);
+            failClaude(300);
+            verify(!notice.visible && checkStatus(popup).visible);
         }
 
         function test_innerLimit() {

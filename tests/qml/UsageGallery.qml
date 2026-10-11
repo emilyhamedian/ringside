@@ -81,6 +81,56 @@ ColumnLayout {
         }
     }
 
+    // Claude's week and Fable's started over early 3 h 10 min ago, from
+    // 62 % and 81 %; Codex's in place 25 minutes ago, from 48 %.
+    FakeMonitor {
+        id: resetEarly
+        usage: FakeUsage {
+            id: resetEarlyUsage
+            readonly property real at: createdAt - 3 * 3600 - 600
+            function early(percent, from, at, history) {
+                return Object.assign(window(percent, at + 7 * day - createdAt, history),
+                                     { earlyReset: { at: at, from: from, until: at + day } });
+            }
+            entries: ({
+                claude: {
+                    status: "ok",
+                    fetchedAt: resetEarlyUsage.createdAt,
+                    weekly: resetEarlyUsage.early(3, 62, resetEarlyUsage.at, [[0.13, 0], [0.08, 1], [0, 3]]),
+                    scoped: [Object.assign({ id: "Fable", label: "Fable" },
+                                           resetEarlyUsage.early(5, 81, resetEarlyUsage.at, [[0.13, 0], [0.08, 2], [0, 5]]))]
+                },
+                codex: {
+                    status: "ok",
+                    fetchedAt: resetEarlyUsage.createdAt,
+                    weekly: Object.assign(resetEarlyUsage.window(1, 2 * resetEarlyUsage.day + 4 * 3600, [[0.02, 0], [0, 1]]),
+                                          { earlyReset: { at: resetEarlyUsage.createdAt - 1500, from: 48,
+                                                          until: resetEarlyUsage.createdAt - 1500 + resetEarlyUsage.day } }),
+                    scoped: []
+                }
+            })
+        }
+    }
+
+    // Fable alone started over early, an hour ago.
+    FakeMonitor {
+        id: fableReset
+        usage: FakeUsage {
+            id: fableResetUsage
+            readonly property real at: createdAt - 3600
+            entries: ({
+                claude: {
+                    status: "ok",
+                    fetchedAt: fableResetUsage.createdAt,
+                    weekly: fableResetUsage.window(55, 2 * fableResetUsage.day + 21 * 3600, section.history(4.1, 55)),
+                    scoped: [Object.assign({ id: "Fable", label: "Fable" },
+                                           fableResetUsage.window(2, 7 * fableResetUsage.day - 3600, [[0.04, 0], [0, 2]]),
+                                           { earlyReset: { at: fableResetUsage.at, from: 81, until: fableResetUsage.at + fableResetUsage.day } })]
+                }
+            })
+        }
+    }
+
     // The last hour of a week that ran close to its limit.
     FakeMonitor {
         id: fullWeek
@@ -404,6 +454,25 @@ ColumnLayout {
         spacing: 2 * Kirigami.Units.gridUnit
 
         GalleryFrame {
+            label: "Claude · reset early 3h ago, from 62 % and Fable's 81 %"
+            UsagePopup { monitor: resetEarly; item: "claude" }
+        }
+
+        GalleryFrame {
+            label: "Codex · reset early in place 25m ago, from 48 %"
+            UsagePopup { monitor: resetEarly; item: "codex" }
+        }
+
+        GalleryFrame {
+            label: "Claude · Fable alone reset early an hour ago"
+            UsagePopup { monitor: fableReset; item: "claude" }
+        }
+    }
+
+    RowLayout {
+        spacing: 2 * Kirigami.Units.gridUnit
+
+        GalleryFrame {
             label: "Claude · 25 %, Fable 55 % (on pace to run out, not coloured)"
             UsagePopup { monitor: fablePace; item: "claude" }
         }
@@ -511,6 +580,12 @@ ColumnLayout {
                 label: "Breeze Light · Codex · week starter signed out (full)"
                 flat: true
                 UsagePopup { monitor: starting; item: "codex" }
+            }
+
+            GalleryFrame {
+                label: "Breeze Light · Claude · reset early 3h ago"
+                flat: true
+                UsagePopup { monitor: resetEarly; item: "claude" }
             }
         }
     }

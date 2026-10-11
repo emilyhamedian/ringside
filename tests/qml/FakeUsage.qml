@@ -3,6 +3,7 @@
 
 import QtQuick
 import "../../package/contents/ui/code/limits.js" as Limits
+import "../../package/contents/ui/code/reset.js" as Reset
 
 // Fixed Claude and Codex readings in the shape of UsageData.qml, for the
 // tests and the preview gallery: every property, signal and function the
@@ -64,6 +65,8 @@ QtObject {
     property real lastRun: createdAt - 60
     // Every checkNow() call.
     property int checks: 0
+    // The newest early reset each popup has shown, as UsageData keeps it.
+    property var seenResets: ({})
 
     signal resetsDetected(var events)
 
@@ -102,6 +105,11 @@ QtObject {
         const e = entry(id);
         const now = nowMs / 1000;
         return degraded(id) && !(e.weekly && e.weekly.resetsAt > now && now - e.fetchedAt < 2 * refreshMinutes * 60);
+    }
+
+    // As UsageData's.
+    function earlyReset(id, nowMs) {
+        return degraded(id) ? null : Reset.notice(entry(id), seenResets[id] ?? 0, nowMs / 1000);
     }
 
     function inner(id) {

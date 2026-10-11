@@ -15,14 +15,14 @@ import org.kde.plasma.plasmoid
 // copies are never touched: Apply hands each back unchanged, and the map
 // keeps no config item under that name, so nothing reaches the file.
 //
-// Three of the keys are reports the widget writes while the dialog may be
-// open: knownLimits, usageStatus and detectedHardware. Once the dialog has
-// set the page's copies, each follows the live value, so Apply writes back
-// the newest report whichever order the dialog saves in, and Plasma 6.4 and
-// later, which turn Apply on only where a copy differs from the live value,
-// never see one differ. Plasma 6.0 to 6.3 turn Apply on at any cfg_ change
-// signal, so there a report written while a page is open turns it on; Apply
-// then saves what is stored already.
+// Four of the keys are reports the widget writes while the dialog may be
+// open: knownLimits, usageStatus, seenResets and detectedHardware. Once the
+// dialog has set the page's copies, each follows the live value, so Apply
+// writes back the newest report whichever order the dialog saves in, and
+// Plasma 6.4 and later, which turn Apply on only where a copy differs from
+// the live value, never see one differ. Plasma 6.0 to 6.3 turn Apply on at
+// any cfg_ change signal, so there a report written while a page is open
+// turns it on; Apply then saves what is stored already.
 KCM.SimpleKCM {
     id: base
 
@@ -84,10 +84,12 @@ KCM.SimpleKCM {
     property string cfg_knownLimitsDefault
     property string cfg_usageStatus
     property string cfg_usageStatusDefault
+    property string cfg_seenResets
+    property string cfg_seenResetsDefault
     property string cfg_detectedHardware
     property string cfg_detectedHardwareDefault
 
-    readonly property var reports: ["knownLimits", "usageStatus", "detectedHardware"]
+    readonly property var reports: ["knownLimits", "usageStatus", "seenResets", "detectedHardware"]
     // The live configuration: undefined outside Plasma. A test seam.
     property var live: Plasmoid.configuration
 

@@ -76,8 +76,9 @@ Nothing, until you turn on something that needs it.
   database and the `.ini` beside it that names it `ringside` while Plasma
   isn't running.
 - **The journal** gets what goes wrong: failed checks and why, the Anthropic
-  host or address service involved, the session starter's steps, a discrete
-  GPU sleeping or waking, and sensors that don't answer. Never tokens,
-  addresses, places, account names or file contents. Program paths show
-  your home folder as `~`. Anyone who can read your journal can read these:
-  you, administrators, and groups such as `systemd-journal`.
+  host or address service involved, the session starter's steps, a weekly
+  limit that resets early, a discrete GPU sleeping or waking, and sensors
+  that don't answer. Never tokens, addresses, places, account names or file
+  contents. Program paths show your home folder as `~`. Anyone who can read
+  your journal can read these: you, administrators, and groups such as
+  `systemd-journal`.

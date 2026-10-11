@@ -129,6 +129,10 @@
       <label>The Claude and Codex items' last status, kept for the settings pages</label>
       <default></default>
     </entry>
+    <entry name="seenResets" type="String">
+      <label>The newest early reset each Claude and Codex popup has shown, so it is told once</label>
+      <default></default>
+    </entry>
     <entry name="detectedHardware" type="String">
       <label>The helper's last report, kept for the settings pages</label>
       <default></default>

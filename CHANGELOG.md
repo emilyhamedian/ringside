@@ -6,6 +6,14 @@ follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- When a Claude or Codex weekly limit resets before it was due, the popup
+  says "You got an early reset" and how much of the limit you got back. It
+  shows for a day, or until you've opened the popup once. Ringside also
+  notices a reset that came while Plasma wasn't running, as long as the week
+  it cut short hadn't ended yet.
+
 ## [0.3.0] - 2026-10-10
 
 ### Added

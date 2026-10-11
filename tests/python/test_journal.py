@@ -170,6 +170,15 @@ class Checks(Isolated):
         self.assertEqual(lines("level", "kind"), [{"level": "debug", "kind": "renewed"},
                                                   {"level": "debug", "kind": "check"}])
 
+    # A model's name comes from the reply, so the line says only which kind
+    # of limit it was.
+    def test_an_early_reset_is_info_and_names_no_model(self):
+        self.collect(1000, claude=lambda: reading(62, 90000, Fable=81))
+        self.collect(1400, claude=lambda: reading(3, 1400 + 7 * 86400, Fable=2))
+        self.assertEqual([(e["level"], e["message"]) for e in usage.EVENTS if e["kind"] == "early-reset"],
+                         [("info", "Claude: the weekly limit reset early, with 62% used"),
+                          ("info", "Claude: a model's weekly limit reset early, with 81% used")])
+
     # The report keeps "fetchedAt" and "providers" beside the events, and
     # the cache takes neither the events nor the HTTP status kept for them.
     def test_the_report_keeps_its_shape_and_the_cache_takes_no_events(self):
