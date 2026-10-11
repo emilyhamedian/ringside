@@ -86,9 +86,9 @@ unless there's a good reason to differ, and may is allowed but optional.
 See CONTRIBUTING.md for the checks, style and required approval. Each change
 must have its own branch and pull request, and land on `main` as one squashed
 commit. Agents must open pull requests as drafts; only the owner marks one
-ready, and it then merges once CI passes. A release must be its own pull request that only bumps the version
-and dates the changelog; once it lands, tag it on `main` and attach
-`ringside.plasmoid` from `scripts/package.sh`.
+ready, and it then merges once CI passes. A release must be its own pull
+request that only bumps the version and dates the changelog; once it lands,
+tag it on `main` and attach `ringside.plasmoid` from `scripts/package.sh`.
 
 Commit titles must name the part of the repo changed and what changed, as
 `area: change`, for example `usage: show an early reset in the popup`. A pull
