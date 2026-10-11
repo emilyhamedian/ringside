@@ -162,8 +162,18 @@ TestRoot {
             compare(monitor.gpuInner.phase, "live");
         }
 
+        // The disk's size comes from its whole disks, and the volume gives
+        // only its free space and name: a volume's own total is unread.
         function test_diskIdsFollowTheSettings() {
             compare(monitor.diskIds, ["vdz"]);
+            const root = "disk/00000000-0000-0000-0000-000000000000/";
+            const ids = sensorsOf(monitor).map(s => s.sensorId).filter(id => id.startsWith("disk/"));
+            compare(ids.sort(), [root + "free", root + "name", "disk/vdz/read", "disk/vdz/total", "disk/vdz/write"]);
+            compare(monitor.volumeLabel, "/");
+            config.diskVolume = "vol9";
+            compare(sensorsOf(monitor).map(s => s.sensorId).filter(id => id.startsWith("disk/vol9/")),
+                    ["disk/vol9/free", "disk/vol9/name"]);
+            config.diskVolume = "";
             config.diskDevice = "all";
             compare(monitor.diskIds, ["vdz", "vdy"]);
             const diskReaders = Array.from(monitor.data).find(child => child.model !== undefined
