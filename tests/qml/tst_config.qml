@@ -418,13 +418,16 @@ TestRoot {
         // the dialog's page stack, where it can find the dialog's root. The
         // page is made here and pushed as an item: pushed as a component,
         // Kirigami would make it under a plain object and Qt would warn that
-        // it isn't in the scene, as it does under Plasma's dialog too.
+        // it isn't in the scene, as it does under Plasma's dialog too. Under
+        // 6.0 to 6.3 the page is sized as the dialog would size it: a list
+        // left without a width makes only some of its rows on Qt 6.6.
         function open(source, config, order) {
             const props = { title: "Page", live: config };
             config.keys().forEach(key => { props["cfg_" + key] = config[key]; });
             let page;
             if (order === "plasma60") {
-                page = createTemporaryObject(pageComponent(source), root, props);
+                page = createTemporaryObject(pageComponent(source), root,
+                                             Object.assign({ width: root.width, height: root.height }, props));
             } else {
                 const host = createTemporaryObject(comparingDialog, root, { width: root.width, height: root.height });
                 page = createTemporaryObject(pageComponent(source), host, props);
