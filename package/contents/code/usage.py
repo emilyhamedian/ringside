@@ -678,13 +678,18 @@ def expired(oauth, margin=CLAUDE_EXPIRY_MARGIN):
         return True
 
 
-def seconds(value):
-    """A non-negative number of seconds from a reply field, or None."""
+def ends_at(now_ms, lifetime):
+    """When a lifetime from a reply field, in seconds, ends: epoch
+    milliseconds, or None when the field isn't a non-negative number the
+    clock can hold. 1e308 seconds is finite; in milliseconds it isn't, and
+    int() of that would raise after the refresh token was spent."""
     try:
-        number = float(value)
+        left_ms = float(lifetime) * 1000
     except (TypeError, ValueError, OverflowError):
         return None
-    return number if math.isfinite(number) and number >= 0 else None
+    if not math.isfinite(left_ms) or left_ms < 0:
+        return None
+    return now_ms + int(left_ms)
 
 
 def write_all(fd, data):
@@ -728,8 +733,9 @@ def refresh_claude(oauth):
 
     The old refresh token is spent once the POST succeeds, so after it
     nothing may fail but the write itself: every field of the reply is read
-    leniently. Without expires_in the new access token counts as expired at
-    once, so the next poll renews it again.
+    leniently, and a lifetime that can't be read counts as missing. Without
+    expires_in the new access token counts as expired at once, so the next
+    poll renews it again.
     """
     reply = http_json(
         CLAUDE_TOKEN_URL,
@@ -747,12 +753,13 @@ def refresh_claude(oauth):
         # access token stays, expired, and the next poll renews again.
         return {"refreshToken": refresh, "expiresAt": 0}
     now_ms = int(time.time() * 1000)
+    expires = ends_at(now_ms, reply.get("expires_in"))
     fresh = {"accessToken": reply["access_token"],
              "refreshToken": refresh,
-             "expiresAt": now_ms + int((seconds(reply.get("expires_in")) or 0) * 1000)}
-    refresh_left = seconds(reply.get("refresh_token_expires_in"))
-    if refresh_left:
-        fresh["refreshTokenExpiresAt"] = now_ms + int(refresh_left * 1000)
+             "expiresAt": now_ms if expires is None else expires}
+    refresh_ends = ends_at(now_ms, reply.get("refresh_token_expires_in"))
+    if refresh_ends is not None and refresh_ends > now_ms:
+        fresh["refreshTokenExpiresAt"] = refresh_ends
     if isinstance(reply.get("scope"), str) and reply["scope"].strip():
         fresh["scopes"] = reply["scope"].split()
     return fresh

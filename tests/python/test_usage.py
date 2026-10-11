@@ -308,16 +308,33 @@ class CredentialWriteBack(Isolated):
         self.assertEqual([call.args[2]["refresh_token"] for call in self.http.call_args_list], ["r1", "r2"])
 
     # After the refresh POST the old token is spent: whatever the reply looks
-    # like, the new pair must reach the file.
+    # like, the new pair must reach the file. Each lifetime is tried in
+    # each field on its own, with the other field sound. 1e308 seconds is a
+    # finite number that overflows once in milliseconds; a lifetime that
+    # can't be read leaves the access token expired at once and the refresh
+    # token's end unknown.
     def test_odd_lifetimes_still_save_the_new_pair(self):
-        for lifetime in ("3600.0", "soon", None, -5, float("nan")):
-            with self.subTest(lifetime=lifetime):
-                self.setUp()
-                self.http.return_value = {"access_token": "new", "refresh_token": "r2", "expires_in": lifetime,
-                                          "refresh_token_expires_in": lifetime, "scope": ["not", "a", "string"]}
-                self.assertEqual(usage.claude_access_token(), "new")
-                self.assertEqual(json.loads(self.path.read_text())["claudeAiOauth"]["refreshToken"], "r2")
-                self.doCleanups()
+        stored_as = {"expires_in": "expiresAt", "refresh_token_expires_in": "refreshTokenExpiresAt"}
+        for field in stored_as:
+            for lifetime in ("3600.0", "soon", None, -5, float("nan"), 1e308, json.loads("1e999")):
+                with self.subTest(field=field, lifetime=lifetime):
+                    self.setUp()
+                    self.http.return_value = {"access_token": "new", "refresh_token": "r2", "expires_in": 3600,
+                                              "refresh_token_expires_in": 3600, "scope": ["not", "a", "string"],
+                                              field: lifetime}
+                    before = int(time.time() * 1000)
+                    self.assertEqual(usage.claude_access_token(), "new")
+                    stored = json.loads(self.path.read_text())["claudeAiOauth"]
+                    self.assertEqual((stored["accessToken"], stored["refreshToken"]), ("new", "r2"))
+                    other = next(key for name, key in stored_as.items() if name != field)
+                    self.assertGreaterEqual(stored[other], before + 3600 * 1000)
+                    if lifetime == "3600.0":
+                        self.assertGreaterEqual(stored[stored_as[field]], before + 3600 * 1000)
+                    elif field == "expires_in":
+                        self.assertLessEqual(stored["expiresAt"], int(time.time() * 1000))
+                    else:
+                        self.assertNotIn("refreshTokenExpiresAt", stored)
+                    self.doCleanups()
 
     def test_a_file_caught_mid_write_is_read_again(self):
         real = Path.read_bytes
