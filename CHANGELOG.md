@@ -226,6 +226,9 @@ follows [Semantic Versioning](https://semver.org/).
   a day while the span's first step is still being gathered, as the CPU and
   disk popups do.
 - Screen readers hear a ring's percentage in the language's own digits.
+- Codex no longer hides for five minutes after an error that only mentions
+  an author or an authority; just a reply saying you aren't signed in
+  counts as signed out.
 - Ring names and the Claude and Codex marks sit at the ring's centre. At
   scales such as 125% they could be up to a pixel off: a ring of an odd
   size was rounded to a whole pixel, the marks were snapped to the
