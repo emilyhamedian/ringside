@@ -626,10 +626,9 @@ TestRoot {
             const gauge = gaugeAt(0);
             const expected = data.tone === "negative" ? Kirigami.Theme.negativeTextColor
                            : data.tone === "neutral" ? Kirigami.Theme.neutralTextColor : Kirigami.Theme.textColor;
-            compare(gauge.outerTone, expected);
             compare(arcs(gauge)[0].color, expected, "the CPU ring as drawn");
             compare(line(0, "first").text, data.usage + "%");
-            compare(line(0, "first").color, gauge.outerTone, "the CPU's reading");
+            compare(line(0, "first").color, expected, "the CPU's reading");
 
             const gpu = strip.cellAt(1).contentItem;
             verify(gpu.dual);
@@ -789,7 +788,7 @@ TestRoot {
             compare(area.subText, "Usage 23%, temperature 95 °C, hot");
             verify(!line(0, "first").visible && !line(0, "second").visible, "the readings are in the tooltip");
             const gauge = cell.contentItem.children[0];
-            compare(gauge.outerTone, root.hotColor);
+            compare(arcs(gauge)[0].color, root.hotColor, "the ring shows the heat");
             verify(!strip.cellAt(3).parent.active, "rates keep their text");
 
             mouseMove(cell, cell.width / 2, cell.height / 2);
