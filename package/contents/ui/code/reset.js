@@ -38,3 +38,18 @@ function detect(before, after, now) {
     }
     return events;
 }
+
+// The window whose early reset (usage.py's "earlyReset") the popup tells
+// of, or null: the weekly window's, else the first model limit's, while it
+// lasts at `now` and is newer than `seen`, the newest one a popup showed.
+function notice(entry, seen, now) {
+    const windows = entry ? [entry.weekly].concat(Array.from(entry.scoped ?? [])) : [];
+    return windows.find(w => w?.earlyReset && w.earlyReset.until > now && w.earlyReset.at > seen) ?? null;
+}
+
+// The newest early reset an entry carries, or 0: a popup that showed one
+// has shown them all, as they happen together.
+function newest(entry) {
+    const windows = entry ? [entry.weekly].concat(Array.from(entry.scoped ?? [])) : [];
+    return Math.max(0, ...windows.map(w => w?.earlyReset?.at ?? 0));
+}

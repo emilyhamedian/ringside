@@ -792,6 +792,7 @@ Item {
         id: usageData
         config: monitor.config
         providers: monitor.enabledItems.filter(Items.isUsage)
+        openPopup: monitor.openPopup
     }
 
     // Static facts, read once. The report also goes into the configuration,

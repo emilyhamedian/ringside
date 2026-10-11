@@ -1295,7 +1295,9 @@ class History(Isolated):
         usage.HISTORY_FILE.write_text(json.dumps(history))
 
     def stored(self):
-        return json.loads(usage.HISTORY_FILE.read_text())
+        """The stored series; EarlyResets checks the reset records beside them."""
+        return {name: {key: value for key, value in series.items() if key != "resets"}
+                for name, series in json.loads(usage.HISTORY_FILE.read_text()).items()}
 
     def test_real_polls_append_and_cache_hits_do_not(self):
         self.collect(reading(10, self.RESET, Opus=5))
@@ -1412,6 +1414,146 @@ class History(Isolated):
             with self.subTest(path.name):
                 self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
         self.assertEqual(sorted(os.listdir(usage.CACHE_DIR)), ["usage-history.json", "usage.json", "usage.lock"])
+
+
+class EarlyResets(History):
+    """A window that starts over before its reset time, told apart from the
+    history's stored reset time, and carried on the report for a day."""
+
+    LAST = History.NOW - 300
+
+    def seed_window(self, percent, reset, name="claude", early=None, **scoped):
+        record = {"resetsAt": reset, **({"early": early} if early else {})}
+        self.seed({name: {"weekly": [[self.LAST, percent]],
+                          "scoped": {key: [[self.LAST, value]] for key, value in scoped.items()},
+                          "resets": {"weekly": record, "scoped": {key: {"resetsAt": reset} for key in scoped}}}})
+
+    def record(self, name="claude"):
+        return json.loads(usage.HISTORY_FILE.read_text())[name]["resets"]
+
+    def test_a_window_that_moved_out_before_its_reset_is_early_from_its_new_start(self):
+        self.seed_window(62, self.RESET)
+        start = self.NOW - 120
+        report = self.collect(reading(3, start + WEEK))
+        early = {"at": start, "from": 62}
+        self.assertEqual(report["weekly"]["earlyReset"], dict(early, until=start + usage.EARLY_SHOWN))
+        self.assertEqual(self.record()["weekly"], {"resetsAt": start + WEEK, "early": early})
+        self.assertNotIn("earlyReset", json.loads(usage.CACHE_FILE.read_text())["claude"]["weekly"])
+
+    def test_a_new_start_before_the_last_poll_dates_it_at_this_poll(self):
+        self.seed_window(62, self.RESET)
+        report = self.collect(reading(3, self.LAST - 60 + WEEK))
+        self.assertEqual(report["weekly"]["earlyReset"]["at"], self.NOW)
+
+    def test_a_window_cleared_in_place_is_early_from_this_poll(self):
+        self.seed_window(61, self.RESET, name="codex")
+        report = self.collect(reading(2, self.RESET), name="codex")
+        self.assertEqual(report["weekly"]["earlyReset"], {"at": self.NOW, "from": 61, "until": self.NOW + usage.EARLY_SHOWN})
+
+    def test_what_is_not_an_early_reset(self):
+        cases = (
+            # The week ran out on schedule.
+            ("scheduled", 78, self.NOW - 60, reading(4, self.NOW - 60 + WEEK)),
+            ("spending", 40, self.RESET, reading(46, self.RESET)),
+            # Too small a fall in place to be anything but noise.
+            ("small fall", 50, self.RESET, reading(35, self.RESET)),
+            # A limit doubled part-way through the week halves the share.
+            ("raised limit", 60, self.RESET, reading(30, self.RESET)),
+            # The provider moved the week's start and gave nothing back.
+            ("moved day", 30, self.RESET, reading(30, self.RESET + 2 * 86400)),
+            # Codex puts an idle week a week from when it is asked.
+            ("idle codex", 0, self.NOW - 2 * 3600 + WEEK, reading(0, self.NOW + WEEK)),
+            # A reset time a second off is the same window.
+            ("jitter", 50, self.RESET, reading(45, self.RESET + 1)),
+            # The provider's clock a minute and a half ahead of this one.
+            ("clock behind", 80, self.NOW + 90, reading(0, self.NOW + WEEK)),
+        )
+        for tag, before, reset, after in cases:
+            with self.subTest(tag):
+                usage.CACHE_FILE.unlink(missing_ok=True)
+                self.seed_window(before, reset)
+                report = self.collect(after)
+                self.assertNotIn("earlyReset", report["weekly"])
+                self.assertEqual(self.record()["weekly"], {"resetsAt": after["weekly"]["resetsAt"]})
+
+    # Claude may give a week no one has used no reset time at all.
+    def test_a_week_back_to_unused_is_early_until_it_is_used_and_after(self):
+        self.seed_window(62, self.RESET)
+        report = self.collect(reading(0, None))
+        early = {"at": self.NOW, "from": 62}
+        self.assertEqual(report["weekly"]["earlyReset"], dict(early, until=self.NOW + usage.EARLY_SHOWN))
+        self.assertEqual(self.record()["weekly"], {"resetsAt": None, "early": early})
+        self.assertIn("earlyReset", self.collect(reading(0, None), now=self.NOW + 600)["weekly"])
+        report = self.collect(reading(3, self.NOW + 900 + WEEK), now=self.NOW + 900)
+        self.assertEqual(report["weekly"]["earlyReset"]["at"], self.NOW)
+        self.assertEqual(self.record()["weekly"], {"resetsAt": self.NOW + 900 + WEEK, "early": early})
+
+    # An idle Codex week's reset moves with every ask, hours apart overnight.
+    def test_an_idle_codex_week_keeps_it_across_a_gap(self):
+        self.seed_window(70, self.RESET, name="codex")
+        self.assertIn("earlyReset", self.collect(reading(0, self.NOW + WEEK), name="codex")["weekly"])
+        later = self.NOW + 5 * 3600
+        report = self.collect(reading(0, later + WEEK), now=later, name="codex")
+        self.assertEqual(report["weekly"]["earlyReset"]["at"], self.NOW)
+
+    def test_a_reading_in_use_that_doesnt_say_when_it_resets_changes_nothing(self):
+        early = {"at": self.NOW - 600, "from": 62}
+        self.seed_window(3, self.RESET, early=early)
+        report = self.collect(reading(5, None))
+        self.assertEqual(report["weekly"]["earlyReset"]["at"], early["at"])
+        self.assertEqual(self.record()["weekly"], {"resetsAt": self.RESET, "early": early})
+
+    # A history written before reset times were kept has no record to go by.
+    def test_a_window_without_a_record_starts_one(self):
+        self.seed({"claude": {"weekly": [[self.LAST, 62]], "scoped": {}}})
+        report = self.collect(reading(3, self.NOW + WEEK))
+        self.assertNotIn("earlyReset", report["weekly"])
+        self.assertEqual(self.record()["weekly"], {"resetsAt": self.NOW + WEEK})
+
+    def test_it_is_kept_for_a_day_while_the_window_lasts(self):
+        early = {"at": self.NOW - usage.EARLY_SHOWN + 600, "from": 62}
+        self.seed_window(3, self.RESET, early=early)
+        report = self.collect(reading(5, self.RESET))
+        self.assertEqual(report["weekly"]["earlyReset"], dict(early, until=early["at"] + usage.EARLY_SHOWN))
+        self.assertEqual(self.record()["weekly"]["early"], early)
+        # A cached reading carries it too.
+        self.assertIn("earlyReset", self.collect(reading(99, self.RESET), now=self.NOW + 299)["weekly"])
+        report = self.collect(reading(6, self.RESET), now=self.NOW + 600)
+        self.assertNotIn("earlyReset", report["weekly"])
+        self.assertEqual(self.record()["weekly"], {"resetsAt": self.RESET})
+
+    def test_a_reset_after_it_ends_it(self):
+        early = {"at": self.NOW - 3600, "from": 62}
+        self.seed_window(3, self.NOW - 60, early=early)
+        report = self.collect(reading(0, self.NOW - 60 + WEEK))
+        self.assertNotIn("earlyReset", report["weekly"])
+        self.assertEqual(self.record()["weekly"], {"resetsAt": self.NOW - 60 + WEEK})
+
+    def test_a_model_limit_resets_early_on_its_own(self):
+        self.seed_window(55, self.RESET, Fable=81)
+        result = reading(56, self.RESET, Fable=2)
+        result["scoped"][0]["resetsAt"] = self.NOW - 60 + WEEK
+        report = self.collect(result)
+        self.assertNotIn("earlyReset", report["weekly"])
+        self.assertEqual(report["scoped"][0]["earlyReset"]["from"], 81)
+        self.assertEqual(self.record()["scoped"]["Fable"]["early"]["from"], 81)
+
+    def test_malformed_records_count_as_none(self):
+        for resets in (None, [], {"weekly": "x"}, {"weekly": {"resetsAt": "1"}}, {"weekly": {"resetsAt": 1.5}},
+                       {"weekly": {"resetsAt": True}}, {"scoped": []}):
+            with self.subTest(resets):
+                usage.CACHE_FILE.unlink(missing_ok=True)
+                self.seed({"claude": {"weekly": [[self.LAST, 62]], "scoped": {}, "resets": resets}})
+                report = self.collect(reading(3, self.NOW + WEEK))
+                self.assertNotIn("earlyReset", report["weekly"])
+                self.assertEqual(self.record()["weekly"], {"resetsAt": self.NOW + WEEK})
+
+    def test_a_malformed_early_reset_is_dropped(self):
+        for early in ("x", {"at": "1", "from": 2}, {"at": 1}, {"at": self.NOW, "from": 2.5}):
+            with self.subTest(early):
+                usage.CACHE_FILE.unlink(missing_ok=True)
+                self.seed_window(5, self.RESET, early=early)
+                self.assertNotIn("earlyReset", self.collect(reading(6, self.RESET))["weekly"])
 
 
 class ClockZone(Isolated):

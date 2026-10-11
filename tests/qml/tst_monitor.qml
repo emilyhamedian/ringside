@@ -249,6 +249,15 @@ TestRoot {
         }
 
         // The default route is re-read only while the network popup shows it.
+        // The Claude and Codex readings learn which popup is open, so one
+        // that told of an early reset can count it as seen once it closes.
+        function test_usageFollowsTheOpenPopup() {
+            for (const open of ["claude", "codex", "cpu", ""]) {
+                monitor.openPopup = open;
+                compare(monitor.usage.openPopup, open);
+            }
+        }
+
         function test_theRouteIsReadForTheNetworkPopupOnly() {
             const route = Array.from(monitor.data).find(child => child.engine === "executable" && child.interval === 3000);
             verify(route, "the monitor owns the route's DataSource");

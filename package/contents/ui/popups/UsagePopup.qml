@@ -18,8 +18,9 @@ import ".."
 // grey for as long as the panel keeps it; once the panel's ring is struck,
 // so is the header's, and the status under it is all the popup shows. A
 // signed-out CLI is said in a line there. While the first check runs the
-// header's ring waits and says so. The footer holds the session starter's
-// switch.
+// header's ring waits and says so. A limit that started over early is told
+// under the header for a day, or until the popup has shown it once. The
+// footer holds the session starter's switch.
 PopupPage {
     id: popup
 
@@ -163,6 +164,18 @@ PopupPage {
             ? i18nc("@info:accessible the time left until the weekly reset, e.g. 5 days 18 hours until reset", "%1 until reset",
                     words.duration(popup.weekly.resetsAt, popup.nowMs))
             : ""
+    }
+
+    // Shown only beside a check that worked, so never with CheckStatus.
+    ResetNotice {
+        Layout.fillWidth: true
+        Layout.leftMargin: Style.contentEdge(Kirigami.Units.largeSpacing)
+        Layout.rightMargin: Layout.leftMargin
+        Layout.topMargin: Kirigami.Units.largeSpacing
+        Layout.bottomMargin: Math.round(Kirigami.Units.largeSpacing * 1.25)
+        window: popup.loading ? null : popup.usage.earlyReset(popup.item, popup.nowMs)
+        texts: words
+        nowMs: popup.nowMs
     }
 
     // Why there is nothing to show.

@@ -50,7 +50,12 @@ result instead of polling again.
 
 The APIs only report the current percentage, so each real poll also adds it to
 the window's history in the same folder. A window's "history" holds the
-points of its current span, oldest first.
+points of its current span, oldest first. The history keeps each window's
+reset time too, so a window that starts over before that time comes is
+noticed even when it happened while Plasma wasn't running; for a day after
+such an early reset the window carries "earlyReset": {"at": <when it
+happened, or was noticed>, "from": <the percent used before it>, "until":
+<when the popup stops telling of it>}.
 
 Claude's entry also carries "session", its five-hour window, or null when
 no session is running; it is left out when the reply doesn't say.
@@ -79,7 +84,9 @@ the retry);
 "retrying" (one send went unconfirmed; at is the send, next the retry) and
 "paused" (two in a row; next is when the hold ends). The widget runs
 --start once Date.now() reaches next, and --starter-set when its switch is
-toggled.
+toggled. A poll that finds what a starter waits for came early, as when a
+provider resets the limits ahead of time, makes it due at once (see
+replan_starters()).
 """
 
 import argparse
@@ -149,6 +156,14 @@ HOLD_MAX = 24 * 3600
 HISTORY_POINTS = 2100
 # A fall of this many points means the provider cleared the window early.
 HISTORY_CLEARED = 20
+# A reset time that moves out by more than this starts a new window, as in
+# code/reset.js; one that jitters by a second or so between replies doesn't.
+RESET_MOVED = 3600
+# How long a window carries its early reset, for the popup's notice.
+EARLY_SHOWN = 24 * 3600
+# A reset this close to when it was due is on schedule: the provider's clock
+# and this one may differ by a minute or two, and an hour early is no gift.
+EARLY_MARGIN = 3600
 
 # The programs chosen with --program, by provider. A chosen program is the
 # only one run for its provider: one that can't run is reported, never
@@ -271,6 +286,7 @@ MESSAGES = {
     "cli": "{name}: asking {cli} app-server",
     "cli-error": "{name}: app-server answered with an error, code {code}",
     "renewed": "{name}: renewed the Claude Code login",
+    "early-reset": "{name}: {which} reset early",
     "starter-on": "{name} session starter switched on",
     "starter-off": "{name} session starter switched off",
     "starter-switch-failed": "{name} session starter switch not saved: {why}",
@@ -282,6 +298,7 @@ MESSAGES = {
     "starter-failed-again": "{name} session starter still can't send: {why}; trying again in {wait} s",
     "starter-switched-off": "{name} session starter was switched off before its message went out",
     "starter-next": "{name} session starter is {state}; next step at {at}",
+    "starter-overtaken": "{name} session starter: what it was waiting for came early, so it plans again",
     "starter-stopped": "{name} session starter didn't run: {why}",
 }
 
@@ -1153,6 +1170,7 @@ def collect(fetchers, now=None):
     with locked():
         now = int(time.time()) if now is None else now
         providers, history = collect_locked(fetchers, now)
+        replan_starters(providers, now)
     attach_history(providers, history, now)
     return providers
 
@@ -1211,8 +1229,23 @@ def points(series):
             if isinstance(point, list) and len(point) == 2 and all(type(v) is int for v in point)]
 
 
+def reset_record(record):
+    """A stored window's reset record as track_reset() makes one, or None
+    for none or anything malformed."""
+    if not isinstance(record, dict) or "resetsAt" not in record or not (
+            record["resetsAt"] is None or type(record["resetsAt"]) is int):
+        return None
+    kept = {"resetsAt": record["resetsAt"]}
+    early = record.get("early")
+    if isinstance(early, dict) and type(early.get("at")) is int and type(early.get("from")) is int:
+        kept["early"] = {"at": early["at"], "from": early["from"]}
+    return kept
+
+
 def read_history():
-    """The stored series as {provider: {"weekly": [...], "scoped": {id: [...]}}}.
+    """The stored series as {provider: {"weekly": [...], "scoped": {id: [...]},
+    "resets": {"weekly": record, "scoped": {id: record}}}}, a record being a
+    window's reset record (see track_reset()) or None.
 
     An unreadable file reads as empty, and any malformed part of a readable
     one is left out, so a damaged file costs history but never a report.
@@ -1225,9 +1258,13 @@ def read_history():
     for name, series in (data.items() if isinstance(data, dict) else ()):
         if isinstance(series, dict):
             scoped = series.get("scoped")
+            resets = series.get("resets") if isinstance(series.get("resets"), dict) else {}
+            scoped_resets = resets.get("scoped") if isinstance(resets.get("scoped"), dict) else {}
             history[name] = {"weekly": points(series.get("weekly")),
                              "scoped": ({key: points(value) for key, value in scoped.items()}
-                                        if isinstance(scoped, dict) else {})}
+                                        if isinstance(scoped, dict) else {}),
+                             "resets": {"weekly": reset_record(resets.get("weekly")),
+                                        "scoped": {key: reset_record(value) for key, value in scoped_resets.items()}}}
     return history
 
 
@@ -1263,21 +1300,76 @@ def extend_series(series, window, now):
     return kept[-HISTORY_POINTS:]
 
 
+def track_reset(name, series, record, window, now):
+    """The window's reset record after this poll: {"resetsAt": ...}, None
+    for a week no one has started, with "early": {"at": ..., "from": ...}
+    while it has an early reset. series and record are the window's stored
+    history and record from before the poll. A reading in use that doesn't
+    say when its week resets changes nothing.
+
+    A window reset early when its reset was still over EARLY_MARGIN away
+    and it gave back some of what had been used: it went back to a week no
+    one has used (see unused()), moved its reset out by more than
+    RESET_MOVED, as code/reset.js has it, or fell in place by
+    HISTORY_CLEARED points or more to a quarter of what had been used or
+    less. A limit raised part-way through a week shrinks its share in place
+    too, by half for a doubled limit, and is no reset; nor is a reset time
+    that moved with nothing given back, as when a provider moves the day a
+    week starts. The reset is dated at the new window's start when that
+    lies after the last poll, else at this poll. It is kept for EARLY_SHOWN
+    while the week it started goes on, unused or not.
+    """
+    reset, percent = window["resetsAt"], window["percent"]
+    if reset is None and percent > 0:
+        return record
+    kept = {"resetsAt": reset}
+    if not record:
+        return kept
+    was = record["resetsAt"]
+    idle = unused(window, now)
+    used = series[-1][1] if series else 0
+    moved = reset is not None and was is not None and reset > was + RESET_MOVED
+    if (was is not None and was > now + EARLY_MARGIN and percent < used
+            and (idle or moved or used - percent >= HISTORY_CLEARED and percent * 4 <= used)):
+        start = reset - window["windowSeconds"] if moved else now
+        kept["early"] = {"at": start if series[-1][0] < start <= now else now, "from": used}
+        event("info", name, "early-reset", which="a model's weekly limit" if "id" in window else "the weekly limit")
+    elif ("early" in record and now - record["early"]["at"] < EARLY_SHOWN
+          and (was is None or idle and was > now or reset is not None and abs(reset - was) <= RESET_MOVED)):
+        kept["early"] = record["early"]
+    return kept
+
+
+def unused(window, now):
+    """Whether a window is a week no one has used yet: Claude may give one
+    no reset time, and Codex a reset a week from whenever it is asked (see
+    codex_running())."""
+    reset = window["resetsAt"]
+    return window["percent"] == 0 and (reset is None or abs(reset - now - window["windowSeconds"]) <= ROLLING_SLACK)
+
+
 def record_history(history, polled, now):
     """The history with this run's real polls added.
 
-    A provider loses the series of limits it no longer reports. A failed
-    poll, or one that finds the CLI signed out, leaves them as they were:
-    the week's span drops what no longer belongs to it.
+    A provider loses the series and reset records of limits it no longer
+    reports. A failed poll, or one that finds the CLI signed out, leaves
+    them as they were: the week's span drops what no longer belongs to it.
     """
     updated = dict(history)
     for name, entry in polled.items():
-        if entry["status"] == "ok":
-            old = history.get(name) or {"weekly": [], "scoped": {}}
-            updated[name] = {
-                "weekly": extend_series(old["weekly"], entry["weekly"], now),
-                "scoped": {window["id"]: extend_series(old["scoped"].get(window["id"], []), window, now)
-                           for window in entry["scoped"]}}
+        if entry["status"] != "ok":
+            continue
+        old = history.get(name) or {"weekly": [], "scoped": {}, "resets": {"weekly": None, "scoped": {}}}
+        weekly_reset = track_reset(name, old["weekly"], old["resets"]["weekly"], entry["weekly"], now)
+        scoped, scoped_resets = {}, {}
+        for window in entry["scoped"]:
+            series = old["scoped"].get(window["id"], [])
+            scoped[window["id"]] = extend_series(series, window, now)
+            scoped_resets[window["id"]] = track_reset(name, series, old["resets"]["scoped"].get(window["id"]), window, now)
+        updated[name] = {
+            "weekly": extend_series(old["weekly"], entry["weekly"], now),
+            "scoped": scoped,
+            "resets": {"weekly": weekly_reset, "scoped": scoped_resets}}
     return updated
 
 
@@ -1309,10 +1401,19 @@ def attach_history(providers, history, now):
     for name, entry in providers.items():
         if entry.get("status") != "ok":
             continue
-        series = history.get(name) or {"weekly": [], "scoped": {}}
-        entry["weekly"]["history"] = within(series["weekly"], entry["weekly"], now)
+        series = history.get(name) or {"weekly": [], "scoped": {}, "resets": {"weekly": None, "scoped": {}}}
+        attach(entry["weekly"], series["weekly"], series["resets"]["weekly"], now)
         for window in entry.get("scoped") or []:
-            window["history"] = within(series["scoped"].get(window["id"], []), window, now)
+            attach(window, series["scoped"].get(window["id"], []), series["resets"]["scoped"].get(window["id"]), now)
+
+
+def attach(window, series, record, now):
+    """Gives a reported window its history, and its early reset while it is
+    under EARLY_SHOWN old."""
+    window["history"] = within(series, window, now)
+    early = (record or {}).get("early")
+    if early and now - early["at"] < EARLY_SHOWN:
+        window["earlyReset"] = dict(early, until=early["at"] + EARLY_SHOWN)
 
 
 # --- session starter -------------------------------------------------------
@@ -1856,6 +1957,50 @@ def run_starter(name):
         if record["next"] is not None:
             event("debug", name, "starter-next", state=record["state"],
                   at=time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(record["next"])))
+
+
+def replan_starters(providers, now):
+    """Makes a starter due at once when a reading shows that what it waits
+    for came early: the window it waits out has ended, or its reset moved by
+    more than RESET_MOVED, or the weekly limit it holds for is no longer
+    reached, as when a provider resets the limits ahead of time. Its times
+    would otherwise stand until they came, telling of a week that is over
+    and holding off a start that could happen now. The widget then runs
+    --start, which plans afresh from the reading. The caller holds
+    usage.lock; a state that can't be written is left for --start to report.
+    """
+    switches = read_switches()
+    if not switches:
+        return
+    states = read_starter_states()
+    due = [name for name, entry in providers.items()
+           if name in switches and name in states and entry.get("status") == "ok" and overtaken(name, states[name], entry, now)]
+    for name in due:
+        states[name]["next"] = now
+        event("info", name, "starter-overtaken")
+    if due:
+        with contextlib.suppress(OSError):
+            private_state_dir()
+            write_private(STARTER_STATE, states)
+
+
+def overtaken(name, record, reading, now):
+    """Whether a reading shows that what a starter waits for came early (see
+    replan_starters()). A reading that can't tell, as a Claude one that
+    doesn't say whether a session runs, never does."""
+    if record["state"] not in ("started", "waiting", "weekly") or record["next"] is None or record["next"] <= now:
+        return False
+    awaited = record["next"] - 1
+    if record["state"] == "weekly":
+        weekly = reading["weekly"]
+        return weekly["percent"] < 100 or weekly["resetsAt"] is not None and abs(weekly["resetsAt"] - awaited) > RESET_MOVED
+    if name == "claude" and "session" not in reading:
+        return False
+    try:
+        window = starters()[name][1](reading, now)
+    except Unreadable:
+        return False
+    return window is None or abs(window["resetsAt"] - awaited) > RESET_MOVED
 
 
 STARTER_OFF = {"enabled": False, "state": "off", "at": None, "next": None, "reason": None}

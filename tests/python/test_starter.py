@@ -1221,6 +1221,97 @@ class Report(Isolated):
         self.assertEqual(usage.read_starter_states(), {})
 
 
+
+class EarlyWait(Isolated):
+    """A starter waiting out a window or a reached weekly limit that a poll
+    shows came to an end early is made due, so --start plans afresh."""
+
+    def setUp(self):
+        super().setUp()
+        usage.STARTER_FILE.parent.mkdir(parents=True)
+        usage.STARTER_FILE.write_text(json.dumps({"claude": True, "codex": True}))
+
+    def seed(self, name, record):
+        usage.STATE_DIR.mkdir(parents=True, exist_ok=True)
+        usage.STARTER_STATE.write_text(json.dumps({name: dict(usage.blank_record(), **record)}))
+
+    def poll(self, name, reading, now=NOW):
+        usage.EVENTS.clear()
+        providers = usage.collect({name: lambda: json.loads(json.dumps(reading))}, now)
+        usage.attach_starters(providers, now)
+        return providers[name]["starter"], usage.read_starter_states()[name]
+
+    def test_a_wait_that_came_to_an_end_early_is_due(self):
+        cases = (
+            # Waiting out a week someone else started, which reset early into
+            # a new one.
+            ("codex", {"state": "waiting", "next": NOW + 2 * 86400 + 1},
+             {"weekly": week(11, NOW + 6 * 86400), "scoped": []}),
+            # A week it started, reset early into an idle one.
+            ("codex", {"state": "started", "at": NOW - 5 * 86400, "next": NOW + 2 * 86400 + 1},
+             {"weekly": week(0, NOW + WEEK), "scoped": []}),
+            # A reached weekly limit, reset early.
+            ("claude", {"state": "weekly", "next": NOW + 3 * 86400 + 1},
+             {"weekly": week(2, NOW + WEEK), "scoped": [], "session": None}),
+            # A session it started, reset early.
+            ("claude", {"state": "started", "at": NOW - HOUR, "next": NOW + 4 * HOUR + 1},
+             {"weekly": week(30, NOW + 86400), "scoped": [], "session": None}),
+        )
+        for name, record, reading in cases:
+            with self.subTest(name=name, state=record["state"]):
+                usage.CACHE_FILE.unlink(missing_ok=True)
+                self.seed(name, record)
+                starter, stored = self.poll(name, reading)
+                self.assertEqual((starter["state"], starter["next"]), (record["state"], NOW))
+                self.assertEqual(stored["next"], NOW)
+                self.assertEqual([e["kind"] for e in usage.EVENTS if e["kind"].startswith("starter")], ["starter-overtaken"])
+
+    def test_what_leaves_the_wait_alone(self):
+        reset = NOW + 2 * 86400
+        cases = (
+            ("same week", "codex", {"state": "waiting", "next": reset + 1}, {"weekly": week(30, reset), "scoped": []}),
+            ("jitter", "codex", {"state": "waiting", "next": reset + 1}, {"weekly": week(30, reset + 60), "scoped": []}),
+            ("already due", "codex", {"state": "waiting", "next": NOW - 5}, {"weekly": week(11, NOW + WEEK), "scoped": []}),
+            ("still reached", "claude", {"state": "weekly", "next": reset + 1},
+             {"weekly": week(100, reset), "scoped": [], "session": None}),
+            # A Claude reply that doesn't say whether a session runs.
+            ("no session word", "claude", {"state": "started", "at": NOW - HOUR, "next": NOW + 4 * HOUR + 1},
+             {"weekly": week(30, NOW + 86400), "scoped": []}),
+            ("failed", "codex", {"state": "failed", "next": NOW + 300, "reason": "not-sent"},
+             {"weekly": week(0, NOW + WEEK), "scoped": []}),
+        )
+        for tag, name, record, reading in cases:
+            with self.subTest(tag):
+                usage.CACHE_FILE.unlink(missing_ok=True)
+                self.seed(name, record)
+                self.assertEqual(self.poll(name, reading)[1], dict(usage.blank_record(), **record))
+        usage.CACHE_FILE.unlink(missing_ok=True)
+        usage.STARTER_FILE.write_text(json.dumps({"codex": False}))
+        self.seed("codex", {"state": "waiting", "next": reset + 1})
+        self.assertEqual(self.poll("codex", {"weekly": week(11, NOW + WEEK), "scoped": []})[1]["next"], reset + 1)
+
+    def test_a_failed_poll_leaves_the_wait_alone(self):
+        self.seed("codex", {"state": "waiting", "next": NOW + 86400})
+        providers = usage.collect({"codex": mock.Mock(side_effect=RuntimeError("down"))}, NOW)
+        usage.attach_starters(providers, NOW)
+        self.assertEqual(usage.read_starter_states()["codex"]["next"], NOW + 86400)
+
+    # The case from the field: Codex reset early into a week already in use,
+    # so the step that follows finds it running, waits for its end and sends
+    # nothing.
+    def test_the_next_step_waits_for_the_new_week_and_sends_nothing(self):
+        self.seed("codex", {"state": "waiting", "next": NOW + 2 * 86400 + 1})
+        reading = {"weekly": week(11, NOW + 6 * 86400), "scoped": []}
+        self.poll("codex", reading)
+        record = usage.read_starter_states()["codex"]
+        sent = mock.Mock()
+        usage.Starter("codex", record, read=lambda not_before: dict(reading, status="ok", fetchedAt=NOW),
+                      check=lambda: "/mock/codex", send=sent, running=usage.codex_running, period=WEEK,
+                      persist=lambda: None, clock=lambda: NOW).step()
+        self.assertEqual((record["state"], record["next"]), ("waiting", NOW + 6 * 86400 + 1))
+        sent.assert_not_called()
+
+
 class Session(Isolated):
     def test_claude_reports_its_five_hour_window(self):
         body = json.loads((FIXTURES / "claude_usage.json").read_text())
