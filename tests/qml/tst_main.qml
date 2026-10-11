@@ -58,11 +58,7 @@ TestRoot {
         }
 
         function initTestCase() {
-            const request = new XMLHttpRequest();
-            request.open("GET", Qt.resolvedUrl("../../package/contents/ui/main.qml"), false);
-            request.send();
-            verify(request.responseText !== "", "main.qml read; set QML_XHR_ALLOW_FILE_READ=1");
-            let text = swap(request.responseText, /^import org\.kde\.plasma\.plasmoid$/m,
+            let text = swap(root.read("../../package/contents/ui/main.qml"), /^import org\.kde\.plasma\.plasmoid$/m,
                             'import "' + Qt.resolvedUrl("fakeplasmoid") + '"\nimport "' + Qt.resolvedUrl(".") + '"');
             text = swap(text, /^    Plasmoid\.contextualActions: \[\n[\s\S]*?^    \]\n/m, "");
             source = swap(text, /^    Monitor \{$/m, "    FakeMonitor {");
