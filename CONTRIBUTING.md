@@ -42,8 +42,10 @@ Work on a branch and open a pull request against `main`. CI runs the tests
 on it once it's out of draft, unless it only touches the README, this file,
 the changelog or the pictures in `docs/`.
 
-Nothing lands on `main` without the owner's go-ahead, and each change goes
-in as one squashed commit, since `main` is what people install from.
+Nothing lands on `main` without the owner's go-ahead. Each change gets its
+own pull request and goes in as one squashed commit. A release is a separate
+pull request that bumps the version and dates the changelog, and is tagged
+once it lands.
 
 [AGENTS.md](AGENTS.md) has the project's ground rules: Plasma 6.0 support,
 no new dependencies, privacy first, and how numbers and text are handled.

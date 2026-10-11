@@ -83,7 +83,8 @@ unless there's a good reason to differ, and may is allowed but optional.
 
 ## Git
 
-See CONTRIBUTING.md for the checks, style and required approval. Work must
-happen on a branch. Each change must land as one squashed commit: `main` is
-what people install from. Releases must be tagged on `main` and carry
+See CONTRIBUTING.md for the checks, style and required approval. Each change
+must have its own branch and pull request, and land on `main` as one squashed
+commit. A release must be its own pull request that only bumps the version
+and dates the changelog; once it lands, tag it on `main` and attach
 `ringside.plasmoid` from `scripts/package.sh`.
