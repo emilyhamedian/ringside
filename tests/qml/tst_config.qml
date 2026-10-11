@@ -3,6 +3,7 @@
 
 pragma ComponentBehavior: Bound
 import QtQuick
+import QtQuick.Controls as QQC2
 import QtTest
 import org.kde.kirigami as Kirigami
 import org.kde.ksysguard.sensors as Sensors
@@ -34,12 +35,16 @@ TestRoot {
             width: root.width
             height: root.height
             cfg_updateInterval: 1000
-            cfg_graphSpan: "minute"
             cfg_networkBits: true
             cfg_highlightTemperatures: true
             cfg_warmCelsius: 75
             cfg_hotCelsius: 90
         }
+    }
+
+    Component {
+        id: fakeConfig
+        FakeConfig {}
     }
 
     Component {
@@ -162,6 +167,7 @@ TestRoot {
     ]
 
     TestCase {
+        id: testCase
         name: "Config"
         when: windowShown
 
@@ -184,7 +190,7 @@ TestRoot {
             return page;
         }
 
-        function combo(page, name) {
+        function accessible(page, name) {
             return find(page, i => i.Accessible && i.Accessible.name === name);
         }
         // A form section's heading, which FormLayout draws at level 3.
@@ -194,8 +200,8 @@ TestRoot {
         // Whether one item sits just under another: starting below it, in
         // the same column.
         function below(item, above) {
-            const a = above.mapToItem(null, 0, 0);
-            const b = item.mapToItem(null, 0, 0);
+            const a = above.mapToItem(null, Qt.point(0, 0));
+            const b = item.mapToItem(null, Qt.point(0, 0));
             return b.y >= a.y + above.height && b.y - (a.y + above.height) < 30 && Math.abs(b.x - a.x) < 1;
         }
 
@@ -203,8 +209,8 @@ TestRoot {
         // Celsius never takes.
         function test_thresholdsInFahrenheit() {
             const page = make(general, { cfg_fahrenheit: true });
-            compare(combo(page, "Amber threshold").value, 167);
-            compare(combo(page, "Red threshold").value, 194);
+            compare(accessible(page, "Amber threshold").value, 167);
+            compare(accessible(page, "Red threshold").value, 194);
         }
 
         // Graph history: a box that keeps the hour and the day across
@@ -251,7 +257,7 @@ TestRoot {
 
         function test_providers() {
             const page = make(providers);
-            const every = combo(page, "Check every");
+            const every = accessible(page, "Check every");
             verify(every.visible);
             compare(every.value, 5);
             every.increase();
@@ -260,35 +266,9 @@ TestRoot {
             compare(every.displayText, "10 minutes");
         }
 
-        function read(path) {
-            const request = new XMLHttpRequest();
-            request.open("GET", Qt.resolvedUrl(path), false);
-            request.send();
-            verify(request.responseText !== "", path + " read; set QML_XHR_ALLOW_FILE_READ=1");
-            return request.responseText;
-        }
-
-        // Every <entry> in main.xml as { name, type, value }, the value being
-        // the default, as Plasma's dialog would hand a page.
-        function entries() {
-            const xml = read("../../package/contents/config/main.xml");
-            const pattern = /<entry name="(\w+)" type="(\w+)">([\s\S]*?)<\/entry>/g;
-            const list = [];
-            for (let m = pattern.exec(xml); m; m = pattern.exec(xml)) {
-                const text = (/<default>([^<]*)<\/default>/.exec(m[3]) || ["", ""])[1];
-                list.push({ name: m[1], type: m[2],
-                            value: m[2] === "Int" || m[2] === "Double" ? Number(text)
-                                 : m[2] === "Bool" ? text === "true"
-                                 : m[2] === "StringList" ? text.split(",").filter(s => s)
-                                 : text });
-            }
-            verify(list.length > 0, "main.xml lists no entry");
-            return list;
-        }
-
         function settings() {
             const values = {};
-            for (const entry of entries()) {
+            for (const entry of root.entries()) {
                 values[entry.name] = entry.value;
             }
             return values;
@@ -296,7 +276,7 @@ TestRoot {
 
         // The pages' sources, as config.qml lists them.
         function pages() {
-            const config = read("../../package/contents/config/config.qml");
+            const config = root.read("../../package/contents/config/config.qml");
             const pattern = /source: "([^"]+)"/g;
             const list = [];
             for (let m = pattern.exec(config); m; m = pattern.exec(config)) {
@@ -453,13 +433,13 @@ TestRoot {
         function test_everyPageDeclaresEverySetting() {
             const types = { Int: "int", Bool: "bool", Double: "real", String: "string", StringList: "var" };
             const expected = {};
-            for (const entry of entries()) {
+            for (const entry of root.entries()) {
                 verify(entry.type in types, entry.name + " has a type this test doesn't know: " + entry.type);
                 expected[entry.name] = types[entry.type];
                 expected[entry.name + "Default"] = types[entry.type];
             }
             const declared = {};
-            const base = read("../../package/contents/ui/config/ConfigPage.qml");
+            const base = root.read("../../package/contents/ui/config/ConfigPage.qml");
             const pattern = /^\s*property (\w+) cfg_(\w+)/gm;
             for (let m = pattern.exec(base); m; m = pattern.exec(base)) {
                 declared[m[2]] = m[1];
@@ -472,7 +452,7 @@ TestRoot {
             }
             const texts = {};
             for (const source of pages()) {
-                const text = read("../../package/contents/ui/" + source);
+                const text = root.read("../../package/contents/ui/" + source);
                 texts[source] = text;
                 verify(/^ConfigPage \{/m.test(text), source + " isn't rooted on ConfigPage");
                 verify(!/property \w+ cfg_/.test(text), source + " declares a cfg_ property of its own");
@@ -484,9 +464,19 @@ TestRoot {
             }
             // The graphs' span is chosen on a graph's caption, not here.
             const unedited = reports().concat(["graphSpan"]);
-            for (const entry of entries()) {
+            for (const entry of root.entries()) {
                 const owners = pages().filter(source => new RegExp("\\bcfg_" + entry.name + "\\s*=(?!=)").test(texts[source]));
                 compare(owners.length, unedited.includes(entry.name) ? 0 : 1, entry.name + " is edited by " + JSON.stringify(owners));
+            }
+        }
+
+        // FakeConfig, the settings the other tests hand Monitor, holds every
+        // entry in main.xml at its default, as Plasma would hand them over.
+        function test_fakeConfigHoldsTheDefaults() {
+            const fake = createTemporaryObject(fakeConfig, root);
+            for (const entry of root.entries()) {
+                compare(JSON.stringify(fake[entry.name]), JSON.stringify(entry.value), entry.name);
+                compare(typeof fake[entry.name], typeof entry.value, entry.name);
             }
         }
 
@@ -500,7 +490,7 @@ TestRoot {
         function test_pagesTakePlasmasProperties(data) {
             const page = createTemporaryObject(pageComponent(data.source), root, handed(settings()));
             verify(page);
-            for (const entry of entries()) {
+            for (const entry of root.entries()) {
                 for (const key of [entry.name, entry.name + "Default"]) {
                     compare(JSON.stringify(page["cfg_" + key]), JSON.stringify(entry.value), "cfg_" + key);
                     compare(typeof page["cfg_" + key], typeof entry.value, "cfg_" + key);
@@ -656,7 +646,7 @@ TestRoot {
             compare(JSON.stringify(config.file[data.key]), JSON.stringify(data.value), "the file after Apply");
             compare(config.usageStatus, status);
             compare(config.file.usageStatus, status);
-            for (const entry of entries()) {
+            for (const entry of root.entries()) {
                 if (entry.name !== data.key && entry.name !== "usageStatus") {
                     compare(JSON.stringify(config.file[entry.name]), JSON.stringify(entry.value), entry.name);
                 }
@@ -679,18 +669,12 @@ TestRoot {
             const box = find(page, i => i.text === "Show in the Network popup" && i.checked !== undefined);
             box.forceActiveFocus();
             keyClick(Qt.Key_Space);
-            const service = combo(page, "Service");
+            const service = accessible(page, "Service");
             verify(service.visible, "the service list shows once the box is ticked");
             // Custom, the third choice after ipify.org and Mullvad, from the
             // open list, which moves on to the first URL.
-            service.forceActiveFocus();
-            keyClick(Qt.Key_Space);
-            tryCompare(service.popup, "opened", true);
-            keyClick(Qt.Key_Down);
-            keyClick(Qt.Key_Down);
-            keyClick(Qt.Key_Return);
-            tryCompare(service.popup, "visible", false);
-            const url4 = combo(page, "IPv4 URL");
+            root.pick(testCase, service, 2);
+            const url4 = accessible(page, "IPv4 URL");
             verify(url4.activeFocus, "Custom focuses the IPv4 URL");
             for (const c of "https://ip.example.org/") {
                 keyClick(c);
@@ -750,7 +734,7 @@ TestRoot {
         }
 
         function within(page, item) {
-            const at = item.mapToItem(page, 0, 0);
+            const at = item.mapToItem(page, Qt.point(0, 0));
             return at.x >= -0.5 && at.x + item.width <= page.width + 0.5;
         }
 
@@ -797,16 +781,16 @@ TestRoot {
             verify(note.lineCount > 1, "the inner rings' note wraps");
             for (const name of ["Check every", "Claude inner ring", "OpenAI inner ring", "Path to claude", "Path to codex",
                                 "Choose where claude is", "Choose where codex is"]) {
-                const control = combo(page, root.stretch(name));
+                const control = accessible(page, root.stretch(name));
                 verify(control && control.visible, name);
                 verify(within(page, control), name + " runs off the page");
             }
             const form = find(page, i => i.wideMode !== undefined);
             if (form.wideMode) {
                 const label = texts.find(t => t.text.startsWith("Check every:"));
-                const field = combo(page, root.stretch("Check every"));
-                const labelX = label.mapToItem(page, 0, 0).x;
-                const fieldX = field.mapToItem(page, 0, 0).x;
+                const field = accessible(page, root.stretch("Check every"));
+                const labelX = label.mapToItem(page, Qt.point(0, 0)).x;
+                const fieldX = field.mapToItem(page, Qt.point(0, 0)).x;
                 if (data.mirrored) {
                     verify(labelX >= fieldX + field.width, "the label sits right of its field");
                 } else {
@@ -860,7 +844,7 @@ TestRoot {
         }
 
         function field(page, command) {
-            return combo(page, "Path to " + command);
+            return accessible(page, "Path to " + command);
         }
         // The line under a program's row, which sits just under its field,
         // or "" while none shows.
@@ -923,7 +907,7 @@ TestRoot {
                     compare(programNote(page, command), data[command], command + "'s note");
                 }
             }
-            compare(combo(page, "OpenAI inner ring").visible, data.ring, "the OpenAI inner ring");
+            compare(accessible(page, "OpenAI inner ring").visible, data.ring, "the OpenAI inner ring");
             compare(all(page, i => i.text === page.automaticLine && i.visible).length, 1 + Number(data.ring),
                     "the inner rings' notes");
             compare(logoChoice(page, "Codex").visible, data.logo, "the ring logo");
@@ -941,15 +925,6 @@ TestRoot {
             verify(!Qt.colorEqual(programNoteColor(page, "claude"), Kirigami.Theme.negativeTextColor));
         }
 
-        function typeInto(item, text) {
-            item.forceActiveFocus();
-            item.selectAll();
-            keyClick(Qt.Key_Delete);
-            for (const c of text) {
-                keyClick(c);
-            }
-        }
-
         // Emptying a field to type another path, or to go back to
         // automatic, leaves the row where it is; nothing above it moves
         // until Apply has had the new path checked.
@@ -957,18 +932,18 @@ TestRoot {
             const page = make(providers, { knownLimits: { codex: [{ id: "gpt", label: "GPT-5.5-Codex", reported: true }] } });
             showPrograms(page, "custom");
             const codex = field(page, "codex");
-            typeInto(codex, "");
+            root.typeIn(testCase, codex, "");
             compare(page.cfg_codexProgram, "");
             verify(codex.visible, "the row went while its field was emptied");
             compare(programNote(page, "codex"), "");
 
             const lost = make(providers);
             showPrograms(lost, "notfound-on");
-            typeInto(field(lost, "codex"), "/opt/codex");
+            root.typeIn(testCase, field(lost, "codex"), "/opt/codex");
             compare(lost.cfg_codexProgram, "/opt/codex");
             verify(!logoChoice(lost, "Codex").visible, "the logo showed before the path was checked");
             compare(programNote(lost, "codex"), "", "the not-found note stays under a typed path");
-            typeInto(field(lost, "codex"), "");
+            root.typeIn(testCase, field(lost, "codex"), "");
             verify(field(lost, "codex").visible);
             compare(programNote(lost, "codex"), codexLost);
         }
@@ -979,7 +954,7 @@ TestRoot {
             const page = make(providers);
             showPrograms(page, "notfound-on");
             const codex = field(page, "codex");
-            typeInto(codex, page.home + "/my tools/codex ");
+            root.typeIn(testCase, codex, page.home + "/my tools/codex ");
             compare(codex.text, page.home + "/my tools/codex ");
             compare(page.cfg_codexProgram, page.home + "/my tools/codex");
             // A path set elsewhere, as by the file picker, shows.
@@ -1001,7 +976,7 @@ TestRoot {
         function test_programTypedPathCheck(data) {
             const page = make(providers);
             showPrograms(page, "custom");
-            typeInto(field(page, "codex"), data.text);
+            root.typeIn(testCase, field(page, "codex"), data.text);
             compare(programNote(page, "codex"), data.note);
             if (data.note !== "") {
                 verify(Qt.colorEqual(programNoteColor(page, "codex"), Kirigami.Theme.negativeTextColor));
@@ -1016,9 +991,9 @@ TestRoot {
             showPrograms(page, "broken");
             const codex = field(page, "codex");
             compare(programNote(page, "codex"), "There is no file at this path.");
-            typeInto(codex, "~/.npm-global/bin/codex2");
+            root.typeIn(testCase, codex, "~/.npm-global/bin/codex2");
             compare(programNote(page, "codex"), "");
-            typeInto(codex, page.home + "/.npm-global/bin/codex");
+            root.typeIn(testCase, codex, page.home + "/.npm-global/bin/codex");
             compare(programNote(page, "codex"), "There is no file at this path.", "the same path, written in full");
             // A problem reported for automatic isn't the chosen path's.
             page.usageStatus = { codex: { status: "error", starter: false,
@@ -1035,10 +1010,10 @@ TestRoot {
                 const f = field(page, command);
                 compare(f.placeholderText, "Path to " + command + "…");
                 verify(f.inputMethodHints & Qt.ImhNoPredictiveText);
-                const button = combo(page, "Choose where " + command + " is");
+                const button = accessible(page, "Choose where " + command + " is");
                 verify(button && button.visible, command + "'s button");
                 compare(button.text, "Choose where " + command + " is");
-                compare(button.display, 0 /* AbstractButton.IconOnly */);
+                compare(button.display, QQC2.AbstractButton.IconOnly);
             }
         }
 
@@ -1067,13 +1042,13 @@ TestRoot {
             const page = host.page;
             showPrograms(page, "custom");
             waitForRendering(host);
-            const f = combo(page, root.stretch("Path to codex"));
-            const button = combo(page, root.stretch("Choose where codex is"));
+            const f = accessible(page, root.stretch("Path to codex"));
+            const button = accessible(page, root.stretch("Choose where codex is"));
             compare(f.effectiveHorizontalAlignment, TextInput.AlignLeft);
             fuzzyCompare(f.width + button.width + f.parent.spacing, f.parent.width, 1, "the field fills the row");
-            verify(button.mapToItem(page, 0, 0).x + button.width <= f.mapToItem(page, 0, 0).x, "the button sits left of the field");
+            verify(button.mapToItem(page, Qt.point(0, 0)).x + button.width <= f.mapToItem(page, Qt.point(0, 0)).x, "the button sits left of the field");
             const label = all(page, i => i.text === root.stretch("Program:") && i.visible)[0];
-            verify(label.mapToItem(page, 0, 0).x >= f.mapToItem(page, 0, 0).x + f.width, "the label sits right of the field");
+            verify(label.mapToItem(page, Qt.point(0, 0)).x >= f.mapToItem(page, Qt.point(0, 0)).x + f.width, "the label sits right of the field");
         }
 
         // Typing a path and pressing Apply saves it, as typed, under its key.
@@ -1086,7 +1061,7 @@ TestRoot {
             const d = dialog(page, config, data.order);
             page.usageStatus = programStates()["notfound-off"].status;
             waitForRendering(page);
-            typeInto(field(page, "codex"), "~/.npm-global/bin/codex");
+            root.typeIn(testCase, field(page, "codex"), "~/.npm-global/bin/codex");
             verify(d.applyEnabled, "typing left Apply off");
             d.apply();
             compare(config.file.codexProgram, "~/.npm-global/bin/codex");
@@ -1117,7 +1092,7 @@ TestRoot {
             for (const p of root.pickers) {
                 const stored = data.stored[p.setting] || "";
                 const values = p.values.includes(stored) ? p.values : p.values.concat([stored]);
-                const picker = combo(page, p.name);
+                const picker = accessible(page, p.name);
                 compare(picker.entries.map(e => e.value), values, p.name);
                 compare(picker.currentIndex, values.indexOf(stored), p.name);
             }
@@ -1224,8 +1199,8 @@ TestRoot {
         function test_innerLimitPickers(data) {
             const page = make(providers, { knownLimits: data.known,
                                            cfg_claudeInnerLimit: data.claudeChoice, cfg_codexInnerLimit: data.codexChoice });
-            const claude = combo(page, "Claude inner ring");
-            const codex = combo(page, "OpenAI inner ring");
+            const claude = accessible(page, "Claude inner ring");
+            const codex = accessible(page, "OpenAI inner ring");
             compare(claude.visible, data.claudeVisible);
             compare(codex.visible, data.codexVisible);
             // Each picker has its own heading and its own note under it.
@@ -1264,7 +1239,7 @@ TestRoot {
         function test_choosingAnInnerLimitWritesTheValue(data) {
             const page = make(providers, { knownLimits: { claude: [{ id: "opus", label: "Opus", reported: true }],
                                                           codex: [{ id: "gpt5", label: "GPT-5", reported: true }] } });
-            const picker = combo(page, data.name);
+            const picker = accessible(page, data.name);
             const index = picker.entries.findIndex(e => e.value === data.value);
             verify(index >= 0);
             picker.activated(index);
@@ -1307,16 +1282,16 @@ TestRoot {
             const page = make(providers, { cfg_itemOrder: ["claude", "codex"], cfg_hiddenItems: [],
                                            knownLimits: { claude: [{ id: "opus", label: "Opus", reported: true }],
                                                           codex: [{ id: "gpt5", label: "GPT-5", reported: true }] } });
-            const y = item => item.mapToItem(null, 0, 0).y;
+            const y = item => item.mapToItem(null, Qt.point(0, 0)).y;
             const both = heading(page, "All Providers");
             const claude = heading(page, "Claude");
             const codex = heading(page, "OpenAI");
             for (const h of [both, claude, codex]) {
                 verify(h && h.visible, h ? h.text : "a heading");
             }
-            const every = combo(page, "Check every");
-            const claudeRing = combo(page, "Claude inner ring");
-            const codexRing = combo(page, "OpenAI inner ring");
+            const every = accessible(page, "Check every");
+            const claudeRing = accessible(page, "Claude inner ring");
+            const codexRing = accessible(page, "OpenAI inner ring");
             const logo = logoChoice(page, "Codex");
             verify(y(both) < y(every) && y(every) < y(claude));
             verify(y(claude) < y(claudeRing) && y(claudeRing) < y(codex));

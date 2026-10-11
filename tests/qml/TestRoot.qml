@@ -69,4 +69,64 @@ Item {
     function texts(item) {
         return all(item, i => i.visible && typeof i.text === "string" && i.text !== "").map(i => i.text);
     }
+
+    // A file's text, by its path from tests/qml. Reading a file needs
+    // QML_XHR_ALLOW_FILE_READ=1, which scripts/test.sh sets; without it the
+    // text is empty and the test fails here.
+    function read(path) {
+        const request = new XMLHttpRequest();
+        request.open("GET", Qt.resolvedUrl(path), false);
+        request.send();
+        if (request.responseText === "") {
+            throw new Error(path + " read as empty; set QML_XHR_ALLOW_FILE_READ=1");
+        }
+        return request.responseText;
+    }
+
+    // Every <entry> in main.xml as { name, type, value }, the value being
+    // the default as Plasma hands it over.
+    function entries() {
+        const xml = read("../../package/contents/config/main.xml");
+        const pattern = /<entry name="(\w+)" type="(\w+)">([\s\S]*?)<\/entry>/g;
+        const list = [];
+        for (let m = pattern.exec(xml); m; m = pattern.exec(xml)) {
+            const text = (/<default>([^<]*)<\/default>/.exec(m[3]) || ["", ""])[1];
+            list.push({ name: m[1], type: m[2],
+                        value: m[2] === "Int" || m[2] === "Double" ? Number(text)
+                             : m[2] === "Bool" ? text === "true"
+                             : m[2] === "StringList" ? text.split(",").filter(s => s)
+                             : text });
+        }
+        if (list.length === 0) {
+            throw new Error("main.xml lists no entry");
+        }
+        return list;
+    }
+
+    // Types `text` into `field` over what it held, with the keys of `test`,
+    // a TestCase.
+    function typeIn(test, field, text) {
+        field.forceActiveFocus();
+        field.selectAll();
+        test.keyClick(Qt.Key_Delete);
+        for (const c of text) {
+            test.keyClick(c);
+        }
+        test.compare(field.text, text);
+    }
+
+    // Picks `row` of a combo box from its open list, with the keys of
+    // `test`, a TestCase.
+    function pick(test, box, row) {
+        box.forceActiveFocus();
+        test.keyClick(Qt.Key_Space);
+        test.tryCompare(box.popup, "opened", true);
+        const steps = row - box.currentIndex;
+        for (let i = 0; i < Math.abs(steps); i++) {
+            test.keyClick(steps > 0 ? Qt.Key_Down : Qt.Key_Up);
+        }
+        test.keyClick(Qt.Key_Return);
+        test.tryCompare(box.popup, "visible", false);
+        test.compare(box.currentIndex, row);
+    }
 }
