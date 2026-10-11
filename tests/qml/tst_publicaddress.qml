@@ -9,6 +9,7 @@ import org.kde.kirigami as Kirigami
 import "../../package/contents/ui"
 import "../../package/contents/ui/config"
 import "../../package/contents/ui/code/publicaddress.js" as Lookup
+import "addressfakes.js" as Fakes
 import "journal.js" as Journal
 
 // The public address in the network popup: the service's URLs and replies,
@@ -32,11 +33,8 @@ TestRoot {
 
     Component {
         id: configComponent
-        QtObject {
-            // var, so a test can hand over what a missing or mistyped setting would.
-            property var publicAddress: true
-            property string publicAddressUrl4: ""
-            property string publicAddressUrl6: ""
+        FakeConfig {
+            publicAddress: true
         }
     }
 
@@ -95,46 +93,19 @@ TestRoot {
         }
     }
 
+    // A real Monitor's settings: the network item alone, and a service
+    // that asks both families. realMonitor() sets the switch and the IPv4 URL.
     Component {
         id: realConfigComponent
-        QtObject {
-            property int updateInterval: 1000
-            property string graphSpan: "minute"
-            property bool keepGraphHistory: false
-            property bool fahrenheit: false
-            property bool networkBits: true
-            property bool highlightTemperatures: true
-            property real warmCelsius: 75
-            property real hotCelsius: 90
-            property var itemOrder: ["network"]
-            property var hiddenItems: []
-            property var ringsOnly: []
-            property string cpuTemperatureSensor: ""
-            property string outerGpu: ""
-            property string innerGpu: ""
-            property string networkInterface: ""
-            property string diskDevice: ""
-            property string diskVolume: ""
-            property string diskTemperatureSensor: ""
-            property string detectedHardware: ""
-            property int usageRefreshMinutes: 5
-            property string claudeInnerLimit: ""
-            property string codexInnerLimit: ""
-            property string knownLimits: ""
-            property string usageStatus: ""
-            property var publicAddress: true
-            property string publicAddressUrl4: "https://monitor.example/ip"
-            property string publicAddressUrl6: "https://monitor6.example/ip"
+        FakeConfig {
+            itemOrder: ["network"]
+            publicAddressUrl6: "https://monitor6.example/ip"
         }
     }
 
     Component {
         id: realMonitorComponent
         Monitor {}
-    }
-
-    FakeMonitor {
-        id: plain
     }
 
     // The popups' monitor, outliving every popup; each test gives it a checker.
@@ -147,7 +118,7 @@ TestRoot {
 
     Words {
         id: words
-        monitor: plain
+        monitor: popupMonitor
     }
 
     TestCase {
@@ -162,6 +133,9 @@ TestRoot {
         }
 
         property var monitors: []
+        // Replies from a service that names the place.
+        readonly property string osl4: JSON.stringify({ ip: "198.51.100.24", city: "Oslo", country: "Norway" })
+        readonly property string fra6: JSON.stringify({ ip: "2001:db8::1c", city: "Frankfurt am Main", country: "Germany" })
 
         function cleanup() {
             Journal.unlisten();
@@ -173,47 +147,6 @@ TestRoot {
             wait(0);
         }
 
-        // Requests that record what they were asked and answer on demand.
-        function requests() {
-            const made = [];
-            const make = () => {
-                const r = {
-                    readyState: 0, status: 0, responseText: "", responseURL: "", method: "", url: "", headers: {},
-                    sent: false, aborted: false, onreadystatechange: null,
-                    open(method, url) { this.method = method; this.url = url; this.readyState = 1; },
-                    setRequestHeader(name, value) { this.headers[name] = value; },
-                    send() { this.sent = true; },
-                    abort() {
-                        this.aborted = true;
-                        if (this.sent && this.readyState !== 4) {
-                            this.readyState = 4;
-                            this.status = 0;
-                            this.onreadystatechange();
-                        }
-                    },
-                    // `from`: the URL the request ended at, after any redirect.
-                    answer(status, body, from) {
-                        this.status = status;
-                        this.responseURL = from ?? this.url;
-                        this.responseText = body;
-                        this.readyState = 3;
-                        this.onreadystatechange();
-                        if (this.readyState !== 4) {
-                            this.readyState = 4;
-                            this.onreadystatechange();
-                        }
-                    }
-                };
-                made.push(r);
-                return r;
-            };
-            return { made: made, make: make };
-        }
-
-        function route(v4, v6, tunnel4, tunnel6) {
-            return { known: true, v4: { device: v4, tunnel: !!tunnel4 }, v6: { device: v6, tunnel: !!tunnel6 } };
-        }
-
         // A service of the test's own, so no other test's checks count.
         function own(tag, both) {
             return { publicAddressUrl4: "https://" + tag + ".example/ip",
@@ -223,9 +156,9 @@ TestRoot {
         // A checker with an open popup on a connection through enp5s0.
         function checker(props, config) {
             const c = createTemporaryObject(configComponent, root, config || {});
-            const fake = requests();
+            const fake = Fakes.requests();
             const checker = createTemporaryObject(checkerComponent, root, Object.assign({
-                config: c, makeRequest: fake.make, open: true, egress: route("enp5s0", "enp5s0"),
+                config: c, makeRequest: fake.make, open: true, egress: Fakes.route("enp5s0", "enp5s0"),
                 localAddress: "192.168.1.2"
             }, props || {}));
             verify(checker);
@@ -270,7 +203,7 @@ TestRoot {
 
         // A checker shown in a popup, as Monitor would give it.
         function shownIn(props, config) {
-            const set = checker(Object.assign({ localAddress: "192.168.99.123", egress: route("enp195s0f3u1", "enp195s0f3u1") }, props), config);
+            const set = checker(Object.assign({ localAddress: "192.168.99.123", egress: Fakes.route("enp195s0f3u1", "enp195s0f3u1") }, props), config);
             popupMonitor.publicAddress = set.checker;
             set.monitor = popupMonitor;
             return set;
@@ -517,7 +450,7 @@ TestRoot {
 
         function test_lines() {
             const result = { v4: "198.51.100.24", v6: "2001:db8::1c" };
-            const vpn = Lookup.lines(result, route("wg0", "enp5s0", true, false), "enp5s0");
+            const vpn = Lookup.lines(result, Fakes.route("wg0", "enp5s0", true, false), "enp5s0");
             compare(vpn.v4, { address: "198.51.100.24", via: "wg0", tunnel: true, city: "", country: "" });
             compare(vpn.v6, { address: "2001:db8::1c", via: "", tunnel: false, city: "", country: "" },
                     "no via through the local interface");
@@ -526,14 +459,14 @@ TestRoot {
             compare([placed.v4.city, placed.v4.country, placed.v6.city], ["Amsterdam", "Netherlands", ""]);
             compare(vpn.leak, { family: "v6", through: "wg0" });
 
-            const reverse = Lookup.lines(result, route("enp5s0", "wg0", false, true), "enp5s0");
+            const reverse = Lookup.lines(result, Fakes.route("enp5s0", "wg0", false, true), "enp5s0");
             compare(reverse.leak, { family: "v4", through: "wg0" });
 
-            compare(Lookup.lines(result, route("wg0", "wg0", true, true), "enp5s0").leak, null, "both through the tunnel");
-            compare(Lookup.lines({ v4: result.v4, v6: "" }, route("wg0", "enp5s0", true, false), "enp5s0").leak, null,
+            compare(Lookup.lines(result, Fakes.route("wg0", "wg0", true, true), "enp5s0").leak, null, "both through the tunnel");
+            compare(Lookup.lines({ v4: result.v4, v6: "" }, Fakes.route("wg0", "enp5s0", true, false), "enp5s0").leak, null,
                     "no IPv6 address shown");
-            compare(Lookup.lines(result, route("wg0", "", true, false), "enp5s0").leak, null, "no IPv6 route");
-            compare(Lookup.lines(result, route("enp5s0", "wlan0", false, false), "enp5s0").leak, null, "no tunnel");
+            compare(Lookup.lines(result, Fakes.route("wg0", "", true, false), "enp5s0").leak, null, "no IPv6 route");
+            compare(Lookup.lines(result, Fakes.route("enp5s0", "wlan0", false, false), "enp5s0").leak, null, "no tunnel");
             const unknown = Lookup.lines(result, { known: false }, "enp5s0");
             compare([unknown.v4.via, unknown.v6.via, unknown.leak], ["", "", null], "without route facts");
             compare(Lookup.lines({ v4: "", v6: "" }, null, "enp5s0"), { v4: null, v6: null, leak: null });
@@ -548,9 +481,9 @@ TestRoot {
                 { tag: "setting not a Bool", config: { publicAddress: "on" }, status: "off" },
                 { tag: "popup closed", props: { open: false }, status: "checking" },
                 { tag: "routes not read yet", props: { egress: null }, status: "checking" },
-                { tag: "no route", props: { egress: route("", "") }, status: "offline" },
+                { tag: "no route", props: { egress: Fakes.route("", "") }, status: "offline" },
                 { tag: "no ip and no local address", props: { egress: { known: false }, localAddress: "" }, status: "offline" },
-                { tag: "custom family without a route", props: { egress: route("", "enp5s0") },
+                { tag: "custom family without a route", props: { egress: Fakes.route("", "enp5s0") },
                   config: { publicAddressUrl4: "https://only4.example/ip" }, status: "unrouted" },
                 { tag: "invalid custom URL", config: { publicAddressUrl4: "http://insecure.example/ip" }, status: "invalid" },
                 { tag: "invalid beside a valid one", config: { publicAddressUrl4: "https://me:pw@a.example/",
@@ -559,7 +492,6 @@ TestRoot {
         }
         function test_nothingSent(data) {
             const set = checker(data.props, data.config);
-            wait(50);
             compare(set.made.length, 0, "no request");
             compare(set.checker.status, data.status);
             compare(timer(set.checker, "wait").running, false, "nothing scheduled");
@@ -572,7 +504,7 @@ TestRoot {
             set.config.publicAddress = true;
             set.checker.open = true;
             compare(set.made.length, 0, "routes not read");
-            set.checker.egress = route("enp5s0", "enp5s0");
+            set.checker.egress = Fakes.route("enp5s0", "enp5s0");
             compare(set.made.length, 2);
         }
 
@@ -610,7 +542,7 @@ TestRoot {
         }
 
         function test_familyWithoutARouteIsNotAsked() {
-            const set = checker({ egress: route("enp5s0", "") }, own("noroute6"));
+            const set = checker({ egress: Fakes.route("enp5s0", "") }, own("noroute6"));
             compare(set.made.map(r => r.url), ["https://noroute6.example/ip"]);
         }
 
@@ -654,21 +586,28 @@ TestRoot {
         }
 
         // A route change while open asks once, a minute after the last check.
+        // The wait timer is fired by hand, the clock moved on as it would be.
         function test_routeChangeWaitsForTheMinute() {
-            const set = checker({ clock: () => Date.now(), floorMs: 600 }, own("routechange"));
-            const started = Date.now();
+            const set = checker({}, own("routechange"));
+            const pending = timer(set.checker, "wait");
             answer(set.made, "v4", 200, "203.0.113.7");
             answer(set.made, "v6", 200, "2001:db8::1c");
-            set.checker.egress = route("wg0", "enp5s0", true, false);
+            root.now += 20000;
+            set.checker.egress = Fakes.route("wg0", "enp5s0", true, false);
             compare(set.made.length, 2, "not at once");
-            verify(timer(set.checker, "wait").running, "scheduled");
-            set.checker.egress = route("wg1", "enp5s0", true, false);
-            tryCompare(set.made, "length", 4, 3000);
-            verify(Date.now() - started >= 600 - 20, "not before the minute: " + (Date.now() - started));
+            verify(pending.running, "scheduled");
+            compare(pending.interval, 40000, "for the rest of the minute");
+            set.checker.egress = Fakes.route("wg1", "enp5s0", true, false);
+            root.now += 39999;
+            pending.triggered();
+            compare(set.made.length, 2, "not before the minute");
+            compare(pending.interval, 1);
+            root.now += 1;
+            pending.triggered();
+            compare(set.made.length, 4, "one check for both changes");
             answer(set.made, "v4", 200, "198.51.100.24");
             answer(set.made, "v6", 200, "2001:db8::1c");
-            wait(900);
-            compare(set.made.length, 4, "one check for both changes, and nothing after");
+            compare(pending.running, false, "nothing after");
         }
 
         function test_routeChangeAfterTheMinuteAsksAtOnce() {
@@ -677,7 +616,7 @@ TestRoot {
             answer(set.made, "v6", 200, "2001:db8::1c");
             root.now += 60000;
             compare(set.made.length, 2, "no polling");
-            set.checker.egress = route("wg0", "enp5s0", true, false);
+            set.checker.egress = Fakes.route("wg0", "enp5s0", true, false);
             compare(set.made.length, 4);
             compare(set.checker.record.route, "enp5s0 enp5s0", "the result's own route until the answer");
             answer(set.made, "v4", 200, "198.51.100.24");
@@ -688,7 +627,7 @@ TestRoot {
         // A check a minute on keeps the addresses already found on screen,
         // with the route they came through, until its answer replaces them.
         function test_recheckKeepsTheAddresses() {
-            const set = shownIn({ egress: route("wg0-mullvad", "wg0-mullvad", true, true) }, own("recheck"));
+            const set = shownIn({ egress: Fakes.route("wg0-mullvad", "wg0-mullvad", true, true) }, own("recheck"));
             answer(set.made, "v4", 200, "198.51.100.24");
             answer(set.made, "v6", 200, "2001:db8::1c");
             const page = popup(set.monitor);
@@ -697,7 +636,7 @@ TestRoot {
 
             root.now += 61000;
             set.checker.open = false;
-            set.checker.egress = route("enp195s0f3u1", "enp195s0f3u1");
+            set.checker.egress = Fakes.route("enp195s0f3u1", "enp195s0f3u1");
             set.checker.open = true;
             compare(set.made.length, 4, "asked again");
             compare(set.checker.status, "shown");
@@ -780,7 +719,7 @@ TestRoot {
 
         function test_journalTimeoutAndRedirect() {
             journal();
-            const late = checker({ clock: () => root.now, timeoutMs: 100 }, own("journal-late", false));
+            const late = checker({ timeoutMs: 100 }, own("journal-late", false));
             tryCompare(late.checker, "status", "failed", 2000);
             const moved = checker({}, own("journal-moved", false));
             answer(moved.made, "v4", 200, "203.0.113.7", "https://elsewhere.example/ip");
@@ -813,13 +752,15 @@ TestRoot {
             compare(timer(set.checker, "wait").running, false);
         }
 
+        // Nothing is left running to ask again: neither timer, even with a
+        // failed family and the same route reported anew.
         function test_noPolling() {
-            const set = checker({ clock: () => Date.now(), floorMs: 150 }, own("nopoll"));
+            const set = checker({}, own("nopoll"));
             answer(set.made, "v4", 200, "203.0.113.7");
             answer(set.made, "v6", 500, "");
-            set.checker.egress = route("enp5s0", "enp5s0");
-            wait(600);
+            set.checker.egress = Fakes.route("enp5s0", "enp5s0");
             compare(set.made.length, 2, "the same route asks nothing");
+            compare([timer(set.checker, "wait").running, timer(set.checker, "timeout").running], [false, false]);
             // Another widget's check tells every checker; this one stays put.
             const other = checker({}, own("nopoll-other"));
             answer(other.made, "v4", 200, "203.0.113.8");
@@ -914,7 +855,7 @@ TestRoot {
             const first = root.now;
 
             root.now += 61000;
-            set.checker.egress = route("wg0", "enp5s0", true, false);
+            set.checker.egress = Fakes.route("wg0", "enp5s0", true, false);
             answer(set.made, "v4", 200, "198.51.100.24");
             compare(set.checker.record.changed.v4, { at: root.now, was: "203.0.113.7" });
 
@@ -989,8 +930,8 @@ TestRoot {
             compare(off, without);
             compare(off.detail, "192.168.99.123 · enp195s0f3u1");
             compare(off.block, false, "no address block");
-            wait(50);
             compare(set.made.length, 0, "nothing asked");
+            compare(timer(set.checker, "wait").running, false, "nothing scheduled");
         }
 
         // The checker's status, and so the popup's block, follow the setting.
@@ -1022,7 +963,7 @@ TestRoot {
         }
 
         function test_shownLinesAndLeak() {
-            const set = shownIn({ egress: route("wg0-mullvad", "enp5s0", true, false) }, own("lines"));
+            const set = shownIn({ egress: Fakes.route("wg0-mullvad", "enp5s0", true, false) }, own("lines"));
             answer(set.made, "v4", 200, "198.51.100.24");
             answer(set.made, "v6", 200, "2001:db8::1c");
             const page = popup(set.monitor);
@@ -1062,7 +1003,7 @@ TestRoot {
             compare(addressLines(page).map(l => l.spoken)[1], "Public address 203.0.113.7");
 
             root.now += 61000;
-            set.checker.egress = route("wg0", "enp195s0f3u1", true, false);
+            set.checker.egress = Fakes.route("wg0", "enp195s0f3u1", true, false);
             answer(set.made, "v4", 200, "198.51.100.24");
             const time = words.timeOfDay(root.now / 1000, root.now);
             verify(visibleTexts(page).includes("Changed at " + time + ", was 203.0.113.7"), visibleTexts(page));
@@ -1097,10 +1038,6 @@ TestRoot {
 
         // ---- The place a service names ----
 
-        readonly property string osl4: JSON.stringify({ ip: "198.51.100.24", city: "Oslo", country: "Norway" })
-        readonly property string fra4: JSON.stringify({ ip: "198.51.100.24", city: "Frankfurt am Main", country: "Germany" })
-        readonly property string fra6: JSON.stringify({ ip: "2001:db8::1c", city: "Frankfurt am Main", country: "Germany" })
-
         // The visible place lines under the addresses, top to bottom.
         function placeTexts(page) {
             const b = block(page);
@@ -1126,7 +1063,8 @@ TestRoot {
                 { tag: "two places", v4: [200, osl4], v6: [200, JSON.stringify({ ip: v6, city: "Bergen", country: "Norway" })],
                   places: ["IPv4 near Oslo, Norway", "IPv6 near Bergen, Norway"],
                   spoken: ["Public address 198.51.100.24, near Oslo, Norway", "Public address 2001:db8::1c, near Bergen, Norway"] },
-                { tag: "the same place", v4: [200, fra4], v6: [200, fra6], places: ["Near Frankfurt am Main, Germany"],
+                { tag: "the same place", v4: [200, JSON.stringify({ ip: "198.51.100.24", city: "Frankfurt am Main", country: "Germany" })],
+                  v6: [200, fra6], places: ["Near Frankfurt am Main, Germany"],
                   spoken: ["Public address 198.51.100.24, near Frankfurt am Main, Germany",
                            "Public address 2001:db8::1c, near Frankfurt am Main, Germany"] },
                 { tag: "a city alone", v4: [200, JSON.stringify({ ip: "198.51.100.24", city: "Amsterdam" })], v6: [200, v6],
@@ -1163,7 +1101,7 @@ TestRoot {
         // The places sit between the addresses and the note, as one group,
         // set a little apart from the addresses.
         function test_placeAboveTheNotes() {
-            const set = shownIn({ egress: route("wg0-mullvad", "enp195s0f3u1", true, false) }, own("placenote"));
+            const set = shownIn({ egress: Fakes.route("wg0-mullvad", "enp195s0f3u1", true, false) }, own("placenote"));
             answer(set.made, "v4", 200, osl4);
             answer(set.made, "v6", 200, fra6);
             const page = popup(set.monitor);
@@ -1369,8 +1307,8 @@ TestRoot {
                 { tag: "checking", config: {}, status: "checking" },
                 { tag: "shown", config: {}, ok: ["v4", "v6"], status: "shown" },
                 { tag: "one family failed", config: {}, ok: ["v4"], fail: ["v6"], status: "shown" },
-                { tag: "offline", props: { egress: route("", "") }, config: {}, status: "offline" },
-                { tag: "unrouted", props: { egress: route("", "enp195s0f3u1") },
+                { tag: "offline", props: { egress: Fakes.route("", "") }, config: {}, status: "offline" },
+                { tag: "unrouted", props: { egress: Fakes.route("", "enp195s0f3u1") },
                   config: { publicAddressUrl4: "https://a.example/", publicAddressUrl6: "" }, status: "unrouted" },
                 { tag: "off", config: { publicAddress: false }, status: "off" }
             ];
@@ -1496,7 +1434,7 @@ TestRoot {
             return [
                 { tag: "popup closed", change: s => { s.checker.open = false; } },
                 { tag: "switched off", change: s => { s.config.publicAddress = false; } },
-                { tag: "no connection", change: s => { s.checker.egress = route("", ""); } },
+                { tag: "no connection", change: s => { s.checker.egress = Fakes.route("", ""); } },
                 { tag: "invalid service", change: s => { s.config.publicAddressUrl4 = "http://typo.example/ip"; } }
             ];
         }
@@ -1568,12 +1506,12 @@ TestRoot {
 
         function test_otherStatesInThePopup_data() {
             return [
-                { tag: "offline", props: { egress: route("", "") }, config: {}, text: "Waiting for a connection" },
+                { tag: "offline", props: { egress: Fakes.route("", "") }, config: {}, text: "Waiting for a connection" },
                 { tag: "invalid", props: {}, config: { publicAddressUrl4: "http://a.example/" },
                   text: "Check the address service in the settings" },
-                { tag: "IPv4 only, without an IPv4 route", props: { egress: route("", "enp195s0f3u1") },
+                { tag: "IPv4 only, without an IPv4 route", props: { egress: Fakes.route("", "enp195s0f3u1") },
                   config: { publicAddressUrl4: "https://a.example/" }, text: "No IPv4 connection" },
-                { tag: "IPv6 only, without an IPv6 route", props: { egress: route("enp195s0f3u1", "") },
+                { tag: "IPv6 only, without an IPv6 route", props: { egress: Fakes.route("enp195s0f3u1", "") },
                   config: { publicAddressUrl6: "https://b.example/" }, text: "No IPv6 connection" },
                 { tag: "checking, two hosts", props: {},
                   config: { publicAddressUrl4: "https://a.example/", publicAddressUrl6: "https://b.example/" },
@@ -1596,7 +1534,7 @@ TestRoot {
             return [{ tag: "leftToRight", mirrored: false }, { tag: "rightToLeft", mirrored: true }];
         }
         function test_mirroredAddressesStayLeftToRight(data) {
-            const set = shownIn({ egress: route("wg0-mullvad", "enp195s0f3u1", true, false) }, own("mirror" + data.mirrored));
+            const set = shownIn({ egress: Fakes.route("wg0-mullvad", "enp195s0f3u1", true, false) }, own("mirror" + data.mirrored));
             answer(set.made, "v4", 200, "198.51.100.24");
             answer(set.made, "v6", 200, "2001:db8::1c");
             const page = popup(set.monitor, data.mirrored);
@@ -1628,7 +1566,7 @@ TestRoot {
             return [{ tag: "leftToRight", mirrored: false }, { tag: "rightToLeft", mirrored: true }];
         }
         function test_longAddressPutsTheInterfaceUnder(data) {
-            const set = shownIn({ egress: route("enp195s0f3u1", "wg0-mullvad", false, true) }, own("longvia" + data.mirrored));
+            const set = shownIn({ egress: Fakes.route("enp195s0f3u1", "wg0-mullvad", false, true) }, own("longvia" + data.mirrored));
             answer(set.made, "v4", 200, "198.51.100.24");
             answer(set.made, "v6", 200, "dddd:dddd:dddd:dddd:dddd:dddd:dddd:dddd");
             const page = popup(set.monitor, data.mirrored);
@@ -1670,7 +1608,7 @@ TestRoot {
         }
         function test_vpnAddressesLaidOutAtOnce(data) {
             failOnWarning(/polish loop|Binding loop/);
-            const set = shownIn({ egress: route("wg0-mullvad", "wg0-mullvad", true, true) }, own("vpnatonce" + (data.drawn ? "open" : "fresh") + (data.mirrored ? "rtl" : "ltr")));
+            const set = shownIn({ egress: Fakes.route("wg0-mullvad", "wg0-mullvad", true, true) }, own("vpnatonce" + (data.drawn ? "open" : "fresh") + (data.mirrored ? "rtl" : "ltr")));
             let page;
             if (data.drawn) {
                 page = popup(set.monitor, data.mirrored);
@@ -1718,17 +1656,7 @@ TestRoot {
         // has it. test_nothingSent and test_offIsToday show that off asks
         // nothing.
         function test_shippedDefaults() {
-            const request = new XMLHttpRequest();
-            request.open("GET", Qt.resolvedUrl("../../package/contents/config/main.xml"), false);
-            request.send();
-            const xml = request.responseText;
-            verify(xml !== "", "main.xml read; set QML_XHR_ALLOW_FILE_READ=1");
-            const entryOf = key => {
-                const entry = new RegExp('<entry name="' + key + '" type="(\\w+)">([\\s\\S]*?)</entry>').exec(xml);
-                verify(entry, key + " in main.xml");
-                return { type: entry[1], value: (/<default>([^<]*)<\/default>/.exec(entry[2]) || ["", ""])[1] };
-            };
-            compare(entryOf("publicAddress"), { type: "Bool", value: "false" });
+            compare(root.entries().find(e => e.name === "publicAddress"), { name: "publicAddress", type: "Bool", value: false });
         }
 
         // The General page, right to left if asked, as an RTL language lays it out.
@@ -1762,30 +1690,6 @@ TestRoot {
             verify(shown.length <= 1);
             verify(shown.every(i => i.text !== ""), "no empty reason takes room");
             return shown.length === 1 ? shown[0].text : "";
-        }
-
-        function typeIn(field, text) {
-            field.forceActiveFocus();
-            field.selectAll();
-            keyClick(Qt.Key_Delete);
-            for (const c of text) {
-                keyClick(c);
-            }
-            compare(field.text, text);
-        }
-
-        // Picks a service from the open list with the keyboard.
-        function pick(c, row) {
-            c.service.forceActiveFocus();
-            keyClick(Qt.Key_Space);
-            tryCompare(c.service.popup, "opened", true);
-            const steps = row - c.service.currentIndex;
-            for (let i = 0; i < Math.abs(steps); i++) {
-                keyClick(steps > 0 ? Qt.Key_Down : Qt.Key_Up);
-            }
-            keyClick(Qt.Key_Return);
-            tryCompare(c.service.popup, "visible", false);
-            compare(c.service.currentIndex, row);
         }
 
         // The line sits under the box's text, at the side it starts from.
@@ -1836,7 +1740,7 @@ TestRoot {
             mouseClick(c.box);
             compare(page.cfg_publicAddress, true);
             if (data.custom) {
-                pick(c, root.customRow);
+                root.pick(testCase, c.service, root.customRow);
             }
             for (const on of [true, false, true]) {
                 if (page.cfg_publicAddress !== on) {
@@ -1900,7 +1804,7 @@ TestRoot {
         function test_settingsCustom() {
             const page = general({ cfg_publicAddress: true });
             const c = controls(page);
-            pick(c, root.customRow);
+            root.pick(testCase, c.service, root.customRow);
             compare([c.url4.visible, c.url6.visible], [true, true]);
             compare([c.url4.text, c.url6.text], ["", ""]);
             verify(c.url4.activeFocus, "the IPv4 field has the focus");
@@ -1909,23 +1813,23 @@ TestRoot {
                 compare(field.parent.Kirigami.FormData.buddyFor, field, field.Accessible.name + "'s label names it");
             }
 
-            typeIn(c.url4, "https://a.example/ip");
-            typeIn(c.url6, "https://b.example/ip");
+            root.typeIn(testCase, c.url4, "https://a.example/ip");
+            root.typeIn(testCase, c.url6, "https://b.example/ip");
             compare([page.cfg_publicAddressUrl4, page.cfg_publicAddressUrl6], ["https://a.example/ip", "https://b.example/ip"]);
             compare(c.line.text, "Asks a.example and b.example, which see your address, when the popup opens.");
 
-            pick(c, root.ipifyRow);
+            root.pick(testCase, c.service, root.ipifyRow);
             compare([page.cfg_publicAddressUrl4, page.cfg_publicAddressUrl6], ["", ""]);
             compare([c.url4.visible, c.url6.visible], [false, false]);
             compare(c.line.text, "Asks ipify.org, which sees your address, when the popup opens.");
 
-            pick(c, root.customRow);
+            root.pick(testCase, c.service, root.customRow);
             compare([page.cfg_publicAddressUrl4, page.cfg_publicAddressUrl6], ["https://a.example/ip", "https://b.example/ip"]);
             compare([c.url4.text, c.url6.text], ["https://a.example/ip", "https://b.example/ip"]);
 
             // Emptying both by hand keeps Custom open, asking ipify.org meanwhile.
-            typeIn(c.url4, "");
-            typeIn(c.url6, "");
+            root.typeIn(testCase, c.url4, "");
+            root.typeIn(testCase, c.url6, "");
             compare(c.service.currentIndex, root.customRow);
             compare([c.url4.visible, c.url6.visible], [true, true]);
             compare(c.line.text, "Asks ipify.org, which sees your address, until you enter a URL.");
@@ -1937,13 +1841,13 @@ TestRoot {
             const page = general({ cfg_publicAddress: true, cfg_publicAddressUrl4: "https://a.example/ip",
                                    cfg_publicAddressUrl6: "https://b.example/ip" });
             const c = controls(page);
-            pick(c, root.ipifyRow);
-            pick(c, root.ipifyRow);
+            root.pick(testCase, c.service, root.ipifyRow);
+            root.pick(testCase, c.service, root.ipifyRow);
             compare([page.cfg_publicAddressUrl4, page.cfg_publicAddressUrl6], ["", ""]);
-            pick(c, root.customRow);
+            root.pick(testCase, c.service, root.customRow);
             compare([page.cfg_publicAddressUrl4, page.cfg_publicAddressUrl6], ["https://a.example/ip", "https://b.example/ip"]);
-            typeIn(c.url4, "https://c.example/ip");
-            pick(c, root.customRow);
+            root.typeIn(testCase, c.url4, "https://c.example/ip");
+            root.pick(testCase, c.service, root.customRow);
             compare([page.cfg_publicAddressUrl4, page.cfg_publicAddressUrl6], ["https://c.example/ip", "https://b.example/ip"]);
             compare(c.url4.text, "https://c.example/ip");
         }
@@ -1973,18 +1877,18 @@ TestRoot {
             const page = general({ cfg_publicAddress: true, cfg_publicAddressUrl4: "https://a.example/ip" });
             const c = controls(page);
             compare(c.service.currentIndex, root.customRow);
-            pick(c, root.mullvadRow);
+            root.pick(testCase, c.service, root.mullvadRow);
             compare([page.cfg_publicAddressUrl4, page.cfg_publicAddressUrl6], mullvad);
             compare([c.url4.visible, c.url6.visible, c.json.visible], [false, false, false]);
             compare(c.line.text, "Asks am.i.mullvad.net, which sees your address, when the popup opens.");
-            pick(c, root.customRow);
+            root.pick(testCase, c.service, root.customRow);
             compare([page.cfg_publicAddressUrl4, page.cfg_publicAddressUrl6], ["https://a.example/ip", ""]);
-            pick(c, root.mullvadRow);
-            pick(c, root.ipifyRow);
+            root.pick(testCase, c.service, root.mullvadRow);
+            root.pick(testCase, c.service, root.ipifyRow);
             compare([page.cfg_publicAddressUrl4, page.cfg_publicAddressUrl6], ["", ""]);
             compare(c.line.text, "Asks ipify.org, which sees your address, when the popup opens.");
-            pick(c, root.mullvadRow);
-            pick(c, root.customRow);
+            root.pick(testCase, c.service, root.mullvadRow);
+            root.pick(testCase, c.service, root.customRow);
             compare([page.cfg_publicAddressUrl4, page.cfg_publicAddressUrl6], ["https://a.example/ip", ""],
                     "Custom keeps its own URLs through Mullvad and ipify.org");
         }
@@ -2010,7 +1914,7 @@ TestRoot {
             const c = controls(page);
             compare(c.service.currentIndex, root.ipifyRow);
             compare(c.url4.visible, false);
-            pick(c, root.customRow);
+            root.pick(testCase, c.service, root.customRow);
             compare([c.url4.visible, c.url6.visible], [true, true]);
             verify(c.url4.activeFocus, "the IPv4 field has the focus");
             compare(c.line.text, "Asks ipify.org, which sees your address, until you enter a URL.");
@@ -2023,7 +1927,7 @@ TestRoot {
             const c = controls(page);
             compare(c.service.currentIndex, root.customRow);
             compare(c.url4.cursorPosition, 0, "a stored URL opens at its start");
-            typeIn(c.url4, "");
+            root.typeIn(testCase, c.url4, "");
             compare(page.cfg_publicAddressUrl4, "");
             compare(c.service.currentIndex, root.customRow);
             compare([c.url4.visible, c.url6.visible], [true, true]);
@@ -2044,8 +1948,8 @@ TestRoot {
                                    cfg_publicAddressUrl6: data.url6 ?? "" });
             const c = controls(page);
             if (data.typed) {
-                pick(c, root.customRow);
-                typeIn(c[data.typed], "https://a.example/ip");
+                root.pick(testCase, c.service, root.customRow);
+                root.typeIn(testCase, c[data.typed], "https://a.example/ip");
             }
             compare(c.service.currentIndex, root.customRow);
             compare(c.url4.visible, true);
@@ -2079,10 +1983,10 @@ TestRoot {
         function test_settingsUrlReasons(data) {
             const page = general({ cfg_publicAddress: true });
             const c = controls(page);
-            pick(c, root.customRow);
+            root.pick(testCase, c.service, root.customRow);
             const field = data.name === "IPv4 URL" ? c.url4 : c.url6;
             const other = field === c.url4 ? c.url6 : c.url4;
-            typeIn(field, data.url);
+            root.typeIn(testCase, field, data.url);
             compare(reason(field), data.reason);
             compare(field.Accessible.description, data.reason);
             compare(reason(other), "");
@@ -2095,7 +1999,7 @@ TestRoot {
                 verify(note.mapToItem(page, Qt.point(0, 0)).y >= field.mapToItem(page, Qt.point(0, 0)).y + field.height - 0.5,
                        "the reason is under its field");
             }
-            typeIn(field, "");
+            root.typeIn(testCase, field, "");
             compare(reason(field), "", "an empty field is fine");
         }
 
@@ -2112,7 +2016,7 @@ TestRoot {
                 verify(!field.mirrored, field.Accessible.name + " mirrored");
                 compare(field.effectiveHorizontalAlignment, TextInput.AlignLeft, field.Accessible.name);
             }
-            typeIn(c.url6, "http://b.example/ip");
+            root.typeIn(testCase, c.url6, "http://b.example/ip");
             compare(reason(c.url6), "Only https:// addresses work.");
             const note = all(c.url6.parent, i => i instanceof QQC2.Label && i.visible)[0];
             compare(note.effectiveHorizontalAlignment, Text.AlignRight);
@@ -2141,7 +2045,7 @@ TestRoot {
                 helperPath: decodeURIComponent(Qt.resolvedUrl("data/fake-info.sh").toString().replace(/^file:\/\//, ""))
             });
             monitors.push(monitor);
-            const fake = requests();
+            const fake = Fakes.requests();
             monitor.publicAddress.makeRequest = fake.make;
             monitor.publicAddress.clock = () => root.now;
             // What the monitor's polled helper runs, of which the route facts end in " egress".
@@ -2159,7 +2063,7 @@ TestRoot {
                 compare(egress().length, 0, "with " + (open || "nothing") + " open");
             }
             // Route facts alone don't send while the network popup is closed.
-            monitor.egress = route("eth9", "eth9");
+            monitor.egress = Fakes.route("eth9", "eth9");
             compare(fake.made.length, 0, "nothing sent with the popup closed");
             monitor.egress = null;
             monitor.openPopup = "network";
@@ -2188,10 +2092,10 @@ TestRoot {
         function test_monitorSwitchedOn() {
             const { config, monitor, fake, egress } = realMonitor("monitor-switchon", "0.3.0", "on");
             monitor.openPopup = "network";
-            wait(100);
             compare(egress().length, 0, "no route facts read");
             compare(monitor.egress, null);
             compare(fake.made.length, 0);
+            compare(timer(monitor.publicAddress, "wait").running, false, "nothing scheduled");
             compare(monitor.publicAddress.status, "off");
             config.publicAddress = true;
             compare(egress().length, 1);

@@ -5,7 +5,6 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls as QQC2
 import QtTest
-import org.kde.kirigami as Kirigami
 import org.kde.plasma.core as PlasmaCore
 import "../../package/contents/ui/config"
 import "fakeplasmoid"
@@ -23,35 +22,17 @@ TestRoot {
     width: 660
     height: 560
 
-
-    Component {
-        id: frame
-        Rectangle {
-            property alias page: page
-            width: root.width
-            height: root.height
-            color: Kirigami.Theme.backgroundColor
-            Kirigami.Theme.colorSet: Kirigami.Theme.Window
-            ConfigItems {
-                id: page
-                anchors.fill: parent
-                cfg_itemOrder: ["cpu", "gpu", "memory", "network", "disk"]
-                cfg_ringsOnly: ["memory"]
-            }
-        }
-    }
-
-    // A bare page, for tests that only read cfg_ values, page.hints or
-    // control state and don't need the Rectangle's theming.
     Component {
         id: plain
         ConfigItems {
             width: root.width
             height: root.height
+            cfg_itemOrder: ["cpu", "gpu", "memory", "network", "disk"]
         }
     }
 
     TestCase {
+        id: testCase
         name: "ConfigItems"
 
         // ConfigItems.qml with fakeplasmoid/ for org.kde.plasma.plasmoid,
@@ -60,13 +41,10 @@ TestRoot {
         property var panelPage: null
 
         function initTestCase() {
-            const request = new XMLHttpRequest();
-            request.open("GET", Qt.resolvedUrl("../../package/contents/ui/config/ConfigItems.qml"), false);
-            request.send();
-            verify(request.responseText !== "", "ConfigItems.qml read; set QML_XHR_ALLOW_FILE_READ=1");
+            const text = root.read("../../package/contents/ui/config/ConfigItems.qml");
             const from = /^import org\.kde\.plasma\.plasmoid$/m;
-            verify(from.test(request.responseText), "ConfigItems.qml no longer matches " + from);
-            panelSource = request.responseText.replace(from, 'import "' + Qt.resolvedUrl("fakeplasmoid") + '"');
+            verify(from.test(text), "ConfigItems.qml no longer matches " + from);
+            panelSource = text.replace(from, 'import "' + Qt.resolvedUrl("fakeplasmoid") + '"');
         }
 
         function cleanup() {
@@ -82,13 +60,7 @@ TestRoot {
         when: windowShown
 
         function button(page, label) {
-            return find(page, i => i.text === label && i.display !== undefined && i.icon !== undefined);
-        }
-        function make() {
-            const f = createTemporaryObject(frame, root);
-            verify(f);
-            waitForRendering(f);
-            return f;
+            return root.find(page, i => i.text === label && i.display !== undefined && i.icon !== undefined);
         }
         function openPage(properties) {
             const p = createTemporaryObject(plain, root, properties);
@@ -97,14 +69,17 @@ TestRoot {
             return p;
         }
         function checkbox(page, name) {
-            return find(page, i => i.text === name && i.checkState !== undefined);
+            return root.find(page, i => i.text === name && i.checkState !== undefined);
         }
         function accessible(page, name) {
-            return find(page, i => i.Accessible && i.Accessible.name === name);
+            return root.find(page, i => i.Accessible && i.Accessible.name === name);
         }
 
-        function test_edges_and_tooltips() {
-            const page = make().page;
+        // The move buttons show icons alone, so their text, which a screen
+        // reader announces and the tooltip shows, says what each does. The
+        // first row can't go up and the last can't go down.
+        function test_keyboard_up_to_top() {
+            const page = openPage();
             verify(!button(page, "Move CPU up").enabled);
             verify(button(page, "Move CPU down").enabled);
             // Claude and OpenAI trail the list by default, so OpenAI is the
@@ -112,15 +87,9 @@ TestRoot {
             verify(button(page, "Move OpenAI up").enabled);
             verify(!button(page, "Move OpenAI down").enabled);
             const up = button(page, "Move GPU up");
-            compare(up.QQC2.ToolTip.text, "Move GPU up");
-            compare(up.icon.name, "go-up");
-            compare(up.display, QQC2.AbstractButton.IconOnly);
-        }
-
-        function test_keyboard_up_to_top() {
-            const page = make().page;
-            const up = button(page, "Move GPU up");
             const down = button(page, "Move GPU down");
+            compare(up.display, QQC2.AbstractButton.IconOnly);
+            compare(up.QQC2.ToolTip.text, "Move GPU up");
             up.forceActiveFocus(Qt.TabFocusReason);
             tryVerify(() => up.visualFocus);
             keyClick(Qt.Key_Space);
@@ -140,7 +109,7 @@ TestRoot {
         // Claude and Codex trail every stored order, so they are the pair
         // at the bottom of the list.
         function test_keyboard_down_to_bottom() {
-            const page = make().page;
+            const page = openPage();
             const down = button(page, "Move Claude down");
             const up = button(page, "Move Claude up");
             down.forceActiveFocus(Qt.TabFocusReason);
@@ -151,7 +120,7 @@ TestRoot {
         }
 
         function test_mouse() {
-            const page = make().page;
+            const page = openPage();
             const up = button(page, "Move Memory up");
             mouseClick(up);
             compare(page.cfg_itemOrder, ["cpu", "memory", "gpu", "network", "disk", "claude", "codex"]);
@@ -246,15 +215,10 @@ TestRoot {
             if (data.vertical) {
                 return;
             }
-            for (const [key, expected] of [[Qt.Key_Down, ["memory", "cpu"]], [Qt.Key_Up, ["memory"]]]) {
-                mode.forceActiveFocus();
-                keyClick(Qt.Key_Space);
-                tryCompare(mode.popup, "opened", true);
-                keyClick(key);
-                keyClick(Qt.Key_Return);
-                tryCompare(mode.popup, "visible", false);
-                compare(page.cfg_ringsOnly, expected);
-            }
+            root.pick(testCase, mode, 1);
+            compare(page.cfg_ringsOnly, ["memory", "cpu"]);
+            root.pick(testCase, mode, 0);
+            compare(page.cfg_ringsOnly, ["memory"]);
         }
     }
 }

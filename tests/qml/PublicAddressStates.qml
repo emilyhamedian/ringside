@@ -4,6 +4,7 @@
 import QtQuick
 import "../../package/contents/ui"
 import "../../package/contents/ui/code/publicaddress.js" as Lookup
+import "addressfakes.js" as Fakes
 
 // The public address lookup in each state the network popup shows, for the
 // gallery: the real checker runs through canned replies and route facts,
@@ -16,7 +17,7 @@ QtObject {
 
     // The interface the popup's monitor names as local, and the moment of
     // the last check: a fixed time, so the notes read the same every run.
-    property string localInterface: "enp195s0f3u1"
+    required property string localInterface
     property real at: new Date(2026, 9, 7, 14, 2).getTime()
     // name -> a lookup frozen in that state, filled in when this is created.
     property var all: ({})
@@ -25,15 +26,9 @@ QtObject {
         PublicAddress {}
     }
     property Component configComponent: Component {
-        QtObject {
-            property bool publicAddress: true
-            property string publicAddressUrl4: ""
-            property string publicAddressUrl6: ""
+        FakeConfig {
+            publicAddress: true
         }
-    }
-
-    function route(v4, v6, tunnel4, tunnel6) {
-        return { known: true, v4: { device: v4, tunnel: !!tunnel4 }, v6: { device: v6, tunnel: !!tunnel6 } };
     }
 
     // Runs `steps`, each { egress, v4, v6 } with the replies as [status,
@@ -45,24 +40,14 @@ QtObject {
         }
         let now = states.at - 61000 * (last ?? steps.length - 1);
         let replies = {};
-        const make = () => ({
-            readyState: 0, status: 0, responseText: "", url: "", responseURL: "", onreadystatechange: null,
-            open(method, url) { this.url = url; },
-            setRequestHeader() {},
-            abort() {},
-            send() {
-                const reply = replies[this.url];
-                if (reply) {
-                    this.status = reply[0];
-                    this.responseURL = this.url;
-                    this.responseText = reply[1];
-                    this.readyState = XMLHttpRequest.DONE;
-                    this.onreadystatechange();
-                }
+        const fake = Fakes.requests(r => {
+            const reply = replies[r.url];
+            if (reply) {
+                r.answer(reply[0], reply[1]);
             }
         });
         const c = configComponent.createObject(states, config || {});
-        const checker = checkerComponent.createObject(null, { config: c, clock: () => now, makeRequest: make, localAddress: "192.0.2.1" });
+        const checker = checkerComponent.createObject(null, { config: c, clock: () => now, makeRequest: fake.make, localAddress: "192.0.2.1" });
         steps.forEach((step, n) => {
             const service = Lookup.service(c.publicAddressUrl4, c.publicAddressUrl6);
             replies = {};
@@ -90,16 +75,16 @@ QtObject {
     }
 
     Component.onCompleted: {
-        const home = route(localInterface, localInterface);
-        const homeV4 = route(localInterface, "");
-        const vpn = route("wg0-mullvad", "", true);
-        const leak = route("wg0-mullvad", localInterface, true);
+        const home = Fakes.route(localInterface, localInterface);
+        const homeV4 = Fakes.route(localInterface, "");
+        const vpn = Fakes.route("wg0-mullvad", "", true);
+        const leak = Fakes.route("wg0-mullvad", localInterface, true);
         const ok4 = [200, "203.0.113.7\n"];
         const long6 = [200, "2001:db8:85a3:4d1c:9d2e:51f4:c8a3:7e61"];
         all = {
             both: run([{ egress: home, v4: ok4, v6: [200, "2001:db8:4f2a::1c"] }]),
             vpn: run([{ egress: homeV4, v4: ok4 }, { egress: vpn, v4: [200, "198.51.100.24"] }]),
-            longvpn: run([{ egress: route("wg0-mullvad", "wg0-mullvad", true, true), v4: [200, "198.51.100.24"], v6: long6 }]),
+            longvpn: run([{ egress: Fakes.route("wg0-mullvad", "wg0-mullvad", true, true), v4: [200, "198.51.100.24"], v6: long6 }]),
             longleak: run([{ egress: leak, v4: [200, "198.51.100.24"], v6: long6 }]),
             // A Custom service that answers in JSON with a city.
             city: run([{ egress: vpn, v4: [200, JSON.stringify({ ip: "198.51.100.24", city: "Amsterdam", country: "Netherlands",
