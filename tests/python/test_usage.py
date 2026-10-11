@@ -157,8 +157,10 @@ class CodexParsing(Isolated):
         with self.assertRaises(RuntimeError):
             usage.parse_codex({"rateLimits": {"primary": None, "secondary": None}})
 
+    # 1e999 is valid JSON that parses to infinity; read as 0% it would pass
+    # for an idle week.
     def test_a_week_without_its_share_is_an_error(self):
-        for used in (None, "soon", "absent"):
+        for used in (None, "soon", "absent", json.loads("1e999"), float("-inf"), float("nan")):
             with self.subTest(used=used):
                 result = fixture("codex_rate_limits.json")
                 week = result["rateLimitsByLimitId"]["codex"]["primary"]
@@ -225,7 +227,7 @@ class ClaudeParsing(Isolated):
 
     # Read as 0%, it would let the starter send past a reached weekly limit.
     def test_a_weekly_window_without_its_share_is_an_error(self):
-        for utilization in (None, "soon", "absent"):
+        for utilization in (None, "soon", "absent", json.loads("1e999"), float("-inf"), float("nan")):
             with self.subTest(utilization=utilization):
                 usage_body = fixture("claude_usage.json")
                 if utilization == "absent":
@@ -241,15 +243,17 @@ class ClaudeParsing(Isolated):
 
 
 class Conversions(Isolated):
-    # Half rounds up, as the widget's Math.round does; JSON's Infinity and
-    # NaN count as no share.
+    # Half rounds up, as the widget's Math.round does. Anything else reads
+    # as 0 for a scoped window, which is only shown; the parsers reject it
+    # for a share the starter acts on.
     def test_percent_is_clamped_and_rounded_half_up(self):
         for value, percent in ((101.2, 100), (-3, 0), (62.5, 63), (61.5, 62), (0.5, 1), ("34.4", 34), (None, 0),
                                ("soon", 0), (float("inf"), 0), (float("-inf"), 0), (float("nan"), 0)):
             with self.subTest(value=value):
                 self.assertEqual(usage.clamp_percent(value), percent)
-        self.assertEqual(usage.parse_claude(json.loads('{"seven_day": {"utilization": Infinity}}'))["weekly"]["percent"],
-                         0)
+        usage_body = fixture("claude_usage.json")
+        usage_body["limits"][2]["percent"] = json.loads("1e999")
+        self.assertEqual([s["percent"] for s in usage.parse_claude(usage_body)["scoped"]], [0, 9])
 
     def test_epoch_accepts_seconds_and_iso(self):
         self.assertEqual(usage.epoch_seconds(1788926677), 1788926677)

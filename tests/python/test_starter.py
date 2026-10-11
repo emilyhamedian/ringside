@@ -985,6 +985,26 @@ class StarterRuns(Isolated):
                 self.assertEqual(stored["failures"], 1)
                 self.assertIn(starter["next"] - stored["steppedAt"], (300, 301))
 
+    # A share that isn't finite (1e999 is valid JSON) read as 0% would
+    # pass for an idle week and let the message go.
+    def test_a_reply_whose_share_isnt_finite_sends_nothing(self):
+        reset = int(time.time()) + WEEK
+        claude_body = {"seven_day": {"utilization": json.loads("1e999"), "resets_at": reset}, "five_hour": None}
+        codex_body = {"rateLimits": {"primary": {"usedPercent": float("nan"), "windowDurationMins": WEEK // 60,
+                                                 "resetsAt": reset}}}
+        self.claude.side_effect = lambda: usage.parse_claude(claude_body)
+        self.codex.side_effect = lambda: usage.parse_codex(codex_body)
+        for name in ("claude", "codex"):
+            with self.subTest(name=name):
+                usage.STARTER_STATE.unlink(missing_ok=True)
+                self.calls.clear()
+                self.run_main("--providers", name, "--starter-set", f"{name}=on")
+                self.write_cache({})
+                entry = self.run_main("--providers", name, "--start")["providers"][name]
+                self.assertEqual(self.calls, [])
+                self.assertEqual(entry["status"], "error")
+                self.assertEqual((entry["starter"]["state"], entry["starter"]["reason"]), ("failed", "unchecked"))
+
     def test_a_cli_that_rejects_a_flag_reports_not_responding(self):
         self.run_main("--starter-set", "claude=on")
         rejects = mock.patch.object(usage, "run_cli", side_effect=lambda argv, env, timeout: self.calls.append(argv)
@@ -1190,6 +1210,8 @@ class Session(Isolated):
         self.assertNotIn("session", usage.parse_claude(body))
         for five_hour in ("soon", [], 12, {"utilization": 40}, {"utilization": "40", "resets_at": None},
                           {"utilization": True, "resets_at": "2026-09-02T02:00:00Z"},
+                          {"utilization": json.loads("1e999"), "resets_at": "2026-09-02T02:00:00Z"},
+                          {"utilization": float("nan"), "resets_at": None},
                           {"utilization": 40, "resets_at": None}, {"utilization": 0, "resets_at": "soon"}):
             with self.subTest(five_hour=five_hour):
                 body["five_hour"] = five_hour

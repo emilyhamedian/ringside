@@ -549,7 +549,7 @@ def parse_codex(result):
     if not window:
         raise RuntimeError("no usage window in app-server reply")
     # As for Claude: a missing share read as 0% could pass for an idle week.
-    if type(window.get("usedPercent")) not in (int, float):
+    if not finite_share(window.get("usedPercent")):
         raise RuntimeError("no usage share in app-server reply")
     scoped = []
     for limit_id, other in sorted(by_id.items()):
@@ -883,7 +883,7 @@ def parse_claude(usage):
         raise RuntimeError("no weekly window in usage reply")
     # Read as 0%, a missing share would let the starter send past a reached
     # weekly limit.
-    if type(weekly.get("utilization")) not in (int, float):
+    if not finite_share(weekly.get("utilization")):
         raise RuntimeError("no weekly utilization in usage reply")
     scoped = []
     for limit in usage.get("limits") or []:
@@ -911,7 +911,7 @@ def parse_session(usage):
     if not isinstance(session, dict) or "resets_at" not in session:
         raise ValueError("five_hour is not a window")
     percent = session.get("utilization")
-    if type(percent) not in (int, float):
+    if not finite_share(percent):
         raise ValueError("five_hour has no utilization")
     reset = epoch_seconds(session["resets_at"])
     if reset is None and (session["resets_at"] is not None or percent != 0):
@@ -932,9 +932,19 @@ def claude_usage():
 # --- shared ----------------------------------------------------------------
 
 
+def finite_share(value):
+    """Whether a reply's share is a number a window can be read from. The
+    starter acts on the weekly and session shares, so each parser rejects
+    one that is missing, a string, or a float with no value: 1e999 is valid
+    JSON and parses to infinity, which clamp_percent would read as 0%."""
+    return type(value) in (int, float) and math.isfinite(value)
+
+
 def clamp_percent(value):
     """A reply's share as a whole percent, 0 to 100, rounded half up as the
-    widget rounds; anything that isn't a finite number reads as 0."""
+    widget rounds; anything that isn't a finite number reads as 0. Only a
+    scoped window, which is shown and never acted on, takes that path: see
+    finite_share."""
     try:
         number = float(value)
     except (TypeError, ValueError):
