@@ -405,15 +405,7 @@ TestRoot {
         }
 
         function gauges(item) {
-            const found = [];
-            const collect = i => {
-                if (i.outerTone !== undefined) {
-                    found.push(i);
-                }
-                i.children.forEach(collect);
-            };
-            collect(item);
-            return found;
+            return all(item, i => i.objectName === "gauge");
         }
 
         // The outer of a gauge's two arcs, the one a popup's ring draws.
@@ -444,14 +436,10 @@ TestRoot {
             const monitor = monitorWith({ cpuUsage: data.value, "gpuOuter.usage": data.value });
             const cpu = gauges(load("CpuPopup", monitor));
             verify(cpu.length > 0);
-            compare(cpu[0].outerTone, expected);
             compare(outerArc(cpu[0]).color, expected, "the header ring as drawn");
             const gpu = gauges(load("GpuPopup", monitor)).filter(g => g.value === data.value);
             verify(gpu.length > 0, "the discrete GPU's ring");
-            gpu.forEach(g => {
-                compare(g.outerTone, expected);
-                compare(outerArc(g).color, expected, "the discrete GPU's ring as drawn");
-            });
+            gpu.forEach(g => compare(outerArc(g).color, expected, "the discrete GPU's ring as drawn"));
         }
 
         // The Text in the middle of a gauge that draws its percentage.
@@ -671,7 +659,7 @@ TestRoot {
             const ascii = t => Array.from(t).map(c => digits.indexOf(c) >= 0 ? String(digits.indexOf(c))
                                                     : c === Qt.locale().decimalPoint ? "." : c).join("");
             const numbers = all(popup, i => i.visible && typeof i.text === "string" && /^[0-9.,–]+%?$/.test(ascii(i.text)) && i.font !== undefined
-                                                 && !ancestor(i, a => a.outerTone !== undefined));
+                                                 && !ancestor(i, a => a.objectName === "gauge"));
             verify(numbers.length > 0);
             numbers.forEach(t => {
                 compare(t.font.family, Kirigami.Theme.defaultFont.family, t.text);
@@ -1710,7 +1698,7 @@ TestRoot {
                                                              .concat(normal.processSample.slice(1)) });
             root.longStrings = true;
             const translated = t => t.endsWith("ß");
-            const rings = popup => all(popup, i => i.outerTone !== undefined && i.text !== undefined && i.text !== "–");
+            const rings = popup => all(popup, i => i.objectName === "gauge" && i.text !== "–");
             const cpu = load("CpuPopup", monitor);
             verify(rings(cpu).length > 0);
             rings(cpu).forEach(r => verify(translated(r.text), r.text));

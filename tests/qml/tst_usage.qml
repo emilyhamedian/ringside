@@ -1299,7 +1299,7 @@ TestRoot {
                 const c = cell("claude", { twoLines: twoLines });
                 compare(line(c, "second").text, root.localized(data.shows));
                 compare(String(line(c, "second").color), dim);
-                compare(line(c, "first").color, c.children[0].outerTone, "the percentage follows the ring");
+                compare(line(c, "first").color, outerArc(c).color, "the percentage follows the ring");
                 const dot = root.find(c, i => i.visible && i.text === "·");
                 compare(dot ? String(dot.color) : dim, dim, "the dot");
             }
@@ -1358,18 +1358,16 @@ TestRoot {
                                : name === "neutral" ? Kirigami.Theme.neutralTextColor : Kirigami.Theme.textColor;
             const c = cell("claude");
             const gauge = c.children[0];
-            compare(gauge.outerTone, tone(data.outer), "the ring");
             compare(outerArc(c).color, tone(data.outer), "the ring as drawn");
-            compare(line(c, "first").color, gauge.outerTone, "the percentage follows the ring");
+            compare(line(c, "first").color, tone(data.outer), "the percentage follows the ring");
             if (data.weekly[0] < 100) {
                 compare(String(line(c, "second").color), String(Style.dim(Kirigami.Theme.textColor)), "the time stays dim");
             }
             compare(gauge.inner, data.inner !== undefined);
             if (data.inner) {
-                compare(gauge.innerTone, tone(data.innerTone), "the inner ring");
                 compare(innerArc(c).color, Qt.alpha(tone(data.innerTone), 0.55 * Kirigami.Theme.textColor.a), "the inner ring as drawn");
             }
-            compare(cell("claude", { textShown: false }).children[0].outerTone, gauge.outerTone, "the ring alone keeps its level");
+            compare(outerArc(cell("claude", { textShown: false })).color, tone(data.outer), "the ring alone keeps its level");
         }
 
         // What merge() adds to an entry whose check failed, with the reading
@@ -1830,7 +1828,14 @@ TestRoot {
         }
 
         function ring(popup) {
-            return root.find(popup, i => i.outerTone !== undefined);
+            return root.find(popup, i => i.objectName === "gauge");
+        }
+
+        // The colour the header ring's outer arc draws in, once at rest.
+        function ringColour(popup) {
+            const r = ring(popup);
+            tryVerify(() => r.still, 2000, "the ring at rest");
+            return String(root.all(r, i => i.playReset !== undefined).reduce((a, b) => a.radius > b.radius ? a : b).color);
         }
 
         // The countdown's visible Readings, in the order of the parts.
@@ -1908,7 +1913,7 @@ TestRoot {
         function test_percentInSans() {
             const found = [];
             const collect = i => {
-                if (i.outerTone !== undefined) {
+                if (i.objectName === "gauge") {
                     return;
                 }
                 if (i.text === root.localized("52%") && i.font !== undefined) {
@@ -2457,7 +2462,7 @@ TestRoot {
             compare(all.level, 0);
             compare(String(rowText(all, root.localized("52%")).color), plain);
             compare(String(fill(all).color), plain);
-            compare(String(ring(popup).outerTone), plain);
+            compare(ringColour(popup), plain);
 
             const usage = monitor.usage;
             setClaude({ weekly: usage.window(39, 5 * usage.day, [[2, 0], [0, 39]]) });
@@ -2466,12 +2471,12 @@ TestRoot {
             compare(popup.paces[0].state, "out", "the week on course to run out at 39 %");
             compare(all.level, 0);
             compare(String(rowText(all, root.localized("39%")).color), plain);
-            compare(String(ring(popup).outerTone), plain);
+            compare(ringColour(popup), plain);
 
             // 91 % is red, whatever the pace.
             setClaude({ weekly: usage.window(91, 3600, [[6.9, 0], [0, 91]]), scoped: [] });
             popup = load("claude");
-            compare(String(ring(popup).outerTone), red);
+            compare(ringColour(popup), red);
         }
 
         function starterSwitch(popup) {
@@ -2887,7 +2892,7 @@ TestRoot {
             verify(w.nextCheckText("claude", popup.nowMs).includes(root.sameDay(next, popup.nowMs) ? w.timeOfDay(next, popup.nowMs)
                                                                                               : w.weekdayTime(next, null)));
             verify(root.find(status, i => i.text === said).textFormat === Text.PlainText);
-            const sign = root.find(status, i => i.outerTone !== undefined);
+            const sign = root.find(status, i => i.objectName === "gauge");
             verify(sign.cancelled && sign.struck === 1 && sign.Accessible.ignored, "the panel's sign, struck");
 
             const r = ring(popup);

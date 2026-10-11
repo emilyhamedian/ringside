@@ -304,14 +304,13 @@ TestRoot {
 
         // 70 to 92: the arc sweeps in the base colour, turns amber on the
         // frame it reaches 75 and red on the frame it reaches 90, not when
-        // the reading arrives. The reading's own colour changes at once.
+        // the reading arrives.
         function test_colourTurnsAtTheCrossing() {
             const gauge = createTemporaryObject(gaugeComponent, root);
             const arc = outerArc(gauge);
             compare(String(arc.color), String(root.tone(0)));
             const seen = frames(gauge);
             gauge.value = 92;
-            compare(gauge.outerTone, root.tone(2), "the reading's colour");
             compare(String(arc.color), String(root.tone(0)), "the arc's, before it moves");
             tryCompare(arc, "percent", 92, 2000);
             compare(String(arc.color), String(root.tone(2)));
@@ -339,7 +338,7 @@ TestRoot {
         // passes, in its colour, and ends on the reading.
         function test_numberCountsWithTheArc() {
             const header = createTemporaryObject(headerComponent, root);
-            const gauge = root.all(header, i => i.drawnValue !== undefined)[0];
+            const gauge = root.find(header, i => i.objectName === "gauge");
             const middle = root.all(gauge, i => i.text === "40%" && i.font !== undefined)[0];
             verify(middle, "40% in the middle");
             const seen = frames(gauge, middle);
@@ -360,7 +359,7 @@ TestRoot {
         // A system popup's ring is still before the next reading.
         function test_settleWithinHalfTheInterval() {
             const header = createTemporaryObject(headerComponent, root, { interval: 500 });
-            const gauge = root.all(header, i => i.drawnValue !== undefined)[0];
+            const gauge = root.find(header, i => i.objectName === "gauge");
             compare(gauge.settle, 250);
             header.interval = 0;
             compare(gauge.settle, Kirigami.Units.veryLongDuration, "the Claude and Codex popups' readings are minutes apart");
@@ -370,7 +369,7 @@ TestRoot {
         // in place in the same frame.
         function test_instant() {
             const header = createTemporaryObject(headerComponent, root);
-            const gauge = root.all(header, i => i.drawnValue !== undefined)[0];
+            const gauge = root.find(header, i => i.objectName === "gauge");
             gauge.settle = 0;
             const middle = root.all(gauge, i => i.text === "40%" && i.font !== undefined)[0];
             header.ringValue = 92;
