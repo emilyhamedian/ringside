@@ -84,7 +84,9 @@ the retry);
 "retrying" (one send went unconfirmed; at is the send, next the retry) and
 "paused" (two in a row; next is when the hold ends). The widget runs
 --start once Date.now() reaches next, and --starter-set when its switch is
-toggled.
+toggled. A poll that finds what a starter waits for came early, as when a
+provider resets the limits ahead of time, makes it due at once (see
+replan_starters()).
 """
 
 import argparse
@@ -296,6 +298,7 @@ MESSAGES = {
     "starter-failed-again": "{name} session starter still can't send: {why}; trying again in {wait} s",
     "starter-switched-off": "{name} session starter was switched off before its message went out",
     "starter-next": "{name} session starter is {state}; next step at {at}",
+    "starter-overtaken": "{name} session starter: what it was waiting for came early, so it plans again",
     "starter-stopped": "{name} session starter didn't run: {why}",
 }
 
@@ -1167,6 +1170,7 @@ def collect(fetchers, now=None):
     with locked():
         now = int(time.time()) if now is None else now
         providers, history = collect_locked(fetchers, now)
+        replan_starters(providers, now)
     attach_history(providers, history, now)
     return providers
 
@@ -1953,6 +1957,50 @@ def run_starter(name):
         if record["next"] is not None:
             event("debug", name, "starter-next", state=record["state"],
                   at=time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(record["next"])))
+
+
+def replan_starters(providers, now):
+    """Makes a starter due at once when a reading shows that what it waits
+    for came early: the window it waits out has ended, or its reset moved by
+    more than RESET_MOVED, or the weekly limit it holds for is no longer
+    reached, as when a provider resets the limits ahead of time. Its times
+    would otherwise stand until they came, telling of a week that is over
+    and holding off a start that could happen now. The widget then runs
+    --start, which plans afresh from the reading. The caller holds
+    usage.lock; a state that can't be written is left for --start to report.
+    """
+    switches = read_switches()
+    if not switches:
+        return
+    states = read_starter_states()
+    due = [name for name, entry in providers.items()
+           if name in switches and name in states and entry.get("status") == "ok" and overtaken(name, states[name], entry, now)]
+    for name in due:
+        states[name]["next"] = now
+        event("info", name, "starter-overtaken")
+    if due:
+        with contextlib.suppress(OSError):
+            private_state_dir()
+            write_private(STARTER_STATE, states)
+
+
+def overtaken(name, record, reading, now):
+    """Whether a reading shows that what a starter waits for came early (see
+    replan_starters()). A reading that can't tell, as a Claude one that
+    doesn't say whether a session runs, never does."""
+    if record["state"] not in ("started", "waiting", "weekly") or record["next"] is None or record["next"] <= now:
+        return False
+    awaited = record["next"] - 1
+    if record["state"] == "weekly":
+        weekly = reading["weekly"]
+        return weekly["percent"] < 100 or weekly["resetsAt"] is not None and abs(weekly["resetsAt"] - awaited) > RESET_MOVED
+    if name == "claude" and "session" not in reading:
+        return False
+    try:
+        window = starters()[name][1](reading, now)
+    except Unreadable:
+        return False
+    return window is None or abs(window["resetsAt"] - awaited) > RESET_MOVED
 
 
 STARTER_OFF = {"enabled": False, "state": "off", "at": None, "next": None, "reason": None}

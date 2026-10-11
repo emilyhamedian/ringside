@@ -14,6 +14,12 @@ follows [Semantic Versioning](https://semver.org/).
   notices a reset that came while Plasma wasn't running, if the week it cut
   short hadn't ended and you haven't used as much again since.
 
+### Fixed
+
+- After an early reset, the session starter no longer shows the old week's
+  times or waits for the old reset before starting your next session or
+  week.
+
 ## [0.3.0] - 2026-10-10
 
 ### Added
