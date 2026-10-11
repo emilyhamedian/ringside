@@ -109,6 +109,8 @@ TestRoot {
             const ids = sensors.map(s => s.sensorId);
             verify(["total", "used", "application", "cache", "buffer"].every(key => ids.includes("memory/physical/" + key)),
                    ids.join());
+            // Two Sensors on one id leak in ksystemstats.
+            compare(new Set(ids).size, ids.length, ids.join());
             verify(sensors.every(s => s.updateRateLimit === data.sample - 250),
                    sensors.map(s => s.updateRateLimit).join());
             verify(monitor.readers().length > 0);
@@ -933,7 +935,8 @@ TestRoot {
             database().transaction(tx => {
                 for (const [at, data] of [[hour - 7, "null"], [hour - 6, '{"cpu":null}'], [hour - 5, "[1, 2]"],
                                           [hour - 4.5, '{"cpu":[9,9]}'], [hour - 4, "not JSON"], [hour - 3, '{"cpu":[5,6]}'],
-                                          [hour - 2, '{"cpu":[7,8],"memory":"x","networkUp":[1]}']]) {
+                                          [hour - 2, '{"cpu":[7,8],"memory":"x","networkUp":[1]}'],
+                                          [hour - 1, '{"cpu":[1,"a"]}']]) {
                     tx.executeSql("INSERT INTO buckets VALUES ('w1', 'hour', ?, ?)", [at, data]);
                 }
             });
