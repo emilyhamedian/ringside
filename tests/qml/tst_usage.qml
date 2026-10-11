@@ -17,7 +17,8 @@ import "journal.js" as Journal
 // The Claude and Codex items. UsageData runs the stub scenarios in data/
 // (fake-usage-*.py) in place of usage.py, so no credentials are read and no
 // service is called. The cell, the popup and the week graph read FakeUsage
-// through FakeMonitor.
+// through FakeMonitor. SpanDigits is here too, as this suite runs in German
+// and Egyptian Arabic and, unlike tst_cells, loads the popups' controls.
 TestRoot {
     id: root
     width: 800
@@ -47,14 +48,7 @@ TestRoot {
 
     Component {
         id: configComponent
-        QtObject {
-            property int usageRefreshMinutes: 5
-            property string claudeInnerLimit: ""
-            property string codexInnerLimit: ""
-            property string knownLimits: ""
-            property string usageStatus: ""
-            property string claudeProgram: ""
-            property string codexProgram: ""
+        FakeConfig {
             property int knownLimitsWrites: 0
             property int usageStatusWrites: 0
             onKnownLimitsChanged: ++knownLimitsWrites
@@ -273,14 +267,6 @@ TestRoot {
             compare(usage.entry("claude").reason, undefined, "recovery leaves nothing of the failure");
         }
 
-        // A report from a helper that gives no reason holds nothing back.
-        function test_failureWithoutAReason() {
-            start("ok");
-            poll("old");
-            const claude = usage.entry("claude");
-            compare([claude.reason, claude.host, claude.retryAt], ["other", "", claude.lastErrorAt]);
-        }
-
         // Signed out replaces the reading and hides the item. A tool whose
         // first check fails keeps its item, struck, with the failure and no
         // readings, and the settings page learns why.
@@ -394,7 +380,7 @@ TestRoot {
             compare(usage.entry("codex").weekly.percent, 24);
         }
 
-        function test_helperFailure_data() {
+        function test_failingHelperKeepsTheReading_data() {
             return [
                 { tag: "no python3", scenario: "no-python", message: "python3 was not found on the Plasma session's PATH.",
                   reason: "missing" },
@@ -405,7 +391,7 @@ TestRoot {
             ];
         }
 
-        function test_helperFailure(data) {
+        function test_failingHelperKeepsTheReading(data) {
             start("ok");
             poll(data.scenario);
             compare(usage.helperError, data.message);
@@ -422,7 +408,7 @@ TestRoot {
             verify(!usage.degraded("claude"));
         }
 
-        function test_failureWords_data() {
+        function test_failureText_data() {
             return [
                 { tag: "crashed", failure: { reason: "crashed", code: 11, detail: "" },
                   message: "The usage helper stopped unexpectedly." },
@@ -433,7 +419,7 @@ TestRoot {
             ];
         }
 
-        function test_failureWords(data) {
+        function test_failureText(data) {
             make("ok", []);
             compare(usage.failureText(data.failure), data.message);
         }
@@ -454,8 +440,10 @@ TestRoot {
         // so the next tick doesn't follow straight after.
         function test_checkNowRestartsTheInterval() {
             start("ok");
-            const first = usage.lastRun;
-            wait(1100);
+            // As if the last tick ran a minute ago, so the restart shows in
+            // lastRun's whole seconds without waiting one out.
+            const first = usage.lastRun - 60;
+            usage.lastRun = first;
             const landed = spy("entriesChanged");
             usage.checkNow();
             tryVerify(() => usage.lastRun > first, 2000, "the interval starts over");
@@ -1003,7 +991,8 @@ TestRoot {
                 const failed = usage.starter("claude");
                 compare([failed.state, failed.reason, failed.error], ["failed", "helper", "[Errno 28] No space left on device"]);
                 compare(failed.next - failed.at, delay);
-                wait(1100);
+                // The poll says due at a later second than the failure.
+                tryVerify(() => usage.nowSeconds() > failed.at, 2000);
                 answer(usage.command, "");
                 compare(usage.starter("claude").reason, "helper", "a poll that says due keeps it");
                 starterTick().triggered();
@@ -1638,43 +1627,6 @@ TestRoot {
                 nextCheckAt(c)]);
         }
 
-        // The words of a failed check, from the reason the helper gives.
-        function test_failureWords_data() {
-            return [
-                { tag: "offline", entry: { reason: "offline", host: "api.anthropic.com" }, text: "Can't reach api.anthropic.com." },
-                { tag: "timeout", entry: { reason: "timeout", host: "api.anthropic.com" },
-                  text: "api.anthropic.com didn't answer in time." },
-                { tag: "codex timeout", item: "codex", entry: { reason: "timeout", host: "" }, text: "Codex didn't answer in time." },
-                { tag: "server", entry: { reason: "server", host: "api.anthropic.com" }, text: "api.anthropic.com answered with an error." },
-                { tag: "rate limit", entry: { reason: "rate-limited", retryAt: Date.now() / 1000 + 3000 },
-                  text: "Anthropic asked Ringside to wait before checking again." },
-                { tag: "codex rate limit", item: "codex", entry: { reason: "rate-limited", retryAt: Date.now() / 1000 + 3000 },
-                  text: "OpenAI asked Ringside to wait before checking again." },
-                { tag: "no python3", entry: { reason: "missing", lastError: "python3 was not found on the Plasma session's PATH." },
-                  text: "python3 was not found on the Plasma session's PATH." },
-                { tag: "lock busy", entry: { reason: "busy", lastError: "another usage check is still running" },
-                  text: "Another usage check is still running." },
-                { tag: "files", entry: { reason: "files" }, text: "The usage helper couldn't read or write its files." },
-                { tag: "helper", entry: { reason: "helper" }, text: "The usage helper stopped with an error." },
-                { tag: "not installed", item: "codex", entry: { reason: "not-installed", lastError: "codex CLI not found" },
-                  text: "Plasma can't find Codex. Install it, set where it is under AI Providers, or turn OpenAI off in Panel Items." },
-                { tag: "chosen program", item: "codex",
-                  entry: { reason: "program", lastError: "the codex program set in Settings can't be run" },
-                  text: "The codex program set in Settings can't be run." },
-                { tag: "other", entry: { reason: "other", lastError: "app-server closed without answering" },
-                  text: "App-server closed without answering." },
-                { tag: "no reason", entry: { lastError: "Claude Code's credentials can't be read" },
-                  text: "Claude Code's credentials can't be read." },
-                { tag: "a sentence", entry: { reason: "other", lastError: "Stopped!" }, text: "Stopped!" },
-                { tag: "offline, no host", entry: { reason: "offline", host: "", lastError: "can't reach it" }, text: "Can't reach it." }
-            ];
-        }
-
-        function test_failureWords(data) {
-            const c = cell(data.item ?? "claude");
-            compare(wordsOf(c).failureReason(data.item ?? "claude", Object.assign({ lastError: "x" }, data.entry)), data.text);
-        }
-
         // The next check, or that one is running; a check on another day
         // has its weekday. A week that has reset says when, as the popup's
         // tile does.
@@ -2157,41 +2109,19 @@ TestRoot {
             compare(left + tile.width, popup.width - edge);
         }
 
-        // "100%" names each percentage graph's top, and a temperature graph
-        // names its peak, at the far end of its tile's caption line, over the
-        // end of the rule, and nothing
-        // is written in the graph above its floor, where a line could run
-        // through it. Mirrored, the caption line reads from the right and
-        // "100%" ends it at the left.
+        // "100%" names the week graph's top at the far end of its tile's
+        // caption line, over the end of the rule, and nothing is written in
+        // the graph above its floor, where a line could run through it.
+        // Mirrored, the caption line reads from the right and "100%" ends
+        // it at the left.
         function test_scaleOnTheCaptionLine_data() {
-            const rows = [];
-            for (const popup of ["claude", "codex", "CpuPopup", "GpuPopup", "MemoryPopup"]) {
-                rows.push({ tag: popup, popup: popup, mirrored: false });
-                rows.push({ tag: popup + " mirrored", popup: popup, mirrored: true });
-            }
-            return rows;
+            return [{ tag: "claude", popup: "claude", mirrored: false }, { tag: "claude mirrored", popup: "claude", mirrored: true },
+                    { tag: "codex", popup: "codex", mirrored: false }, { tag: "codex mirrored", popup: "codex", mirrored: true }];
         }
 
         function test_scaleOnTheCaptionLine(data) {
-            let page;
-            if (data.popup === "claude" || data.popup === "codex") {
-                page = load(data.popup, data.mirrored);
-            } else {
-                const loader = (data.mirrored ? mirroredHost : host).createObject(root) as Loader;
-                loaders.push(loader);
-                loader.setSource(Qt.resolvedUrl("../../package/contents/ui/popups/" + data.popup + ".qml"), { monitor: monitor });
-                compare(loader.status, Loader.Ready);
-                page = loader.item as Item;
-                waitForRendering(page);
-            }
-            const rules = [];
-            const collect = i => {
-                if (i.visible && i.lineColor !== undefined && i.limitY !== undefined) {
-                    rules.push(i);
-                }
-                i.children.forEach(collect);
-            };
-            collect(page);
+            const page = load(data.popup, data.mirrored);
+            const rules = root.all(page, i => i.visible && i.lineColor !== undefined && i.limitY !== undefined);
             verify(rules.length > 0, "a percentage graph");
             for (const rule of rules) {
                 const g = rule.parent;
@@ -2201,31 +2131,13 @@ TestRoot {
                 }
                 const left = i => i.mapToItem(page, Qt.point(0, 0)).x;
                 const top = i => i.mapToItem(page, Qt.point(0, 0)).y;
-                const plotBottom = top(g) + (g.plotHeight ?? g.height);
-                const written = [];
-                const look = i => {
-                    if (i.visible && i.font !== undefined && typeof i.text === "string" && i.text !== "" && top(i) < plotBottom) {
-                        written.push(i.text);
-                    }
-                    i.children.forEach(look);
-                };
-                look(g);
+                const plotBottom = top(g) + g.plotHeight;
+                const written = root.all(g, i => i.visible && i.font !== undefined && typeof i.text === "string" && i.text !== ""
+                                                 && top(i) < plotBottom).map(i => i.text);
                 compare(written, [], "nothing written in the graph");
 
-                const lineParts = [];
-                const part = i => {
-                    if (i.label !== undefined && i.detail !== undefined) {
-                        lineParts.push(i);
-                    }
-                    i.children.forEach(part);
-                };
-                part(tile);
-                const [caption, scale] = lineParts;
-                if (g.plot !== undefined) {
-                    verify(scale.text.startsWith(root.localized("peak ")), scale.text);
-                } else {
-                    compare(scale.text, root.localized("100%"));
-                }
+                const [caption, scale] = root.all(tile, i => i.label !== undefined && i.detail !== undefined);
+                compare(scale.text, root.localized("100%"));
                 verify(scale.visible && !scale.truncated);
                 verify(top(scale) + scale.height <= top(g), "on the caption line, over the graph");
                 verify(caption.visible && caption.text !== "");
@@ -2502,7 +2414,7 @@ TestRoot {
         // 90 %: a run-out before the reset leaves the row's percentage and
         // bar and the header's ring at their own level, and says so in the
         // pace sentence alone.
-        function test_paceNeverRaisesTheLevel() {
+        function test_paceNeverRaisesThePopupsLevel() {
             const red = String(Kirigami.Theme.negativeTextColor);
             const amber = String(Kirigami.Theme.neutralTextColor);
             const plain = String(Kirigami.Theme.textColor);
@@ -2682,8 +2594,8 @@ TestRoot {
             const status = starterStatus(popup);
             const button = configureButton(popup);
             const label = starterLabel(popup);
-            const rect = i => ({ left: i.mapToItem(popup, 0, 0).x, right: i.mapToItem(popup, i.width, 0).x,
-                                 top: i.mapToItem(popup, 0, 0).y, bottom: i.mapToItem(popup, 0, i.height).y });
+            const rect = i => ({ left: i.mapToItem(popup, Qt.point(0, 0)).x, right: i.mapToItem(popup, Qt.point(i.width, 0)).x,
+                                 top: i.mapToItem(popup, Qt.point(0, 0)).y, bottom: i.mapToItem(popup, Qt.point(0, i.height)).y });
             const margin = Math.round(Kirigami.Units.largeSpacing * 2);
             waitForRendering(popup);
             const block = { top: rect(label).top, bottom: rect(status).bottom };
@@ -3491,6 +3403,42 @@ TestRoot {
                     "When a session ends, Ringside sends Claude a one-word message to start the next one.");
         }
 
+        // The words of a failed check, from the reason the helper gives.
+        function test_failureWords_data() {
+            return [
+                { tag: "offline", entry: { reason: "offline", host: "api.anthropic.com" }, text: "Can't reach api.anthropic.com." },
+                { tag: "timeout", entry: { reason: "timeout", host: "api.anthropic.com" },
+                  text: "api.anthropic.com didn't answer in time." },
+                { tag: "codex timeout", item: "codex", entry: { reason: "timeout", host: "" }, text: "Codex didn't answer in time." },
+                { tag: "server", entry: { reason: "server", host: "api.anthropic.com" }, text: "api.anthropic.com answered with an error." },
+                { tag: "rate limit", entry: { reason: "rate-limited", retryAt: Date.now() / 1000 + 3000 },
+                  text: "Anthropic asked Ringside to wait before checking again." },
+                { tag: "codex rate limit", item: "codex", entry: { reason: "rate-limited", retryAt: Date.now() / 1000 + 3000 },
+                  text: "OpenAI asked Ringside to wait before checking again." },
+                { tag: "no python3", entry: { reason: "missing", lastError: "python3 was not found on the Plasma session's PATH." },
+                  text: "python3 was not found on the Plasma session's PATH." },
+                { tag: "lock busy", entry: { reason: "busy", lastError: "another usage check is still running" },
+                  text: "Another usage check is still running." },
+                { tag: "files", entry: { reason: "files" }, text: "The usage helper couldn't read or write its files." },
+                { tag: "helper", entry: { reason: "helper" }, text: "The usage helper stopped with an error." },
+                { tag: "not installed", item: "codex", entry: { reason: "not-installed", lastError: "codex CLI not found" },
+                  text: "Plasma can't find Codex. Install it, set where it is under AI Providers, or turn OpenAI off in Panel Items." },
+                { tag: "chosen program", item: "codex",
+                  entry: { reason: "program", lastError: "the codex program set in Settings can't be run" },
+                  text: "The codex program set in Settings can't be run." },
+                { tag: "other", entry: { reason: "other", lastError: "app-server closed without answering" },
+                  text: "App-server closed without answering." },
+                { tag: "no reason", entry: { lastError: "Claude Code's credentials can't be read" },
+                  text: "Claude Code's credentials can't be read." },
+                { tag: "a sentence", entry: { reason: "other", lastError: "Stopped!" }, text: "Stopped!" },
+                { tag: "offline, no host", entry: { reason: "offline", host: "", lastError: "can't reach it" }, text: "Can't reach it." }
+            ];
+        }
+
+        function test_failureWords(data) {
+            compare(words.failureReason(data.item ?? "claude", Object.assign({ lastError: "x" }, data.entry)), data.text);
+        }
+
         // Temperature sensors go by plain words, not their hwmon labels;
         // labels Words doesn't know are shown as they are.
         function test_sensorNamesInWords_data() {
@@ -3533,115 +3481,6 @@ TestRoot {
             if (!/s/.test(locale.timeFormat(Locale.ShortFormat))) {
                 compare(words.shortTime(at), at.toLocaleTimeString(locale, Locale.ShortFormat));
             }
-        }
-    }
-
-    // The short readings by a ring, for every item, from FakeMonitor's
-    // readings or the ones a row sets. Expectations follow the running
-    // locale's digits, as in UsageWords.
-    TestCase {
-        id: readouts
-        name: "Readout"
-
-        property var monitor: null
-
-        Words {
-            id: readoutWords
-            monitor: readouts.monitor
-        }
-
-        function init() {
-            failOnWarning(/TypeError|ReferenceError|SyntaxError|is not a function|Unable to assign|Cannot assign|Binding loop/);
-            monitor = createTemporaryObject(monitorComponent, readouts);
-        }
-
-        function local(text) {
-            const zero = Qt.locale().zeroDigit.codePointAt(0);
-            return text.replace(/[0-9]/g, c => String.fromCodePoint(zero + Number(c))).replace(".", Qt.locale().decimalPoint);
-        }
-
-        function apply(target, values) {
-            for (const key in values) {
-                target[key] = values[key];
-            }
-        }
-
-        // `set`, `outer` and `inner` override the monitor's and its GPUs'
-        // readings; `weekly` is [percent, seconds left] for the row's item.
-        function test_readout_data() {
-            return [
-                { tag: "cpu", item: "cpu", first: "23%", second: "61°" },
-                { tag: "cpu under amber", item: "cpu", set: { cpuUsage: 74 }, first: "74%", second: "61°" },
-                { tag: "cpu warm", item: "cpu", set: { cpuUsage: 75, cpuTemperature: 75 },
-                  first: "75%", level: 1, second: "75°", heat: 1 },
-                { tag: "cpu under red", item: "cpu", set: { cpuUsage: 89 }, first: "89%", level: 1, second: "61°" },
-                { tag: "cpu hot", item: "cpu", set: { cpuUsage: 90, cpuTemperature: 90 },
-                  first: "90%", level: 2, second: "90°", heat: 2 },
-                { tag: "cpu in fahrenheit", item: "cpu", set: { fahrenheit: true }, first: "23%", second: "142°" },
-                // The heat is the Celsius reading's, in either unit.
-                { tag: "cpu hot in fahrenheit", item: "cpu", set: { fahrenheit: true, cpuTemperature: 95 },
-                  first: "23%", second: "203°", heat: 2 },
-                { tag: "cpu unread", item: "cpu", set: { cpuUsage: NaN, cpuTemperature: NaN }, first: "–", second: "–" },
-                // The integrated GPU's temperature stays in the tooltip.
-                { tag: "two gpus", item: "gpu", first: "12%", second: "48°" },
-                { tag: "gpu warm", item: "gpu", outer: { temperature: 80 }, first: "12%", second: "80°", heat: 1 },
-                { tag: "gpu hot", item: "gpu", outer: { usage: 95, temperature: 92 },
-                  first: "95%", level: 2, second: "92°", heat: 2 },
-                { tag: "gpu resting", item: "gpu", outer: { phase: "resting" }, inner: { present: false },
-                  first: "0%", second: "48°" },
-                { tag: "intel gpu", item: "gpu", outer: { reportsTemperature: false }, inner: { present: false },
-                  first: "12%", second: "" },
-                { tag: "integrated gpu awake alone", item: "gpu", outer: { phase: "asleep" }, first: "3%", second: "41°" },
-                { tag: "only gpu asleep", item: "gpu", outer: { phase: "asleep" }, inner: { present: false },
-                  first: "off", off: true, second: "" },
-                { tag: "both gpus asleep", item: "gpu", outer: { phase: "asleep" }, inner: { phase: "asleep" },
-                  first: "off", off: true, second: "" },
-                { tag: "memory", item: "memory", first: "42%", second: "13.4 GiB" },
-                { tag: "memory in MiB", item: "memory", set: { memoryUsed: 900 * 1048576 }, first: "3%", second: "900.0 MiB" },
-                { tag: "memory to one decimal", item: "memory", set: { memoryUsed: 9.64 * 1073741824 }, first: "30%", second: "9.6 GiB" },
-                { tag: "memory full", item: "memory", set: { memoryUsed: 29 * 1073741824 },
-                  first: "91%", level: 2, second: "29.0 GiB" },
-                { tag: "memory unread", item: "memory", set: { memoryUsed: NaN }, first: "–", second: "–" },
-                { tag: "claude", item: "claude", first: "52%", second: "2d" },
-                { tag: "codex", item: "codex", first: "24%", second: "5d" },
-                { tag: "claude a day out", item: "claude", weekly: [40, 86400 + 30 * 60], first: "40%", second: "1d" },
-                { tag: "claude last day", item: "claude", weekly: [40, 23 * 3600 + 5 * 60], first: "40%", second: "23h" },
-                { tag: "claude at its limit", item: "claude", weekly: [90, 3600], first: "90%", level: 2, second: "1h" },
-                { tag: "claude last hour", item: "claude", weekly: [40, 59 * 60], first: "40%", second: "59m" },
-                { tag: "claude amber", item: "claude", weekly: [75, 12 * 60], first: "75%", level: 1, second: "12m" },
-                { tag: "claude used up", item: "claude", weekly: [100, 2 * 86400], first: "100%", level: 2, second: "2d" },
-                { tag: "used up, reset passed", item: "claude", weekly: [100, -600], first: "100%", level: 2, second: "–" },
-                { tag: "reset passed", item: "claude", weekly: [40, -600], first: "40%", second: "–" },
-                // On pace to run out before the reset, the percentage keeps
-                // its own reading's colour.
-                { tag: "claude runs out", item: "claude", weekly: [70, 3 * 86400], first: "70%", second: "3d" },
-                { tag: "claude runaway first day", item: "claude", weekly: [70, 6 * 86400 + 6 * 3600], first: "70%", second: "6d" },
-                { tag: "claude quiet first day", item: "claude", weekly: [5, 6 * 86400 + 21 * 3600], first: "5%", second: "6d" },
-                { tag: "runs out, reset passed", item: "claude", weekly: [70, -600], first: "70%", second: "–" },
-                { tag: "signed out", item: "claude", entries: { claude: { status: "signed_out" } }, first: "–", second: "–" },
-                { tag: "no weekly window", item: "claude", entries: { claude: { status: "ok", scoped: [] } }, first: "–", second: "–" },
-                { tag: "not checked yet", item: "codex", entries: {}, first: "–", off: true, second: "–" }
-            ];
-        }
-
-        // Readout reads a missing level or heat as none, and only a true
-        // `off` as asleep. A countdown keeps to its largest unit.
-        function test_readout(data) {
-            const usage = monitor.usage;
-            apply(monitor, data.set ?? {});
-            apply(monitor.gpuOuter, data.outer ?? {});
-            apply(monitor.gpuInner, data.inner ?? {});
-            if (data.entries !== undefined) {
-                usage.entries = data.entries;
-            }
-            if (data.weekly !== undefined) {
-                usage.entries = { [data.item]: { status: "ok", fetchedAt: usage.createdAt,
-                                                 weekly: usage.window(data.weekly[0], data.weekly[1], []), scoped: [] } };
-            }
-            const r = readoutWords.readout(data.item, usage.createdAt * 1000);
-            compare({ first: r.first, level: r.level ?? 0, off: r.off === true, second: r.second, heat: r.heat ?? 0 },
-                    { first: local(data.first), level: data.level ?? 0, off: data.off ?? false,
-                      second: local(data.second), heat: data.heat ?? 0 });
         }
     }
 
@@ -3934,8 +3773,7 @@ TestRoot {
         }
     }
 
-    // A graph's span, "1 day", has its 1 in the locale's digits. It is
-    // here as this suite runs in German and Egyptian Arabic too.
+    // A graph's span, "1 day", has its 1 in the locale's digits.
     TestCase {
         name: "SpanDigits"
         when: windowShown

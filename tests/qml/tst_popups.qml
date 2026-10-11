@@ -145,12 +145,14 @@ TestRoot {
     }
 
     // Just opened: no rate has a sample yet.
-    FakeMonitor {
-        id: fresh
-        networkDownHistory: []
-        networkUpHistory: []
-        diskReadHistory: []
-        diskWriteHistory: []
+    Component {
+        id: unsampled
+        FakeMonitor {
+            networkDownHistory: []
+            networkUpHistory: []
+            diskReadHistory: []
+            diskWriteHistory: []
+        }
     }
 
     // A drive that reports no temperature.
@@ -167,42 +169,36 @@ TestRoot {
 
     // Temperatures climbing from 60 °C to 93 °C across the graph's span,
     // through the warm and hot thresholds.
-    FakeMonitor {
+    Component {
         id: heating
-        readonly property var climb: Array.from({ length: historyLength }, (_, i) => 60 + 33 * i / (historyLength - 1))
-        cpuTemperature: 93
-        cpuTemperatureHistory: climb
-        gpuOuter.temperature: 93
-        gpuOuter.temperatureHistory: climb
-        diskTemperature: 93
-        diskTemperatureHistory: climb
+        FakeMonitor {
+            readonly property var climb: Array.from({ length: historyLength }, (_, i) => 60 + 33 * i / (historyLength - 1))
+            cpuTemperature: 93
+            cpuTemperatureHistory: climb
+            gpuOuter.temperature: 93
+            gpuOuter.temperatureHistory: climb
+            diskTemperature: 93
+            diskTemperatureHistory: climb
+        }
     }
 
     // A CPU that ran over the hot threshold in one of the day's 10-minute
     // steps, and stayed calm through the last minute and hour.
-    FakeMonitor {
+    Component {
         id: hotDay
-        cpuTemperatureHighs: highsOf(cpuTemperatureHistory, 8, 9, Infinity).map((v, i) => graphSpan === "day" && i === 100 ? 93.4 : v)
-        cpuTemperatureExtent: [44, 93.4]
-    }
-
-    // At a 500 ms update interval the minute has 120 readings.
-    FakeMonitor {
-        id: shortSpan
-        interval: 500
-    }
-
-    // A CPU whose first reading has just come.
-    FakeMonitor {
-        id: firstReading
-        cpuTemperatureHistory: [61]
+        FakeMonitor {
+            cpuTemperatureHighs: highsOf(cpuTemperatureHistory, 8, 9, Infinity).map((v, i) => graphSpan === "day" && i === 100 ? 93.4 : v)
+            cpuTemperatureExtent: [44, 93.4]
+        }
     }
 
     // The discrete GPU alone, awake for the last 35 s of the graph's span.
-    FakeMonitor {
+    Component {
         id: woken
-        gpuOuter.temperatureHistory: Array.from({ length: historyLength }, (_, i) => i < 25 ? NaN : 48)
-        gpuInner.present: false
+        FakeMonitor {
+            gpuOuter.temperatureHistory: Array.from({ length: historyLength }, (_, i) => i < 25 ? NaN : 48)
+            gpuInner.present: false
+        }
     }
 
     // Every whole disk's I/O, and a volume picked by its own name.
@@ -227,6 +223,11 @@ TestRoot {
     // What a Text that elides draws of its text.
     TextMetrics {
         id: elideProbe
+    }
+
+    Component {
+        id: plain
+        FakeMonitor {}
     }
 
     Component {
@@ -276,8 +277,43 @@ TestRoot {
         name: "Popups"
         when: windowShown
 
+        // A page wide enough for every peak in full: the test's fallback
+        // font runs about half as wide again as Breeze's, and a peak with
+        // too little room goes (test_rateCaptionsKeepTheirLabel).
+        readonly property real widePage: Kirigami.Units.gridUnit * 30
+        // Where the content starts and ends, in from either side of the page.
+        readonly property real contentEdge: Math.round(Kirigami.Units.largeSpacing * 2)
+        // The monitors the last test made for itself.
+        property var monitors: []
+
         function init() {
+            monitors.forEach(m => m.destroy());
+            monitors = [];
             failOnWarning(/TypeError|ReferenceError|SyntaxError|is not a function|Unable to assign|Cannot assign|Binding loop|polish loop/);
+        }
+
+        function cleanup() {
+            root.longStrings = false;
+        }
+
+        function cleanupTestCase() {
+            monitors.forEach(m => m.destroy());
+        }
+
+        // A monitor of the test's own, made from `component` or a plain
+        // FakeMonitor, with `values` set on it ("gpuOuter.usage" sets a
+        // GPU's), so nothing a test sets reaches another. It outlives the
+        // test's popups, which read it until they go, and goes before the
+        // next test starts.
+        function monitorWith(values, component) {
+            const monitor = (component ?? plain).createObject(root);
+            monitors.push(monitor);
+            for (const [key, value] of Object.entries(values)) {
+                const path = key.split(".");
+                const name = path.pop();
+                path.reduce((o, p) => o[p], monitor)[name] = value;
+            }
+            return monitor;
         }
 
         // The CPU's temperature turns red over the hot threshold, as the
@@ -354,9 +390,8 @@ TestRoot {
             const line = shownText(popup, "AMD Radeon RX 7700S · off");
             compare(String(line.color), String(Style.dim(Kirigami.Theme.textColor)));
             const top = i => i.mapToItem(popup, Qt.point(0, 0)).y;
-            const edge = Math.round(Kirigami.Units.largeSpacing * 2);
-            compare(line.mapToItem(popup, Qt.point(0, 0)).x, edge);
-            compare(line.width, popup.width - 2 * edge);
+            compare(line.mapToItem(popup, Qt.point(0, 0)).x, contentEdge);
+            compare(line.width, popup.width - 2 * contentEdge);
             const headers = all(popup, i => i.visible && i.partsShown !== undefined);
             const tiles = all(popup, i => i.visible && i.graphTop !== undefined);
             if (data.monitor === onlyAsleep) {
@@ -406,20 +441,17 @@ TestRoot {
         function test_popupRingsTakeTheLevelColours(data) {
             const expected = data.tone === "negative" ? Kirigami.Theme.negativeTextColor
                            : data.tone === "neutral" ? Kirigami.Theme.neutralTextColor : Kirigami.Theme.textColor;
-            normal.cpuUsage = data.value;
-            normal.gpuOuter.usage = data.value;
-            const cpu = gauges(load("CpuPopup", normal));
+            const monitor = monitorWith({ cpuUsage: data.value, "gpuOuter.usage": data.value });
+            const cpu = gauges(load("CpuPopup", monitor));
             verify(cpu.length > 0);
             compare(cpu[0].outerTone, expected);
             compare(outerArc(cpu[0]).color, expected, "the header ring as drawn");
-            const gpu = gauges(load("GpuPopup", normal)).filter(g => g.value === data.value);
+            const gpu = gauges(load("GpuPopup", monitor)).filter(g => g.value === data.value);
             verify(gpu.length > 0, "the discrete GPU's ring");
             gpu.forEach(g => {
                 compare(g.outerTone, expected);
                 compare(outerArc(g).color, expected, "the discrete GPU's ring as drawn");
             });
-            normal.cpuUsage = 23;
-            normal.gpuOuter.usage = Qt.binding(() => normal.gpuOuter.live ? 12 : normal.gpuOuter.resting ? 0 : NaN);
         }
 
         // The Text in the middle of a gauge that draws its percentage.
@@ -526,12 +558,10 @@ TestRoot {
         }
 
         function test_temperatureUnitSizeAndGap(data) {
-            normal.fahrenheit = data.fahrenheit;
             const inkGaps = { CpuPopup: [], GpuPopup: [], DiskPopup: [] };
-            for (const [popup, cpuTemperature] of [["CpuPopup", 61], ["CpuPopup", 60], ["GpuPopup", 61], ["DiskPopup", 61]]) {
-                normal.cpuTemperature = cpuTemperature;
-                normal.diskTemperature = cpuTemperature;
-                const temperatures = readings(load(popup, normal)).filter(r => r.visible && r.degreeUnit !== "");
+            for (const [popup, celsius] of [["CpuPopup", 61], ["CpuPopup", 60], ["GpuPopup", 61], ["DiskPopup", 61]]) {
+                const monitor = monitorWith({ fahrenheit: data.fahrenheit, cpuTemperature: celsius, diskTemperature: celsius });
+                const temperatures = readings(load(popup, monitor)).filter(r => r.visible && r.degreeUnit !== "");
                 verify(temperatures.length > 0, popup);
                 temperatures.forEach(r => {
                     const p = parts(r);
@@ -554,9 +584,6 @@ TestRoot {
             }
             compare(inkGaps.DiskPopup.length, 1);
             fuzzyCompare(inkGaps.DiskPopup[0], inkGaps.CpuPopup[0], 0.5, "the disk's as the CPU's");
-            normal.cpuTemperature = 61;
-            normal.diskTemperature = 39;
-            normal.fahrenheit = false;
         }
 
         // Only the degree sign moves toward a narrow last digit: the digits,
@@ -567,16 +594,15 @@ TestRoot {
             const cpu = [];
             const gpu = [];
             for (const t of [59, 60, 61, 62, 71]) {
-                normal.cpuTemperature = t;
-                normal.gpuOuter.temperature = t;
-                const popup = load("CpuPopup", normal);
+                const monitor = monitorWith({ cpuTemperature: t, "gpuOuter.temperature": t });
+                const popup = load("CpuPopup", monitor);
                 const header = headerOf(popup);
                 const headline = readings(header).find(r => r.visible && r.degreeUnit !== "");
                 const caption = shownText(header, header.caption);
                 verify(headline && caption);
                 cpu.push([where(headline, popup), headline.implicitWidth, caption.mapToItem(popup, Qt.point(0, 0)).x].join(" "));
-                const gpuPopup = load("GpuPopup", normal);
-                const gpuHeader = all(gpuPopup, i => i.partsShown !== undefined && i.title === normal.gpuOuter.name)[0];
+                const gpuPopup = load("GpuPopup", monitor);
+                const gpuHeader = all(gpuPopup, i => i.partsShown !== undefined && i.title === monitor.gpuOuter.name)[0];
                 const gpuHeadline = readings(gpuHeader).find(r => r.visible && r.degreeUnit !== "");
                 const gpuCaption = shownText(gpuHeader, gpuHeader.caption);
                 verify(gpuHeadline && gpuCaption, "the GPU header at " + t);
@@ -584,21 +610,17 @@ TestRoot {
                 gpu.push([where(gpuHeadline, gpuPopup), gpuHeadline.implicitWidth,
                           gpuCaption.mapToItem(gpuPopup, Qt.point(0, 0)).x].join(" "));
             }
-            normal.cpuTemperature = 61;
-            normal.gpuOuter.temperature = Qt.binding(() => normal.gpuOuter.awake ? 48 : NaN);
             compare(cpu.filter(s => s !== cpu[0]), [], "the header at 59, 60, 61, 62, 71: " + cpu.join(", "));
             compare(gpu.filter(s => s !== gpu[0]), [], "the GPU header at 59, 60, 61, 62, 71: " + gpu.join(", "));
         }
 
         // A missing temperature is a bare dash.
         function test_missingTemperatureHasNoUnit() {
-            normal.cpuTemperature = NaN;
-            const header = readings(load("CpuPopup", normal)).filter(r => r.degreeUnit !== "");
+            const header = readings(load("CpuPopup", cpuUnheated)).filter(r => r.degreeUnit !== "");
             compare(header.length, 1);
             compare(parts(header[0]).number.text, "–");
             verify(!parts(header[0]).suffix.visible);
             compare(header[0].implicitWidth, parts(header[0]).number.implicitWidth);
-            normal.cpuTemperature = 61;
         }
 
         // The header's caption lines up with the reading's digits, the unit
@@ -782,24 +804,28 @@ TestRoot {
             return caption.text + (span && span.visible ? " · " + span.text : "");
         }
 
+        // Where `item` draws across `tile`, from its left to its right: a
+        // Text that doesn't elide can run past its own width.
+        function box(tile, item) {
+            const left = item.mapToItem(tile, Qt.point(0, 0)).x;
+            const elides = item.elide !== undefined && item.elide !== Text.ElideNone;
+            return [left, left + (elides ? item.width : Math.max(item.width, item.contentWidth ?? 0))];
+        }
+
         // A caption line keeps its span whole, inside the tile and clear of
         // the caption before it and the top after it, and its label whole
         // wherever the label and the span fit the line together.
         function checkSpanLine(tile, caption, top, mirrored) {
             const span = spanOf(tile);
             verify(span && span.visible, tile.caption + " has its span");
-            const box = t => {
-                const left = t.mapToItem(tile, Qt.point(0, 0)).x;
-                return [left, left + (t.elide !== undefined && t.elide !== Text.ElideNone ? t.width : Math.max(t.width, t.contentWidth ?? 0))];
-            };
-            const [left, right] = box(span);
+            const [left, right] = box(tile, span);
             verify(span.width >= span.implicitWidth - 0.5, "the span whole");
             verify(left >= tile.horizontalPadding - 0.5 && right <= tile.width - tile.horizontalPadding + 0.5,
                    span.text + " at " + left + " to " + right + " in a tile " + tile.width + " wide");
             const order = mirrored ? [span, caption] : [caption, span];
-            verify(box(order[0])[1] <= box(order[1])[0] + 0.5, caption.text + " before " + span.text);
+            verify(box(tile, order[0])[1] <= box(tile, order[1])[0] + 0.5, caption.text + " before " + span.text);
             if (top.visible) {
-                const after = mirrored ? [box(top), box(span)] : [box(span), box(top)];
+                const after = mirrored ? [box(tile, top), box(tile, span)] : [box(tile, span), box(tile, top)];
                 verify(after[0][1] <= after[1][0], span.text + " clear of " + top.text);
             }
             const label = caption.label.toLocaleUpperCase();
@@ -814,6 +840,24 @@ TestRoot {
             }
         }
 
+        // A whole caption line inside its tile: the caption and the top at
+        // its end inside and apart, the top whole or not shown at all, never
+        // as a stub or a bare ellipsis, and the span as checkSpanLine has it.
+        function checkCaptionLine(tile, caption, top, mirrored) {
+            for (const t of [caption, top].filter(t => t.visible)) {
+                const [left, right] = box(tile, t);
+                verify(left >= tile.horizontalPadding - 0.5 && right <= tile.width - tile.horizontalPadding + 0.5,
+                       t.text + " at " + left + " to " + right + " in a tile " + tile.width + " wide");
+            }
+            verify(!top.visible || !top.truncated && top.width >= Math.ceil(top.implicitWidth),
+                   top.text + " whole: " + top.width + " for " + top.implicitWidth);
+            if (top.visible) {
+                const [a, b] = mirrored ? [box(tile, top), box(tile, caption)] : [box(tile, caption), box(tile, top)];
+                verify(a[1] <= b[0], caption.text + " clear of " + top.text + ": " + a + " " + b);
+            }
+            checkSpanLine(tile, caption, top, mirrored);
+        }
+
         // A percentage graph has its 100 % rule, and a rate graph, which has
         // no natural top, rises to its peak where that rule would be. The
         // caption line names the top at its end, "100%" or the peak.
@@ -825,11 +869,8 @@ TestRoot {
                     { tag: "disk", popup: "DiskPopup", ceilings: 0, peaks: 2 }];
         }
 
-        // Wide enough for every peak in full: the test's fallback font runs
-        // about half as wide again as Breeze's, and a peak with too little
-        // room goes (test_rateCaptionsKeepTheirLabel).
         function test_graphsHaveARuleOrAPeak(data) {
-            const found = graphs(load(data.popup, normal, false, Kirigami.Units.gridUnit * 30)).filter(g => g.visible);
+            const found = graphs(load(data.popup, normal, false, widePage)).filter(g => g.visible);
             compare(found.filter(g => g.ceiling).length, data.ceilings);
             compare(found.filter(g => !g.ceiling).length, data.peaks);
             found.forEach(g => {
@@ -852,6 +893,50 @@ TestRoot {
             });
         }
 
+        // "100%" names each percentage graph's top, and a temperature graph
+        // names its peak, at the far end of its tile's caption line, level
+        // with the caption and over the end of the rule. Mirrored, the
+        // caption line reads from the right and the top ends it at the left.
+        function test_scaleOnTheCaptionLine_data() {
+            const rows = [];
+            for (const popup of ["CpuPopup", "GpuPopup", "MemoryPopup"]) {
+                rows.push({ tag: popup, popup: popup, mirrored: false });
+                rows.push({ tag: popup + " mirrored", popup: popup, mirrored: true });
+            }
+            return rows;
+        }
+
+        function test_scaleOnTheCaptionLine(data) {
+            const popup = load(data.popup, normal, data.mirrored);
+            const left = i => i.mapToItem(popup, Qt.point(0, 0)).x;
+            const top = i => i.mapToItem(popup, Qt.point(0, 0)).y;
+            const rules = all(popup, i => i.visible && i.lineColor !== undefined && i.limitY !== undefined);
+            verify(rules.length > 0, "a percentage graph");
+            for (const rule of rules) {
+                const g = rule.parent;
+                const [caption, scale] = captionLine(ancestor(g, i => i.graphTop !== undefined));
+                if (g.plot !== undefined) {
+                    verify(scale.text.startsWith(localized("peak ")), scale.text);
+                } else {
+                    compare(scale.text, localized("100%"));
+                }
+                verify(scale.visible && !scale.truncated);
+                verify(top(scale) + scale.height <= top(g), "on the caption line, over the graph");
+                verify(caption.visible && caption.text !== "");
+                fuzzyCompare(top(scale) + scale.baselineOffset, top(caption) + caption.baselineOffset, 0.5);
+                // The text's box at the graph's far end; its ink is right-aligned in it.
+                if (data.mirrored) {
+                    compare(left(scale), left(g));
+                    verify(left(caption) >= left(scale) + scale.width, "the caption after it");
+                } else {
+                    compare(left(scale) + scale.width, left(g) + g.width);
+                    verify(left(caption) + caption.width <= left(scale), "the caption before it");
+                }
+                compare(left(rule), left(g));
+                compare(rule.width, g.width, "the rule spans the graph, under the scale's end");
+            }
+        }
+
         // The rate tiles name their peak on the caption line and nowhere
         // else; before the first sample they say nothing. Throughput's peak
         // is in the header's unit, bits or bytes; a disk's always in bytes.
@@ -865,27 +950,21 @@ TestRoot {
                 return "peak " + r.value + " " + r.unit;
             };
             const seconds = "THROUGHPUT · 1 min";
-            normal.networkBits = data.bits;
-            fresh.networkBits = data.bits;
-            try {
-                for (const [popupName, captions, expected] of [
-                        ["NetworkPopup", [seconds], [peak(normal.networkDownHistory.concat(normal.networkUpHistory), data.bits)]],
-                        ["DiskPopup", ["READ · 1 min", "WRITE · 1 min"], [peak(normal.diskReadHistory, false), peak(normal.diskWriteHistory, false)]]]) {
-                    // Wide enough for the peaks, as in test_graphsHaveARuleOrAPeak.
-                    const popup = load(popupName, normal, false, Kirigami.Units.gridUnit * 30);
-                    compare(graphs(popup).map(heading), captions, popupName);
-                    const tops = graphs(popup).map(tileTop);
-                    compare(tops.map(c => c.text), expected, popupName);
-                    verify(tops.every(c => c.visible), popupName);
-                    verify(!texts(popup).some(t => t.indexOf("Peak") >= 0), JSON.stringify(texts(popup)));
+            const monitor = monitorWith({ networkBits: data.bits });
+            const before = monitorWith({ networkBits: data.bits }, unsampled);
+            for (const [popupName, captions, expected] of [
+                    ["NetworkPopup", [seconds], [peak(monitor.networkDownHistory.concat(monitor.networkUpHistory), data.bits)]],
+                    ["DiskPopup", ["READ · 1 min", "WRITE · 1 min"], [peak(monitor.diskReadHistory, false), peak(monitor.diskWriteHistory, false)]]]) {
+                const popup = load(popupName, monitor, false, widePage);
+                compare(graphs(popup).map(heading), captions, popupName);
+                const tops = graphs(popup).map(tileTop);
+                compare(tops.map(c => c.text), expected, popupName);
+                verify(tops.every(c => c.visible), popupName);
+                verify(!texts(popup).some(t => t.indexOf("Peak") >= 0), JSON.stringify(texts(popup)));
 
-                    const empty = graphs(load(popupName, fresh));
-                    compare(empty.map(heading), captions, popupName + " before a sample");
-                    verify(empty.map(tileTop).every(c => !c.visible && c.text === ""), popupName + " before a sample");
-                }
-            } finally {
-                normal.networkBits = true;
-                fresh.networkBits = true;
+                const empty = graphs(load(popupName, before));
+                compare(empty.map(heading), captions, popupName + " before a sample");
+                verify(empty.map(tileTop).every(c => !c.visible && c.text === ""), popupName + " before a sample");
             }
         }
 
@@ -932,43 +1011,16 @@ TestRoot {
         // ellipsis.
         function test_rateCaptionsKeepTheirLabel(data) {
             root.longStrings = true;
-            try {
-                const loader = createTemporaryObject(data.mirrored ? mirroredHost : host, root, { width: data.width });
-                loader.setSource(Qt.resolvedUrl("../../package/contents/ui/popups/" + data.popup + ".qml"), { monitor: normal });
-                const popup = loader.item;
-                waitForRendering(popup);
-                compare(popup.width, data.width);
-                const captions = graphs(popup).map(tileCaption);
-                const tops = graphs(popup).map(tileTop);
-                compare(captions.length, data.count);
-                if (data.squeezed) {
-                    verify(captions.some(c => c.truncated) || tops.some(t => !t.visible),
-                           "something is cut short: " + captions.concat(tops).map(c => c.text).join(", "));
-                }
-                for (const t of tops) {
-                    verify(!t.visible || !t.truncated && t.width >= Math.ceil(t.implicitWidth),
-                           t.text + " whole: " + t.width + " for " + t.implicitWidth);
-                }
-                captions.forEach((c, i) => {
-                    const tile = ancestor(c, i => i.graphTop !== undefined);
-                    const span = t => {
-                        const left = t.mapToItem(tile, Qt.point(0, 0)).x;
-                        return [left, left + (t.elide !== Text.ElideNone ? t.width : Math.max(t.width, t.contentWidth))];
-                    };
-                    for (const t of [c, tops[i]].filter(t => t.visible)) {
-                        const [left, right] = span(t);
-                        verify(left >= tile.horizontalPadding - 0.5 && right <= tile.width - tile.horizontalPadding + 0.5,
-                               t.text + " at " + left + " to " + right + " in a tile " + tile.width + " wide");
-                    }
-                    if (tops[i].visible) {
-                        const [a, b] = data.mirrored ? [span(tops[i]), span(c)] : [span(c), span(tops[i])];
-                        verify(a[1] <= b[0], c.text + " clear of " + tops[i].text + ": " + a + " " + b);
-                    }
-                    checkSpanLine(tile, c, tops[i], data.mirrored);
-                });
-            } finally {
-                root.longStrings = false;
+            const popup = load(data.popup, normal, data.mirrored, data.width);
+            compare(popup.width, data.width);
+            const captions = graphs(popup).map(tileCaption);
+            const tops = graphs(popup).map(tileTop);
+            compare(captions.length, data.count);
+            if (data.squeezed) {
+                verify(captions.some(c => c.truncated) || tops.some(t => !t.visible),
+                       "something is cut short: " + captions.concat(tops).map(c => c.text).join(", "));
             }
+            captions.forEach((c, i) => checkCaptionLine(ancestor(c, a => a.graphTop !== undefined), c, tops[i], data.mirrored));
         }
 
         // A rate graph scales to its floor while the rates stay under it,
@@ -1093,20 +1145,18 @@ TestRoot {
 
         function test_contentEdges(data) {
             const popup = load(data.popup, data.monitor, data.mirrored);
-            const edge = Math.round(Kirigami.Units.largeSpacing * 2);
             const left = i => i.mapToItem(popup, Qt.point(0, 0)).x;
             const right = i => left(i) + i.width;
             const spanning = [headerOf(popup)]
                 .concat(all(popup, i => i.visible && i.key !== undefined && i.threads !== undefined))
-                .concat(all(popup, i => i.visible && i.ratio !== undefined && i.radius !== undefined))
-                .concat(all(popup, i => i.visible && i.height === 1 && i.radius !== undefined && i.inner !== undefined));
+                .concat(all(popup, i => i.visible && i.ratio !== undefined && i.radius !== undefined));
             spanning.forEach(i => {
-                compare(left(i), edge, String(i));
-                compare(right(i), popup.width - edge, String(i));
+                compare(left(i), contentEdge, String(i));
+                compare(right(i), popup.width - contentEdge, String(i));
             });
             const tiles = all(popup, i => i.visible && i.graphTop !== undefined);
-            compare(Math.min(...tiles.map(left)), edge, "the tiles' near edge");
-            compare(Math.max(...tiles.map(right)), popup.width - edge, "the tiles' far edge");
+            compare(Math.min(...tiles.map(left)), contentEdge, "the tiles' near edge");
+            compare(Math.max(...tiles.map(right)), popup.width - contentEdge, "the tiles' far edge");
         }
 
         function test_dividers_data() {
@@ -1140,39 +1190,8 @@ TestRoot {
         }
 
         function test_networkHeader(data) {
-            normal.networkBits = data.bits;
-            try {
-                networkHeader(data);
-            } finally {
-                normal.networkBits = true;
-                normal.networkDown = 3.1e6;
-            }
-        }
-
-        // The connection's name and its address sit on lines of their own, so
-        // a long name elides alone and the address stays whole beneath it,
-        // with the interface's name after it.
-        function test_networkHeaderLines() {
-            const name = normal.networkConnection;
-            normal.networkConnection = "Framework 10G Ethernet Expansion Card on the left rear port";
-            try {
-                const header = all(load("NetworkPopup", normal), i => i.detail !== undefined)[0];
-                compare(header.subtitle, normal.networkConnection);
-                compare(header.detail, [normal.networkAddress, normal.networkInterface].filter(s => s !== "").join(" · "));
-                const nameLine = shownText(header, header.subtitle);
-                const addressLine = shownText(header, header.detail);
-                verify(nameLine && addressLine);
-                verify(nameLine.truncated, "the long name elides");
-                verify(!addressLine.truncated, "the address shows whole");
-                verify(addressLine.mapToItem(header, Qt.point(0, 0)).y >= nameLine.mapToItem(header, Qt.point(0, nameLine.height)).y,
-                       "the address under the name");
-            } finally {
-                normal.networkConnection = name;
-            }
-        }
-
-        function networkHeader(data) {
-            const popup = load("NetworkPopup", normal, data.mirrored);
+            const monitor = monitorWith({ networkBits: data.bits });
+            const popup = load("NetworkPopup", monitor, data.mirrored);
             const rates = all(popup, i => i.pairWidth !== undefined)[0];
             verify(rates);
             const values = readings(rates);
@@ -1180,13 +1199,14 @@ TestRoot {
             const arrows = all(rates, i => i.up !== undefined && i.color !== undefined);
             compare(arrows.map(a => a.up), [false, true]);
             const x = i => i.mapToItem(popup, Qt.point(0, 0)).x;
-            const down = Format.rate(normal.networkDown, data.bits);
-            const up = Format.rate(normal.networkUp, data.bits);
+            const down = Format.rate(monitor.networkDown, data.bits);
+            const up = Format.rate(monitor.networkUp, data.bits);
             compare(values.map(r => r.value + " " + r.unit), [down.value + " " + down.unit, up.value + " " + up.unit]);
             compare(rates.Accessible.name, "Down " + down.value + " " + down.unit + ", up " + up.value + " " + up.unit);
-            normal.networkDown = NaN;
+            const rate = monitor.networkDown;
+            monitor.networkDown = NaN;
             compare(rates.Accessible.name, "Down unavailable, up " + up.value + " " + up.unit);
-            normal.networkDown = 3.1e6;
+            monitor.networkDown = rate;
             const ends = [];
             const starts = [];
             values.forEach((r, n) => {
@@ -1208,7 +1228,7 @@ TestRoot {
             // The rates, at the tiles' size, never make the header taller than
             // one with a ring; the connection's name and address take the two
             // lines they need beside them.
-            const cpu = headerOf(load("CpuPopup", normal));
+            const cpu = headerOf(load("CpuPopup", monitor));
             verify(rates.implicitHeight <= cpu.implicitHeight, "rates no taller than a header with a ring");
             // They centre on the band the CPU header centres its ring, name
             // and reading on, within the half pixel rounding leaves.
@@ -1217,6 +1237,23 @@ TestRoot {
             const centre = rates.mapToItem(header, Qt.point(0, rates.height / 2)).y;
             verify(Math.abs(centre - cpu.bandHeight / 2) <= 0.5,
                    "the rates centred on the band: " + centre + " against " + cpu.bandHeight / 2);
+        }
+
+        // The connection's name and its address sit on lines of their own, so
+        // a long name elides alone and the address stays whole beneath it,
+        // with the interface's name after it.
+        function test_networkHeaderLines() {
+            const monitor = monitorWith({ networkConnection: "Framework 10G Ethernet Expansion Card on the left rear port" });
+            const header = all(load("NetworkPopup", monitor), i => i.detail !== undefined)[0];
+            compare(header.subtitle, monitor.networkConnection);
+            compare(header.detail, [monitor.networkAddress, monitor.networkInterface].filter(s => s !== "").join(" · "));
+            const nameLine = shownText(header, header.subtitle);
+            const addressLine = shownText(header, header.detail);
+            verify(nameLine && addressLine);
+            verify(nameLine.truncated, "the long name elides");
+            verify(!addressLine.truncated, "the address shows whole");
+            verify(addressLine.mapToItem(header, Qt.point(0, 0)).y >= nameLine.mapToItem(header, Qt.point(0, nameLine.height)).y,
+                   "the address under the name");
         }
 
         // The totals since boot lead with their arrows, as the rates do.
@@ -1243,12 +1280,29 @@ TestRoot {
             compare(disk.map(heading), ["READ · 1 min", "WRITE · 1 min"]);
             verify(disk.map(tileTop).every(t => t.visible && t.text !== ""), "the peaks shown");
             root.longStrings = true;
-            try {
-                graphs(load("DiskPopup", normal)).forEach(g => checkSpanLine(ancestor(g, i => i.graphTop !== undefined),
-                                                                             tileCaption(g), tileTop(g), false));
-            } finally {
-                root.longStrings = false;
-            }
+            graphs(load("DiskPopup", normal)).forEach(g => checkSpanLine(ancestor(g, i => i.graphTop !== undefined),
+                                                                         tileCaption(g), tileTop(g), false));
+        }
+
+        // Every object under `item` that `test` accepts, found through what
+        // each holds in `data`: a Sensor is there but not in `children`,
+        // which lists Items only. A model's `data` is a method instead.
+        function held(item, test) {
+            const found = [];
+            const walk = o => {
+                const list = o.data;
+                if (!list || typeof list === "function") {
+                    return;
+                }
+                for (let i = 0; i < list.length; ++i) {
+                    if (test(list[i])) {
+                        found.push(list[i]);
+                    }
+                    walk(list[i]);
+                }
+            };
+            walk(item);
+            return found;
         }
 
         // The popups read everything from the Monitor, which keeps one Sensor
@@ -1258,21 +1312,7 @@ TestRoot {
         }
 
         function test_ratePopupsSubscribeNothing(data) {
-            const found = [];
-            const walk = o => {
-                const held = o.data;
-                if (!held || typeof held === "function") {
-                    return;
-                }
-                for (let i = 0; i < held.length; ++i) {
-                    if (held[i].sensorId !== undefined || held[i].connectedSources !== undefined) {
-                        found.push(held[i]);
-                    }
-                    walk(held[i]);
-                }
-            };
-            walk(load(data.popup, normal));
-            compare(found.length, 0);
+            compare(held(load(data.popup, normal), o => o.sensorId !== undefined || o.connectedSources !== undefined).length, 0);
         }
 
         // The disk header names the device, then its size and the volume's
@@ -1336,7 +1376,7 @@ TestRoot {
             const disk = place("DiskPopup");
             fuzzyCompare(disk.below, cpu.below, 1, "the digits against the title");
             compare(disk.edge, cpu.edge, "on the far edge");
-            compare(disk.titleEdge, Math.round(Kirigami.Units.largeSpacing * 2), "the title on the near edge");
+            compare(disk.titleEdge, contentEdge, "the title on the near edge");
         }
 
         // Every header's title and digits sit as far below its top as the CPU
@@ -1415,19 +1455,11 @@ TestRoot {
         function test_diskTemperatureTakesTheLevelColours(data) {
             const expected = data.tone === "negative" ? Kirigami.Theme.negativeTextColor
                            : data.tone === "neutral" ? Kirigami.Theme.neutralTextColor : Kirigami.Theme.textColor;
-            normal.highlightTemperatures = !data.plain;
-            normal.fahrenheit = !!data.fahrenheit;
-            normal.diskTemperature = data.celsius;
-            try {
-                const headline = readings(headerOf(load("DiskPopup", normal))).find(r => r.visible);
-                compare(headline.value, Format.temperature(data.celsius, !!data.fahrenheit));
-                compare(headline.degreeUnit, data.fahrenheit ? "F" : "C");
-                compare(String(parts(headline).number.color), String(expected), "the digits as drawn");
-            } finally {
-                normal.highlightTemperatures = true;
-                normal.fahrenheit = false;
-                normal.diskTemperature = 39;
-            }
+            const monitor = monitorWith({ highlightTemperatures: !data.plain, fahrenheit: !!data.fahrenheit, diskTemperature: data.celsius });
+            const headline = readings(headerOf(load("DiskPopup", monitor))).find(r => r.visible);
+            compare(headline.value, Format.temperature(data.celsius, !!data.fahrenheit));
+            compare(headline.degreeUnit, data.fahrenheit ? "F" : "C");
+            compare(String(parts(headline).number.color), String(expected), "the digits as drawn");
         }
 
         // Each awake GPU opens with the CPU popup's header: its usage in the
@@ -1499,31 +1531,11 @@ TestRoot {
         // thread's bar, are read as often as the graph above them, so at a
         // long update interval the whole popup still moves together.
         function test_cpuPopupReadsWithItsGraph() {
-            normal.interval = 5000;
-            try {
-                const popup = load("CpuPopup", normal);
-                const sensors = [];
-                // Items list what they hold in `data`; models have a data()
-                // method of that name instead.
-                const walk = o => {
-                    const held = o.data;
-                    if (!held || typeof held === "function") {
-                        return;
-                    }
-                    for (let i = 0; i < held.length; ++i) {
-                        if (held[i].sensorId !== undefined) {
-                            sensors.push(held[i]);
-                        }
-                        walk(held[i]);
-                    }
-                };
-                walk(popup);
-                const own = sensors.filter(s => s.sensorId === "cpu/all/averageFrequency" || /^cpu\/cpu\d+\/usage$/.test(s.sensorId));
-                verify(own.length > 2, "the frequency and the threads: " + own.length);
-                verify(own.every(s => s.updateRateLimit === normal.readInterval), own.map(s => s.updateRateLimit).join());
-            } finally {
-                normal.interval = 1000;
-            }
+            const monitor = monitorWith({ interval: 5000 });
+            const own = held(load("CpuPopup", monitor),
+                             o => o.sensorId === "cpu/all/averageFrequency" || /^cpu\/cpu\d+\/usage$/.test(o.sensorId));
+            verify(own.length > 2, "the frequency and the threads: " + own.length);
+            verify(own.every(s => s.updateRateLimit === monitor.readInterval), own.map(s => s.updateRateLimit).join());
         }
 
         // Every GPU header is laid out as the CPU popup's is, on the
@@ -1541,7 +1553,6 @@ TestRoot {
         }
 
         function test_gpuHeadersMatchTheCpu(data) {
-            const edge = Math.round(Kirigami.Units.largeSpacing * 2);
             const layout = popup => all(popup, i => i.visible && i.partsShown !== undefined).map(header => {
                 const at = i => i.mapToItem(header, Qt.point(0, 0));
                 const baseline = t => t.mapToItem(header, Qt.point(0, t.baselineOffset)).y;
@@ -1566,7 +1577,7 @@ TestRoot {
             });
             const cpu = layout(load("CpuPopup", normal, data.mirrored));
             compare(cpu.length, 1);
-            compare(cpu[0].edges, [edge, edge]);
+            compare(cpu[0].edges, [contentEdge, contentEdge]);
             const gpu = layout(load("GpuPopup", data.monitor, data.mirrored));
             compare(gpu.length, 2);
             data.shown.forEach((keys, n) => {
@@ -1613,24 +1624,15 @@ TestRoot {
         function test_gpuTemperatureTakesTheLevelColours(data) {
             const expected = data.tone === "negative" ? Kirigami.Theme.negativeTextColor
                            : data.tone === "neutral" ? Kirigami.Theme.neutralTextColor : Kirigami.Theme.textColor;
-            normal.highlightTemperatures = !data.plain;
-            normal.fahrenheit = !!data.fahrenheit;
-            normal.gpuOuter.temperature = data.celsius;
-            normal.gpuInner.temperature = data.celsius;
-            try {
-                const headers = all(load("GpuPopup", normal), i => i.visible && i.partsShown !== undefined);
-                compare(headers.length, 2);
-                headers.forEach(h => {
-                    const headline = readings(h).find(r => r.visible);
-                    compare(headline.value, Format.temperature(data.celsius, !!data.fahrenheit), h.title);
-                    compare(String(parts(headline).number.color), String(expected), h.title + ": the digits as drawn");
-                });
-            } finally {
-                normal.highlightTemperatures = true;
-                normal.fahrenheit = false;
-                normal.gpuOuter.temperature = Qt.binding(() => normal.gpuOuter.awake ? 48 : NaN);
-                normal.gpuInner.temperature = Qt.binding(() => normal.gpuInner.awake ? 41 : NaN);
-            }
+            const monitor = monitorWith({ highlightTemperatures: !data.plain, fahrenheit: !!data.fahrenheit,
+                                          "gpuOuter.temperature": data.celsius, "gpuInner.temperature": data.celsius });
+            const headers = all(load("GpuPopup", monitor), i => i.visible && i.partsShown !== undefined);
+            compare(headers.length, 2);
+            headers.forEach(h => {
+                const headline = readings(h).find(r => r.visible);
+                compare(headline.value, Format.temperature(data.celsius, !!data.fahrenheit), h.title);
+                compare(String(parts(headline).number.color), String(expected), h.title + ": the digits as drawn");
+            });
         }
 
         // The second GPU's usage graph is drawn as the first's and the CPU's
@@ -1662,7 +1664,6 @@ TestRoot {
             waitForRendering(popup);
             compare(popup.width, data.width);
             const left = i => i.mapToItem(popup, Qt.point(0, 0)).x;
-            const edge = Math.round(Kirigami.Units.largeSpacing * 2);
             const headers = all(popup, i => i.visible && i.partsShown !== undefined);
             compare(headers.length, 2);
             headers.forEach(h => {
@@ -1672,8 +1673,8 @@ TestRoot {
                 verify(headline.width >= headline.implicitWidth - 0.5, "the temperature keeps its width");
                 const [near, far] = data.mirrored ? [headline, title] : [title, headline];
                 verify(left(near) + near.width <= left(far) + 0.5, "the name stops short of the temperature");
-                compare(left(h), edge);
-                compare(left(h) + h.width, popup.width - edge);
+                compare(left(h), contentEdge);
+                compare(left(h) + h.width, popup.width - contentEdge);
             });
         }
 
@@ -1705,26 +1706,21 @@ TestRoot {
         // takes the locale's digits: the rings' centres, the per-thread bars'
         // descriptions and a process that runs several times.
         function test_numbersAreTranslated() {
-            const sample = normal.processSample;
-            normal.processSample = [{ name: "chrome", usage: 8.4 * 16, memory: 3.9 * 1024 ** 3, count: 12 }].concat(sample.slice(1));
+            const monitor = monitorWith({ processSample: [{ name: "chrome", usage: 8.4 * 16, memory: 3.9 * 1024 ** 3, count: 12 }]
+                                                             .concat(normal.processSample.slice(1)) });
             root.longStrings = true;
-            try {
-                const translated = t => t.endsWith("ß");
-                const rings = popup => all(popup, i => i.outerTone !== undefined && i.text !== undefined && i.text !== "–");
-                const cpu = load("CpuPopup", normal);
-                verify(rings(cpu).length > 0);
-                rings(cpu).forEach(r => verify(translated(r.text), r.text));
-                const threads = all(cpu, i => i.Accessible.role === Accessible.ProgressBar);
-                verify(threads.length > 0);
-                threads.forEach(b => verify(translated(b.Accessible.description), b.Accessible.description));
-                verify(texts(cpu).some(t => t.startsWith("chrome ×" + Format.whole(12)) && translated(t)), JSON.stringify(texts(cpu)));
-                const gpu = load("GpuPopup", normal);
-                compare(rings(gpu).length, 2, "each GPU's ring");
-                rings(gpu).forEach(r => verify(translated(r.text), r.text));
-            } finally {
-                root.longStrings = false;
-                normal.processSample = sample;
-            }
+            const translated = t => t.endsWith("ß");
+            const rings = popup => all(popup, i => i.outerTone !== undefined && i.text !== undefined && i.text !== "–");
+            const cpu = load("CpuPopup", monitor);
+            verify(rings(cpu).length > 0);
+            rings(cpu).forEach(r => verify(translated(r.text), r.text));
+            const threads = all(cpu, i => i.Accessible.role === Accessible.ProgressBar);
+            verify(threads.length > 0);
+            threads.forEach(b => verify(translated(b.Accessible.description), b.Accessible.description));
+            verify(texts(cpu).some(t => t.startsWith("chrome ×" + Format.whole(12)) && translated(t)), JSON.stringify(texts(cpu)));
+            const gpu = load("GpuPopup", monitor);
+            compare(rings(gpu).length, 2, "each GPU's ring");
+            rings(gpu).forEach(r => verify(translated(r.text), r.text));
         }
 
         // The system popups' footers keep the System Monitor link and the
@@ -1756,15 +1752,14 @@ TestRoot {
             // On the readings' edges: the link's text, and the icon's drawing
             // inside the button's padding and the 3 px Breeze's 22 px icon
             // keeps free around it.
-            const edge = Math.round(Kirigami.Units.largeSpacing * 2);
             const slack = Kirigami.Units.iconSizes.smallMedium * 3 / 22;
             const x = (i, at) => i.mapToItem(footer, Qt.point(at, 0)).x;
             if (data.mirrored) {
-                compare(x(link, link.width), footer.width - edge);
-                compare(x(button, button.leftPadding + slack), edge);
+                compare(x(link, link.width), footer.width - contentEdge);
+                compare(x(button, button.leftPadding + slack), contentEdge);
             } else {
-                compare(x(link, 0), edge);
-                compare(x(button, button.width - button.rightPadding - slack), footer.width - edge);
+                compare(x(link, 0), contentEdge);
+                compare(x(button, button.width - button.rightPadding - slack), footer.width - contentEdge);
             }
         }
 
@@ -1804,7 +1799,7 @@ TestRoot {
         }
 
         function test_temperatureGraphs(data) {
-            const popup = load(data.popup, data.monitor, false, Kirigami.Units.gridUnit * 30);
+            const popup = load(data.popup, data.monitor, false, widePage);
             const tiles = temperatureTiles(popup);
             compare(tiles.length, data.count);
             // The usage or write rate graph over it, whose shape it shares.
@@ -1853,37 +1848,28 @@ TestRoot {
         // to a five, and the caption names the peak of the span shown, as a
         // rate graph's does: the calm minute's, then the day's.
         function test_temperatureCaptionIsThePeakWithoutHighlighting() {
-            hotDay.highlightTemperatures = false;
-            try {
-                const tile = temperatureTiles(load("CpuPopup", hotDay, false, Kirigami.Units.gridUnit * 30))[0];
-                const g = temperatureGraph(tile);
-                for (const span of ["minute", "day"]) {
-                    hotDay.chooseSpan(span);
-                    const peak = Math.max(...hotDay.cpuTemperatureHistory.concat(hotDay.cpuTemperatureHighs).filter(Number.isFinite));
-                    compare(tile.scaleTop, 95, span);
-                    compare(captionLine(tile)[1].text, localized("peak " + Math.round(peak) + " °C"), span);
-                    verify(!all(g, i => i.limitY !== undefined)[0].visible, span + ": no rule");
-                }
-                compare(captionLine(tile)[1].text, localized("peak 93 °C"));
-            } finally {
-                hotDay.chooseSpan("minute");
-                hotDay.highlightTemperatures = true;
+            const monitor = monitorWith({ highlightTemperatures: false }, hotDay);
+            const tile = temperatureTiles(load("CpuPopup", monitor, false, widePage))[0];
+            const g = temperatureGraph(tile);
+            for (const span of ["minute", "day"]) {
+                monitor.chooseSpan(span);
+                const peak = Math.max(...monitor.cpuTemperatureHistory.concat(monitor.cpuTemperatureHighs).filter(Number.isFinite));
+                compare(tile.scaleTop, 95, span);
+                compare(captionLine(tile)[1].text, localized("peak " + Math.round(peak) + " °C"), span);
+                verify(!all(g, i => i.limitY !== undefined)[0].visible, span + ": no rule");
             }
+            compare(captionLine(tile)[1].text, localized("peak 93 °C"));
         }
 
-        // A lone reading draws no line, so there is no graph until a second
-        // one comes.
+        // A lone reading, the first say, draws no line, so there is no graph
+        // until a second one comes.
         function test_aLoneReadingHasNoGraph() {
-            const sample = firstReading.cpuTemperatureHistory;
-            try {
-                compare(temperatureTiles(load("CpuPopup", firstReading)).length, 0);
-                firstReading.cpuTemperatureHistory = [NaN, 60, NaN, 61];
-                compare(temperatureTiles(load("CpuPopup", firstReading)).length, 0, "nor from readings apart");
-                firstReading.cpuTemperatureHistory = [60, 61];
-                compare(temperatureTiles(load("CpuPopup", firstReading)).length, 1);
-            } finally {
-                firstReading.cpuTemperatureHistory = sample;
-            }
+            const monitor = monitorWith({ cpuTemperatureHistory: [61] });
+            compare(temperatureTiles(load("CpuPopup", monitor)).length, 0);
+            monitor.cpuTemperatureHistory = [NaN, 60, NaN, 61];
+            compare(temperatureTiles(load("CpuPopup", monitor)).length, 0, "nor from readings apart");
+            monitor.cpuTemperatureHistory = [60, 61];
+            compare(temperatureTiles(load("CpuPopup", monitor)).length, 1);
         }
 
         // At an hour or a day a bucket between gaps is a mark of its own, so
@@ -1891,57 +1877,47 @@ TestRoot {
         // tile stays while the sensor has read anything, though its first
         // bucket is still open.
         function test_aLoneBucketHasAGraph() {
-            const was = [firstReading.cpuTemperatureHistory, firstReading.cpuTemperatureHighs, firstReading.cpuTemperatureExtent];
-            try {
-                const popup = load("CpuPopup", firstReading);
-                firstReading.chooseSpan("day");
-                firstReading.cpuTemperatureHistory = [NaN, 60, NaN];
-                firstReading.cpuTemperatureHighs = [NaN, 62, NaN];
-                compare(temperatureTiles(popup).length, 1, "a lone bucket");
-                firstReading.cpuTemperatureHistory = [];
-                firstReading.cpuTemperatureHighs = [];
-                compare(temperatureTiles(popup).length, 0, "nothing read");
-                firstReading.cpuTemperatureExtent = [60, 61];
-                compare(temperatureTiles(popup).length, 1, "read, in a bucket still open");
-                firstReading.chooseSpan("minute");
-                firstReading.cpuTemperatureHistory = [NaN, 60, NaN];
-                compare(temperatureTiles(popup).length, 0, "a lone reading at a minute");
-            } finally {
-                firstReading.chooseSpan("minute");
-                [firstReading.cpuTemperatureHistory, firstReading.cpuTemperatureHighs, firstReading.cpuTemperatureExtent] = was;
-            }
+            const monitor = monitorWith({ cpuTemperatureHistory: [61] });
+            const popup = load("CpuPopup", monitor);
+            monitor.chooseSpan("day");
+            monitor.cpuTemperatureHistory = [NaN, 60, NaN];
+            monitor.cpuTemperatureHighs = [NaN, 62, NaN];
+            compare(temperatureTiles(popup).length, 1, "a lone bucket");
+            monitor.cpuTemperatureHistory = [];
+            monitor.cpuTemperatureHighs = [];
+            compare(temperatureTiles(popup).length, 0, "nothing read");
+            monitor.cpuTemperatureExtent = [60, 61];
+            compare(temperatureTiles(popup).length, 1, "read, in a bucket still open");
+            monitor.chooseSpan("minute");
+            monitor.cpuTemperatureHistory = [NaN, 60, NaN];
+            compare(temperatureTiles(popup).length, 0, "a lone reading at a minute");
         }
 
         // Picking a day from the temperature's own caption, on a widget
         // whose first buckets are still open, keeps the tile where it was,
         // and the focus on its span.
         function test_aFreshTileStaysAsTheSpanChanges() {
-            const fresh = createTemporaryObject(freshStart, root);
-            const host = createTemporaryObject(escapeHost, root, { width: Kirigami.Units.gridUnit * 30 });
+            const fresh = monitorWith({}, freshStart);
+            const host = createTemporaryObject(escapeHost, root, { width: widePage });
             host.setSource(Qt.resolvedUrl("../../package/contents/ui/popups/CpuPopup.qml"), { monitor: fresh });
-            try {
-                const popup = host.item;
-                waitForRendering(popup);
-                const tile = temperatureTiles(popup)[0];
-                verify(tile);
-                const height = popup.implicitHeight;
-                const span = spanOf(tile);
-                span.forceActiveFocus(Qt.TabFocusReason);
-                keyClick(Qt.Key_Space);
-                tryVerify(() => span.menu.opened, 2000);
-                keyClick(Qt.Key_Down);
-                keyClick(Qt.Key_Down);
-                keyClick(Qt.Key_Return);
-                tryVerify(() => !span.menu.visible, 2000);
-                compare(fresh.graphSpan, "day");
-                compare(fresh.cpuTemperatureHistory, []);
-                verify(tile.visible, "the tile stays");
-                compare(popup.implicitHeight, height, "and the popup's height");
-                tryVerify(() => span.activeFocus && span.visualFocus, 2000, "the focus is back on its span");
-            } finally {
-                // The popup goes before its monitor.
-                host.active = false;
-            }
+            const popup = host.item;
+            waitForRendering(popup);
+            const tile = temperatureTiles(popup)[0];
+            verify(tile);
+            const height = popup.implicitHeight;
+            const span = spanOf(tile);
+            span.forceActiveFocus(Qt.TabFocusReason);
+            keyClick(Qt.Key_Space);
+            tryVerify(() => span.menu.opened, 2000);
+            keyClick(Qt.Key_Down);
+            keyClick(Qt.Key_Down);
+            keyClick(Qt.Key_Return);
+            tryVerify(() => !span.menu.visible, 2000);
+            compare(fresh.graphSpan, "day");
+            compare(fresh.cpuTemperatureHistory, []);
+            verify(tile.visible, "the tile stays");
+            compare(popup.implicitHeight, height, "and the popup's height");
+            tryVerify(() => span.activeFocus && span.visualFocus, 2000, "the focus is back on its span");
         }
 
         // At an hour, on a widget whose first buckets are still open, every
@@ -1951,42 +1927,31 @@ TestRoot {
         }
 
         function test_freshTemperatureTileAtAnHour(data) {
-            const fresh = createTemporaryObject(freshStart, root);
-            const host = createTemporaryObject(escapeHost, root, { width: Kirigami.Units.gridUnit * 30 });
-            host.setSource(Qt.resolvedUrl("../../package/contents/ui/popups/" + data.popup + ".qml"), { monitor: fresh });
-            try {
-                fresh.chooseSpan("hour");
-                const tiles = temperatureTiles(host.item);
-                compare(tiles.length, 1);
-                verify(!tiles[0].hasReading, "nothing to draw yet");
-                verify(spanOf(tiles[0]).visible);
-            } finally {
-                // The popup goes before its monitor.
-                host.active = false;
-            }
+            const fresh = monitorWith({}, freshStart);
+            const popup = load(data.popup, fresh, false, widePage);
+            fresh.chooseSpan("hour");
+            const tiles = temperatureTiles(popup);
+            compare(tiles.length, 1);
+            verify(!tiles[0].hasReading, "nothing to draw yet");
+            verify(spanOf(tiles[0]).visible);
         }
 
         // A reading dipping under a round number lowers the floor, which then
         // stays down as the dip leaves the span, so the line moves once.
         function test_temperatureFloorHoldsInTheTile() {
-            const sample = firstReading.cpuTemperatureHistory;
-            try {
-                firstReading.cpuTemperatureHistory = [46, 45, 46];
-                const tile = temperatureTiles(load("CpuPopup", firstReading))[0];
-                compare(tile.floor, 40);
-                firstReading.cpuTemperatureHistory = [45, 46, 44.9];
-                compare(tile.floor, 30);
-                firstReading.cpuTemperatureHistory = [46, 44.9, 46];
-                firstReading.cpuTemperatureHistory = [44.9, 46, 45];
-                firstReading.cpuTemperatureHistory = [46, 45, 46];
-                compare(tile.floor, 30, "kept as the dip leaves");
-                const g = temperatureGraph(tile);
-                fuzzyCompare(g.plot.points[2].y, g.topY + (1 - (46 - 30) / (90 - 30)) * (g.height - g.topY - 0.75), 1e-6);
-                firstReading.cpuTemperatureHistory = [52, 51, 53];
-                compare(tile.floor, 40, "raised once well clear");
-            } finally {
-                firstReading.cpuTemperatureHistory = sample;
-            }
+            const monitor = monitorWith({ cpuTemperatureHistory: [46, 45, 46] });
+            const tile = temperatureTiles(load("CpuPopup", monitor))[0];
+            compare(tile.floor, 40);
+            monitor.cpuTemperatureHistory = [45, 46, 44.9];
+            compare(tile.floor, 30);
+            monitor.cpuTemperatureHistory = [46, 44.9, 46];
+            monitor.cpuTemperatureHistory = [44.9, 46, 45];
+            monitor.cpuTemperatureHistory = [46, 45, 46];
+            compare(tile.floor, 30, "kept as the dip leaves");
+            const g = temperatureGraph(tile);
+            fuzzyCompare(g.plot.points[2].y, g.topY + (1 - (46 - 30) / (90 - 30)) * (g.height - g.topY - 0.75), 1e-6);
+            monitor.cpuTemperatureHistory = [52, 51, 53];
+            compare(tile.floor, 40, "raised once well clear");
         }
 
         // Two GPUs, the integrated one without a temperature graph, fit a
@@ -2030,16 +1995,11 @@ TestRoot {
         // In °F the samples, the scale and the peak are in °F, the hot
         // threshold the top as it is in °C.
         function test_temperatureGraphsInFahrenheit() {
-            normal.fahrenheit = true;
-            try {
-                const tile = temperatureTiles(load("CpuPopup", normal, false, Kirigami.Units.gridUnit * 30))[0];
-                const g = temperatureGraph(tile);
-                fuzzyCompare(g.plot.values[g.plot.values.length - 1], 61 * 9 / 5 + 32, 1e-9);
-                const peak = Math.max(...tile.history.filter(c => Number.isFinite(c))) * 9 / 5 + 32;
-                compare(captionLine(tile)[1].text, localized("peak " + Math.round(peak) + " °F"));
-            } finally {
-                normal.fahrenheit = false;
-            }
+            const tile = temperatureTiles(load("CpuPopup", monitorWith({ fahrenheit: true }), false, widePage))[0];
+            const g = temperatureGraph(tile);
+            fuzzyCompare(g.plot.values[g.plot.values.length - 1], 61 * 9 / 5 + 32, 1e-9);
+            const peak = Math.max(...tile.history.filter(c => Number.isFinite(c))) * 9 / 5 + 32;
+            compare(captionLine(tile)[1].text, localized("peak " + Math.round(peak) + " °F"));
         }
 
         // The line turns amber from the warm threshold and red from the hot
@@ -2054,15 +2014,16 @@ TestRoot {
         }
 
         function test_temperatureLineTakesTheLevelColours(data) {
-            const strokes = g => all(g, i => i.preferredRendererType !== undefined)[0].data.filter(p => p.strokeWidth === 1.5);
+            // The line's pieces at each level, the paths that take a list of lines.
+            const strokes = g => all(g, i => i.preferredRendererType !== undefined)[0].data.filter(p => p.lines !== undefined);
             const check = (highlighted, levels, counts) => {
-                heating.highlightTemperatures = highlighted;
-                const tile = temperatureTiles(load(data.popup, heating, false, Kirigami.Units.gridUnit * 30)).pop();
+                const monitor = monitorWith({ fahrenheit: data.f, highlightTemperatures: highlighted }, heating);
+                const tile = temperatureTiles(load(data.popup, monitor, false, widePage)).pop();
                 compare(captionLine(tile)[1].text, localized(data.top));
                 const g = temperatureGraph(tile);
                 compare(g.pieces.map(p => p.level), levels);
                 // The climb passes 75 °C 26.8 samples in and 90 °C 53.6 in.
-                const step = g.width / (heating.historyLength - 1);
+                const step = g.width / (monitor.historyLength - 1);
                 g.pieces.slice(1).forEach((p, n) => fuzzyCompare(p.points[0].x, ([75, 90][n] - 60) * 59 / 33 * step, 1e-6,
                                                                  "where it turns"));
                 const paths = strokes(g);
@@ -2070,20 +2031,15 @@ TestRoot {
                         [Kirigami.Theme.textColor, Kirigami.Theme.neutralTextColor, Kirigami.Theme.negativeTextColor].map(String));
                 compare(paths.map(p => p.pathElements[0].paths.length), counts);
             };
-            heating.fahrenheit = data.f;
-            try {
-                check(true, [0, 1, 2], [1, 1, 1]);
-                check(false, [0], [1, 0, 0]);
-            } finally {
-                heating.highlightTemperatures = true;
-                heating.fahrenheit = false;
-            }
+            check(true, [0, 1, 2], [1, 1, 1]);
+            check(false, [0], [1, 0, 0]);
         }
 
         // A GPU that woke during the graph's span has no line before it woke.
         function test_aGpuThatWokeLeavesAGap() {
-            const g = temperatureGraph(temperatureTiles(load("GpuPopup", woken))[0]);
-            const step = g.width / (woken.historyLength - 1);
+            const monitor = monitorWith({}, woken);
+            const g = temperatureGraph(temperatureTiles(load("GpuPopup", monitor))[0]);
+            const step = g.width / (monitor.historyLength - 1);
             compare(g.areas.length, 1);
             fuzzyCompare(g.areas[0][0].x, 25 * step, 1e-6);
             compare(g.pieces.length, 1);
@@ -2110,40 +2066,17 @@ TestRoot {
 
         function test_temperatureCaptionsFit(data) {
             root.longStrings = true;
-            normal.fahrenheit = true;
-            try {
-                const loader = createTemporaryObject(data.mirrored ? mirroredHost : host, root, { width: data.width });
-                loader.setSource(Qt.resolvedUrl("../../package/contents/ui/popups/" + data.popup + ".qml"), { monitor: normal });
-                const popup = loader.item;
-                waitForRendering(popup);
-                const tiles = temperatureTiles(popup);
-                verify(tiles.length > 0);
-                tiles.forEach(tile => {
-                    const [caption, top] = captionLine(tile);
-                    const span = t => {
-                        const left = t.mapToItem(tile, Qt.point(0, 0)).x;
-                        return [left, left + (t.elide !== Text.ElideNone ? t.width : Math.max(t.width, t.contentWidth))];
-                    };
-                    for (const t of [caption, top].filter(t => t.visible)) {
-                        const [left, right] = span(t);
-                        verify(left >= tile.horizontalPadding - 0.5 && right <= tile.width - tile.horizontalPadding + 0.5,
-                               t.text + " at " + left + " to " + right + " in a tile " + tile.width + " wide");
-                    }
-                    verify(!top.visible || !top.truncated && top.width >= Math.ceil(top.implicitWidth), top.text + " whole");
-                    if (top.visible) {
-                        const [a, b] = data.mirrored ? [span(top), span(caption)] : [span(caption), span(top)];
-                        verify(a[1] <= b[0], caption.text + " clear of " + top.text);
-                    }
-                    checkSpanLine(tile, caption, top, data.mirrored);
-                    const g = temperatureGraph(tile);
-                    const newest = g.plot.points[g.plot.points.length - 1];
-                    fuzzyCompare(newest.x, g.width, 1e-6, "the newest sample at the right");
-                    verify(g.plot.points[0].x < newest.x);
-                });
-            } finally {
-                root.longStrings = false;
-                normal.fahrenheit = false;
-            }
+            const popup = load(data.popup, monitorWith({ fahrenheit: true }), data.mirrored, data.width);
+            const tiles = temperatureTiles(popup);
+            verify(tiles.length > 0);
+            tiles.forEach(tile => {
+                const [caption, top] = captionLine(tile);
+                checkCaptionLine(tile, caption, top, data.mirrored);
+                const g = temperatureGraph(tile);
+                const newest = g.plot.points[g.plot.points.length - 1];
+                fuzzyCompare(newest.x, g.width, 1e-6, "the newest sample at the right");
+                verify(g.plot.points[0].x < newest.x);
+            });
         }
 
         // Every graph tile in every popup with a moving graph, at every span:
@@ -2157,48 +2090,44 @@ TestRoot {
             const rows = [];
             for (const [popup, count] of [["CpuPopup", 2], ["GpuPopup", 3], ["MemoryPopup", 1], ["NetworkPopup", 1], ["DiskPopup", 3]]) {
                 for (const span of ["minute", "hour", "day"]) {
-                    rows.push({ tag: popup + " " + span, popup: popup, count: count, span: span, monitor: normal,
+                    rows.push({ tag: popup + " " + span, popup: popup, count: count, span: span, values: {},
                                 length: { minute: 60, hour: 120, day: 144 }[span] });
                 }
             }
-            rows.push({ tag: "CpuPopup minute at 500 ms", popup: "CpuPopup", count: 2, span: "minute", monitor: shortSpan, length: 120 });
+            rows.push({ tag: "CpuPopup minute at 500 ms", popup: "CpuPopup", count: 2, span: "minute", values: { interval: 500 }, length: 120 });
             return rows;
         }
 
         function test_graphsAtEachSpan(data) {
             const label = { minute: "1 min", hour: "1 h", day: "1 day" }[data.span];
             const name = { minute: "1 minute", hour: "1 hour", day: "1 day" }[data.span];
-            data.monitor.chooseSpan(data.span);
-            try {
-                const popup = load(data.popup, data.monitor, false, Kirigami.Units.gridUnit * 30);
-                const tiles = all(popup, i => i.visible && i.graphTop !== undefined && i.spans !== undefined && i.spans !== null);
-                compare(tiles.length, data.count);
-                for (const tile of tiles) {
-                    const span = spanOf(tile);
-                    verify(span.visible);
-                    compare(heading(tile), tile.caption.toLocaleUpperCase() + " · " + label);
-                    compare(span.Accessible.role, Accessible.ButtonMenu);
-                    compare(span.Accessible.name, "Graph span: " + name);
-                    const g = graphs(tile)[0] ?? temperatureGraph(tile);
-                    const shape = g.drawn ?? g;
-                    const points = g.drawn ? g.drawn.main : g.plot.points;
-                    const bands = g.drawn ? g.drawn.bands : g.bands;
-                    compare(points.length, data.length, tile.caption + " spans its points");
-                    fuzzyCompare(points[0].x, 0, 1e-6, "the oldest at the left");
-                    fuzzyCompare(points[points.length - 1].x, g.width, 1e-6, "the newest at the right");
-                    compare(all(g, i => i.visible && i.border !== undefined && i.radius !== undefined
-                                        && !ancestor(i, a => a.limitY !== undefined)).length, 0, tile.caption + ": no grid");
-                    compare(all(g, i => typeof i.text === "string").length, 0, tile.caption + ": nothing written on the graph");
-                    if (data.span === "minute") {
-                        compare(bands.length, 0, tile.caption + ": no band at a minute");
-                    } else {
-                        verify(bands.length >= 2, tile.caption + ": a band either side of the gap, " + bands.length);
-                        const runs = g.drawn ? g.drawn.runs : g.areas;
-                        verify(runs.length >= 2, tile.caption + ": the line breaks off where the machine slept");
-                    }
+            const monitor = monitorWith(data.values);
+            monitor.chooseSpan(data.span);
+            const popup = load(data.popup, monitor, false, widePage);
+            const tiles = all(popup, i => i.visible && i.graphTop !== undefined && i.spans !== undefined && i.spans !== null);
+            compare(tiles.length, data.count);
+            for (const tile of tiles) {
+                const span = spanOf(tile);
+                verify(span.visible);
+                compare(heading(tile), tile.caption.toLocaleUpperCase() + " · " + label);
+                compare(span.Accessible.role, Accessible.ButtonMenu);
+                compare(span.Accessible.name, "Graph span: " + name);
+                const g = graphs(tile)[0] ?? temperatureGraph(tile);
+                const points = g.drawn ? g.drawn.main : g.plot.points;
+                const bands = g.drawn ? g.drawn.bands : g.bands;
+                compare(points.length, data.length, tile.caption + " spans its points");
+                fuzzyCompare(points[0].x, 0, 1e-6, "the oldest at the left");
+                fuzzyCompare(points[points.length - 1].x, g.width, 1e-6, "the newest at the right");
+                compare(all(g, i => i.visible && i.border !== undefined && i.radius !== undefined
+                                    && !ancestor(i, a => a.limitY !== undefined)).length, 0, tile.caption + ": no grid");
+                compare(all(g, i => typeof i.text === "string").length, 0, tile.caption + ": nothing written on the graph");
+                if (data.span === "minute") {
+                    compare(bands.length, 0, tile.caption + ": no band at a minute");
+                } else {
+                    verify(bands.length >= 2, tile.caption + ": a band either side of the gap, " + bands.length);
+                    const runs = g.drawn ? g.drawn.runs : g.areas;
+                    verify(runs.length >= 2, tile.caption + ": the line breaks off where the machine slept");
                 }
-            } finally {
-                data.monitor.chooseSpan("minute");
             }
         }
 
@@ -2211,33 +2140,30 @@ TestRoot {
         }
 
         function test_ratePeaksAtLongSpansAreTheHighestSecond(data) {
-            normal.chooseSpan(data.span);
-            try {
-                const popup = load("DiskPopup", normal, false, Kirigami.Units.gridUnit * 30);
-                const read = graphs(popup)[0];
-                const high = Math.max(...normal.diskReadHighs.filter(v => Number.isFinite(v)));
-                verify(high > Math.max(...normal.diskReadHistory.filter(v => Number.isFinite(v))), "the highs run over the averages");
-                compare(read.maximum, high);
-                const r = Format.rate(high, false);
-                compare(tileTop(read).text, "peak " + r.value + " " + r.unit);
-                const bandTop = read.drawn.bands.reduce((m, b) => Math.min(m, ...b.map(p => p.y)), Infinity);
-                fuzzyCompare(bandTop, read.topY, 1e-6, "the band reaches the top it names");
-                const lineTop = read.drawn.runs.reduce((m, run) => Math.min(m, ...run.map(p => p.y)), Infinity);
-                verify(lineTop > read.topY + 1, "the averages stay under it");
+            const monitor = monitorWith({});
+            monitor.chooseSpan(data.span);
+            const popup = load("DiskPopup", monitor, false, widePage);
+            const read = graphs(popup)[0];
+            const high = Math.max(...monitor.diskReadHighs.filter(v => Number.isFinite(v)));
+            verify(high > Math.max(...monitor.diskReadHistory.filter(v => Number.isFinite(v))), "the highs run over the averages");
+            compare(read.maximum, high);
+            const r = Format.rate(high, false);
+            compare(tileTop(read).text, "peak " + r.value + " " + r.unit);
+            const bandTop = read.drawn.bands.reduce((m, b) => Math.min(m, ...b.map(p => p.y)), Infinity);
+            fuzzyCompare(bandTop, read.topY, 1e-6, "the band reaches the top it names");
+            const lineTop = read.drawn.runs.reduce((m, run) => Math.min(m, ...run.map(p => p.y)), Infinity);
+            verify(lineTop > read.topY + 1, "the averages stay under it");
 
-                const throughput = graphs(load("NetworkPopup", normal, false, Kirigami.Units.gridUnit * 30))[0];
-                const both = Math.max(...normal.networkDownHighs.concat(normal.networkUpHighs).filter(v => Number.isFinite(v)));
-                compare(throughput.maximum, both, "the upload's highs count too");
-                compare(throughput.drawn.secondRuns.length > 0, true, "the upload drawn");
-            } finally {
-                normal.chooseSpan("minute");
-            }
+            const throughput = graphs(load("NetworkPopup", monitor, false, widePage))[0];
+            const both = Math.max(...monitor.networkDownHighs.concat(monitor.networkUpHighs).filter(v => Number.isFinite(v)));
+            compare(throughput.maximum, both, "the upload's highs count too");
+            compare(throughput.drawn.secondRuns.length > 0, true, "the upload drawn");
         }
 
         // Upload is as strong as download and told from it by longer
         // dashes, and the legend draws a sample of each line by its name.
         function test_uploadLineAndLegend() {
-            const popup = load("NetworkPopup", normal, false, Kirigami.Units.gridUnit * 30);
+            const popup = load("NetworkPopup", normal, false, widePage);
             const g = graphs(popup)[0];
             const dashed = [];
             for (const shape of all(g, i => i.preferredRendererType !== undefined)) {
@@ -2260,27 +2186,18 @@ TestRoot {
         // a day; at a minute a lone reading still draws nothing.
         function test_aLoneBucketIsAMark() {
             const lone = Array.from({ length: 144 }, (_, i) => i === 100 ? 40 : NaN);
-            woken.chooseSpan("day");
-            const usage = woken.gpuOuter.history;
-            const highs = woken.gpuOuter.highs;
-            try {
-                woken.gpuOuter.history = lone;
-                woken.gpuOuter.highs = lone.map(v => v + 30);
-                const g = graphs(load("GpuPopup", woken))[0];
-                compare(g.drawn.runs.length, 1);
-                const run = g.drawn.runs[0];
-                verify(run[1].x - run[0].x >= 3 - 1e-6, "at least 3 px: " + (run[1].x - run[0].x));
-                compare(run[0].y, run[1].y, "level");
-                compare(g.drawn.bands.length, 1, "with its band");
-                woken.chooseSpan("minute");
-                woken.gpuOuter.history = Array.from({ length: 60 }, (_, i) => i === 40 ? 40 : NaN);
-                woken.gpuOuter.highs = [];
-                compare(graphs(load("GpuPopup", woken))[0].drawn.runs.length, 0);
-            } finally {
-                woken.chooseSpan("minute");
-                woken.gpuOuter.history = usage;
-                woken.gpuOuter.highs = highs;
-            }
+            const monitor = monitorWith({ "gpuOuter.history": lone, "gpuOuter.highs": lone.map(v => v + 30) }, woken);
+            monitor.chooseSpan("day");
+            const g = graphs(load("GpuPopup", monitor))[0];
+            compare(g.drawn.runs.length, 1);
+            const run = g.drawn.runs[0];
+            verify(run[1].x - run[0].x >= 3 - 1e-6, "at least 3 px: " + (run[1].x - run[0].x));
+            compare(run[0].y, run[1].y, "level");
+            compare(g.drawn.bands.length, 1, "with its band");
+            monitor.chooseSpan("minute");
+            monitor.gpuOuter.history = Array.from({ length: 60 }, (_, i) => i === 40 ? 40 : NaN);
+            monitor.gpuOuter.highs = [];
+            compare(graphs(load("GpuPopup", monitor))[0].drawn.runs.length, 0);
         }
 
         // A temperature graph's scale comes from every reading the three
@@ -2290,59 +2207,50 @@ TestRoot {
         // peak of the span on screen, its band's top included, and the rule
         // marks the hot threshold at every span, wherever it falls.
         function test_temperatureScaleHoldsAcrossSpans_data() {
-            return [{ tag: "underHot", monitor: normal, extent: [44, 80], scaleTop: 90 },
-                    { tag: "dayOverHot", monitor: hotDay, extent: [44, 93.4], scaleTop: 95, dayPeak: 93 }];
+            return [{ tag: "underHot", component: plain, extent: [44, 80], scaleTop: 90 },
+                    { tag: "dayOverHot", component: hotDay, extent: [44, 93.4], scaleTop: 95, dayPeak: 93 }];
         }
 
         function test_temperatureScaleHoldsAcrossSpans(data) {
-            const extent = data.monitor.cpuTemperatureExtent;
-            data.monitor.cpuTemperatureExtent = data.extent;
-            try {
-                const popup = load("CpuPopup", data.monitor, false, Kirigami.Units.gridUnit * 30);
-                const tile = temperatureTiles(popup)[0];
-                const g = temperatureGraph(tile);
-                const rule = all(g, i => i.limitY !== undefined)[0];
-                const hotY = g.topY + (1 - (90 - 30) / (data.scaleTop - 30)) * (g.height - g.topY - 0.75);
-                for (const span of ["minute", "hour", "day", "minute"]) {
-                    data.monitor.chooseSpan(span);
-                    compare(tile.scaleTop, data.scaleTop, span);
-                    compare(tile.floor, 30, span);
-                    const peak = Math.max(...tile.history.concat(tile.highs).filter(c => Number.isFinite(c)));
-                    compare(captionLine(tile)[1].text, localized("peak " + Math.round(peak) + " °C"), span);
-                    if (span === "day" && data.dayPeak !== undefined) {
-                        compare(Math.round(peak), data.dayPeak, "the day's peak, from its band");
-                    }
-                    verify(rule.visible, span + ": the rule");
-                    fuzzyCompare(rule.mapToItem(g, Qt.point(0, rule.limitY)).y, hotY, 1e-6, span + ": the rule at 90 °C");
-                    compare(g.bands.length > 0, span !== "minute", span + ": the band");
-                    const ys = g.plot.points.filter(p => Number.isFinite(p.y)).map(p => p.y);
-                    verify(Math.min(...ys) >= g.topY - 1e-6 && Math.max(...ys) <= g.height, span + ": inside the scale");
+            const monitor = monitorWith({ cpuTemperatureExtent: data.extent }, data.component);
+            const popup = load("CpuPopup", monitor, false, widePage);
+            const tile = temperatureTiles(popup)[0];
+            const g = temperatureGraph(tile);
+            const rule = all(g, i => i.limitY !== undefined)[0];
+            const hotY = g.topY + (1 - (90 - 30) / (data.scaleTop - 30)) * (g.height - g.topY - 0.75);
+            for (const span of ["minute", "hour", "day", "minute"]) {
+                monitor.chooseSpan(span);
+                compare(tile.scaleTop, data.scaleTop, span);
+                compare(tile.floor, 30, span);
+                const peak = Math.max(...tile.history.concat(tile.highs).filter(c => Number.isFinite(c)));
+                compare(captionLine(tile)[1].text, localized("peak " + Math.round(peak) + " °C"), span);
+                if (span === "day" && data.dayPeak !== undefined) {
+                    compare(Math.round(peak), data.dayPeak, "the day's peak, from its band");
                 }
-            } finally {
-                data.monitor.chooseSpan("minute");
-                data.monitor.cpuTemperatureExtent = extent;
+                verify(rule.visible, span + ": the rule");
+                fuzzyCompare(rule.mapToItem(g, Qt.point(0, rule.limitY)).y, hotY, 1e-6, span + ": the rule at 90 °C");
+                compare(g.bands.length > 0, span !== "minute", span + ": the band");
+                const ys = g.plot.points.filter(p => Number.isFinite(p.y)).map(p => p.y);
+                verify(Math.min(...ys) >= g.topY - 1e-6 && Math.max(...ys) <= g.height, span + ": inside the scale");
             }
         }
 
         // An hour's or a day's temperature takes the band too, in the
         // graph's own colour, fainter than the area under the line.
         function test_temperatureBand() {
-            normal.chooseSpan("hour");
-            try {
-                const tile = temperatureTiles(load("CpuPopup", normal, false, Kirigami.Units.gridUnit * 30))[0];
-                const g = temperatureGraph(tile);
-                verify(g.bands.length > 0);
-                const paths = all(g, i => i.preferredRendererType !== undefined)[0].data;
-                compare(paths[0].pathElements[0].paths.length, g.bands.length);
-                compare(String(Qt.alpha(paths[0].fillColor, 1)), String(Qt.alpha(Kirigami.Theme.textColor, 1)));
-                verify(paths[0].fillColor.a < paths[1].fillColor.a, "fainter than the area");
-                // The band's top is each bucket's highest reading.
-                const run = g.bands[0];
-                const top = Math.min(...run.map(p => p.y));
-                verify(top < Math.min(...g.plot.points.filter(p => Number.isFinite(p.y)).map(p => p.y)) + 1e-6);
-            } finally {
-                normal.chooseSpan("minute");
-            }
+            const monitor = monitorWith({});
+            monitor.chooseSpan("hour");
+            const tile = temperatureTiles(load("CpuPopup", monitor, false, widePage))[0];
+            const g = temperatureGraph(tile);
+            verify(g.bands.length > 0);
+            const paths = all(g, i => i.preferredRendererType !== undefined)[0].data;
+            compare(paths[0].pathElements[0].paths.length, g.bands.length);
+            compare(String(Qt.alpha(paths[0].fillColor, 1)), String(Qt.alpha(Kirigami.Theme.textColor, 1)));
+            verify(paths[0].fillColor.a < paths[1].fillColor.a, "fainter than the area");
+            // The band's top is each bucket's highest reading.
+            const run = g.bands[0];
+            const top = Math.min(...run.map(p => p.y));
+            verify(top < Math.min(...g.plot.points.filter(p => Number.isFinite(p.y)).map(p => p.y)) + 1e-6);
         }
 
         // The span opens its menu at a click: the three spans, the one shown
@@ -2352,31 +2260,28 @@ TestRoot {
         }
 
         function test_spanMenuByPointer(data) {
-            try {
-                const popup = load(data.popup, normal, false, Kirigami.Units.gridUnit * 30);
-                const span = spanOf(graphs(popup)[0]);
-                const menu = span.menu;
-                verify(!menu.visible);
-                mouseClick(span);
-                tryVerify(() => menu.opened, 2000, "the menu opens");
-                compare(menu.count, 3);
-                compare([0, 1, 2].map(i => menu.itemAt(i).text), ["1 minute", "1 hour", "1 day"]);
-                compare([0, 1, 2].map(i => menu.itemAt(i).checked), [true, false, false]);
-                mouseClick(menu.itemAt(2));
-                tryVerify(() => !menu.visible, 2000, "it closes on a pick");
-                compare(normal.graphSpan, "day");
-                const tiles = all(popup, i => i.visible && i.spans !== undefined && i.spans !== null);
-                verify(tiles.length > 0);
-                tiles.forEach(t => compare(spanOf(t).text, "1 day", t.caption));
-                mouseClick(span);
-                tryVerify(() => menu.opened, 2000);
-                compare([0, 1, 2].map(i => menu.itemAt(i).checked), [false, false, true]);
-                mouseClick(span);
-                tryVerify(() => !menu.visible, 2000, "a second click closes it");
-                compare(normal.graphSpan, "day", "unchanged");
-            } finally {
-                normal.chooseSpan("minute");
-            }
+            const monitor = monitorWith({});
+            const popup = load(data.popup, monitor, false, widePage);
+            const span = spanOf(graphs(popup)[0]);
+            const menu = span.menu;
+            verify(!menu.visible);
+            mouseClick(span);
+            tryVerify(() => menu.opened, 2000, "the menu opens");
+            compare(menu.count, 3);
+            compare([0, 1, 2].map(i => menu.itemAt(i).text), ["1 minute", "1 hour", "1 day"]);
+            compare([0, 1, 2].map(i => menu.itemAt(i).checked), [true, false, false]);
+            mouseClick(menu.itemAt(2));
+            tryVerify(() => !menu.visible, 2000, "it closes on a pick");
+            compare(monitor.graphSpan, "day");
+            const tiles = all(popup, i => i.visible && i.spans !== undefined && i.spans !== null);
+            verify(tiles.length > 0);
+            tiles.forEach(t => compare(spanOf(t).text, "1 day", t.caption));
+            mouseClick(span);
+            tryVerify(() => menu.opened, 2000);
+            compare([0, 1, 2].map(i => menu.itemAt(i).checked), [false, false, true]);
+            mouseClick(span);
+            tryVerify(() => !menu.visible, 2000, "a second click closes it");
+            compare(monitor.graphSpan, "day", "unchanged");
         }
 
         // From the keyboard: Space, Return or Down opens the menu on the span
@@ -2387,44 +2292,41 @@ TestRoot {
         }
 
         function test_spanMenuByKeyboard(data) {
-            try {
-                const host = createTemporaryObject(escapeHost, root, { width: Kirigami.Units.gridUnit * 30 });
-                host.setSource(Qt.resolvedUrl("../../package/contents/ui/popups/CpuPopup.qml"), { monitor: normal });
-                const popup = host.item;
-                waitForRendering(popup);
-                const span = spanOf(graphs(popup)[0]);
-                const menu = span.menu;
-                span.forceActiveFocus(Qt.TabFocusReason);
-                verify(span.visualFocus);
-                keyClick(data.key);
-                tryVerify(() => menu.opened, 2000, "opened from the keyboard");
-                compare(menu.currentIndex, 0, "on the span shown");
-                keyClick(Qt.Key_Down);
-                compare(menu.currentIndex, 1);
-                keyClick(Qt.Key_Return);
-                tryVerify(() => !menu.visible, 2000);
-                compare(normal.graphSpan, "hour");
-                tryVerify(() => span.activeFocus && span.visualFocus, 2000, "the focus is back, with its ring");
-                compare(span.text, "1 h");
-                keyClick(data.key);
-                tryVerify(() => menu.opened, 2000);
-                compare(menu.currentIndex, 1);
-                keyClick(Qt.Key_Down);
-                keyClick(Qt.Key_Escape);
-                tryVerify(() => !menu.visible, 2000, "Escape closes it");
-                compare(host.escapes, 0, "and not the popup");
-                compare(normal.graphSpan, "hour", "unchanged");
-                tryVerify(() => span.activeFocus && span.visualFocus, 2000);
-                keyClick(Qt.Key_Escape);
-                compare(host.escapes, 1, "the next Escape is the popup's");
-            } finally {
-                normal.chooseSpan("minute");
-            }
+            const monitor = monitorWith({});
+            const host = createTemporaryObject(escapeHost, root, { width: widePage });
+            host.setSource(Qt.resolvedUrl("../../package/contents/ui/popups/CpuPopup.qml"), { monitor: monitor });
+            const popup = host.item;
+            waitForRendering(popup);
+            const span = spanOf(graphs(popup)[0]);
+            const menu = span.menu;
+            span.forceActiveFocus(Qt.TabFocusReason);
+            verify(span.visualFocus);
+            keyClick(data.key);
+            tryVerify(() => menu.opened, 2000, "opened from the keyboard");
+            compare(menu.currentIndex, 0, "on the span shown");
+            keyClick(Qt.Key_Down);
+            compare(menu.currentIndex, 1);
+            keyClick(Qt.Key_Return);
+            tryVerify(() => !menu.visible, 2000);
+            compare(monitor.graphSpan, "hour");
+            tryVerify(() => span.activeFocus && span.visualFocus, 2000, "the focus is back, with its ring");
+            compare(span.text, "1 h");
+            keyClick(data.key);
+            tryVerify(() => menu.opened, 2000);
+            compare(menu.currentIndex, 1);
+            keyClick(Qt.Key_Down);
+            keyClick(Qt.Key_Escape);
+            tryVerify(() => !menu.visible, 2000, "Escape closes it");
+            compare(host.escapes, 0, "and not the popup");
+            compare(monitor.graphSpan, "hour", "unchanged");
+            tryVerify(() => span.activeFocus && span.visualFocus, 2000);
+            keyClick(Qt.Key_Escape);
+            compare(host.escapes, 1, "the next Escape is the popup's");
         }
 
         // Every graph's span is a stop in the popup's Tab order.
         function test_spansAreInTheTabOrder() {
-            const popup = load("CpuPopup", normal, false, Kirigami.Units.gridUnit * 30);
+            const popup = load("CpuPopup", normal, false, widePage);
             const spans = all(popup, i => i.objectName === "span" && i.visible);
             compare(spans.length, 2);
             spans.forEach(s => compare(s.focusPolicy, Qt.StrongFocus));
@@ -2446,29 +2348,25 @@ TestRoot {
         function test_longTranslationsFit(data) {
             const width = load(data.popup, normal).implicitWidth;
             root.longStrings = true;
-            try {
-                const popup = load(data.popup, data.monitor);
-                verify(texts(popup).some(t => t.endsWith("ß")), "the pseudo-locale is on");
-                compare(popup.implicitWidth, width, "the page keeps its width");
-                compare(popup.width, width);
-                const left = i => i.mapToItem(popup, Qt.point(0, 0)).x;
-                all(popup, i => i.visible && typeof i.text === "string" && i.text !== "" && i.contentWidth !== undefined)
-                    .forEach(t => {
-                        const drawn = t.elide !== Text.ElideNone || t.wrapMode !== Text.NoWrap ? t.width : Math.max(t.width, t.contentWidth);
-                        verify(left(t) >= -0.5 && left(t) + drawn <= popup.width + 0.5,
-                               t.text + " at " + left(t) + " to " + (left(t) + drawn) + " of " + popup.width);
-                    });
-                readings(popup).filter(r => r.visible).forEach(r => {
-                    verify(r.width >= r.implicitWidth - 0.5, r.value + " " + r.unit + " squeezed to " + r.width);
+            const popup = load(data.popup, data.monitor);
+            verify(texts(popup).some(t => t.endsWith("ß")), "the pseudo-locale is on");
+            compare(popup.implicitWidth, width, "the page keeps its width");
+            compare(popup.width, width);
+            const left = i => i.mapToItem(popup, Qt.point(0, 0)).x;
+            all(popup, i => i.visible && typeof i.text === "string" && i.text !== "" && i.contentWidth !== undefined)
+                .forEach(t => {
+                    const drawn = t.elide !== Text.ElideNone || t.wrapMode !== Text.NoWrap ? t.width : Math.max(t.width, t.contentWidth);
+                    verify(left(t) >= -0.5 && left(t) + drawn <= popup.width + 0.5,
+                           t.text + " at " + left(t) + " to " + (left(t) + drawn) + " of " + popup.width);
                 });
-                const header = headerOf(popup);
-                const subtitle = shownText(header, header.subtitle);
-                const value = readings(header).find(r => r.visible);
-                if (subtitle && value) {
-                    verify(left(subtitle) + subtitle.width <= left(value) + 0.5, "the subtitle stops short of the reading");
-                }
-            } finally {
-                root.longStrings = false;
+            readings(popup).filter(r => r.visible).forEach(r => {
+                verify(r.width >= r.implicitWidth - 0.5, r.value + " " + r.unit + " squeezed to " + r.width);
+            });
+            const header = headerOf(popup);
+            const subtitle = shownText(header, header.subtitle);
+            const value = readings(header).find(r => r.visible);
+            if (subtitle && value) {
+                verify(left(subtitle) + subtitle.width <= left(value) + 0.5, "the subtitle stops short of the reading");
             }
         }
     }
