@@ -451,8 +451,8 @@ TestRoot {
         // Plasma's dialog warns about every key a page lacks, so each page
         // declares all of them, and their Defaults, through ConfigPage: typed
         // as main.xml types them, nothing main.xml lacks, and no declaration
-        // of a page's own. Each setting is then assigned by one page, and the
-        // reports and the graphs' span by none; another page may read it.
+        // of a page's own. test_eachControlSavesItsSetting covers which
+        // page's controls edit each.
         function test_everyPageDeclaresEverySetting() {
             const types = { Int: "int", Bool: "bool", Double: "real", String: "string", StringList: "var" };
             const expected = {};
@@ -473,10 +473,8 @@ TestRoot {
             for (const key in declared) {
                 verify(key in expected, "ConfigPage.qml declares cfg_" + key + ", which main.xml lacks");
             }
-            const texts = {};
             for (const source of pages()) {
                 const text = root.read("../../package/contents/ui/" + source);
-                texts[source] = text;
                 verify(/^ConfigPage \{/m.test(text), source + " isn't rooted on ConfigPage");
                 verify(!/property \w+ cfg_/.test(text), source + " declares a cfg_ property of its own");
                 const page = createTemporaryObject(pageComponent(source), root);
@@ -484,12 +482,6 @@ TestRoot {
                     verify(("cfg_" + key) in page, source + " lacks cfg_" + key);
                     verify(page.hasOwnProperty("cfg_" + key), source + " doesn't own cfg_" + key);
                 }
-            }
-            // The graphs' span is chosen on a graph's caption, not here.
-            const unedited = reports().concat(["graphSpan"]);
-            for (const entry of root.entries()) {
-                const owners = pages().filter(source => new RegExp("\\bcfg_" + entry.name + "\\s*=(?!=)").test(texts[source]));
-                compare(owners.length, unedited.includes(entry.name) ? 0 : 1, entry.name + " is edited by " + JSON.stringify(owners));
             }
         }
 
@@ -675,6 +667,139 @@ TestRoot {
                 }
                 compare(JSON.stringify(config[entry.name + "Default"]), JSON.stringify(entry.value), entry.name + "Default");
                 verify(!((entry.name + "Default") in config.file), entry.name + "Default reached the file");
+            }
+            verify(!d.changed(), "Apply would stay enabled");
+        }
+
+        // A checkable control or a button, found by its text, pressed from
+        // the keyboard.
+        function press(page, text) {
+            const control = find(page, i => i.visible && i.text === text && i.toggled !== undefined);
+            verify(control, text);
+            control.forceActiveFocus();
+            keyClick(Qt.Key_Space);
+        }
+        function spinUp(page, name) {
+            const box = accessible(page, name);
+            verify(box && box.visible, name);
+            box.forceActiveFocus();
+            keyClick(Qt.Key_Up);
+        }
+        function pickIn(page, name, row) {
+            const box = accessible(page, name);
+            verify(box && box.visible, name);
+            root.pick(testCase, box, row);
+        }
+        function typeInto(page, name, text) {
+            const box = accessible(page, name);
+            verify(box && box.visible, name);
+            root.typeIn(testCase, box, text);
+        }
+
+        // Every setting a page edits, by the control that edits it: where
+        // the stand-in starts beyond the defaults, what to do on the page,
+        // and what Apply then saves. Panel Items writes the order and the
+        // hidden items together.
+        function controls() {
+            const general = "config/ConfigGeneral.qml";
+            const items = "config/ConfigItems.qml";
+            const sensors = "config/ConfigSensors.qml";
+            const providers = "config/ConfigProviders.qml";
+            const everyItem = ["cpu", "gpu", "memory", "network", "disk", "claude", "codex"];
+            const limits = { knownLimits: JSON.stringify({ claude: [{ id: "opus", label: "Opus", reported: true }],
+                                                           codex: [{ id: "gpt5", label: "GPT-5", reported: true }] }) };
+            const programs = { itemOrder: ["cpu", "claude", "codex"], hiddenItems: [],
+                               usageStatus: JSON.stringify(programStates()["notfound-on"].status) };
+            const listed = page => { page.listed = root.listed; };
+            return [
+                { tag: "updateInterval", source: general, drive: page => spinUp(page, "Update interval"),
+                  saved: { updateInterval: 1500 } },
+                { tag: "keepGraphHistory", source: general,
+                  drive: page => press(page, "Keep the last hour and day across restarts"), saved: { keepGraphHistory: true } },
+                { tag: "fahrenheit", source: general, drive: page => press(page, "Fahrenheit"), saved: { fahrenheit: true } },
+                { tag: "networkBits", source: general,
+                  drive: page => press(page, find(page, i => typeof i.text === "string" && i.text.startsWith("Bytes per second")).text),
+                  saved: { networkBits: false } },
+                { tag: "highlightTemperatures", source: general, drive: page => press(page, "Highlight temperatures above"),
+                  saved: { highlightTemperatures: false } },
+                { tag: "warmCelsius", source: general, drive: page => spinUp(page, "Amber threshold"), saved: { warmCelsius: 76 } },
+                { tag: "hotCelsius", source: general, drive: page => spinUp(page, "Red threshold"), saved: { hotCelsius: 91 } },
+                { tag: "publicAddress", source: general, drive: page => press(page, "Show in the Network popup"),
+                  saved: { publicAddress: true } },
+                { tag: "publicAddressUrl4", source: general, start: { publicAddress: true },
+                  drive: page => { pickIn(page, "Service", 2); typeInto(page, "IPv4 URL", "https://ip.example.org/"); },
+                  saved: { publicAddressUrl4: "https://ip.example.org/" } },
+                { tag: "publicAddressUrl6", source: general, start: { publicAddress: true },
+                  drive: page => { pickIn(page, "Service", 2); typeInto(page, "IPv6 URL", "https://ip6.example.org/"); },
+                  saved: { publicAddressUrl6: "https://ip6.example.org/" } },
+                { tag: "itemOrder", source: items, drive: page => press(page, "Move Memory up"),
+                  saved: { itemOrder: ["cpu", "memory", "gpu", "network", "disk", "claude", "codex"],
+                           hiddenItems: ["disk", "claude", "codex"] } },
+                { tag: "hiddenItems", source: items, drive: page => press(page, "Disk"),
+                  saved: { itemOrder: everyItem, hiddenItems: ["claude", "codex"] } },
+                { tag: "ringsOnly", source: items, drive: page => pickIn(page, "What CPU shows", 1), saved: { ringsOnly: ["cpu"] } },
+                { tag: "cpuTemperatureSensor", source: sensors, drive: page => { listed(page); pickIn(page, "CPU temperature", 3); },
+                  saved: { cpuTemperatureSensor: "lmsensors/k10temp-pci-00c3/temp1" } },
+                { tag: "outerGpu", source: sensors, drive: page => pickIn(page, "GPU on the outer ring", 1),
+                  saved: { outerGpu: "none" } },
+                { tag: "innerGpu", source: sensors, drive: page => pickIn(page, "GPU on the inner ring", 1),
+                  saved: { innerGpu: "none" } },
+                { tag: "networkInterface", source: sensors, drive: page => { listed(page); pickIn(page, "Network interface", 2); },
+                  saved: { networkInterface: "wlp9s0" } },
+                { tag: "diskDevice", source: sensors, drive: page => { listed(page); pickIn(page, "Disk activity", 3); },
+                  saved: { diskDevice: "sda" } },
+                { tag: "diskVolume", source: sensors, drive: page => { listed(page); pickIn(page, "Free space on", 1); },
+                  saved: { diskVolume: root.volume } },
+                { tag: "diskTemperatureSensor", source: sensors, drive: page => pickIn(page, "Disk temperature", 1),
+                  saved: { diskTemperatureSensor: "none" } },
+                { tag: "usageRefreshMinutes", source: providers, drive: page => spinUp(page, "Check every"),
+                  saved: { usageRefreshMinutes: 10 } },
+                { tag: "claudeInnerLimit", source: providers, start: limits, drive: page => pickIn(page, "Claude inner ring", 2),
+                  saved: { claudeInnerLimit: "opus" } },
+                { tag: "codexInnerLimit", source: providers, start: limits, drive: page => pickIn(page, "OpenAI inner ring", 2),
+                  saved: { codexInnerLimit: "gpt5" } },
+                { tag: "codexMark", source: providers, start: { itemOrder: ["cpu", "codex"], hiddenItems: [] },
+                  drive: page => press(page, "ChatGPT"), saved: { codexMark: "openai" } },
+                { tag: "claudeProgram", source: providers, start: programs,
+                  drive: page => typeInto(page, "Path to claude", "~/bin/claude"), saved: { claudeProgram: "~/bin/claude" } },
+                { tag: "codexProgram", source: providers, start: programs,
+                  drive: page => typeInto(page, "Path to codex", "~/.npm-global/bin/codex"),
+                  saved: { codexProgram: "~/.npm-global/bin/codex" } }
+            ];
+        }
+
+        // Every setting is edited by a control above, all but the reports,
+        // which the widget writes, and the graphs' span, which a graph's
+        // caption chooses.
+        function test_everySettingHasAControl() {
+            const edited = new Set();
+            for (const row of controls()) {
+                Object.keys(row.saved).forEach(key => edited.add(key));
+            }
+            const unedited = reports().concat(["graphSpan"]);
+            for (const entry of root.entries()) {
+                compare(edited.has(entry.name), !unedited.includes(entry.name), entry.name);
+            }
+        }
+
+        // Each setting's control, used as a person would, turns Apply on,
+        // and Apply saves what it chose and leaves every other setting,
+        // the reports and the graphs' span among them, as it was.
+        function test_eachControlSavesItsSetting_data() {
+            return orders(controls());
+        }
+        function test_eachControlSavesItsSetting(data) {
+            const start = Object.assign(settings(), data.start);
+            const config = fakeConfiguration(start);
+            const page = open(data.source, config, data.order);
+            const d = dialog(page, config, data.order);
+            waitForRendering(page);
+            data.drive(page);
+            verify(d.applyEnabled, "the control left Apply off");
+            d.apply();
+            for (const entry of root.entries()) {
+                const expected = entry.name in data.saved ? data.saved[entry.name] : start[entry.name];
+                compare(JSON.stringify(config.file[entry.name]), JSON.stringify(expected), entry.name);
             }
             verify(!d.changed(), "Apply would stay enabled");
         }
@@ -1072,23 +1197,6 @@ TestRoot {
             verify(button.mapToItem(page, Qt.point(0, 0)).x + button.width <= f.mapToItem(page, Qt.point(0, 0)).x, "the button sits left of the field");
             const label = all(page, i => i.text === root.stretch("Program:") && i.visible)[0];
             verify(label.mapToItem(page, Qt.point(0, 0)).x >= f.mapToItem(page, Qt.point(0, 0)).x + f.width, "the label sits right of the field");
-        }
-
-        // Typing a path and pressing Apply saves it, as typed, under its key.
-        function test_applySavesTheTypedProgram_data() {
-            return orders([{ tag: "codex" }]);
-        }
-        function test_applySavesTheTypedProgram(data) {
-            const config = fakeConfiguration(Object.assign(settings(), { itemOrder: ["cpu", "codex"], hiddenItems: [] }));
-            const page = open("config/ConfigProviders.qml", config, data.order);
-            const d = dialog(page, config, data.order);
-            page.usageStatus = programStates()["notfound-off"].status;
-            waitForRendering(page);
-            root.typeIn(testCase, field(page, "codex"), "~/.npm-global/bin/codex");
-            verify(d.applyEnabled, "typing left Apply off");
-            d.apply();
-            compare(config.file.codexProgram, "~/.npm-global/bin/codex");
-            compare(config.file.claudeProgram, "");
         }
 
         // Each picker offers its fixed choices and what the list collect()
