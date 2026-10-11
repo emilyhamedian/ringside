@@ -23,6 +23,14 @@ TestRoot {
     readonly property var ringItems: ["cpu", "gpu", "memory", "claude", "codex"]
     readonly property var names: ({ cpu: "CPU", gpu: "GPU", memory: "MEM" })
 
+    // A name at the smallest size it may shrink to, measured here rather
+    // than read from RingName.
+    TextMetrics {
+        id: smallestName
+        font.pointSize: Kirigami.Theme.smallFont.pointSize * 0.7
+        font.letterSpacing: Kirigami.Theme.smallFont.pointSize * 0.08
+    }
+
     Component {
         id: monitorComponent
         FakeMonitor {}
@@ -140,10 +148,15 @@ TestRoot {
             return found.sort((a, b) => b.radius - a.radius);
         }
 
-        // Exactly the rings in `shown` show their name or mark. One that
-        // shows sits inside the hole, centred, and is all the ring holds: its
-        // percentage is beside it.
-        function checkNames(shown) {
+        // Each ring's name shows exactly where `active` lets it and it fits
+        // the clear middle at its smallest size: the chord of the hole at the
+        // name's ink height, a round hole being narrower above and below its
+        // middle. Which names fit depends on the font, so it is measured here
+        // rather than listed. A name or mark that shows sits inside the hole,
+        // centred, and is all the ring holds: its percentage is beside it.
+        // Claude's and Codex's marks are small enough to show at every ring
+        // size tested.
+        function checkNames(active) {
             for (let i = 0; i < strip.items.length; ++i) {
                 const item = strip.items[i];
                 if (!root.ringItems.includes(item)) {
@@ -158,13 +171,18 @@ TestRoot {
                 const inside = texts(gauge);
                 verify(inside.length === 0 || inside.length === 1 && inside[0] === root.names[item],
                        item + " holds " + JSON.stringify(inside));
-                compare(name.visible, shown.includes(item), item + "'s name across " + hole);
                 let drawnName;
                 if (item === "claude" || item === "codex") {
                     drawnName = find(name, m => m.art !== undefined && m.unit !== undefined);
                     compare(name.mark, item);
-                    compare(drawnName.visible, shown.includes(item), item + "'s mark");
+                    compare(name.visible, active, item + "'s mark");
+                    compare(drawnName.visible, active, item + "'s mark");
                 } else {
+                    smallestName.text = root.names[item];
+                    const ink = smallestName.tightBoundingRect.height;
+                    const chord = 2 * Math.sqrt(Math.max(0, hole * hole / 4 - ink * ink / 4));
+                    compare(name.visible, active && smallestName.advanceWidth <= chord,
+                            item + ": " + smallestName.advanceWidth + " in a chord of " + chord + " across " + hole);
                     drawnName = find(name, t => t.text === root.names[item]);
                     verify(drawnName, item + "'s name");
                 }
@@ -368,13 +386,14 @@ TestRoot {
         // one a small spacing either side. They stop at two and a half grid
         // units, a pixel less where that would leave the panel's parity, and
         // the stroke is about a thirteenth of the ring in half pixels. The
-        // sizes are Breeze's: an 18 px grid unit and a 4 px small spacing.
+        // sizes are Breeze's 4 px small spacing; the cap follows the font's
+        // grid unit, 18 px on Breeze.
         function test_ringFollowsThickness_data() {
             return [{ tag: "horizontal 18, never smaller", vertical: false, thickness: 18, ring: 16, stroke: 2 },
                     { tag: "horizontal 30", vertical: false, thickness: 30, ring: 26, stroke: 2 },
                     { tag: "horizontal 38", vertical: false, thickness: 38, ring: 34, stroke: 2.5 },
                     { tag: "horizontal 46", vertical: false, thickness: 46, ring: 42, stroke: 3 },
-                    { tag: "horizontal 60, capped", vertical: false, thickness: 60, ring: 44, stroke: 3.5 },
+                    { tag: "horizontal 60, capped", vertical: false, thickness: 60, capped: true },
                     { tag: "vertical 34", vertical: true, thickness: 34, ring: 26, stroke: 2 }];
         }
 
@@ -383,13 +402,16 @@ TestRoot {
             const strip = data.vertical
                 ? makeStrip({ items: items, vertical: true, width: data.thickness, thickness: data.thickness })
                 : makePanel(data.thickness, { items: items });
-            compare(strip.ring, data.ring);
+            const cap = Math.round(Kirigami.Units.gridUnit * 2.5);
+            const ring = data.capped ? cap - (data.thickness - cap) % 2 : data.ring;
+            const stroke = data.capped ? Math.max(2, Math.round(ring / 6.5) / 2) : data.stroke;
+            compare(strip.ring, ring);
             compare((data.thickness - strip.ring) % 2, 0, "the ring keeps the panel's parity");
             for (let i = 0; i < root.ringItems.length; ++i) {
                 const gauge = gaugeAt(i);
-                compare(gauge.width, data.ring, items[i]);
-                compare(gauge.height, data.ring, items[i]);
-                compare(gauge.strokeWidth, data.stroke, items[i]);
+                compare(gauge.width, ring, items[i]);
+                compare(gauge.height, ring, items[i]);
+                compare(gauge.strokeWidth, stroke, items[i]);
                 compare(arcs(gauge)[0].strokeWidth, gauge.strokeWidth, items[i] + " as drawn");
             }
         }
@@ -487,7 +509,7 @@ TestRoot {
                 verify(!line(i, "second").visible, items[i]);
                 verify(strip.cellAt(i).parent.active, items[i] + "'s tooltip");
             }
-            checkNames(["cpu", "claude", "codex"]);
+            checkNames(true);
             const network = strip.cellAt(5).contentItem;
             const disk = strip.cellAt(6).contentItem;
             compare(textsAt(network, 200), ["24.8M", "1.2M"]);
@@ -518,13 +540,11 @@ TestRoot {
         }
 
         // Names sit inside the rings beside two lines of readings, and where
-        // the rings stand alone; beside one line the rings are too small. At
-        // 38 px CPU fits its ring, MEM doesn't, and the GPU's inner ring
-        // leaves too little room; at 30 px only the marks fit.
+        // the rings stand alone; beside one line the rings are too small.
         function test_namesInsideRings_data() {
-            return [{ tag: "two lines", thickness: 38, ringsOnly: [], shown: ["cpu", "claude", "codex"] },
-                    { tag: "thin", thickness: 30, ringsOnly: [], shown: [] },
-                    { tag: "thin rings only", thickness: 30, ringsOnly: root.ringItems, shown: ["claude", "codex"] }];
+            return [{ tag: "two lines", thickness: 38, ringsOnly: [], active: true },
+                    { tag: "thin", thickness: 30, ringsOnly: [], active: false },
+                    { tag: "thin rings only", thickness: 30, ringsOnly: root.ringItems, active: true }];
         }
 
         function test_namesInsideRings(data) {
@@ -532,7 +552,7 @@ TestRoot {
             const gpu = strip.cellAt(1).contentItem;
             verify(gpu.dual);
             verify(gaugeAt(1).centreWidth < gaugeAt(0).centreWidth, "the inner ring narrows the middle");
-            checkNames(data.shown);
+            checkNames(data.active);
         }
 
         // A sleeping GPU drops out of the panel, whichever ring it is on: the

@@ -1109,8 +1109,7 @@ TestRoot {
             ];
         }
         function test_sensors(data) {
-            const page = make(sensors, data.stored);
-            page.fromTree = root.listed;
+            const page = make(sensors, Object.assign({ listed: root.listed }, data.stored));
             compare(page.found, root.found);
             for (const p of root.pickers) {
                 const stored = data.stored[p.setting] || "";
@@ -1124,8 +1123,7 @@ TestRoot {
         // A picker keeps the value the page opened with listed after another
         // is picked, so it can be picked back before Apply.
         function test_pickerKeepsTheOpenedValue() {
-            const page = make(sensors, { cfg_networkInterface: "wlp8s0" });
-            page.fromTree = root.listed;
+            const page = make(sensors, { listed: root.listed, cfg_networkInterface: "wlp8s0" });
             const picker = accessible(page, "Network interface");
             root.pick(testCase, picker, 1);
             compare(page.cfg_networkInterface, "enp5s0");
