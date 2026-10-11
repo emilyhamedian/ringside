@@ -115,3 +115,34 @@ jobs:
       # D-Bus starts ksystemstats when the tests ask for it.
       - name: Run the tests and the gallery on Plasma 6.0
         run: dbus-run-session -- sh scripts/test-floor.sh
+
+  # Marking a pull request ready for review is the owner's go-ahead
+  # (CONTRIBUTING.md), so a ready one from a branch of this repository merges
+  # as soon as its checks pass, and only the commit they tested. Drafts and
+  # forks never merge here. Should GitHub still wait on something else, the
+  # merge is left to auto-merge, for that commit. A merge made with this
+  # run's token starts no run on main; this run has tested the merge already.
+  merge:
+    needs: [changes, test, floor]
+    if: >-
+      ${{ !cancelled() &&
+        github.event_name == 'pull_request' &&
+        github.base_ref == github.event.repository.default_branch &&
+        !github.event.pull_request.draft &&
+        github.event.pull_request.head.repo.full_name == github.repository &&
+        needs.changes.result == 'success' &&
+        contains(fromJSON('["success", "skipped"]'), needs.test.result) &&
+        contains(fromJSON('["success", "skipped"]'), needs.floor.result) }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Squash-merge the tested commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+        run: >-
+          gh pr merge "$PR" --repo "$GITHUB_REPOSITORY" --squash --match-head-commit "$SHA" ||
+          gh pr merge "$PR" --repo "$GITHUB_REPOSITORY" --squash --match-head-commit "$SHA" --auto
