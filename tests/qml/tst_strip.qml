@@ -186,19 +186,11 @@ TestRoot {
             }
         }
 
-        // The cells' widths, added up.
-        function cellsWidth() {
-            let sum = 0;
-            for (let i = 0; i < strip.items.length; ++i) {
-                sum += strip.cellAt(i).implicitWidth;
-            }
-            return sum;
-        }
-
         // The cells sit side by side from the strip's start, with nothing
         // after the last of them.
         function checkRow(what) {
-            compare(strip.implicitWidth, cellsWidth(), what + ": the cells and nothing more");
+            const cellsWidth = strip.items.reduce((sum, item, i) => sum + strip.cellAt(i).implicitWidth, 0);
+            compare(strip.implicitWidth, cellsWidth, what + ": the cells and nothing more");
             for (let i = 1; i < strip.items.length; ++i) {
                 compare(box(strip.cellAt(i)).x, box(strip.cellAt(i - 1)).right, what + ": " + strip.items[i] + " follows " + strip.items[i - 1]);
             }
@@ -306,11 +298,6 @@ TestRoot {
             }
         }
 
-        // The objects that measure a rate cell's text, at the panel's size.
-        function rateFaces(index) {
-            return Array.from(strip.cellAt(index).contentItem.resources).filter(o => o.drawnSize !== undefined);
-        }
-
         // Settings and the font are what may resize an item, and they do so
         // at once, moving the items after it by as much: bits or bytes sets
         // the rates' unit column, a thinner panel puts readings on one line,
@@ -350,7 +337,8 @@ TestRoot {
             const face = Array.from(readout.resources).find(o => o.drawnSize !== undefined);
             const cpu = check("a larger font for the CPU", () => { face.pointSize = face.panelPointSize * 1.5; }, [0]);
             verify(cpu.now[0] > cpu.before[0], "wider");
-            const faces = rateFaces(3);
+            // The objects that measure the disk's text, at the panel's size.
+            const faces = Array.from(strip.cellAt(3).contentItem.resources).filter(o => o.drawnSize !== undefined);
             compare(faces.length, 2, "the disk measures at its base size and as drawn");
             const disk = check("a larger font for the disk", () => faces.forEach(f => { f.pointSize = f.panelPointSize * 1.5; }), [3]);
             verify(disk.now[3] > disk.before[3], "wider");
