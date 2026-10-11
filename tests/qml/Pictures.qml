@@ -175,14 +175,19 @@ TestRoot {
         });
     }
 
-    // Long enough for the process lists' first scan. The usage popup steps
-    // its clock with each report, so its fixed time is set last.
+    // The usage popup steps its clock with each report, so its fixed time is
+    // set once the sample has loaded, and a second before the shots so the
+    // run-out marker has finished sliding to it.
+    Timer {
+        interval: 4000
+        running: pictures.outDir !== ""
+        onTriggered: usagePopup.nowMs = pictures.now * 1000
+    }
+
+    // Long enough for the process lists' first scan.
     Timer {
         interval: 5000
         running: pictures.outDir !== ""
-        onTriggered: {
-            usagePopup.nowMs = pictures.now * 1000;
-            pictures.save(["panel", "popups-black", "popups-white", "usage"], Qt.quit);
-        }
+        onTriggered: pictures.save(["panel", "popups-black", "popups-white", "usage"], Qt.quit)
     }
 }
