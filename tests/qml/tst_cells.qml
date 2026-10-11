@@ -806,7 +806,7 @@ TestRoot {
         }
 
         // A row for each colour a line takes, on each kind of cell. What the
-        // lines say in every state is Readout's test_readout, in tst_usage.
+        // lines say in every state is the Readout TestCase's test_readout.
         function test_lines_data() {
             return [
                 { tag: "cpu", item: "cpu", lines: [percent(23), degrees(61)], tones: ["text", "dim"] },
@@ -1447,6 +1447,115 @@ TestRoot {
                 const narrowest = root.digits(widths.indexOf(Math.min(...widths)));
                 verify(proportional.advanceWidth(narrowest + "%") < face.room(proportional, [narrowest + "%"]));
             }
+        }
+    }
+
+    // The short readings by a ring, for every item, from FakeMonitor's
+    // readings or the ones a row sets. Expectations follow the running
+    // locale's digits.
+    TestCase {
+        id: readouts
+        name: "Readout"
+
+        property var monitor: null
+
+        Words {
+            id: readoutWords
+            monitor: readouts.monitor
+        }
+
+        function init() {
+            failOnWarning(/TypeError|ReferenceError|SyntaxError|is not a function|Unable to assign|Cannot assign|Binding loop/);
+            monitor = createTemporaryObject(monitorComponent, readouts);
+        }
+
+        function local(text) {
+            const zero = Qt.locale().zeroDigit.codePointAt(0);
+            return text.replace(/[0-9]/g, c => String.fromCodePoint(zero + Number(c))).replace(".", Qt.locale().decimalPoint);
+        }
+
+        function apply(target, values) {
+            for (const key in values) {
+                target[key] = values[key];
+            }
+        }
+
+        // `set`, `outer` and `inner` override the monitor's and its GPUs'
+        // readings; `weekly` is [percent, seconds left] for the row's item.
+        function test_readout_data() {
+            return [
+                { tag: "cpu", item: "cpu", first: "23%", second: "61°" },
+                { tag: "cpu under amber", item: "cpu", set: { cpuUsage: 74 }, first: "74%", second: "61°" },
+                { tag: "cpu warm", item: "cpu", set: { cpuUsage: 75, cpuTemperature: 75 },
+                  first: "75%", level: 1, second: "75°", heat: 1 },
+                { tag: "cpu under red", item: "cpu", set: { cpuUsage: 89 }, first: "89%", level: 1, second: "61°" },
+                { tag: "cpu hot", item: "cpu", set: { cpuUsage: 90, cpuTemperature: 90 },
+                  first: "90%", level: 2, second: "90°", heat: 2 },
+                { tag: "cpu in fahrenheit", item: "cpu", set: { fahrenheit: true }, first: "23%", second: "142°" },
+                // The heat is the Celsius reading's, in either unit.
+                { tag: "cpu hot in fahrenheit", item: "cpu", set: { fahrenheit: true, cpuTemperature: 95 },
+                  first: "23%", second: "203°", heat: 2 },
+                { tag: "cpu unread", item: "cpu", set: { cpuUsage: NaN, cpuTemperature: NaN }, first: "–", second: "–" },
+                // The integrated GPU's temperature stays in the tooltip.
+                { tag: "two gpus", item: "gpu", first: "12%", second: "48°" },
+                { tag: "gpu warm", item: "gpu", outer: { temperature: 80 }, first: "12%", second: "80°", heat: 1 },
+                { tag: "gpu hot", item: "gpu", outer: { usage: 95, temperature: 92 },
+                  first: "95%", level: 2, second: "92°", heat: 2 },
+                { tag: "gpu resting", item: "gpu", outer: { phase: "resting" }, inner: { present: false },
+                  first: "0%", second: "48°" },
+                { tag: "intel gpu", item: "gpu", outer: { reportsTemperature: false }, inner: { present: false },
+                  first: "12%", second: "" },
+                { tag: "integrated gpu awake alone", item: "gpu", outer: { phase: "asleep" }, first: "3%", second: "41°" },
+                { tag: "only gpu asleep", item: "gpu", outer: { phase: "asleep" }, inner: { present: false },
+                  first: "off", off: true, second: "" },
+                { tag: "both gpus asleep", item: "gpu", outer: { phase: "asleep" }, inner: { phase: "asleep" },
+                  first: "off", off: true, second: "" },
+                { tag: "memory", item: "memory", first: "42%", second: "13.4 GiB" },
+                { tag: "memory in MiB", item: "memory", set: { memoryUsed: 900 * 1048576 }, first: "3%", second: "900.0 MiB" },
+                { tag: "memory to one decimal", item: "memory", set: { memoryUsed: 9.64 * 1073741824 }, first: "30%", second: "9.6 GiB" },
+                { tag: "memory full", item: "memory", set: { memoryUsed: 29 * 1073741824 },
+                  first: "91%", level: 2, second: "29.0 GiB" },
+                { tag: "memory unread", item: "memory", set: { memoryUsed: NaN }, first: "–", second: "–" },
+                { tag: "claude", item: "claude", first: "52%", second: "2d" },
+                { tag: "codex", item: "codex", first: "24%", second: "5d" },
+                { tag: "claude a day out", item: "claude", weekly: [40, 86400 + 30 * 60], first: "40%", second: "1d" },
+                { tag: "claude last day", item: "claude", weekly: [40, 23 * 3600 + 5 * 60], first: "40%", second: "23h" },
+                { tag: "claude at its limit", item: "claude", weekly: [90, 3600], first: "90%", level: 2, second: "1h" },
+                { tag: "claude last hour", item: "claude", weekly: [40, 59 * 60], first: "40%", second: "59m" },
+                { tag: "claude amber", item: "claude", weekly: [75, 12 * 60], first: "75%", level: 1, second: "12m" },
+                { tag: "claude used up", item: "claude", weekly: [100, 2 * 86400], first: "100%", level: 2, second: "2d" },
+                { tag: "used up, reset passed", item: "claude", weekly: [100, -600], first: "100%", level: 2, second: "–" },
+                { tag: "reset passed", item: "claude", weekly: [40, -600], first: "40%", second: "–" },
+                // On pace to run out before the reset, the percentage keeps
+                // its own reading's colour.
+                { tag: "claude runs out", item: "claude", weekly: [70, 3 * 86400], first: "70%", second: "3d" },
+                { tag: "claude runaway first day", item: "claude", weekly: [70, 6 * 86400 + 6 * 3600], first: "70%", second: "6d" },
+                { tag: "claude quiet first day", item: "claude", weekly: [5, 6 * 86400 + 21 * 3600], first: "5%", second: "6d" },
+                { tag: "runs out, reset passed", item: "claude", weekly: [70, -600], first: "70%", second: "–" },
+                { tag: "signed out", item: "claude", entries: { claude: { status: "signed_out" } }, first: "–", second: "–" },
+                { tag: "no weekly window", item: "claude", entries: { claude: { status: "ok", scoped: [] } }, first: "–", second: "–" },
+                { tag: "not checked yet", item: "codex", entries: {}, first: "–", off: true, second: "–" }
+            ];
+        }
+
+        // Readout reads a missing level or heat as none, and only a true
+        // `off` as asleep. A countdown keeps to its largest unit.
+        function test_readout(data) {
+            const usage = monitor.usage;
+            apply(monitor, data.set ?? {});
+            apply(monitor.gpuOuter, data.outer ?? {});
+            apply(monitor.gpuInner, data.inner ?? {});
+            if (data.entries !== undefined) {
+                usage.entries = data.entries;
+            }
+            if (data.weekly !== undefined) {
+                usage.entries = { [data.item]: { status: "ok", fetchedAt: usage.createdAt,
+                                                 weekly: usage.window(data.weekly[0], data.weekly[1], []), scoped: [] } };
+            }
+            const r = readoutWords.readout(data.item, usage.createdAt * 1000);
+            compare({ first: r.first, level: r.level ?? 0, off: r.off === true, second: r.second, heat: r.heat ?? 0 },
+                    { first: local(data.first), level: data.level ?? 0, off: data.off ?? false,
+                      second: local(data.second), heat: data.heat ?? 0 });
         }
     }
 }
