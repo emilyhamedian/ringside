@@ -289,14 +289,25 @@ TestRoot {
 
         // Polled with no report yet: shown and loading, with no entry, until
         // the first report, which ends it whatever it says.
+        // FakeUsage, told the ids polled with no report yet as `pending`,
+        // agrees with this UsageData on what is loading and present.
+        function checkTheStandIn(pending) {
+            const fake = createTemporaryObject(fakeUsageComponent, root, { pending: pending, entries: usage.entries });
+            for (const id of ["claude", "codex"]) {
+                compare([fake.loading(id), fake.present(id)], [usage.loading(id), usage.present(id)], id + ": the tests' stand-in agrees");
+            }
+        }
+
         function test_loadingUntilTheFirstReport() {
             make("slow", ["claude", "codex"]);
             verify(usage.loading("claude") && usage.loading("codex"));
             verify(usage.claudePresent && usage.codexPresent, "shown while loading");
             compare(usage.entry("claude"), null);
             verify(!usage.degraded("claude"));
+            checkTheStandIn(["claude", "codex"]);
             spy("entriesChanged").wait(10000);
             verify(!usage.loading("claude") && !usage.loading("codex"));
+            checkTheStandIn(["claude", "codex"]);
             compare(usage.entry("claude").weekly.percent, 52);
             poll("failed");
             verify(!usage.loading("claude") && usage.degraded("claude"), "a later failure doesn't load again");
@@ -335,17 +346,20 @@ TestRoot {
                                           { config: config, helperPath: root.stub("failed"), providers: ["claude", "codex"] });
             verify(!usage.loading("claude") && !usage.claudePresent);
             verify(usage.loading("codex") && usage.codexPresent);
+            checkTheStandIn(["codex"]);
             spy("entriesChanged").wait(10000);
             compare(usage.entry("claude"), null);
             verify(!usage.claudePresent && !usage.loading("claude"));
             verify(usage.codexPresent && usage.degraded("codex"));
 
             usage.providers = ["codex"];
+            checkTheStandIn(["codex"]);
             usage.providers = ["claude", "codex"];
             verify(usage.loading("claude"), "turned off and on again, it loads");
             spy("entriesChanged").wait(10000);
             poll("signed-out");
             verify(!usage.claudePresent && !usage.loading("claude"));
+            checkTheStandIn(["claude", "codex"]);
         }
 
         // The helper itself failing on the first check strikes every
@@ -2153,6 +2167,22 @@ TestRoot {
                 compare(left(rule), left(g));
                 compare(rule.width, g.width, "the rule spans the graph, under the scale's end");
             }
+        }
+
+        // While the desktop clock shows system time the helper gives no
+        // clock zone, and the reset reads in system time, naming no zone.
+        function test_resetInSystemTime() {
+            const config = createTemporaryObject(configComponent, popups);
+            const helper = createTemporaryObject(usageComponent, popups, { config: config, helperPath: root.stub("system-time"),
+                                                                           providers: ["claude"] });
+            tryVerify(() => helper.entry("claude") !== null, 10000);
+            const weekly = helper.entry("claude").weekly;
+            compare(weekly.clockZone, undefined, "no zone from the helper");
+            monitor.usage.entries = { claude: helper.entry("claude") };
+            const shown = root.texts(load("claude"));
+            const date = new Date(Math.round(weekly.resetsAt / 60) * 60 * 1000);
+            const said = "THIS WEEK · resets " + Qt.locale().dayName(date.getDay(), Locale.ShortFormat) + " " + words.shortTime(date);
+            verify(shown.includes(said), said + " in " + JSON.stringify(shown));
         }
 
         // A week the helper gives no reset time draws no rule, so its
