@@ -868,29 +868,39 @@ TestRoot {
 
         // A series left unsampled for a while, a GPU off the rings say, closes
         // its old bucket when it comes back: saved under that bucket's own
-        // time, as it is held, not with the buckets closing beside it.
-        function test_aLateBucketIsSavedUnderItsOwnTime() {
+        // time, as it is held, not with the buckets closing beside it, and
+        // beside what the other series saved there, whether that went in the
+        // same save or an earlier one.
+        function test_aLateBucketIsSavedUnderItsOwnTime_data() {
+            return [{ tag: "oneSave", savedBetween: false }, { tag: "savedBetween", savedBetween: true }];
+        }
+
+        function test_aLateBucketIsSavedUnderItsOwnTime(data) {
             forget();
             const m = suspended(keeping("w1", true));
             const t = tenMinutes(1);
             m.sample(t);
-            m.config.outerGpu = "none";
-            m.config.innerGpu = "none";
+            m.config.hiddenItems = ["disk", "gpu"];
             verify(!m.gpuOuter.present);
             m.sample(t + 1000);
             m.sample(t + 30000);
             m.sample(t + 60000);
-            m.config.outerGpu = "";
-            m.config.innerGpu = "";
-            verify(m.gpuOuter.present);
+            if (data.savedBetween) {
+                m.flush();
+                verify(saved("w1").some(r => r.at === t / 30000 && r.data.cpu !== undefined), "the CPU's first bucket is saved");
+            }
+            m.config.hiddenItems = ["disk"];
+            tryVerify(() => m.gpuOuter.present, 5000);
             m.sample(t + 90000);
             const held = m.series["gpu:gpu97"].hour;
             compare(held.means[0], 0);
             verify(held.means.length === 3 && held.means.slice(1).every(v => Number.isNaN(v)), JSON.stringify(held.means));
             m.flush();
             const rows = saved("w1").filter(r => r.tier === "hour");
-            compare(rows.map(r => r.at - t / 30000), [0, 1, 2], "the CPU's");
+            compare(rows.map(r => r.at - t / 30000), [0, 1, 2]);
+            verify(rows.every(r => r.data.cpu !== undefined && r.data.memory !== undefined), JSON.stringify(rows));
             compare(rows.filter(r => r.data["gpu:gpu97"] !== undefined).map(r => r.at - t / 30000), [0], "the GPU's");
+            compare(rows[0].data["gpu:gpu97"], [0, 0]);
             forget();
         }
 
@@ -1071,9 +1081,29 @@ TestRoot {
             compare(kept.filter(r => r.tier === "day").length, 145);
             verify(kept.every(r => r.at <= (r.tier === "hour" ? hour : day)), "nothing ahead of the clock");
             compare(saved("gone").length, 0, "a removed widget's old buckets go too");
+            m.store.save([{ tier: "hour", at: hour, data: { cpu: [3, 4], memory: [5, 6] } }]);
             m.store.save([{ tier: "hour", at: hour, data: { cpu: [7, 8] } }]);
-            compare(saved("w1").find(r => r.tier === "hour" && r.at === hour).data, { cpu: [7, 8] },
-                    "a bucket closed again, after the clock was set back, replaces what was saved");
+            compare(saved("w1").find(r => r.tier === "hour" && r.at === hour).data, { cpu: [7, 8], memory: [5, 6] },
+                    "a bucket closed again, after the clock was set back, replaces what was saved of its series");
+            forget();
+        }
+
+        // A saved row not in the store's shape, from a damaged file say, is
+        // saved over rather than stopping the save; what it held that is in
+        // shape stays.
+        function test_aMalformedRowIsSavedOver() {
+            failOnWarning(/graphs' (saved )?history/);
+            forget();
+            const m = keeping("w1", true);
+            const hour = Math.floor(Date.now() / 30000);
+            const stored = ["not JSON", "null", "[1, 2]", "7", '{"cpu":null,"memory":[3,4],"networkUp":[1]}'];
+            database().transaction(tx => {
+                stored.forEach((data, i) => tx.executeSql("INSERT INTO buckets VALUES ('w1', 'hour', ?, ?)", [hour - 5 + i, data]));
+            });
+            m.store.save(stored.map((_, i) => ({ tier: "hour", at: hour - 5 + i, data: { cpu: [i, i] } })));
+            verify(!m.store.failed);
+            compare(saved("w1").map(r => r.data), [{ cpu: [0, 0] }, { cpu: [1, 1] }, { cpu: [2, 2] }, { cpu: [3, 3] },
+                                                   { cpu: [4, 4], memory: [3, 4] }]);
             forget();
         }
 

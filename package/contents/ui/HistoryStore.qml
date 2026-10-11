@@ -61,43 +61,57 @@ QtObject {
         }
     }
 
-    // This widget's buckets of a tier, oldest first: [{ at, data }], data
-    // each series' [average, highest] by its key. A row or a series that
-    // isn't in that shape is a gap.
+    // A saved row's data, each series' [average, highest] by its key, or
+    // null where it isn't an object. A series not in that shape is left out.
+    function parsed(text) {
+        let data = null;
+        try {
+            data = JSON.parse(text);
+        } catch (err) {
+            return null;
+        }
+        if (data === null || typeof data !== "object" || Array.isArray(data)) {
+            return null;
+        }
+        const kept = {};
+        for (const key of Object.keys(data)) {
+            const v = data[key];
+            if (Array.isArray(v) && v.length === 2 && v.every(n => typeof n === "number")) {
+                kept[key] = v;
+            }
+        }
+        return kept;
+    }
+
+    // This widget's buckets of a tier, oldest first: [{ at, data }] (see
+    // parsed()). A row or a series that isn't in that shape is a gap.
     function load(tier) {
         const rows = [];
         run(tx => {
             const r = tx.executeSql("SELECT at, data FROM buckets WHERE widget = ? AND tier = ? ORDER BY at", [widget, tier]);
             for (let i = 0; i < r.rows.length; ++i) {
                 const at = r.rows.item(i).at;
-                let data = null;
-                try {
-                    data = JSON.parse(r.rows.item(i).data);
-                } catch (err) {
-                    continue;
+                const data = parsed(r.rows.item(i).data);
+                if (Number.isInteger(at) && at >= 0 && data !== null) {
+                    rows.push({ at: at, data: data });
                 }
-                if (!Number.isInteger(at) || at < 0 || data === null || typeof data !== "object" || Array.isArray(data)) {
-                    continue;
-                }
-                const kept = {};
-                for (const key of Object.keys(data)) {
-                    const v = data[key];
-                    if (Array.isArray(v) && v.length === 2 && v.every(n => typeof n === "number")) {
-                        kept[key] = v;
-                    }
-                }
-                rows.push({ at: at, data: kept });
             }
         }, true);
         return rows;
     }
 
     // Saves closed buckets, [{ tier, at, data }], and drops whatever has
-    // fallen out of its tier's span, or lies ahead of the clock.
+    // fallen out of its tier's span, or lies ahead of the clock. A row's
+    // series go into the bucket beside those already saved there: a series
+    // that went unsampled for a while, a GPU off the rings say, closes its
+    // bucket after the others have saved theirs. One saved again, after the
+    // clock was set back say, takes the new values.
     function save(rows) {
         run(tx => {
             for (const row of rows) {
-                tx.executeSql("INSERT OR REPLACE INTO buckets VALUES (?, ?, ?, ?)", [widget, row.tier, row.at, JSON.stringify(row.data)]);
+                const r = tx.executeSql("SELECT data FROM buckets WHERE widget = ? AND tier = ? AND at = ?", [widget, row.tier, row.at]);
+                const data = Object.assign(r.rows.length > 0 ? parsed(r.rows.item(0).data) ?? {} : {}, row.data);
+                tx.executeSql("INSERT OR REPLACE INTO buckets VALUES (?, ?, ?, ?)", [widget, row.tier, row.at, JSON.stringify(data)]);
             }
             for (const tier of Object.keys(History.TIERS)) {
                 const t = History.TIERS[tier];
