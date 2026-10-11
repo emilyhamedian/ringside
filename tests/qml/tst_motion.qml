@@ -1470,7 +1470,7 @@ TestRoot {
             const seen = [];
             createTemporaryObject(samplerComponent, c, {
                 sample: () => seen.push({ at: Date.now(), moving: g.moving, motion: g.motion, dots: g.dotsShown, sweep: g.sweep,
-                                          covered: dots(c).covered, circles: dots(c).data[0].pathElements[0].path.split("M ").length - 1,
+                                          covered: dots(c).covered, circles: circles(c),
                                           struck: g.struck, percent: outerArc(c).percent,
                                           track: outerArc(c).trackColor.a, trackSweep: outerArc(c).trackSweep, cap: track(c).capStyle,
                                           text: readout(c).opacity, first: line(c, "first").text, mark: middle(c).opacity })
@@ -1487,6 +1487,20 @@ TestRoot {
         // second.
         function second(c) {
             return c.children[0].resources.find(r => r.interval === 1000);
+        }
+
+        // Holds a loading ring's first second open, so what it shows can be
+        // checked at any pace: set before the event loop turns, its timer
+        // runs for an hour instead. Returns the timer.
+        function holdTheSecond(c) {
+            const timer = second(c);
+            timer.interval = 3600 * 1000;
+            return timer;
+        }
+
+        // How many dots are drawn.
+        function circles(c) {
+            return dots(c).data[0].pathElements[0].path.split("M ").length - 1;
         }
 
         // Ends the first second at once, so the dot travels; only
@@ -1508,22 +1522,21 @@ TestRoot {
         function test_stillForASecond() {
             const c = cell();
             const g = c.children[0];
+            const timer = holdTheSecond(c);
+            tryVerify(() => timer.running && g.dotsShown === 1 && g.sweep === 0, 1000, "waiting its second");
             const seen = record(c);
-            const start = Date.now();
-            tryVerify(() => seen.length > 10, 1000, "sampled");
+            tryVerify(() => seen.length >= 2, 2000, "frames pass");
             verify(seen.every(f => !f.moving && f.motion === 0 && f.dots === 1 && f.sweep === 0),
                    JSON.stringify(seen.slice(-3)));
             const still = shot(c);
             const frames = seen.length;
-            tryVerify(() => seen.length > frames + 5, 1000);
+            tryVerify(() => seen.length >= frames + 2, 2000, "more frames pass");
             verify(still.equals(shot(c)), "nothing moves");
-            // Checked inside the second, before the lit dot is due.
-            verify(Date.now() - start < 1000);
-            verify(second(c).running && !g.waited, "still within its second");
+            verify(timer.running && !g.waited, "still within its second");
             setClaude(okClaude());
             tryCompare(g, "dotsShown", 0, 3000);
             compare(g.sweep, 1);
-            verify(!second(c).running && !g.waited, "the reading ends the wait, so the dot never comes");
+            verify(!timer.running && !g.waited, "the reading ends the wait, so the dot never comes");
             verify(seen.every(f => !f.moving && f.motion === 0), "nothing ever moved");
         }
 
@@ -1634,6 +1647,35 @@ TestRoot {
                    JSON.stringify(after.slice(0, 3)));
         }
 
+        // The track fills in over the dots from twelve, covering each it
+        // reaches, drawn only as far as it has filled and square-ended
+        // there, with the dots still ahead of it. Stepped by hand, so every
+        // stage is seen however fast the runner draws.
+        function test_trackFillsOverTheDots() {
+            const c = cell();
+            const g = c.children[0];
+            const timer = holdTheSecond(c);
+            tryVerify(() => timer.running && g.dotsShown === 1 && g.sweep === 0, 1000, "waiting its second");
+            const count = dots(c).count;
+            compare(circles(c), count, "every dot before the track starts");
+            let covered = 0;
+            let partly = false;
+            for (let step = 1; step < 40; ++step) {
+                g.sweep = step / 40;
+                const at = "at " + g.sweep + ": ";
+                verify(dots(c).covered >= covered, at + "the dots go as the track reaches them");
+                covered = dots(c).covered;
+                partly = partly || covered > 0 && covered < count;
+                compare(circles(c), count - covered, at + "drawn ahead of the track only");
+                verify(outerArc(c).trackColor.a > 0, at + "the track is drawn as it fills");
+                compare(outerArc(c).trackSweep, g.sweep, at + "only as far as it has filled");
+                compare(track(c).capStyle, ShapePath.FlatCap, at + "a part track ends square, over no dot");
+            }
+            verify(partly, "some dots covered with others ahead");
+            g.sweep = 1;
+            compare(track(c).capStyle, ShapePath.SquareCap, "a whole track as before");
+        }
+
         // A reading fades the dot out first, then fills the track in over
         // the dots from twelve, covering them as it goes, while the arc
         // draws in on top and the numbers and the mark fade in.
@@ -1652,14 +1694,16 @@ TestRoot {
             tryVerify(() => seen.some(f => f.sweep === 1) && seen.some(f => f.motion === 0), 1000,
                       "sampled to the end: " + JSON.stringify(seen.slice(-3)));
             const filling = seen.filter(f => f.sweep > 0 && f.sweep < 1);
-            verify(filling.length >= 5, "the track fills in: " + JSON.stringify(seen.map(f => f.sweep)));
+            verify(filling.length > 0, "the track fills in: " + JSON.stringify(seen.map(f => f.sweep)));
+            // The dot's fade is the shorter, and both run on one clock, so
+            // whatever frames are sampled, none shows the track well on
+            // with the dot still there.
             verify(seen.filter(f => f.sweep >= 0.4).every(f => f.motion === 0), "the dot is gone first");
-            const gone = seen.find(f => f.motion === 0);
-            verify(gone.at - start <= Kirigami.Units.shortDuration + 80, "the dot fades in " + (gone.at - start) + " ms");
+            // A frame can only come late, so a slow runner can't make the
+            // fill look quicker than it is: it takes its time.
             const filled = seen.find(f => f.sweep === 1);
-            verify(filled.at - start <= Kirigami.Units.veryLongDuration + 150, "filled in " + (filled.at - start) + " ms");
+            verify(filled.at - start >= Kirigami.Units.veryLongDuration / 2, "filled in " + (filled.at - start) + " ms");
             verify(filling.every((f, i) => i === 0 || f.covered >= filling[i - 1].covered), "the dots go as the track reaches them");
-            verify(filling.some(f => f.covered > 0 && f.covered < dots(c).count));
             verify(filling.every(f => f.circles === dots(c).count - f.covered), "drawn ahead of the track only");
             verify(filling.every(f => f.track > 0), "the track is drawn as it fills");
             verify(filling.every(f => Math.abs(f.trackSweep - f.sweep) < 1e-9), "only as far as it has filled");
