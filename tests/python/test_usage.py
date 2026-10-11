@@ -1465,6 +1465,8 @@ class EarlyResets(History):
             ("idle codex", 0, self.NOW - 2 * 3600 + WEEK, reading(0, self.NOW + WEEK)),
             # A reset time a second off is the same window.
             ("jitter", 50, self.RESET, reading(45, self.RESET + 1)),
+            # The provider's clock a minute and a half ahead of this one.
+            ("clock behind", 80, self.NOW + 90, reading(0, self.NOW + WEEK)),
         )
         for tag, before, reset, after in cases:
             with self.subTest(tag):
@@ -1473,6 +1475,33 @@ class EarlyResets(History):
                 report = self.collect(after)
                 self.assertNotIn("earlyReset", report["weekly"])
                 self.assertEqual(self.record()["weekly"], {"resetsAt": after["weekly"]["resetsAt"]})
+
+    # Claude may give a week no one has used no reset time at all.
+    def test_a_week_back_to_unused_is_early_until_it_is_used_and_after(self):
+        self.seed_window(62, self.RESET)
+        report = self.collect(reading(0, None))
+        early = {"at": self.NOW, "from": 62}
+        self.assertEqual(report["weekly"]["earlyReset"], dict(early, until=self.NOW + usage.EARLY_SHOWN))
+        self.assertEqual(self.record()["weekly"], {"resetsAt": None, "early": early})
+        self.assertIn("earlyReset", self.collect(reading(0, None), now=self.NOW + 600)["weekly"])
+        report = self.collect(reading(3, self.NOW + 900 + WEEK), now=self.NOW + 900)
+        self.assertEqual(report["weekly"]["earlyReset"]["at"], self.NOW)
+        self.assertEqual(self.record()["weekly"], {"resetsAt": self.NOW + 900 + WEEK, "early": early})
+
+    # An idle Codex week's reset moves with every ask, hours apart overnight.
+    def test_an_idle_codex_week_keeps_it_across_a_gap(self):
+        self.seed_window(70, self.RESET, name="codex")
+        self.assertIn("earlyReset", self.collect(reading(0, self.NOW + WEEK), name="codex")["weekly"])
+        later = self.NOW + 5 * 3600
+        report = self.collect(reading(0, later + WEEK), now=later, name="codex")
+        self.assertEqual(report["weekly"]["earlyReset"]["at"], self.NOW)
+
+    def test_a_reading_in_use_that_doesnt_say_when_it_resets_changes_nothing(self):
+        early = {"at": self.NOW - 600, "from": 62}
+        self.seed_window(3, self.RESET, early=early)
+        report = self.collect(reading(5, None))
+        self.assertEqual(report["weekly"]["earlyReset"]["at"], early["at"])
+        self.assertEqual(self.record()["weekly"], {"resetsAt": self.RESET, "early": early})
 
     # A history written before reset times were kept has no record to go by.
     def test_a_window_without_a_record_starts_one(self):
