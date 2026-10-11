@@ -378,6 +378,132 @@ TestRoot {
             compare(String(outerArc(gauge).color), String(root.tone(2)));
             compare(middle.text, "92%");
         }
+
+        // Both arcs, the outer first.
+        function arcs(gauge) {
+            return root.all(gauge, i => i.playReset !== undefined).sort((a, b) => b.radius - a.radius);
+        }
+
+        // An arc at rest draws its reading in its reading's colour, and
+        // follows the next reading from there.
+        function verifyResting(arc, what) {
+            verify(!arc.animating, what + ": no reset playing");
+            compare(arc.head, arc.percent, what + ": head");
+            compare(arc.tail, 0, what + ": tail");
+            compare(arc.lift, 0, what + ": lift");
+            compare(String(arc.drawColor), String(arc.color), what + ": colour");
+            compare(String(arc.litColor), String(arc.shaded(arc.color, true)), what + ": top");
+            compare(String(arc.deepColor), String(arc.shaded(arc.color, false)), what + ": bottom");
+        }
+
+        // At Instant, once readings that just changed have arrived, the arcs
+        // are bound to them again: a new one lands at once, in its colour.
+        function verifyFollowsAtOnce(gauge) {
+            const [outer, inner] = arcs(gauge);
+            gauge.value = 92;
+            gauge.innerValue = 80;
+            compare(outer.head, 92, "the outer arc follows the reading");
+            compare(String(outer.drawColor), String(root.tone(2)), "in its colour");
+            compare(inner.head, 80, "the inner arc follows its reading");
+            compare(String(inner.drawColor), String(Qt.alpha(root.tone(1), 0.55 * Kirigami.Theme.textColor.a)), "in its colour");
+        }
+
+        function face(gauge) {
+            return outerArc(gauge).parent;
+        }
+
+        // The face's opacity each frame from now on.
+        function opacities(gauge) {
+            const seen = [];
+            createTemporaryObject(samplerComponent, rings, { sample: () => seen.push(face(gauge).opacity) });
+            return seen;
+        }
+
+        // Lets two frames pass, enough for any motion to have begun.
+        function nextFrames(seen) {
+            const from = seen.length;
+            tryVerify(() => seen.length >= from + 2, 2000, "frames pass");
+        }
+
+        // At Instant a week that starts over shows its new reading at once,
+        // on schedule or early, with no lap or dissolve.
+        function test_instantReset() {
+            const gauge = createTemporaryObject(gaugeComponent, root, { value: 4, inner: true, innerValue: 6, settle: 0 });
+            gauge.playResets({ from: 78, early: false }, { from: 92, early: true });
+            const [outer, inner] = arcs(gauge);
+            verifyResting(outer, "outer");
+            verifyResting(inner, "inner");
+            compare(outer.head, 4);
+            compare(inner.head, 6);
+            verifyFollowsAtOnce(gauge);
+        }
+
+        // Turned to Instant while a reset plays, both arcs stop where they
+        // are and come to rest on their readings.
+        function test_instantMidReset() {
+            const gauge = createTemporaryObject(gaugeComponent, root, { value: 4, inner: true, innerValue: 6 });
+            tryVerify(() => gauge.still, 2000, "the inner ring in");
+            const [outer, inner] = arcs(gauge);
+            gauge.playResets({ from: 78, early: false }, { from: 92, early: true });
+            verify(outer.animating && inner.animating, "both resets play");
+            tryVerify(() => outer.head > 78 && inner.lift > 0, 2000, "part way");
+            gauge.settle = 0;
+            verifyResting(outer, "outer");
+            verifyResting(inner, "inner");
+            compare(outer.head, 4);
+            compare(inner.head, 6);
+            verifyFollowsAtOnce(gauge);
+        }
+
+        // Near its limit the face dims to half and back, and breathes on; a
+        // ring made near its limit starts at once.
+        function test_pulseBreathes() {
+            const gauge = createTemporaryObject(gaugeComponent, root, { value: 95, pulsing: true });
+            const seen = opacities(gauge);
+            const again = () => {
+                const low = seen.findIndex(o => o < 0.6);
+                const whole = low < 0 ? -1 : seen.findIndex((o, i) => i > low && o > 0.99);
+                return whole >= 0 && seen.some((o, i) => i > whole && o < 0.9);
+            };
+            tryVerify(again, 5000, "down to half, back, and down again");
+            verify(seen.every(o => o >= 0.5 && o <= 1), "between half and whole");
+        }
+
+        // At Instant a ring near its limit doesn't breathe.
+        function test_instantPulse() {
+            const gauge = createTemporaryObject(gaugeComponent, root, { value: 95, settle: 0 });
+            const seen = opacities(gauge);
+            gauge.pulsing = true;
+            nextFrames(seen);
+            verify(seen.every(o => o === 1), "the face holds still: " + JSON.stringify(seen));
+        }
+
+        // Turned to Instant mid-breath, the face is whole again at once.
+        function test_instantMidPulse() {
+            const gauge = createTemporaryObject(gaugeComponent, root, { value: 95, pulsing: true });
+            tryVerify(() => face(gauge).opacity < 0.9, 2000, "it breathes");
+            gauge.settle = 0;
+            compare(face(gauge).opacity, 1, "whole at once");
+            const seen = opacities(gauge);
+            nextFrames(seen);
+            verify(seen.every(o => o === 1), "and holds still: " + JSON.stringify(seen));
+        }
+
+        // A breath under way when the pulse stops finishes, unless the
+        // animations are turned to Instant meanwhile.
+        function test_instantAsTheLastBreathEnds() {
+            const gauge = createTemporaryObject(gaugeComponent, root, { value: 95, pulsing: true });
+            tryVerify(() => face(gauge).opacity < 0.9, 2000, "it breathes");
+            gauge.pulsing = false;
+            const seen = opacities(gauge);
+            nextFrames(seen);
+            verify(seen.every(o => o < 1), "the breath goes on: " + JSON.stringify(seen));
+            gauge.settle = 0;
+            compare(face(gauge).opacity, 1, "whole at once");
+            const after = opacities(gauge);
+            nextFrames(after);
+            verify(after.every(o => o === 1), "and holds still: " + JSON.stringify(after));
+        }
     }
 
     TestCase {
