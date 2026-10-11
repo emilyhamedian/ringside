@@ -18,7 +18,8 @@ GPL-3.0-or-later.
   - `ui/PublicAddress.qml`: asks for the address the network popup shows.
   - `ui/HistoryStore.qml`: keeps the graphs' hour and day when that setting
     is on; the only file that imports Qt's optional LocalStorage module.
-  - `ui/code/pace.js`: a weekly limit's pace, for the panel and the popup.
+  - `ui/code/pace.js`: a weekly limit's pace, for the popup's sentence and
+    week graph.
   - `code/ringside-info.sh`: hardware facts ksystemstats doesn't publish.
 - `tests/`:
   - `qml/tst_*.qml`: the QtTest suites.
