@@ -88,3 +88,6 @@ must have its own branch and pull request, and land on `main` as one squashed
 commit. A release must be its own pull request that only bumps the version
 and dates the changelog; once it lands, tag it on `main` and attach
 `ringside.plasmoid` from `scripts/package.sh`.
+
+Commit titles must name the part of the repo changed and what changed, as
+`area: change`, for example `usage: show an early reset in the popup`.

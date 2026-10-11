@@ -59,3 +59,5 @@ Have a look before anything big. A few smaller things:
   `QT_LOGGING_RULES="ringside.*.debug=true"` turns on the debug lines.
 - In tests, map points with `mapToItem(item, Qt.point(x, y))`. Qt 6.6 rounds
   the separate `x, y` form to whole pixels.
+- Commit titles name the part of Ringside changed and what changed:
+  `usage: show an early reset in the popup`, `ci: cache the Fedora image`.
