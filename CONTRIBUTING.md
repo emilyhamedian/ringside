@@ -42,8 +42,10 @@ Work on a branch and open a pull request against `main`. CI runs the tests
 on it once it's out of draft, unless it only touches the README, this file,
 the changelog or the pictures in `docs/`.
 
-Nothing lands on `main` without the owner's go-ahead. Each change gets its
-own pull request and goes in as one squashed commit. A release is a separate
+Nothing lands on `main` without the owner's go-ahead: pull requests open as
+drafts, and marking one ready for review is that go-ahead, after which it
+merges as soon as CI passes. Each change gets its own pull request and goes
+in as one squashed commit. A release is a separate
 pull request that bumps the version and dates the changelog, and is tagged
 once it lands.
 
