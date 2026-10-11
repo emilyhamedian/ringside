@@ -61,3 +61,4 @@ Have a look before anything big. A few smaller things:
   the separate `x, y` form to whole pixels.
 - Commit titles name the part of Ringside changed and what changed:
   `usage: show an early reset in the popup`, `ci: cache the Fedora image`.
+  Title a pull request the same way, since it becomes the squashed commit.

@@ -90,4 +90,6 @@ and dates the changelog; once it lands, tag it on `main` and attach
 `ringside.plasmoid` from `scripts/package.sh`.
 
 Commit titles must name the part of the repo changed and what changed, as
-`area: change`, for example `usage: show an early reset in the popup`.
+`area: change`, for example `usage: show an early reset in the popup`. A pull
+request is titled as the commit it squashes into, and a release as
+`release: 0.3.1`.
