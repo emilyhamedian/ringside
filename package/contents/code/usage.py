@@ -55,7 +55,9 @@ reset time too, so a window that starts over before that time comes is
 noticed even when it happened while Plasma wasn't running; for a day after
 such an early reset the window carries "earlyReset": {"at": <when it
 happened, or was noticed>, "from": <the percent used before it>, "until":
-<when the popup stops telling of it>}.
+<when the popup stops telling of it>}, and for as long as the window lasts
+"startedAt", the same time, since a window cleared in place keeps its
+reset and so no longer started a window's length before it.
 
 Claude's entry also carries "session", its five-hour window, or null when
 no session is running; it is left out when the reply doesn't say.
@@ -1316,8 +1318,9 @@ def track_reset(name, series, record, window, now):
     too, by half for a doubled limit, and is no reset; nor is a reset time
     that moved with nothing given back, as when a provider moves the day a
     week starts. The reset is dated at the new window's start when that
-    lies after the last poll, else at this poll. It is kept for EARLY_SHOWN
-    while the week it started goes on, unused or not.
+    lies after the last poll, else at this poll. It is kept while the week
+    it started goes on, unused or not, for the pace to count from; the
+    report tells of it for EARLY_SHOWN (see attach()).
     """
     reset, percent = window["resetsAt"], window["percent"]
     if reset is None and percent > 0:
@@ -1334,8 +1337,7 @@ def track_reset(name, series, record, window, now):
         start = reset - window["windowSeconds"] if moved else now
         kept["early"] = {"at": start if series[-1][0] < start <= now else now, "from": used}
         event("info", name, "early-reset", which="a model's weekly limit" if "id" in window else "the weekly limit")
-    elif ("early" in record and now - record["early"]["at"] < EARLY_SHOWN
-          and (was is None or idle and was > now or reset is not None and abs(reset - was) <= RESET_MOVED)):
+    elif "early" in record and (was is None or idle and was > now or reset is not None and abs(reset - was) <= RESET_MOVED):
         kept["early"] = record["early"]
     return kept
 
@@ -1408,12 +1410,14 @@ def attach_history(providers, history, now):
 
 
 def attach(window, series, record, now):
-    """Gives a reported window its history, and its early reset while it is
-    under EARLY_SHOWN old."""
+    """Gives a reported window its history and, after an early reset, when
+    it started and, while that is under EARLY_SHOWN old, the reset."""
     window["history"] = within(series, window, now)
     early = (record or {}).get("early")
-    if early and now - early["at"] < EARLY_SHOWN:
-        window["earlyReset"] = dict(early, until=early["at"] + EARLY_SHOWN)
+    if early:
+        window["startedAt"] = early["at"]
+        if now - early["at"] < EARLY_SHOWN:
+            window["earlyReset"] = dict(early, until=early["at"] + EARLY_SHOWN)
 
 
 # --- session starter -------------------------------------------------------

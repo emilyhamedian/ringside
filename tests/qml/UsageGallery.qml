@@ -90,7 +90,7 @@ ColumnLayout {
             readonly property real at: createdAt - 3 * 3600 - 600
             function early(percent, from, at, history) {
                 return Object.assign(window(percent, at + 7 * day - createdAt, history),
-                                     { earlyReset: { at: at, from: from, until: at + day } });
+                                     { earlyReset: { at: at, from: from, until: at + day }, startedAt: at });
             }
             entries: ({
                 claude: {
@@ -105,7 +105,8 @@ ColumnLayout {
                     fetchedAt: resetEarlyUsage.createdAt,
                     weekly: Object.assign(resetEarlyUsage.window(1, 2 * resetEarlyUsage.day + 4 * 3600, [[0.02, 0], [0, 1]]),
                                           { earlyReset: { at: resetEarlyUsage.createdAt - 1500, from: 48,
-                                                          until: resetEarlyUsage.createdAt - 1500 + resetEarlyUsage.day } }),
+                                                          until: resetEarlyUsage.createdAt - 1500 + resetEarlyUsage.day },
+                                            startedAt: resetEarlyUsage.createdAt - 1500 }),
                     scoped: []
                 }
             })
@@ -125,7 +126,8 @@ ColumnLayout {
                     weekly: fableResetUsage.window(55, 2 * fableResetUsage.day + 21 * 3600, section.history(4.1, 55)),
                     scoped: [Object.assign({ id: "Fable", label: "Fable" },
                                            fableResetUsage.window(2, 7 * fableResetUsage.day - 3600, [[0.04, 0], [0, 2]]),
-                                           { earlyReset: { at: fableResetUsage.at, from: 81, until: fableResetUsage.at + fableResetUsage.day } })]
+                                           { earlyReset: { at: fableResetUsage.at, from: 81, until: fableResetUsage.at + fableResetUsage.day },
+                                             startedAt: fableResetUsage.at })]
                 }
             })
         }

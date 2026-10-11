@@ -1437,6 +1437,7 @@ class EarlyResets(History):
         report = self.collect(reading(3, start + WEEK))
         early = {"at": start, "from": 62}
         self.assertEqual(report["weekly"]["earlyReset"], dict(early, until=start + usage.EARLY_SHOWN))
+        self.assertEqual(report["weekly"]["startedAt"], start)
         self.assertEqual(self.record()["weekly"], {"resetsAt": start + WEEK, "early": early})
         self.assertNotIn("earlyReset", json.loads(usage.CACHE_FILE.read_text())["claude"]["weekly"])
 
@@ -1449,6 +1450,7 @@ class EarlyResets(History):
         self.seed_window(61, self.RESET, name="codex")
         report = self.collect(reading(2, self.RESET), name="codex")
         self.assertEqual(report["weekly"]["earlyReset"], {"at": self.NOW, "from": 61, "until": self.NOW + usage.EARLY_SHOWN})
+        self.assertEqual(report["weekly"]["startedAt"], self.NOW)
 
     def test_what_is_not_an_early_reset(self):
         cases = (
@@ -1474,6 +1476,7 @@ class EarlyResets(History):
                 self.seed_window(before, reset)
                 report = self.collect(after)
                 self.assertNotIn("earlyReset", report["weekly"])
+                self.assertNotIn("startedAt", report["weekly"])
                 self.assertEqual(self.record()["weekly"], {"resetsAt": after["weekly"]["resetsAt"]})
 
     # Claude may give a week no one has used no reset time at all.
@@ -1510,7 +1513,8 @@ class EarlyResets(History):
         self.assertNotIn("earlyReset", report["weekly"])
         self.assertEqual(self.record()["weekly"], {"resetsAt": self.NOW + WEEK})
 
-    def test_it_is_kept_for_a_day_while_the_window_lasts(self):
+    # Told of for a day; counted from for as long as the window lasts.
+    def test_it_is_told_for_a_day_and_kept_while_the_window_lasts(self):
         early = {"at": self.NOW - usage.EARLY_SHOWN + 600, "from": 62}
         self.seed_window(3, self.RESET, early=early)
         report = self.collect(reading(5, self.RESET))
@@ -1520,13 +1524,15 @@ class EarlyResets(History):
         self.assertIn("earlyReset", self.collect(reading(99, self.RESET), now=self.NOW + 299)["weekly"])
         report = self.collect(reading(6, self.RESET), now=self.NOW + 600)
         self.assertNotIn("earlyReset", report["weekly"])
-        self.assertEqual(self.record()["weekly"], {"resetsAt": self.RESET})
+        self.assertEqual(report["weekly"]["startedAt"], early["at"])
+        self.assertEqual(self.record()["weekly"], {"resetsAt": self.RESET, "early": early})
 
     def test_a_reset_after_it_ends_it(self):
         early = {"at": self.NOW - 3600, "from": 62}
         self.seed_window(3, self.NOW - 60, early=early)
         report = self.collect(reading(0, self.NOW - 60 + WEEK))
         self.assertNotIn("earlyReset", report["weekly"])
+        self.assertNotIn("startedAt", report["weekly"])
         self.assertEqual(self.record()["weekly"], {"resetsAt": self.NOW - 60 + WEEK})
 
     def test_a_model_limit_resets_early_on_its_own(self):

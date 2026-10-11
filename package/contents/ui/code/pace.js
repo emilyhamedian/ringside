@@ -56,11 +56,16 @@ function pollTime(entry, now) {
     return history.length > 0 ? history[history.length - 1][0] : now;
 }
 
-// project() for a usage window read at `at`. Once its reset has passed by
-// `now` the reading belongs to a week that is over, so there is nothing to say.
+// project() for a usage window read at `at`, from when it started: a
+// window's length before its reset, or its early reset (usage.py's
+// "startedAt") if that came later, as when a week is cleared part-way
+// through without its reset moving. A week that lay unused after its reset
+// started when it was first used. Once its reset has passed by `now` the
+// reading belongs to a week that is over, so there is nothing to say.
 function ofWindow(window, at, now) {
     if (!window || !(window.resetsAt > now)) {
         return project(NaN, 0, 0, at, []);
     }
-    return project(window.percent, window.resetsAt - window.windowSeconds, window.resetsAt, at, window.history);
+    const start = Math.max(window.resetsAt - window.windowSeconds, Number.isFinite(window.startedAt) ? window.startedAt : -Infinity);
+    return project(window.percent, start, window.resetsAt, at, window.history);
 }
