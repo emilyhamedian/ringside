@@ -1,54 +1,59 @@
 # Contributing
 
-## Checks
+Ringside is plain QML with two small helper scripts, so there's nothing to
+build. Clone it and run `scripts/install.sh` to try your changes in a panel.
+
+A running Plasma keeps the old QML until it restarts. To see your changes
+without restarting it, open the installed widget in a window:
 
 ```bash
-sh scripts/test.sh        # the linters and the QML, sh and Python tests
-sh scripts/test-floor.sh  # the tests and the gallery on Plasma 6.0
-sh scripts/gallery.sh     # renders every view to /tmp/ringside-gallery.png
-sh scripts/pictures.sh    # renders the README's pictures in docs/
-python3 scripts/logo.py   # draws the logo in docs/ and the widget's icon
-sh scripts/package.sh     # builds ringside.plasmoid from the last commit
+plasmawindowed dev.emily.ringside
 ```
 
-`scripts/test.sh`, `scripts/gallery.sh` and `scripts/pictures.sh` need a
-Plasma 6.5 or later desktop, since older libplasma ships no importable
-`org.kde.plasma.plasmoid` module: the Qt 6 `qmllint`, `qmltestrunner` and
-`qml` tools (looked for in `/usr/lib/qt6/bin` and `/usr/lib64/qt6/bin`, or
-set `QMLLINT`, `QMLTESTRUNNER`, `QML`), the Plasma and libksysguard QML
-modules, and Python 3.11+. `scripts/test.sh` also runs `shellcheck` and
-`reuse lint` when they're installed, and prints a note when it skips one.
-`scripts/test-floor.sh` runs from Plasma 6.0 on, with a stand-in for
-`org.kde.plasma.plasmoid` from `tests/floor` on the import path.
-`scripts/pictures.sh` also needs Pillow, and `scripts/logo.py` fontTools,
-Nunito and `rsvg-convert`.
+## Running the tests
 
-CI runs on PRs and on pushes to main, release branches and tags: the full
-suite and the gallery on Fedora 44, and the floor tests on Fedora 40 as
-released. Draft PRs to main wait until they're marked ready, and PRs that
-change only the README, this file, the changelog or the pictures in `docs/`
-skip both; that rule and its tests are in `.github/scripts/`.
+```bash
+sh scripts/test.sh        # lint, then the QML, shell and Python tests
+sh scripts/test-floor.sh  # the tests and the gallery on Plasma 6.0
+sh scripts/gallery.sh     # every view in one picture, /tmp/ringside-gallery.png
+```
 
-## Branches
+`test.sh` and `gallery.sh` need Plasma 6.5 or later with libksysguard, Qt 6's
+`qmllint`, `qmltestrunner` and `qml`, and Python 3.11 or later. If the Qt
+tools aren't in `/usr/lib/qt6/bin` or `/usr/lib64/qt6/bin`, point `QMLLINT`,
+`QMLTESTRUNNER` and `QML` at them. `shellcheck` and `reuse lint` run too if
+you have them.
 
-Work on a branch. Nothing lands on `main` without the owner's go-ahead, and
-it lands as one squashed commit; `main` is what people install from and what
-releases are tagged on.
+Older Plasma can't load its own module outside the shell, so `test-floor.sh`
+runs the tests against a stand-in instead. CI uses it to check Plasma 6.0 on
+Fedora 40.
 
-When bumping the widget version in `package/metadata.json`, update `VERSION`
-in `package/contents/code/usage.py` too. The helper sends it in its HTTP
-User-Agent, and the Python tests check that the versions agree.
+A few more scripts:
 
-## Style
+```bash
+sh scripts/pictures.sh    # the README's pictures, needs Pillow
+python3 scripts/logo.py   # the logo and icon, needs fontTools, Nunito and rsvg-convert
+sh scripts/package.sh     # ringside.plasmoid from the last commit
+```
 
-[AGENTS.md](AGENTS.md) sets the project's rules and maps the repository.
-Two more:
+## Pull requests
 
-- Journal lines go through `ui/code/log.js` under a `ringside.<area>`
-  LoggingCategory (usage, network, gpu, setup). The helper's lines come
-  from the fixed templates in `usage.py`'s `MESSAGES`, so no token,
-  address, account or reply text can reach them; keep it that way, and keep
-  the privacy tests in `tests/python/test_journal.py` covering any new
-  input. Turn debug on with `QT_LOGGING_RULES="ringside.*.debug=true"`.
-- Tests map points with `mapToItem(item, Qt.point(x, y))`: Qt 6.6 truncates
-  the separate x and y of `mapToItem(item, x, y)` to whole numbers.
+Work on a branch and open a pull request against `main`. CI runs the tests
+on it once it's out of draft, unless it only touches the README, this file,
+the changelog or the pictures in `docs/`.
+
+Nothing lands on `main` without the owner's go-ahead, and each change goes
+in as one squashed commit, since `main` is what people install from.
+
+[AGENTS.md](AGENTS.md) has the project's ground rules: Plasma 6.0 support,
+no new dependencies, privacy first, and how numbers and text are handled.
+Have a look before anything big. A few smaller things:
+
+- If you bump the version, change it in `package/metadata.json` and in
+  `VERSION` in `usage.py`. A test checks they match.
+- Journal lines go through `ui/code/log.js`, and the helper's come from the
+  fixed `MESSAGES` in `usage.py`, so nothing private can end up in them. Keep
+  `tests/python/test_journal.py` covering anything new.
+  `QT_LOGGING_RULES="ringside.*.debug=true"` turns on the debug lines.
+- In tests, map points with `mapToItem(item, Qt.point(x, y))`. Qt 6.6 rounds
+  the separate `x, y` form to whole pixels.
