@@ -19,7 +19,9 @@ neither. Every entry carries the program usage.py would find,
 /usr/bin/<id>, unless the scenario gives one; --program <id>=<path> comes
 back as that provider's program, chosen and fine, exactly as it arrived.
 Nothing is remembered between runs. A scenario may give the journal lines
-the report carries as events, none by default.
+the report carries as events, none by default. Times carry the desktop
+clock's zone, EDT, unless the scenario passes zoned=False: usage.py gives
+none when the clock shows system time.
 """
 
 import json
@@ -70,7 +72,16 @@ def values(flag):
     return [sys.argv[i + 1] for i, arg in enumerate(sys.argv[:-1]) if arg == flag]
 
 
-def report(sticks=True, events=(), **entries):
+def without_zones(value):
+    """value with every clockZone and atClockZone left out."""
+    if isinstance(value, dict):
+        return {k: without_zones(v) for k, v in value.items() if k not in ("clockZone", "atClockZone")}
+    if isinstance(value, list):
+        return [without_zones(v) for v in value]
+    return value
+
+
+def report(sticks=True, events=(), zoned=True, **entries):
     requested = sys.argv[sys.argv.index("--providers") + 1].split(",")
     providers = {k: v for k, v in entries.items() if k in requested}
     for name, entry in providers.items():
@@ -89,6 +100,8 @@ def report(sticks=True, events=(), **entries):
     if "--start" in sys.argv:
         for entry in providers.values():
             entry["starter"] = starter("confirming", at=0, next=300)
+    if not zoned:
+        providers = without_zones(providers)
     print(json.dumps({"fetchedAt": NOW, "providers": providers, "events": list(events)}))
 
 
