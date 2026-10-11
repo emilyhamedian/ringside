@@ -205,12 +205,35 @@ TestRoot {
             return b.y >= a.y + above.height && b.y - (a.y + above.height) < 30 && Math.abs(b.x - a.x) < 1;
         }
 
-        // In Fahrenheit the threshold boxes count °F, a path the shipped
-        // Celsius never takes.
-        function test_thresholdsInFahrenheit() {
+        // The thresholds count degrees of the unit shown and store Celsius,
+        // amber stays at least a degree below red, and both are off while
+        // highlighting is.
+        function test_thresholds() {
             const page = make(general, { cfg_fahrenheit: true });
-            compare(accessible(page, "Amber threshold").value, 167);
-            compare(accessible(page, "Red threshold").value, 194);
+            const amber = accessible(page, "Amber threshold");
+            const red = accessible(page, "Red threshold");
+            compare([amber.value, red.value, amber.to, red.from], [167, 194, 193, 168]);
+            red.decrease();
+            red.valueModified();
+            fuzzyCompare(page.cfg_hotCelsius, (193 - 32) * 5 / 9, 1e-9);
+            compare(amber.to, 192, "a degree below red");
+            mouseClick(find(page, i => i.text === "Highlight temperatures above"));
+            compare(page.cfg_highlightTemperatures, false);
+            compare([amber.enabled, red.enabled], [false, false]);
+        }
+
+        // The update interval steps by half a second, and the rate unit
+        // follows its radios.
+        function test_intervalAndRateUnit() {
+            const page = make(general);
+            const interval = accessible(page, "Update interval");
+            interval.increase();
+            interval.valueModified();
+            compare(page.cfg_updateInterval, 1500);
+            mouseClick(find(page, i => typeof i.text === "string" && i.text.startsWith("Bytes per second")));
+            compare(page.cfg_networkBits, false);
+            mouseClick(find(page, i => i.text === "Bits per second (Mb/s)"));
+            compare(page.cfg_networkBits, true);
         }
 
         // Graph history: a box that keeps the hour and the day across
@@ -1096,6 +1119,19 @@ TestRoot {
                 compare(picker.entries.map(e => e.value), values, p.name);
                 compare(picker.currentIndex, values.indexOf(stored), p.name);
             }
+        }
+
+        // A picker keeps the value the page opened with listed after another
+        // is picked, so it can be picked back before Apply.
+        function test_pickerKeepsTheOpenedValue() {
+            const page = make(sensors, { cfg_networkInterface: "wlp8s0" });
+            page.fromTree = root.listed;
+            const picker = accessible(page, "Network interface");
+            root.pick(testCase, picker, 1);
+            compare(page.cfg_networkInterface, "enp5s0");
+            compare(picker.entries.map(e => e.value), ["", "enp5s0", "wlp9s0", "wlp8s0"]);
+            root.pick(testCase, picker, 3);
+            compare(page.cfg_networkInterface, "wlp8s0");
         }
 
         // What the page takes from the sensor tree.
