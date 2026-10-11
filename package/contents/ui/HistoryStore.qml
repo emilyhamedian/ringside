@@ -11,10 +11,11 @@ import "code/log.js" as Log
 // then, so where Qt's LocalStorage module is missing (Debian and Ubuntu
 // package it on its own) the widget still loads and its history stays in
 // memory. Qt keeps the database in plasmashell's data folder, under
-// QML/OfflineStorage/Databases: one SQLite file for every Ringside widget,
-// each row a closed bucket of one widget's graphs. A save also drops every
-// widget's buckets older than its span, a removed widget's too, so while
-// any widget keeps its history the file holds about a day.
+// QML/OfflineStorage/Databases: one SQLite file that every Ringside widget
+// shares, each row a closed bucket of one widget's graphs under its widget
+// id. A save also drops every widget's buckets older than its span, a
+// removed widget's too, so while any widget keeps its history the file
+// holds about a day.
 QtObject {
     id: store
 
