@@ -109,7 +109,7 @@ TestRoot {
         }
 
         function strip(applet) {
-            return find(applet, i => i.cellAt !== undefined && i.ringsOnly !== undefined);
+            return root.find(applet, i => i.cellAt !== undefined && i.ringsOnly !== undefined);
         }
 
         function popup(applet) {
@@ -200,7 +200,7 @@ TestRoot {
             compare(applet.items.length, 0);
             verify(!strip(applet).visible);
             compare([applet.width, applet.height], [44, 44]);
-            const icon = find(applet, i => i.source !== undefined && i.active !== undefined && i.isMask !== undefined);
+            const icon = root.find(applet, i => i.source !== undefined && i.active !== undefined && i.isMask !== undefined);
             verify(icon && icon.visible, "the icon stands in");
             const configured = Plasmoid.configured;
             mouseClick(icon);
@@ -237,7 +237,7 @@ TestRoot {
             settle();
             const claude = s.cellAt(1);
             compare(claude.item, "claude");
-            const gauge = find(claude, i => i.dotsShown !== undefined);
+            const gauge = root.find(claude, i => i.dotsShown !== undefined);
             tryCompare(gauge, "dotsShown", 1, 1000, "waiting");
             const sweeps = [];
             const record = () => sweeps.push(gauge.sweep);
@@ -292,7 +292,7 @@ TestRoot {
                 verify(String(loader.source).endsWith("/popups/" + expected[item] + ".qml"), item + " loads " + loader.source);
                 compare(loader.status, Loader.Ready, item);
             });
-            const title = () => find(loader.item, i => i.partsShown !== undefined).title;
+            const title = () => root.find(loader.item, i => i.partsShown !== undefined).title;
             applet.toggle("network", s.cellAt(3));
             settle();
             compare(title(), "Network");
@@ -315,7 +315,7 @@ TestRoot {
 
         // The hidden animation (Egg.qml) and the keys main.qml hands it.
         function egg(applet) {
-            return find(applet, i => i.watch !== undefined && i.code !== undefined);
+            return root.find(applet, i => i.watch !== undefined && i.code !== undefined);
         }
 
         function typeCode() {
