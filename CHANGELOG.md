@@ -19,6 +19,10 @@ follows [Semantic Versioning](https://semver.org/).
 - After an early reset, the session starter no longer shows the old week's
   times or waits for the old reset before starting your next session or
   week.
+- After a weekly limit is cleared early without its reset time moving, the
+  pace sentence and the week graph's run-out count from the reset rather
+  than from the start of the week, so they no longer understate how fast
+  you're using it.
 
 ## [0.3.0] - 2026-10-10
 

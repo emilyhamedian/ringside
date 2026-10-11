@@ -122,6 +122,23 @@ TestCase {
         compare(Pace.ofWindow({ percent: 60, resetsAt: null, windowSeconds: 7 * day }, at, at).state, "none");
     }
 
+    // A week cleared part-way through, its reset unmoved, counts from the
+    // clearing: 10% in the two days since lasts to 25%, where counting from
+    // the week's start would say 18%.
+    function test_ofWindowStartedOverInPlace() {
+        const window = { percent: 10, resetsAt: end, windowSeconds: 7 * day, startedAt: start + 2 * day, history: [] };
+        const at = start + 4 * day;
+        const pace = Pace.ofWindow(window, at, at);
+        compare(pace.state, "lasts");
+        fuzzyCompare(pace.atReset, 25, 1e-9);
+        fuzzyCompare(Pace.ofWindow(Object.assign({}, window, { startedAt: undefined }), at, at).atReset, 17.5, 1e-9);
+        // An hour in, too soon to tell.
+        compare(Pace.ofWindow(window, start + 2 * day + 3600, start + 2 * day + 3600).state, "none");
+        // A reset before the week's own start, as when it lay unused after
+        // the reset, counts from the start.
+        compare(Pace.ofWindow(Object.assign({}, window, { startedAt: start - day }), at, at).atReset, 17.5);
+    }
+
     // Once the reset has passed, the reading is last week's: nothing to say,
     // even of a limit that was used up.
     function test_resetThatHasPassed() {
