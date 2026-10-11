@@ -739,6 +739,12 @@ TestRoot {
                 Object.assign({ value: Format.temperature(71, false), pointSize: 3 * small }, properties));
             const r = make({ degreeUnit: data.unit });
             const p = parts(r);
+            // A machine without a font for the locale's digits draws them as
+            // nothing, which leaves no top to hang from.
+            const digits = keep(figureComponent.createObject(root, { font: p.number.font, text: p.number.text }));
+            if (digits.tightBoundingRect.height === 0) {
+                skip("no font here draws " + p.number.text);
+            }
             fuzzyCompare(inkTop(p.suffix), inkTop(p.number), 0.5, "level with the digits' top");
             const baseline = p.number.y + p.number.baselineOffset;
             verify(p.suffix.y + p.suffix.baselineOffset < baseline - small,
