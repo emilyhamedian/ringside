@@ -1300,10 +1300,12 @@ def track_reset(name, series, record, window, now):
 
     A window reset early when its reset time hadn't come yet and it gave
     back some of what had been used, either moving its reset out by more
-    than RESET_MOVED or falling HISTORY_CLEARED points or more in place, as
-    code/reset.js tells them apart. A reset time that moved with nothing
-    given back, as when a provider moves the day a week starts, is no reset
-    to tell anyone about. The reset is dated at the new window's start when
+    than RESET_MOVED, as code/reset.js has it, or falling in place by
+    HISTORY_CLEARED points or more to a quarter of what had been used or
+    less. A limit raised part-way through a week shrinks its share in place
+    too, by half for a doubled limit, and is no reset; nor is a reset time
+    that moved with nothing given back, as when a provider moves the day a
+    week starts. The reset is dated at the new window's start when
     that lies after the last poll, else at this poll. It is kept for
     EARLY_SHOWN, while the window is still the one it started.
     """
@@ -1315,8 +1317,9 @@ def track_reset(name, series, record, window, now):
         return kept
     moved = reset > record["resetsAt"] + RESET_MOVED
     used = series[-1][1] if series else None
-    if (used is not None and record["resetsAt"] > now and window["percent"] < used
-            and (moved or used - window["percent"] >= HISTORY_CLEARED)):
+    percent = window["percent"]
+    if (used is not None and record["resetsAt"] > now and percent < used
+            and (moved or used - percent >= HISTORY_CLEARED and percent * 4 <= used)):
         start = reset - window["windowSeconds"]
         kept["early"] = {"at": start if moved and series[-1][0] < start <= now else now, "from": used}
         event("info", name, "early-reset", percent=used,

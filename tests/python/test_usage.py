@@ -1457,6 +1457,8 @@ class EarlyResets(History):
             ("spending", 40, self.RESET, reading(46, self.RESET)),
             # Too small a fall in place to be anything but noise.
             ("small fall", 50, self.RESET, reading(35, self.RESET)),
+            # A limit doubled part-way through the week halves the share.
+            ("raised limit", 60, self.RESET, reading(30, self.RESET)),
             # The provider moved the week's start and gave nothing back.
             ("moved day", 30, self.RESET, reading(30, self.RESET + 2 * 86400)),
             # Codex puts an idle week a week from when it is asked.
