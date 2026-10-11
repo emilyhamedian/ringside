@@ -247,12 +247,11 @@ Item {
                                        : config.diskDevice || (hardware.root && hardware.root.disk) || "all"
     readonly property var diskIds: diskDevice === "all" ? (hardware.disks || []) : [diskDevice]
     readonly property string volumeId: config.diskVolume || (hardware.root && hardware.root.uuid) || ""
-    readonly property string volumeLabel: config.diskVolume ? groupText(volumeReaders, 2) : volumeId ? "/" : ""
+    readonly property string volumeLabel: config.diskVolume ? groupText(volumeReaders, 1) : volumeId ? "/" : ""
     readonly property real diskRead: diskSum(0)
     readonly property real diskWrite: diskSum(1)
     readonly property real diskSize: diskSum(2)
-    readonly property real volumeTotal: groupValue(volumeReaders, 0)
-    readonly property real volumeFree: groupValue(volumeReaders, 1)
+    readonly property real volumeFree: groupValue(volumeReaders, 0)
     readonly property string diskTemperatureSensorId: config.diskTemperatureSensor === "none" ? ""
         : config.diskTemperatureSensor || (!config.diskDevice && hardware.root ? hardware.root.tempSensor : "")
     readonly property real diskTemperature: {
@@ -748,7 +747,7 @@ Item {
 
     ReaderSet {
         id: volumeReaders
-        model: monitor.volumeId ? ["total", "free", "name"].map(key => "disk/" + monitor.volumeId + "/" + key) : []
+        model: monitor.volumeId ? ["free", "name"].map(key => "disk/" + monitor.volumeId + "/" + key) : []
     }
 
     ReaderSet {
