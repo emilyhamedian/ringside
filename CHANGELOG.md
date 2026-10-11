@@ -6,6 +6,8 @@ follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-10-11
+
 ### Added
 
 - When a Claude or Codex weekly limit resets before it was due, the popup
@@ -215,7 +217,8 @@ follows [Semantic Versioning](https://semver.org/).
   and one reader per GPU is shared across widgets so a second Ringside
   doesn't keep it awake.
 
-[Unreleased]: https://github.com/emilyhamedian/ringside/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/emilyhamedian/ringside/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/emilyhamedian/ringside/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/emilyhamedian/ringside/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/emilyhamedian/ringside/compare/v0.2.0...v0.2.2
 [0.2.0]: https://github.com/emilyhamedian/ringside/compare/v0.1.0...v0.2.0

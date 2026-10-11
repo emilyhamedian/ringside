@@ -114,7 +114,7 @@ from email.utils import parsedate_to_datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-VERSION = "0.3.0"
+VERSION = "0.3.1"
 
 PROVIDERS = ("claude", "codex")
 
