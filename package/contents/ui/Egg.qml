@@ -189,8 +189,11 @@ Item {
         readonly property real at: time - 0.12 * index
         readonly property real span: 1.45
         // How far the band is over this ring, 0 to 1: it eases in over
-        // 0.4 s and out over the last 0.45 s of its pass.
-        readonly property real band: at <= 0 || at >= span ? 0 : Math.min(inOut(at / 0.4), inOut((span - at) / 0.45))
+        // 0.4 s and out over the last 0.45 s of its pass. None while it
+        // isn't playing here: a ring sitting out has index -1, which would
+        // otherwise put it 0.12 s into a pass.
+        readonly property real band: !active || at <= 0 || at >= span ? 0
+            : Math.min(inOut(at / 0.4), inOut((span - at) / 0.45))
         // How far round the band reaches, in percent: from the reading to
         // the whole ring.
         readonly property real extent: band > 0 ? outerRing.percent + (100 - outerRing.percent) * inOut(Math.min(1, band * 1.4)) : 0

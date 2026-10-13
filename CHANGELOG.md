@@ -22,6 +22,10 @@ follows [Semantic Versioning](https://semver.org/).
   sleeping GPU: an NVIDIA GPU's wait until it's awake, and need Plasma 6.4 or
   later.
 
+### Fixed
+
+- The rings no longer show a faint band of colour around their arcs.
+
 ## [0.3.1] - 2026-10-11
 
 ### Added

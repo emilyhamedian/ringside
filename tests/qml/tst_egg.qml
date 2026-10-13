@@ -320,6 +320,26 @@ TestRoot {
             egg.playing = false;
         }
 
+        // At rest no ring shows the band, numbered along the strip or not,
+        // as every ring is until the first play, and one that sat a play
+        // out shows none while the others do.
+        function test_noBandAtRest() {
+            makeStrip(false);
+            const found = rings();
+            verify(found.length > 1);
+            verify(found.every(r => r.index === -1), "not numbered before a play");
+            verify(found.every(r => r.band === 0 && !wheelOf(r).visible), "no band before a play");
+            egg.arrange();
+            found[0].index = -1;
+            egg.playing = true;
+            egg.progress = 0.5;
+            verify(found.slice(1).some(r => wheelOf(r).visible), "the band shows mid-way");
+            compare(found[0].band, 0, "none on a ring sitting it out");
+            verify(!wheelOf(found[0]).visible);
+            egg.playing = false;
+            verify(found.every(r => r.band === 0 && !wheelOf(r).visible), "none after");
+        }
+
         function test_backToLive_data() {
             return [{ tag: "horizontal", vertical: false }, { tag: "vertical", vertical: true }];
         }
