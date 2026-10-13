@@ -26,15 +26,15 @@ PlasmoidItem {
                                                                : k === "codex" ? readings.usage.codexPresent
                                                                : true)
 
-    // Where the items sit along the panel, from 0 at its start to 1 at its
-    // end, when the applet takes the panel's free space as a panel spacer
-    // beside it would; undefined when it takes only the items' room.
-    readonly property var fillLead: ({ start: 0, center: 0.5, end: 1 })[Plasmoid.configuration.fillPanel]
-    readonly property bool fills: fillLead !== undefined
-                                  && (Plasmoid.formFactor === PlasmaCore.Types.Horizontal || vertical)
+    // Where the items sit when the applet takes the panel's free space, as
+    // a panel spacer beside it would: 0, 1 or 2 for the panel's start,
+    // middle or end, and -1 when it takes only the items' room.
+    readonly property int fillPlace: ["start", "center", "end"].indexOf(Plasmoid.configuration.fillPanel)
+    readonly property bool fills: fillPlace >= 0 && (Plasmoid.formFactor === PlasmaCore.Types.Horizontal || vertical)
     // A right-to-left horizontal panel starts at the right. A test seam.
     property bool mirrored: Application.layoutDirection === Qt.RightToLeft
-    readonly property real lead: !fills ? 0.5 : mirrored && !vertical ? 1 - fillLead : fillLead
+    // How far along the applet the items sit, from 0 at the start to 1 at the end.
+    readonly property real lead: !fills ? 0.5 : (mirrored && !vertical ? 2 - fillPlace : fillPlace) / 2
 
     // Where a child `size` long sits in the applet's `room`, along the panel
     // or across it.

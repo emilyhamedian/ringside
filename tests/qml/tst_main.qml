@@ -247,7 +247,7 @@ TestRoot {
         }
 
         function test_fillOff_data() {
-            return [{ tag: "empty", fill: "" }, { tag: "unknown", fill: "left" }];
+            return [{ tag: "empty", fill: "" }, { tag: "unknown", fill: "left" }, { tag: "inherited", fill: "toString" }];
         }
 
         // Switched off, or set to something it doesn't know, the applet is
