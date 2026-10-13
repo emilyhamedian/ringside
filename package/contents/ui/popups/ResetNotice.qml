@@ -9,10 +9,10 @@ import "../code/style.js" as Style
 import ".."
 
 // A weekly limit that started over before its reset time, under the popup's
-// header, laid out as CheckStatus is: a star beside the news and how long
-// ago it came, and under that which limit it was and what it gave back. It
-// says nothing of who reset it, since a reset the user redeemed themselves
-// looks the same as one the provider gave everyone.
+// header, laid out as CheckStatus is: a star beside which limit reset and
+// how long ago, and under that how far its usage fell. It says nothing of
+// who reset it, since a reset the user redeemed themselves looks the same
+// as one the provider gave everyone.
 GridLayout {
     id: notice
 
@@ -43,11 +43,17 @@ GridLayout {
         Layout.fillWidth: true
         spacing: Kirigami.Units.largeSpacing
 
+        // The time is set smaller, so it sits on the headline's baseline
+        // rather than in the middle of its line.
         Text {
             id: headline
             Layout.fillWidth: true
-            text: i18nc("@info under Claude's or Codex's header: a weekly limit started over before its reset time",
-                        "You got an early reset")
+            Layout.alignment: Qt.AlignBaseline
+            text: notice.window?.label
+                ? i18nc("@info under Claude's or Codex's header: a model's weekly limit started over before its reset time; %1 is the model, e.g. Fable",
+                        "%1 limit reset early", notice.window.label)
+                : i18nc("@info under Claude's or Codex's header: the weekly limit started over before its reset time",
+                        "Weekly limit reset early")
             color: Kirigami.Theme.textColor
             elide: Text.ElideRight
             textFormat: Text.PlainText
@@ -55,6 +61,7 @@ GridLayout {
         }
 
         Text {
+            Layout.alignment: Qt.AlignBaseline
             text: notice.early ? notice.texts.ago(notice.early.at, notice.nowMs) : ""
             color: Style.dim(Kirigami.Theme.textColor)
             font.pointSize: Kirigami.Theme.smallFont.pointSize
@@ -79,18 +86,10 @@ GridLayout {
             anchors.left: parent.left
             width: notice.parent ? notice.parent.width - notice.Layout.leftMargin - notice.Layout.rightMargin
                                    - sign.Layout.preferredWidth - notice.columnSpacing : 0
-            text: {
-                if (!notice.early) {
-                    return "";
-                }
-                const used = notice.texts.percent(notice.early.from);
-                return notice.window.label
-                    ? i18nc("@info under 'You got an early reset'; %1 is a model, %2 a percentage, e.g. Fable, 81%",
-                            "Your %1 limit started over before it was due. The %2 you had used is back.",
-                            notice.window.label, used)
-                    : i18nc("@info under 'You got an early reset'; %1 is a percentage, e.g. 62%",
-                            "Your weekly limit started over before it was due. The %1 you had used is back.", used);
-            }
+            text: notice.early
+                ? i18nc("@info under 'Weekly limit reset early': how much of the limit was used before and after, e.g. 80% and 0%",
+                        "Your usage went from %1 to %2.", notice.texts.percent(notice.early.from), notice.texts.percent(0))
+                : ""
             color: Style.dim(Kirigami.Theme.textColor)
             font.pointSize: Kirigami.Theme.smallFont.pointSize
             wrapMode: Text.Wrap

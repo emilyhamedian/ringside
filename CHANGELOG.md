@@ -22,6 +22,12 @@ follows [Semantic Versioning](https://semver.org/).
   sleeping GPU: an NVIDIA GPU's wait until it's awake, and need Plasma 6.4 or
   later.
 
+### Changed
+
+- The early reset notice names the limit that reset, as "Weekly limit
+  reset early", and says how far your usage fell, as "Your usage went from
+  80% to 0%." Its time now sits level with its title.
+
 ### Fixed
 
 - The rings no longer show a faint band of colour around their arcs.
