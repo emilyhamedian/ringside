@@ -56,6 +56,8 @@ KCM.SimpleKCM {
     property var cfg_hiddenItemsDefault: []
     property var cfg_ringsOnly: []
     property var cfg_ringsOnlyDefault: []
+    property string cfg_fillPanel
+    property string cfg_fillPanelDefault
     property string cfg_cpuTemperatureSensor
     property string cfg_cpuTemperatureSensorDefault
     property string cfg_outerGpu

@@ -207,6 +207,67 @@ TestRoot {
             compare(Plasmoid.configured, configured + 1, "a click opens the settings");
         }
 
+        function test_fillsThePanel_data() {
+            const rows = [];
+            for (const vertical of [false, true]) {
+                for (const [fill, lead] of [["start", 0], ["center", 0.5], ["end", 1]]) {
+                    rows.push({ tag: (vertical ? "vertical " : "horizontal ") + fill,
+                                vertical: vertical, fill: fill, lead: lead, mirrored: false });
+                }
+            }
+            rows.push({ tag: "right-to-left start", vertical: false, fill: "start", lead: 1, mirrored: true });
+            rows.push({ tag: "right-to-left end", vertical: false, fill: "end", lead: 0, mirrored: true });
+            return rows;
+        }
+
+        // Filling, the applet takes the room the panel leaves after it, with
+        // its items at the panel's start, middle or end, which a
+        // right-to-left panel mirrors, and moves them there when the place
+        // changes. The icon that stands in with every item hidden goes to
+        // the same place.
+        function test_fillsThePanel(data) {
+            Plasmoid.configuration = { ringsOnly: [], fillPanel: data.fill === "end" ? "start" : "end" };
+            const applet = panel(data.vertical, 44);
+            applet.mirrored = data.mirrored;
+            Plasmoid.configuration = { ringsOnly: [], fillPanel: data.fill };
+            settle();
+            const s = strip(applet);
+            const length = data.vertical ? applet.height : applet.width;
+            compare(length, (data.vertical ? 900 : 1700) - 100, "takes the free space");
+            compare(data.vertical ? applet.width : applet.height, 44, "as thick as the panel");
+            const size = data.vertical ? s.implicitHeight : s.implicitWidth;
+            const at = s.mapToItem(applet, Qt.point(0, 0));
+            fuzzyCompare(data.vertical ? at.y : at.x, Math.round((length - size) * data.lead), 0.5, "the items' place");
+            checkCells(applet, data.vertical, 44);
+
+            s.monitor.enabledItems = [];
+            settle();
+            compare(data.vertical ? applet.height : applet.width, length, "still filling");
+            const icon = root.find(applet, i => i.source !== undefined && i.active !== undefined && i.isMask !== undefined);
+            verify(icon && icon.visible, "the icon stands in");
+            compare([icon.width, icon.height], [44, 44]);
+            const iconAt = icon.mapToItem(applet, Qt.point(0, 0));
+            fuzzyCompare(data.vertical ? iconAt.y : iconAt.x, Math.round((length - 44) * data.lead), 0.5, "the icon's place");
+        }
+
+        function test_fillOff_data() {
+            return [{ tag: "empty", fill: "" }, { tag: "unknown", fill: "left" }, { tag: "inherited", fill: "toString" }];
+        }
+
+        // Switched off, or set to something it doesn't know, the applet is
+        // back to the strip's width.
+        function test_fillOff(data) {
+            Plasmoid.configuration = { ringsOnly: [], fillPanel: "end" };
+            const applet = panel(false, 44);
+            const s = strip(applet);
+            compare(applet.width, 1600);
+            Plasmoid.configuration = { ringsOnly: [], fillPanel: data.fill };
+            settle();
+            fuzzyCompare(applet.width, s.implicitWidth, 0.001, "as wide as the strip");
+            compare(applet.Layout.maximumWidth, applet.Layout.minimumWidth, "no wider");
+            fuzzyCompare(s.x, 0, 0.5);
+        }
+
         // Claude and Codex show from the start while their first check
         // runs, and stay when it fails; signed out hides them.
         function test_usageItemsWhileLoading() {

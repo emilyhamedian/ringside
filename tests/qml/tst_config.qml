@@ -741,6 +741,7 @@ TestRoot {
                 { tag: "hiddenItems", source: items, drive: page => press(page, "Disk"),
                   saved: { itemOrder: everyItem, hiddenItems: ["claude", "codex"] } },
                 { tag: "ringsOnly", source: items, drive: page => pickIn(page, "What CPU shows", 1), saved: { ringsOnly: ["cpu"] } },
+                { tag: "fillPanel", source: items, drive: page => pickIn(page, "Panel space", 3), saved: { fillPanel: "end" } },
                 { tag: "cpuTemperatureSensor", source: sensors, drive: page => { listed(page); pickIn(page, "CPU temperature", 3); },
                   saved: { cpuTemperatureSensor: "lmsensors/k10temp-pci-00c3/temp1" } },
                 { tag: "outerGpu", source: sensors, drive: page => pickIn(page, "GPU on the outer ring", 1),

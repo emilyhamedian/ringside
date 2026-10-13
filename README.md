@@ -39,7 +39,9 @@ From Local File…*, or from a terminal:
 kpackagetool6 --type Plasma/Applet --install ringside.plasmoid
 ```
 
-Then add **Ringside** to a panel like any other widget.
+Then add **Ringside** to a panel like any other widget. To keep it at the
+far end of the panel without a spacer, set *Panel space* in *Configure
+Ringside… → Panel Items* to fill the free space.
 
 To update to a new release, run the same command with `--upgrade` instead of
 `--install`, then restart Plasma by logging out and back in, or with

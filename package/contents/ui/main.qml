@@ -26,6 +26,20 @@ PlasmoidItem {
                                                                : k === "codex" ? readings.usage.codexPresent
                                                                : true)
 
+    // Where the items sit when the applet takes the panel's free space, as
+    // a panel spacer beside it would: 0, 1 or 2 for the panel's start,
+    // middle or end, and -1 when it takes only the items' room.
+    readonly property int fillPlace: ["start", "center", "end"].indexOf(Plasmoid.configuration.fillPanel)
+    readonly property bool fills: fillPlace >= 0 && (Plasmoid.formFactor === PlasmaCore.Types.Horizontal || vertical)
+    // A right-to-left horizontal panel starts at the right. A test seam.
+    property bool mirrored: Application.layoutDirection === Qt.RightToLeft
+    // How far along the applet the items sit, from 0 at the start to 1 at the end.
+    readonly property real lead: !fills ? 0.5 : (mirrored && !vertical ? 2 - fillPlace : fillPlace) / 2
+    // How far the items move from the applet's middle to their place; their
+    // size is the applet's minimum.
+    readonly property real shift: Math.round((vertical ? height - Layout.minimumHeight : width - Layout.minimumWidth)
+                                             * (lead - 0.5))
+
     // The clicked item's name and cell; the popup follows the cell.
     property string openItem: ""
     // Cleared when the cell goes away, say when its item is switched off,
@@ -74,15 +88,16 @@ PlasmoidItem {
     Keys.onPressed: event => eggClock.watch(event)
 
     // With every item hidden the applet keeps a square the panel's
-    // thickness, for the icon below.
+    // thickness, for the icon below. Filling, it grows along the panel from
+    // there; the panel then gives it the room it would leave at its end.
     Layout.minimumWidth: vertical ? 0 : items.length > 0 ? strip.implicitWidth : thickness
     Layout.preferredWidth: Layout.minimumWidth
-    Layout.maximumWidth: vertical ? Infinity : Layout.minimumWidth
+    Layout.maximumWidth: vertical || fills ? Infinity : Layout.minimumWidth
     Layout.minimumHeight: vertical ? (items.length > 0 ? strip.implicitHeight : thickness) : 0
     Layout.preferredHeight: Layout.minimumHeight
-    Layout.maximumHeight: vertical ? Layout.minimumHeight : Infinity
-    Layout.fillWidth: vertical
-    Layout.fillHeight: !vertical
+    Layout.maximumHeight: vertical && !fills ? Layout.minimumHeight : Infinity
+    Layout.fillWidth: vertical || fills
+    Layout.fillHeight: !vertical || fills
 
     Plasmoid.contextualActions: [
         PlasmaCore.Action {
@@ -109,53 +124,66 @@ PlasmoidItem {
         }
     }
 
-    Strip {
-        id: strip
-        anchors.centerIn: parent
-        // Cells take the panel's full thickness, so their hover and pressed
-        // backgrounds line up with the rest of the panel.
-        width: root.vertical ? parent.width : implicitWidth
-        height: Plasmoid.formFactor === PlasmaCore.Types.Horizontal ? parent.height : implicitHeight
-        visible: root.items.length > 0
-        monitor: readings
-        items: root.items
-        vertical: root.vertical
-        thickness: root.thickness
-        ringsOnly: Plasmoid.configuration.ringsOnly
-        location: Plasmoid.location
-        openItem: popup.visible ? root.openItem : ""
-        egg: eggClock
-        onActivated: (item, cell) => root.toggle(item, cell)
+    // The strip and the icon, moved along the panel to the items' place.
+    // This moves rather than they do: on Qt 6.6 a strip that moves lays
+    // itself out again, which can change its size, a binding loop.
+    Item {
+        x: root.vertical ? 0 : root.shift
+        y: root.vertical ? root.shift : 0
+        width: parent.width
+        height: parent.height
+
+        Strip {
+            id: strip
+            anchors.centerIn: parent
+            // Cells take the panel's full thickness, so their hover and pressed
+            // backgrounds line up with the rest of the panel.
+            width: root.vertical ? parent.width : implicitWidth
+            height: Plasmoid.formFactor === PlasmaCore.Types.Horizontal ? parent.height : implicitHeight
+            visible: root.items.length > 0
+            monitor: readings
+            items: root.items
+            vertical: root.vertical
+            thickness: root.thickness
+            ringsOnly: Plasmoid.configuration.ringsOnly
+            location: Plasmoid.location
+            openItem: popup.visible ? root.openItem : ""
+            egg: eggClock
+            onActivated: (item, cell) => root.toggle(item, cell)
+        }
+
+        // With every item hidden, something still has to be there to right-click.
+        // A filling applet keeps it a square where the items would be.
+        Kirigami.Icon {
+            anchors.centerIn: parent
+            width: root.fills && !root.vertical ? parent.height : parent.width
+            height: root.fills && root.vertical ? parent.width : parent.height
+            visible: root.items.length === 0
+            source: Plasmoid.icon
+            active: mouse.containsMouse
+            MouseArea {
+                id: mouse
+                anchors.fill: parent
+                hoverEnabled: true
+                activeFocusOnTab: parent.visible
+                Accessible.role: Accessible.Button
+                Accessible.name: i18nc("@action:button", "Configure Ringside…")
+                Accessible.onPressAction: Plasmoid.internalAction("configure").trigger()
+                onClicked: Plasmoid.internalAction("configure").trigger()
+                Keys.onPressed: event => {
+                    if (Buttons.pressedBy(event)) {
+                        Plasmoid.internalAction("configure").trigger();
+                        event.accepted = true;
+                    }
+                }
+            }
+        }
     }
 
     Egg {
         id: eggClock
         stage: strip
         vertical: root.vertical
-    }
-
-    // With every item hidden, something still has to be there to right-click.
-    Kirigami.Icon {
-        anchors.fill: parent
-        visible: root.items.length === 0
-        source: Plasmoid.icon
-        active: mouse.containsMouse
-        MouseArea {
-            id: mouse
-            anchors.fill: parent
-            hoverEnabled: true
-            activeFocusOnTab: parent.visible
-            Accessible.role: Accessible.Button
-            Accessible.name: i18nc("@action:button", "Configure Ringside…")
-            Accessible.onPressAction: Plasmoid.internalAction("configure").trigger()
-            onClicked: Plasmoid.internalAction("configure").trigger()
-            Keys.onPressed: event => {
-                if (Buttons.pressedBy(event)) {
-                    Plasmoid.internalAction("configure").trigger();
-                    event.accepted = true;
-                }
-            }
-        }
     }
 
     PlasmaCore.AppletPopup {
