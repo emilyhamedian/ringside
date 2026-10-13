@@ -1948,6 +1948,28 @@ TestRoot {
             compare(tile.floor, 40, "raised once well clear");
         }
 
+        // Until the monitor says process models may be made, the CPU and
+        // memory popups leave out their lists, and the rule above them, and
+        // make no model.
+        function test_processListsWaitForTheMonitor_data() {
+            return [{ tag: "cpu", popup: "CpuPopup" }, { tag: "memory", popup: "MemoryPopup" }];
+        }
+
+        function test_processListsWaitForTheMonitor(data) {
+            const m = monitorWith({ processesReadable: false, processSample: null });
+            const popup = load(data.popup, m);
+            const list = find(popup, i => i.key !== undefined && i.threads !== undefined && i.rows !== undefined);
+            verify(list && !list.visible);
+            const scan = Array.from(list.resources).find(o => o.instantiator !== undefined);
+            compare(scan.model, null);
+            const height = popup.implicitHeight;
+            m.processesReadable = true;
+            waitForRendering(popup);
+            verify(list.visible);
+            verify(scan.model !== null);
+            verify(popup.implicitHeight > height, popup.implicitHeight + " after " + height);
+        }
+
         // The room a popup has on a 1920 × 1080 screen at `scale`, under a
         // 44 px panel, with 10 px for the dialog's margins, at Plasma's usual
         // grid unit of 18 px.

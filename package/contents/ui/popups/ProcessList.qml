@@ -11,7 +11,8 @@ import "../code/style.js" as Style
 import ".."
 
 // The three heaviest processes by CPU or by memory, read while its popup is
-// open. Until the list has readings, a busy indicator stands in for its rows.
+// open and the list is shown. Until the list has readings, a busy indicator
+// stands in for its rows.
 ColumnLayout {
     id: list
 
@@ -38,7 +39,7 @@ ColumnLayout {
     // Plasma 6.0 to 6.2 lack "memory", so the list asks for what they offer.
     ProcessScan {
         id: scan
-        active: list.sample === null
+        active: list.sample === null && list.visible
     }
 
     Caption {

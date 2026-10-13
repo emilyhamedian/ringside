@@ -31,6 +31,9 @@ follows [Semantic Versioning](https://semver.org/).
 ### Fixed
 
 - The rings no longer show a faint band of colour around their arcs.
+- On Plasma 6.4 or later with an NVIDIA GPU, opening the CPU or memory popup
+  no longer wakes the GPU when it's asleep. Their top-process lists now show
+  once the GPU has been awake while Ringside is running, and from then on.
 
 ## [0.3.1] - 2026-10-11
 

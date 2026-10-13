@@ -3,9 +3,11 @@
 
 pragma ComponentBehavior: Bound
 import QtQuick
+import org.kde.ksysguard.process as Process
 import org.kde.ksysguard.sensors as Sensors
 import org.kde.plasma.plasma5support as P5Support
 import "code/format.js" as Format
+import "code/gpugate.js" as Gate
 import "code/hardware.js" as Hardware
 import "code/history.js" as History
 import "code/items.js" as Items
@@ -123,6 +125,42 @@ Item {
 
     // The helper's report (see code/ringside-info.sh), {} until it answers.
     property var hardware: ({})
+
+    // From Plasma 6.4, libksysguard runs nvidia-smi, which wakes an NVIDIA
+    // GPU, whenever plasmashell's first process model is made, as a popup's
+    // top-process list makes one. So the lists wait until every NVIDIA GPU
+    // has been seen awake, and the monitor then keeps a model of its own for
+    // the widget's life, so no list makes the first again.
+    property bool processesReadable: false
+    // While a CPU or memory popup waits for that, the NVIDIA GPUs' power
+    // states are polled with the discrete GPUs' (see pollPower).
+    readonly property bool watchingNvidia: !processesReadable && nvidiaBdfs().length > 0
+        && ["cpu", "memory"].includes(openPopup)
+
+    function nvidiaBdfs() {
+        return (hardware.gpus ?? []).filter(gpu => gpu.vendor === "10de").map(gpu => gpu.bdf);
+    }
+
+    // Takes a power poll's states, { BDF: { status, control } }.
+    function noteNvidia(states) {
+        const bdfs = nvidiaBdfs();
+        if (!processesReadable && bdfs.length > 0 && bdfs.every(bdf => states[bdf] && !Gate.sleeping(states[bdf].status))) {
+            processesReadable = true;
+            Log.write(journal, "info", "every NVIDIA GPU is awake, so the top-process lists can start");
+        }
+    }
+
+    // Holds libksysguard's process plugins once they may be loaded. Disabled
+    // and asking for nothing, it reads no process itself.
+    Instantiator {
+        id: processKeeper
+        active: monitor.processesReadable
+
+        Process.ProcessDataModel {
+            enabled: false
+            enabledAttributes: []
+        }
+    }
     // Which popup is open, so GPU reads can follow what's on screen.
     property string openPopup: ""
     // The hardware helper.
@@ -334,6 +372,9 @@ Item {
     function pollPower() {
         const bdfs = readers().filter(r => r.kind === "discrete" && (r.leading || r.leader === null))
             .map(r => r.info.bdf);
+        if (watchingNvidia) {
+            nvidiaBdfs().filter(bdf => !bdfs.includes(bdf)).forEach(bdf => bdfs.push(bdf));
+        }
         if (bdfs.length > 0) {
             Qt.callLater(monitor.deferPowerPoll, helper.command("pm " + bdfs.join(" ")));
         }
@@ -620,8 +661,14 @@ Item {
         dropOtherSensors();
         showAll();
     }
-    // Once the bindings on the report have settled.
-    onHardwareChanged: Qt.callLater(monitor.dropOtherSensors)
+    // Once the bindings on the report have settled. Without an NVIDIA GPU
+    // the process lists have nothing to wait for.
+    onHardwareChanged: {
+        Qt.callLater(monitor.dropOtherSensors);
+        if (hardware.gpus !== undefined && nvidiaBdfs().length === 0) {
+            processesReadable = true;
+        }
+    }
 
     Timer {
         objectName: "sample"
@@ -637,6 +684,14 @@ Item {
         running: monitor.systemShown
         repeat: true
         onTriggered: monitor.latch(true)
+    }
+
+    Timer {
+        interval: 2000
+        running: monitor.watchingNvidia
+        repeat: true
+        triggeredOnStart: true
+        onTriggered: monitor.pollPower()
     }
 
     // The clock: steps every GPU reader (leadership, interest, sleep gates)
@@ -848,6 +903,10 @@ Item {
                                                           : "; the GPU item and the hardware details stay empty"));
             if (left > 0) {
                 start();
+            } else {
+                // Without the report there's no knowing about NVIDIA GPUs,
+                // and the lists show as they did before they waited.
+                monitor.processesReadable = true;
             }
         }
         onTriggered: {
@@ -902,6 +961,7 @@ Item {
                     r.takeStatus(s.status, s.control, readAt);
                 }
             }
+            monitor.noteNvidia(states);
         }
     }
 

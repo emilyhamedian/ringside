@@ -226,9 +226,13 @@ PopupPage {
         }
     }
 
-    Divider {}
+    // Left out until the monitor says process models may be made.
+    Divider {
+        visible: popup.monitor.processesReadable
+    }
 
     ProcessList {
+        visible: popup.monitor.processesReadable
         key: "usage"
         threads: popup.threads
         sample: popup.monitor.processSample || null
