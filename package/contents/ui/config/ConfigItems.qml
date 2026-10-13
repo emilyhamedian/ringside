@@ -269,6 +269,7 @@ ConfigPage {
                 model: [i18nc("@item:inlistbox how much of the panel Ringside takes", "Only what the items need"), first,
                         i18nc("@item:inlistbox how much of the panel Ringside takes", "Fill free space, items in the middle"), last]
                 currentIndex: Math.max(0, places.indexOf(page.cfg_fillPanel))
+                implicitContentWidthPolicy: QQC2.ComboBox.WidestText
                 Accessible.name: i18nc("@label:listbox", "Panel space")
                 onActivated: index => page.cfg_fillPanel = places[index]
             }
