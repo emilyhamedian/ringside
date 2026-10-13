@@ -6,6 +6,13 @@ follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- *Panel space*, under Panel Items, lets Ringside fill the panel's free
+  space with its items at the start, middle or end, so it can keep to the
+  far end of the panel without a spacer widget beside it. It's off by
+  default.
+
 ## [0.3.1] - 2026-10-11
 
 ### Added
