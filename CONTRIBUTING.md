@@ -64,3 +64,12 @@ Have a look before anything big. A few smaller things:
 - Commit titles name the part of Ringside changed and what changed:
   `usage: show an early reset in the popup`, `ci: cache the Fedora image`.
   Title a pull request the same way, since it becomes the squashed commit.
+- Changelog entries go under `[Unreleased]` in Added, Changed or Fixed, one
+  line each, about what users see: "GPU popup lists each GPU's top
+  processes, with their usage and VRAM." Lead with the thing, in the present
+  tense. Give an example only where it saves words ("80% → 0%"), put a limit
+  last ("NVIDIA needs Plasma 6.4 or later."), and name a fix by the problem
+  it removes ("Faint band of colour on the rings."). Leave out how and why;
+  the pull request has those. A release moves them under its own dated
+  heading, `## [0.3.2] - 2026-10-13`, leaves `[Unreleased]` empty, and points
+  the compare links at the new tag.

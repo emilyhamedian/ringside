@@ -8,36 +8,22 @@ follows [Semantic Versioning](https://semver.org/).
 
 ### Added
 
-- *Panel space*, under Panel Items, lets Ringside fill the panel's free
-  space with its items at the start, middle or end, so it can keep to the
-  far end of the panel without a spacer widget beside it. It's off by
-  default. A click in that space closes an open popup.
-- The GPU popup lists your processes using each GPU, with each one's share
-  of the GPU and its video memory. Processes sharing a name add up to one
-  row. Compute work, such as a Blender render through ROCm, is listed with
-  its memory and a dash for its share, which the kernel doesn't count; when
-  the GPU is busier than the rest add up to, it comes first. Each GPU lists
-  three, or two each with two GPUs awake, and fewer or none where the popup
-  would otherwise outgrow the screen. Reading the lists never wakes a
-  sleeping GPU: an NVIDIA GPU's wait until it's awake, and need Plasma 6.4 or
-  later.
-- Pointing at a graph shows what it read there and when, in place of the
-  peak at the end of its caption: "30% · 2:14:05 PM", or for an hour or a
-  day the average and the highest of that stretch. From the keyboard, a
-  graph takes focus and the arrow keys move along it.
+- Panel space: Ringside can fill the panel's free space, with its items at
+  the start, middle or end.
+- GPU popup lists each GPU's top processes, with their usage and VRAM.
+  NVIDIA needs Plasma 6.4 or later.
+- Hover over a graph, or use the arrow keys, to see a value and when it was
+  read.
 
 ### Changed
 
-- The early reset notice names the limit that reset, as "Weekly limit
-  reset early", and says how far your usage fell, as "Your usage went from
-  80% to 0%." Its time now sits level with its title.
+- Clearer early reset notice, showing your usage before and after (e.g. 80%
+  → 0%).
 
 ### Fixed
 
-- The rings no longer show a faint band of colour around their arcs.
-- On Plasma 6.4 or later with an NVIDIA GPU, opening the CPU or memory popup
-  no longer wakes the GPU when it's asleep. Their top-process lists now show
-  once the GPU has been awake while Ringside is running, and from then on.
+- Faint band of colour on the rings.
+- CPU and memory popups no longer wake a sleeping NVIDIA GPU.
 
 ## [0.3.1] - 2026-10-11
 
