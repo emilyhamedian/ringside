@@ -28,6 +28,12 @@ follows [Semantic Versioning](https://semver.org/).
   reset early", and says how far your usage fell, as "Your usage went from
   80% to 0%." Its time now sits level with its title.
 
+### Fixed
+
+- On Plasma 6.4 or later with an NVIDIA GPU, opening the CPU or memory popup
+  no longer wakes the GPU when it's asleep. Their top-process lists now show
+  once the GPU has been awake while Ringside is running, and from then on.
+
 ## [0.3.1] - 2026-10-11
 
 ### Added

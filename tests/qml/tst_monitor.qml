@@ -274,6 +274,41 @@ TestRoot {
             fuzzyCompare(monitor.gpuProcesses.find(p => p.name === "game").usage, 25, 0.5);
         }
 
+        // The process models a monitor holds itself.
+        function keptModels(m) {
+            return Array.from(m.data).filter(c => c.objectAt !== undefined).map(i => i.object)
+                .filter(o => o && o.availableAttributes !== undefined);
+        }
+
+        // From Plasma 6.4, libksysguard wakes an NVIDIA GPU as the first
+        // process model is made, so the top-process lists wait until every
+        // NVIDIA GPU has been seen awake, and the monitor then keeps a model
+        // of its own, so none is made first again. A machine without an
+        // NVIDIA GPU doesn't wait.
+        function test_processListsWaitForNvidia() {
+            verify(monitor.processesReadable, "no NVIDIA GPU, no wait");
+            compare(keptModels(monitor).length, 1);
+            const other = makeMonitor({ helperPath: dataPath("fake-info-nvidia.sh") });
+            tryVerify(() => other.hardware.cpu !== undefined, 10000);
+            compare(other.nvidiaBdfs(), ["0000:fe:00.0"]);
+            verify(!other.processesReadable);
+            compare(keptModels(other).length, 0);
+            verify(!other.watchingNvidia, "nothing to wait for with no list open");
+            other.openPopup = "cpu";
+            verify(other.watchingNvidia);
+            const nvidia = other.readers().find(r => r.info.bdf === "0000:fe:00.0");
+            tryVerify(() => nvidia.pmReadAt >= 0, 10000, "the NVIDIA GPU's state is read");
+            compare(nvidia.pmStatus, "suspended");
+            verify(!other.processesReadable, "still waiting while it sleeps");
+            other.noteNvidia({ "0000:fe:00.0": { status: "active", control: "auto" } });
+            verify(other.processesReadable);
+            verify(!other.watchingNvidia);
+            compare(keptModels(other).length, 1);
+            other.openPopup = "";
+            verify(other.processesReadable, "for the widget's life");
+            compare(keptModels(other).length, 1);
+        }
+
         function powerStatesOf(m) {
             return Array.from(m.data).find(child => child.pendingSource !== undefined);
         }

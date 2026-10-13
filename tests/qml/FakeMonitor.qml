@@ -33,6 +33,7 @@ QtObject {
         { name: "plasmashell", usage: 3.1 * 16, memory: 620 * 1024 ** 2, count: 1 },
         { name: "kwin_wayland", usage: 2.6 * 16, memory: 410 * 1024 ** 2, count: 1 }
     ]
+    property bool processesReadable: true
     // Stands in for the GPU popup's processes, before they are grouped, each
     // on the GPU named by its PCI address, or for NVIDIA as ksystemstats
     // names it. Blender's ROCm compute counts no usage.
