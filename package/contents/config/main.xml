@@ -72,6 +72,10 @@
       <label>Ring items drawn without their text</label>
       <default></default>
     </entry>
+    <entry name="fillPanel" type="String">
+      <label>Take the panel's free space with the items at its "start", "center" or "end"; empty to take only the items' room</label>
+      <default></default>
+    </entry>
   </group>
 
   <group name="Sensors">

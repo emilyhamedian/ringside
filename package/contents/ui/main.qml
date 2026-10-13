@@ -26,6 +26,22 @@ PlasmoidItem {
                                                                : k === "codex" ? readings.usage.codexPresent
                                                                : true)
 
+    // Where the items sit along the panel, from 0 at its start to 1 at its
+    // end, when the applet takes the panel's free space as a panel spacer
+    // beside it would; undefined when it takes only the items' room.
+    readonly property var fillLead: ({ start: 0, center: 0.5, end: 1 })[Plasmoid.configuration.fillPanel]
+    readonly property bool fills: fillLead !== undefined
+                                  && (Plasmoid.formFactor === PlasmaCore.Types.Horizontal || vertical)
+    // A right-to-left horizontal panel starts at the right. A test seam.
+    property bool mirrored: Application.layoutDirection === Qt.RightToLeft
+    readonly property real lead: !fills ? 0.5 : mirrored && !vertical ? 1 - fillLead : fillLead
+
+    // Where a child `size` long sits in the applet's `room`, along the panel
+    // or across it.
+    function offset(room, size, along) {
+        return Math.round((room - size) * (along ? lead : 0.5));
+    }
+
     // The clicked item's name and cell; the popup follows the cell.
     property string openItem: ""
     // Cleared when the cell goes away, say when its item is switched off,
@@ -74,15 +90,16 @@ PlasmoidItem {
     Keys.onPressed: event => eggClock.watch(event)
 
     // With every item hidden the applet keeps a square the panel's
-    // thickness, for the icon below.
+    // thickness, for the icon below. Filling, it grows along the panel from
+    // there; the panel then gives it the room it would leave at its end.
     Layout.minimumWidth: vertical ? 0 : items.length > 0 ? strip.implicitWidth : thickness
     Layout.preferredWidth: Layout.minimumWidth
-    Layout.maximumWidth: vertical ? Infinity : Layout.minimumWidth
+    Layout.maximumWidth: vertical || fills ? Infinity : Layout.minimumWidth
     Layout.minimumHeight: vertical ? (items.length > 0 ? strip.implicitHeight : thickness) : 0
     Layout.preferredHeight: Layout.minimumHeight
-    Layout.maximumHeight: vertical ? Layout.minimumHeight : Infinity
-    Layout.fillWidth: vertical
-    Layout.fillHeight: !vertical
+    Layout.maximumHeight: vertical && !fills ? Layout.minimumHeight : Infinity
+    Layout.fillWidth: vertical || fills
+    Layout.fillHeight: !vertical || fills
 
     Plasmoid.contextualActions: [
         PlasmaCore.Action {
@@ -111,7 +128,8 @@ PlasmoidItem {
 
     Strip {
         id: strip
-        anchors.centerIn: parent
+        x: root.offset(parent.width, width, !root.vertical)
+        y: root.offset(parent.height, height, root.vertical)
         // Cells take the panel's full thickness, so their hover and pressed
         // backgrounds line up with the rest of the panel.
         width: root.vertical ? parent.width : implicitWidth
@@ -135,8 +153,12 @@ PlasmoidItem {
     }
 
     // With every item hidden, something still has to be there to right-click.
+    // A filling applet keeps it a square where the items would be.
     Kirigami.Icon {
-        anchors.fill: parent
+        x: root.offset(parent.width, width, !root.vertical)
+        y: root.offset(parent.height, height, root.vertical)
+        width: root.fills && !root.vertical ? parent.height : parent.width
+        height: root.fills && root.vertical ? parent.width : parent.height
         visible: root.items.length === 0
         source: Plasmoid.icon
         active: mouse.containsMouse
