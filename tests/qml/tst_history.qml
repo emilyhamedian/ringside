@@ -48,6 +48,24 @@ TestCase {
 
     // By default the top sits 0.75 px down and zero 0.75 px up, half the
     // 1.5 px stroke, so a line along either edge draws whole.
+    // A point's time: at a minute, a reading an interval apart back from
+    // the last; at an hour or a day, the start of its wall-clock bucket,
+    // the last drawn being the one before the open bucket the last reading
+    // fell in.
+    function test_pointTime() {
+        const last = Date.UTC(2026, 9, 13, 21, 15, 7, 400);
+        compare(History.pointTime("minute", 59, 60, last, 1000), last);
+        compare(History.pointTime("minute", 0, 60, last, 1000), last - 59000);
+        compare(History.pointTime("minute", 9, 10, last, 2000), last);
+        compare(History.pointTime("hour", 119, 120, last, 1000), Date.UTC(2026, 9, 13, 21, 14, 30));
+        compare(History.pointTime("hour", 0, 120, last, 1000), Date.UTC(2026, 9, 13, 20, 15, 0));
+        compare(History.pointTime("day", 143, 144, last, 1000), Date.UTC(2026, 9, 13, 21, 0, 0));
+        compare(History.pointTime("day", 142, 143, last, 1000), Date.UTC(2026, 9, 13, 21, 0, 0), "a day not yet full");
+        verify(Number.isNaN(History.pointTime("minute", 0, 60, NaN, 1000)), "before the first reading");
+        verify(Number.isNaN(History.pointTime("hour", 120, 120, last, 1000)), "past the end");
+        verify(Number.isNaN(History.pointTime("hour", -1, 120, last, 1000)));
+    }
+
     function test_pointsForAFullHistory() {
         var pts = History.points([0, 50, 100], 3, 100, 50, 100);
         compare(pts.length, 3);

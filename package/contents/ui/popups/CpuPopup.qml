@@ -68,9 +68,12 @@ PopupPage {
             caption: i18nc("@title:group", "Usage")
             spans: popup.monitor
             graphTop: words.percent(100)
+            graphReading: cpuGraph.reading
 
             Graph {
+                id: cpuGraph
                 Layout.fillWidth: true
+                describe: i => words.pointText(values, highs, i, v => words.percent(v))
                 values: popup.monitor.cpuHistory
                 highs: popup.monitor.cpuHighs
                 length: popup.monitor.historyLength

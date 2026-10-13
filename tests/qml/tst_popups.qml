@@ -8,6 +8,7 @@ import QtTest
 import org.kde.kirigami as Kirigami
 import "../../package/contents/ui/code/format.js" as Format
 import "../../package/contents/ui/code/style.js" as Style
+import "../../package/contents/ui"
 
 // Every popup against FakeMonitor in the states the gallery shows, loaded the
 // way main.qml loads them. qmllint can't type the duck-typed monitor, so a
@@ -232,6 +233,13 @@ TestRoot {
     }
 
     Component {
+        id: wordsComponent
+        Words {
+            monitor: null
+        }
+    }
+
+    Component {
         id: plain
         FakeMonitor {}
     }
@@ -295,6 +303,8 @@ TestRoot {
         function init() {
             monitors.forEach(m => m.destroy());
             monitors = [];
+            // Off every popup, so none opens under a pointer left over a graph.
+            mouseMove(root, root.width - 1, root.height - 1);
             failOnWarning(/TypeError|ReferenceError|SyntaxError|is not a function|Unable to assign|Cannot assign|Binding loop|polish loop/);
         }
 
@@ -374,6 +384,123 @@ TestRoot {
             loader.setSource(Qt.resolvedUrl("../../package/contents/ui/popups/" + popup + ".qml"), { monitor: monitor });
             waitForRendering(loader.item);
             return loader.item;
+        }
+
+        // A graph's hover overlay, and the tile around it.
+        function hoverOf(tile) {
+            return find(tile, i => i.keyIndex !== undefined && i.secondPoints !== undefined);
+        }
+
+        function graphTile(popup, caption) {
+            return find(popup, i => i.graphReading !== undefined && i.caption === caption && i.visible);
+        }
+
+        // The caption line's top-end text: the top, or the reading over it.
+        function topOf(tile) {
+            return find(tile, i => i.horizontalAlignment === Text.AlignRight && i.font && i.font.features
+                                   && i.font.features.tnum === 1 && i.text !== undefined && i.elide !== undefined);
+        }
+
+        // Over a graph the point under the pointer is marked and its reading
+        // and time take the caption's end in the text colour, giving it back
+        // as the pointer leaves. At an hour or a day the point is a stretch,
+        // with its average and highest; the throughput gives both directions.
+        function test_hoverShowsAPointsReading_data() {
+            return [{ tag: "cpu", popup: "CpuPopup", caption: "Usage", span: "minute", pattern: /^\S+% · \S+/ },
+                    { tag: "cpu hour", popup: "CpuPopup", caption: "Usage", span: "hour", pattern: /^avg \S+%, high \S+% · \S+/ },
+                    { tag: "temperature hour", popup: "CpuPopup", caption: "Temperature", span: "hour", pattern: /^avg \S+ °C, high \S+ °C · /, temperature: true },
+                    { tag: "memory", popup: "MemoryPopup", caption: "Used", span: "minute", pattern: /^\S+% · / },
+                    { tag: "gpu", popup: "GpuPopup", caption: "Usage", span: "minute", pattern: /^\S+% · / },
+                    { tag: "disk", popup: "DiskPopup", caption: "Read", span: "minute", pattern: /^\S+ \S+\/s · / },
+                    { tag: "network", popup: "NetworkPopup", caption: "Throughput", span: "minute", pattern: /^↓ \S+ \S+ ↑ \S+ \S+ · / }];
+        }
+
+        function test_hoverShowsAPointsReading(data) {
+            const popup = load(data.popup, monitorWith({ graphSpan: data.span }));
+            const tile = graphTile(popup, data.caption);
+            verify(tile, data.caption);
+            const hover = hoverOf(tile);
+            const top = topOf(tile);
+            const before = top.text;
+            verify(hover && top);
+            compare(tile.graphReading, "");
+            mouseMove(hover, hover.width - 1, hover.height / 2);
+            const last = hover.points.length - 1;
+            tryCompare(hover, "index", last);
+            verify(tile.graphReading.match(data.pattern), tile.graphReading);
+            compare(top.text, tile.graphReading);
+            verify(Qt.colorEqual(top.color, Kirigami.Theme.textColor), "in the text colour");
+            const marks = all(hover, i => i.radius !== undefined && i.visible);
+            verify(marks.length >= 1, "a dot on the line");
+            mouseMove(hover, 1, hover.height / 2);
+            tryCompare(hover, "index", 0);
+            compare(top.text, tile.graphReading, "the oldest point's reading");
+            mouseMove(popup, 1, 1);
+            tryCompare(tile, "graphReading", "");
+            compare(top.text, before, "the top comes back");
+        }
+
+        // From the keyboard: the graph takes focus, starts at the newest
+        // point, steps with the arrows and jumps with Home and End, and a
+        // screen reader hears the reading.
+        function test_graphPointsFromTheKeyboard() {
+            const popup = load("CpuPopup", normal);
+            const tile = graphTile(popup, "Usage");
+            const hover = hoverOf(tile);
+            verify(hover.activeFocusOnTab);
+            compare(hover.index, -1);
+            hover.forceActiveFocus();
+            const last = hover.points.length - 1;
+            compare(hover.index, last);
+            keyClick(Qt.Key_Left);
+            compare(hover.index, last - 1);
+            keyClick(Qt.Key_Right);
+            keyClick(Qt.Key_Right);
+            compare(hover.index, last, "stops at the newest");
+            keyClick(Qt.Key_Home);
+            compare(hover.index, 0);
+            keyClick(Qt.Key_Left);
+            compare(hover.index, 0, "stops at the oldest");
+            keyClick(Qt.Key_End);
+            compare(hover.index, last);
+            verify(tile.graphReading !== "");
+            compare(hover.Accessible.name, tile.graphReading);
+        }
+
+        // At a minute the time has its seconds; at an hour or a day, where a
+        // point stands for a stretch, it is to the minute, and the newest
+        // point is the bucket before the one the last reading fell in.
+        function test_pointTimes() {
+            const words = createTemporaryObject(wordsComponent, root, { monitor: normal });
+            const at = new Date(normal.sampledAt);
+            const minute = words.pointTime(59, 60);
+            verify(minute.length > 0);
+            const hour = monitorWith({ graphSpan: "hour" });
+            const hourWords = createTemporaryObject(wordsComponent, root, { monitor: hour });
+            const hourTime = hourWords.pointTime(119, 120);
+            verify(minute.length > hourTime.length, minute + " has seconds, " + hourTime + " doesn't");
+            compare(hourTime, hourWords.shortTime(new Date(at.getTime() - 30000)));
+            compare(words.pointText([30, NaN], [], 1, v => v + "%"), "no reading · " + words.pointTime(1, 2));
+        }
+
+        // A reading too long for the line beside the caption and its span
+        // takes the whole line while it shows.
+        function test_aLongReadingTakesTheLine() {
+            const popup = load("NetworkPopup", normal, false, Kirigami.Units.gridUnit * 14);
+            const tile = graphTile(popup, "Throughput");
+            const hover = hoverOf(tile);
+            const caption = find(tile, i => i.label === "Throughput");
+            verify(caption.visible);
+            mouseMove(hover, hover.width - 1, hover.height / 2);
+            tryVerify(() => tile.graphReading !== "");
+            const top = topOf(tile);
+            verify(top.visible, "the reading shows");
+            verify(top.x >= 0 && top.x + top.width <= top.parent.width + 0.5, "inside the line");
+            const shown = all(top.parent, i => i !== top && i !== top.parent && i.visible && i.width > 0);
+            verify(shown.every(i => i.x + i.width <= top.x + 0.5 || i.x >= top.x + top.width - 0.5),
+                   "nothing else on the line under it: " + JSON.stringify(shown.map(i => [String(i.text ?? i), i.x, i.width, top.x])));
+            mouseMove(popup, 1, 1);
+            tryVerify(() => caption.visible, 1000, "the caption comes back");
         }
 
         // A C-locale expectation in the digits and decimal mark Format uses
@@ -2458,7 +2585,8 @@ TestRoot {
             compare(host.escapes, 1, "the next Escape is the popup's");
         }
 
-        // Every graph's span is a stop in the popup's Tab order.
+        // Every graph's span is a stop in the popup's Tab order, and so is
+        // the graph itself, for its points from the keyboard.
         function test_spansAreInTheTabOrder() {
             const popup = load("CpuPopup", normal, false, widePage);
             const spans = all(popup, i => i.objectName === "span" && i.visible);
@@ -2466,7 +2594,10 @@ TestRoot {
             spans.forEach(s => compare(s.focusPolicy, Qt.StrongFocus));
             spans[0].forceActiveFocus(Qt.TabFocusReason);
             keyClick(Qt.Key_Tab);
-            verify(spans[1].activeFocus, "Tab goes on to the temperature's");
+            const usageGraph = find(popup, i => i.keyIndex !== undefined && i.activeFocus);
+            verify(usageGraph, "Tab goes on to the usage graph's points");
+            keyClick(Qt.Key_Tab);
+            verify(spans[1].activeFocus, "and then to the temperature's span");
         }
 
         // A third longer in every string, the page keeps its width and

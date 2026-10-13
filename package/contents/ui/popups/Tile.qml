@@ -20,6 +20,10 @@ Rectangle {
     // caption line over the top's end, outside the graph so that no line
     // runs through it: "100%", "peak 24.8 Mb/s".
     property string graphTop: ""
+    // A point's reading and time while the graph shows one, in place of the
+    // top: "30% · 2:14:05 PM". The caption and its span give way to it
+    // when the line can't hold both.
+    property string graphReading: ""
     // The text the content ends on, such as a reading, if it doesn't end on
     // a graph: its line has room for descenders below its ink.
     property Item foot: null
@@ -89,7 +93,10 @@ Rectangle {
             id: captionLine
             readonly property real spacing: Kirigami.Units.largeSpacing
             // The dot and the span after the caption, each a space apart.
-            readonly property real spanWidth: span.visible ? Math.ceil(2 * space.advanceWidth + dot.implicitWidth + span.implicitWidth) : 0
+            readonly property real spanWidth: tile.spans !== null ? Math.ceil(2 * space.advanceWidth + dot.implicitWidth + span.implicitWidth) : 0
+            // The reading needs the room the caption and its span take.
+            readonly property bool crowded: tile.graphReading !== ""
+                && Math.ceil(topText.implicitWidth) + spacing + Math.ceil(labelRoom.advanceWidth) + spanWidth > width
             visible: captionText.text !== ""
             Layout.fillWidth: true
             implicitWidth: captionText.implicitWidth + spanWidth + (topText.text !== "" ? spacing + topText.implicitWidth : 0)
@@ -104,7 +111,7 @@ Rectangle {
                 width: span.visible
                     ? Math.min(implicitWidth, parent.width - captionLine.spanWidth - (topText.visible ? topText.width + captionLine.spacing : 0))
                     : parent.width - (topText.visible ? topText.width + captionLine.spacing : 0)
-                visible: text !== ""
+                visible: text !== "" && !captionLine.crowded
                 label: tile.caption
                 detail: tile.spans !== null ? "" : tile.detail
             }
@@ -126,7 +133,7 @@ Rectangle {
                 anchors.left: dot.right
                 anchors.leftMargin: space.advanceWidth
                 anchors.baseline: captionText.baseline
-                visible: tile.spans !== null
+                visible: tile.spans !== null && !captionLine.crowded
                 monitor: tile.spans ?? ({ graphSpan: "minute" })
             }
 
@@ -138,11 +145,15 @@ Rectangle {
             Caption {
                 id: topText
                 anchors.right: parent.right
-                width: Math.max(0, Math.min(Math.ceil(implicitWidth),
-                                            captionLine.width - captionLine.spacing - Math.ceil(labelRoom.advanceWidth)
-                                            - captionLine.spanWidth))
-                visible: text !== "" && width >= Math.ceil(implicitWidth)
-                text: tile.graphTop
+                width: captionLine.crowded ? Math.min(Math.ceil(implicitWidth), captionLine.width)
+                    : Math.max(0, Math.min(Math.ceil(implicitWidth),
+                                           captionLine.width - captionLine.spacing - Math.ceil(labelRoom.advanceWidth)
+                                           - captionLine.spanWidth))
+                visible: text !== "" && (tile.graphReading !== "" || width >= Math.ceil(implicitWidth))
+                text: tile.graphReading !== "" ? tile.graphReading : tile.graphTop
+                // A reading is set in the text colour, apart from the dim top.
+                color: tile.graphReading !== "" ? Kirigami.Theme.textColor : Style.dim(Kirigami.Theme.textColor)
+                elide: Text.ElideLeft
                 font.features: ({ "tnum": 1 })
                 horizontalAlignment: Text.AlignRight
             }

@@ -213,11 +213,21 @@ PopupPage {
         caption: i18nc("@title:group", "Throughput")
         spans: popup.monitor
         graphTop: words.peakText(throughput.tops, popup.monitor.networkBits)
+        graphReading: throughputGraph.reading
         foot: downKey.label
 
         Graph {
+            id: throughputGraph
             Layout.fillWidth: true
             ceiling: false
+            // Both directions at the point, each its average there at an
+            // hour or a day; down's highest is the band.
+            describe: i => {
+                const rate = v => Number.isFinite(v) ? words.rateText(Format.rate(v, popup.monitor.networkBits))
+                                                     : i18nc("@info a point on a graph with no reading", "no reading");
+                return words.pointAt(i18nc("@info the download and upload rates at a point on the throughput graph, e.g. ↓ 24.8 Mb/s ↑ 1.2 Mb/s",
+                                           "↓ %1 ↑ %2", rate(values[i]), rate(secondValues[i])), i, values.length);
+            }
             values: popup.monitor.networkDownHistory
             highs: popup.monitor.networkDownHighs
             second: true
