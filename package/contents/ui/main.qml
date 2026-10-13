@@ -133,6 +133,17 @@ PlasmoidItem {
         }
     }
 
+    // A click in the applet's room away from its items, as when it fills the
+    // panel, closes an open popup. Plasma's panel takes no focus, so the
+    // popup isn't deactivated and wouldn't close by itself. Right-clicks are
+    // left to the panel's menu.
+    MouseArea {
+        anchors.fill: parent
+        enabled: popup.visible
+        acceptedButtons: Qt.LeftButton
+        onClicked: popup.visible = false
+    }
+
     // The strip and the icon, moved along the panel to the items' place.
     // This moves rather than they do: on Qt 6.6 a strip that moves lays
     // itself out again, which can change its size, a binding loop.
