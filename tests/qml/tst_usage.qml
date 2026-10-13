@@ -1939,6 +1939,25 @@ TestRoot {
             return root.find(popup, i => i.early !== undefined && i.window !== undefined);
         }
 
+        // Over the week's graph the poll under the pointer is marked and its
+        // use, and the model limit's beside it, takes the caption's end with
+        // its weekday and time, giving it back as the pointer leaves.
+        function test_weekGraphHover() {
+            mouseMove(root, root.width - 1, root.height - 1);
+            const popup = load("claude");
+            const tile = root.find(popup, i => i.graphReading !== undefined && i.caption === "This week");
+            verify(tile);
+            const hover = root.find(tile, i => i.keyIndex !== undefined && i.secondPoints !== undefined);
+            verify(hover && hover.points.length > 1);
+            compare(tile.graphReading, "");
+            const last = hover.points[hover.points.length - 1];
+            mouseMove(hover, last.x, hover.height / 2);
+            tryCompare(hover, "index", hover.points.length - 1);
+            verify(/^\S+%, Fable \S+% · \S+ \S+/.test(tile.graphReading), tile.graphReading);
+            mouseMove(root, root.width - 1, root.height - 1);
+            tryCompare(tile, "graphReading", "");
+        }
+
         // A limit that started over early is told under the header, without
         // saying who reset it, while the reading carries it and the popup
         // hasn't shown it before, and never beside a failed check.

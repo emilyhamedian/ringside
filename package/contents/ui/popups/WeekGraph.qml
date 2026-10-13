@@ -27,7 +27,9 @@ import "../code/style.js" as Style
 // that goes fades out where and as it was, the marker for now and a first
 // reading's dot fade in and out, and a week that starts over while the
 // popup is open fades out the last week's line, run-out and marker. Any
-// other change is drawn at once.
+// other change is drawn at once. Under the pointer, or the arrow keys once
+// it has focus, it marks a poll and gives its reading, `reading`, for the
+// tile to show (GraphHover).
 Item {
     id: graph
 
@@ -73,6 +75,25 @@ Item {
 
     readonly property var mainPoints: points(window)
     readonly property var secondPoints: points(secondWindow)
+    // The main series' polls drawn, [epoch seconds, percent], one per point.
+    readonly property var mainSamples: placed && window && window.history
+        ? Array.from(window.history).filter(p => p[0] >= start && p[0] <= end) : []
+    // The second series' reading at each of those polls: its latest at or
+    // before it, NaN before its first. The two are polled together, so
+    // this is the same moment's.
+    readonly property var secondAtMain: {
+        const history = placed && secondWindow && secondWindow.history ? Array.from(secondWindow.history) : [];
+        let k = -1;
+        return mainSamples.map(s => {
+            while (k + 1 < history.length && history[k + 1][0] <= s[0]) {
+                ++k;
+            }
+            return k >= 0 ? history[k][1] : NaN;
+        });
+    }
+    // Writes the reading at a poll's index, for `reading`.
+    property var describe: null
+    readonly property string reading: hover.index >= 0 && describe ? describe(hover.index) : ""
     // When that limit runs out, in epoch seconds, while the pace says it
     // will before the reset, as the popup's sentence reads it; NaN
     // otherwise.
@@ -349,6 +370,18 @@ Item {
 
     implicitHeight: plotHeight + (timeShown ? Math.round(Kirigami.Units.smallSpacing / 2) + runOutTime.implicitHeight : 0)
     clip: true
+
+    GraphHover {
+        id: hover
+        x: 0
+        width: parent.width
+        height: graph.plotHeight
+        points: graph.mainPoints
+        secondPoints: graph.secondWindow ? graph.mainPoints.map((p, i) => Qt.point(p.x, Number.isFinite(graph.secondAtMain[i])
+                                                                                 ? graph.yAt(graph.secondAtMain[i]) : NaN)) : []
+        reading: graph.reading
+        z: 1
+    }
 
     LimitRule {
         id: rule

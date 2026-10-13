@@ -351,6 +351,7 @@ PopupPage {
             caption: i18nc("@title:group the current weekly window", "This week")
             // The rule's, so only while the graph draws one.
             graphTop: week.placed ? words.percent(100) : ""
+            graphReading: week.reading
             foot: popup.innerLimit !== null ? allModels : week.foot
             detail: {
                 const date = words.resetDate(popup.weekly);
@@ -363,6 +364,17 @@ PopupPage {
                 Layout.fillWidth: true
                 window: popup.weekly
                 secondWindow: popup.innerLimit
+                // The week's use at a poll, and the model's beside it, and when.
+                describe: i => {
+                    const used = words.percent(week.mainSamples[i][1]);
+                    const second = week.secondAtMain[i];
+                    const reading = popup.innerLimit !== null && Number.isFinite(second)
+                        ? i18nc("@info the week's use at a point on its graph, then a model limit's, e.g. 62%, Fable 30%",
+                                "%1, %2 %3", used, popup.innerLimit.label, words.percent(second))
+                        : used;
+                    return i18nc("@info a graph point's reading and when, e.g. 62% · Mon 2:14 PM", "%1 · %2",
+                                 reading, words.weekdayTime(week.mainSamples[i][0], popup.weekly));
+                }
                 nowMs: popup.nowMs
                 pollAt: popup.pollAt
                 failed: popup.greyShown
