@@ -59,6 +59,7 @@ QtObject {
     readonly property bool present: info !== null
     readonly property string kind: present ? info.kind : ""
     readonly property string vendor: present ? info.vendor : ""
+    readonly property string bdf: present ? info.bdf : ""
     // Gated while the kernel may power it down. The helper's report stands in
     // until the first poll; tools like TLP switch power/control on and off
     // with the power source.

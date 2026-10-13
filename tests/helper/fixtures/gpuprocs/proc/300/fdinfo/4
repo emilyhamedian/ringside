@@ -1,0 +1,6 @@
+drm-driver:	i915
+drm-client-id:	7
+drm-resident-local0:	2097152
+drm-resident-system0:	4096
+drm-engine-render:	300 ns
+drm-engine-capacity-video:	2

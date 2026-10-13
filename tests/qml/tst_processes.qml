@@ -326,11 +326,11 @@ TestRoot {
         }
 
         // A GPU's processes, grouped by name: the busiest first, then those
-        // holding video memory while idle, by how much; a process using
-        // neither is left out, as is every other GPU's.
+        // holding video memory while idle or with no usage counted, by how
+        // much; a process using neither is left out, as is every other GPU's.
         function test_topOnGpu() {
             const rows = [
-                { name: "blender", usage: 9.8, memory: 1100, gpu: "dGPU" },
+                { name: "blender", usage: NaN, memory: 1800, gpu: "dGPU" },
                 { name: "steam", usage: 0.9, memory: 120, gpu: "dGPU" },
                 { name: "steam", usage: 0.5, memory: 92, gpu: "dGPU" },
                 { name: "quiet", usage: 0, memory: 30, gpu: "dGPU" },
@@ -341,14 +341,76 @@ TestRoot {
                 { name: "baloo_file", usage: 0, memory: 0, gpu: "" }
             ];
             compare(Processes.topOnGpu(rows, "dGPU", 10).map(r => [r.name, r.count]),
-                    [["blender", 1], ["steam", 2], ["idle", 1], ["alpha", 1], ["quiet", 1]]);
+                    [["steam", 2], ["blender", 1], ["idle", 1], ["alpha", 1], ["quiet", 1]]);
             const top = Processes.topOnGpu(rows, "dGPU", 2);
-            compare(top.map(r => r.name), ["blender", "steam"]);
-            fuzzyCompare(top[1].usage, 1.4, 1e-9);
-            compare(top[1].memory, 212);
+            compare(top.map(r => r.name), ["steam", "blender"]);
+            fuzzyCompare(top[0].usage, 1.4, 1e-9);
+            compare(top[0].memory, 212);
+            verify(Number.isNaN(top[1].usage), "no usage counted, none made up");
             compare(Processes.topOnGpu(rows, "iGPU", 3).map(r => r.name), ["kwin_wayland"]);
             compare(Processes.topOnGpu(rows, "", 3).length, 0);
             compare(Processes.topOnGpu(rows, "missing", 3).length, 0);
+        }
+
+        // A GPU busier than its counted processes add up to is doing work
+        // the uncounted ones do, so they lead; within a GPU's share the
+        // counted ones explain, they follow.
+        function test_topOnGpuLeadsWithUncountedWork_data() {
+            return [{ tag: "busy", busy: 100, first: "blender" },
+                    { tag: "explained", busy: 8, first: "steam" },
+                    { tag: "unknown", busy: NaN, first: "steam" }];
+        }
+
+        function test_topOnGpuLeadsWithUncountedWork(data) {
+            const rows = [{ name: "steam", usage: 1.4, memory: 212, gpu: "dGPU" },
+                          { name: "blender", usage: NaN, memory: 1800, gpu: "dGPU" }];
+            compare(Processes.topOnGpu(rows, "dGPU", 2, data.busy)[0].name, data.first);
+        }
+
+        // The helper's lines: DRM clients add up per process and GPU, ROCm's
+        // memory stands beside DRM's, and a name keeps its spaces.
+        function test_gpuScan() {
+            const scan = Processes.gpuScan([
+                "t 100.50",
+                "drm 7 0000:03:00.0 40 1024 gfx:1000,compute:500 Web Content",
+                "drm 7 0000:03:00.0 41 512 gfx:200 Web Content",
+                "drm 7 0000:c4:00.0 42 12 - Web Content",
+                "kfd 9 0000:03:00.0 1048576 blender",
+                "drm 9 0000:03:00.0 43 768 - blender",
+                "",
+                "garbage"
+            ].join("\n"));
+            compare(scan.time, 100.5);
+            compare(Object.keys(scan.uses).sort(), ["7 0000:03:00.0", "7 0000:c4:00.0", "9 0000:03:00.0"]);
+            const web = scan.uses["7 0000:03:00.0"];
+            compare(web.name, "Web Content");
+            compare(web.drm, 1536 * 1024);
+            compare(web.engines, { gfx: 1200, compute: 500 });
+            verify(web.counted);
+            const blender = scan.uses["9 0000:03:00.0"];
+            compare(blender.drm, 768 * 1024);
+            compare(blender.rocm, 1048576);
+            verify(!blender.counted);
+        }
+
+        // Usage is the busiest engine's share of the time between two scans,
+        // up to 100%; none without an earlier reading of the process or with
+        // no engine counted. Memory is the larger of DRM's and ROCm's.
+        function test_gpuProcesses() {
+            const before = Processes.gpuScan("t 10\ndrm 7 A 1 100 gfx:0,compute:0 game\ndrm 9 A 2 10 - blender\nkfd 9 A 4096 blender");
+            const after = Processes.gpuScan("t 12\ndrm 7 A 1 100 gfx:500000000,compute:1000000000 game\n"
+                                            + "drm 9 A 2 10 - blender\nkfd 9 A 4096 blender\ndrm 11 A 3 1 gfx:50 new");
+            const found = {};
+            Processes.gpuProcesses(before, after).forEach(p => found[p.name] = p);
+            fuzzyCompare(found.game.usage, 50, 1e-9);
+            compare(found.game.memory, 100 * 1024);
+            compare(found.game.gpu, "A");
+            verify(Number.isNaN(found.blender.usage));
+            compare(found.blender.memory, 4096 * 2.5);
+            verify(Number.isNaN(found.new.usage), "no earlier reading");
+            verify(Processes.gpuProcesses(null, after).every(p => Number.isNaN(p.usage)), "a first scan has no usage");
+            const hot = Processes.gpuScan("t 11\ndrm 7 A 1 100 gfx:9000000000 game");
+            compare(Processes.gpuProcesses(before, hot)[0].usage, 100);
         }
 
         // The GPU scan against the real process model. Where libksysguard

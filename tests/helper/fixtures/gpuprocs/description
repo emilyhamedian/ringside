@@ -1,0 +1,1 @@
+Processes on an AMD dGPU (one with ROCm compute), an Intel iGPU reporting sizes in bytes, an NVIDIA GPU the helper leaves alone, and a process that maps no GPU.

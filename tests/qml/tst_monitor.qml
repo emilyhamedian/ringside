@@ -244,6 +244,29 @@ TestRoot {
             compare(follower.gpuOuter.pmReadAt, before);
         }
 
+        // The GPU popup's processes are read from the helper while it is open:
+        // the first at once, their usage once a second run is in, and nothing
+        // once it closes.
+        function test_gpuProcessesFollowThePopup() {
+            compare(monitor.gpuProcesses.length, 0);
+            monitor.openPopup = "cpu";
+            wait(1500);
+            compare(monitor.gpuProcesses.length, 0, "not for another popup");
+            monitor.openPopup = "gpu";
+            tryVerify(() => monitor.gpuProcesses.length === 2, 3000, "the first run");
+            verify(!monitor.gpuProcessesScanned);
+            tryVerify(() => monitor.gpuProcessesScanned, 3000, "a second run a moment later");
+            const game = monitor.gpuProcesses.find(p => p.name === "game");
+            fuzzyCompare(game.usage, 25, 0.5);
+            compare(game.gpu, "0000:fe:00.0");
+            const blender = monitor.gpuProcesses.find(p => p.name === "blender");
+            verify(Number.isNaN(blender.usage));
+            compare(blender.memory, 2147483648);
+            monitor.openPopup = "";
+            compare(monitor.gpuProcesses.length, 0);
+            verify(!monitor.gpuProcessesScanned);
+        }
+
         function powerStatesOf(m) {
             return Array.from(m.data).find(child => child.pendingSource !== undefined);
         }

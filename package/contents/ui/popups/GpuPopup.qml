@@ -33,20 +33,21 @@ PopupPage {
     // Off opens and closes sections at once, as at Plasma's Instant speed.
     property bool animated: Style.animated(Kirigami.Units)
 
-    // libksysguard reads NVIDIA GPUs' processes with nvidia-smi, which wakes
-    // each NVIDIA GPU it asks, so processes are read only while every NVIDIA
-    // GPU is awake and on show. Reading the others' wakes nothing.
-    readonly property bool processesReadable: awake.length > 0
+    // An AMD or Intel GPU's processes come from the monitor, which reads them
+    // from /proc and /sys and wakes nothing. An NVIDIA GPU's come from
+    // libksysguard, from Plasma 6.4, through nvidia-smi, which wakes each
+    // NVIDIA GPU it asks, so they're read only while every NVIDIA GPU is
+    // awake and on show.
+    readonly property bool nvidiaReadable: slots.some(slot => slot.vendor === "10de" && slot.phase !== "asleep")
         && (popup.monitor.hardware?.gpus ?? []).every(gpu => gpu.vendor !== "10de"
             || slots.some(slot => slot.info?.id === gpu.id && slot.live))
-    // Fixed processes ({ name, usage, memory, gpu }) stand in for the scan
-    // when set; the preview gallery uses them.
+    // Fixed processes ({ name, usage, memory, gpu }) stand in for both when
+    // set; the preview gallery uses them. An NVIDIA GPU's processes name it
+    // as ksystemstats does, the others' by its PCI address.
     readonly property var processSample: popup.monitor.gpuProcessSample ?? null
-    readonly property var processes: processSample ?? processScan.processes
-    // Before Plasma 6.4 the processes' GPUs can't be read, and the lists are
-    // left out.
-    readonly property bool processesShown: processesReadable && (processSample !== null || processScan.columns.length > 0)
-    readonly property bool processesLoading: processSample === null && !processScan.scanned
+    // Before Plasma 6.4 libksysguard doesn't say which NVIDIA GPU a process
+    // uses, and their lists are left out.
+    readonly property bool nvidiaListed: nvidiaReadable && (processSample !== null || processScan.columns.length > 0)
     // Two rows each when two sections share the popup, three for one, fewer
     // where the page would outgrow its room, and none where even one row
     // would.
@@ -80,13 +81,13 @@ PopupPage {
     onImplicitHeightChanged: fitProcesses()
     onRoomChanged: fitProcesses()
     onProcessCountWantedChanged: fitProcesses()
-    onProcessesShownChanged: fitProcesses()
+    onNvidiaListedChanged: fitProcesses()
 
-    // The process model is made, but says nothing of GPUs.
+    // The NVIDIA process model is made, but says nothing of GPUs.
     readonly property bool processesUnavailable: processScan.model !== null && processScan.columns.length === 0
     onProcessesUnavailableChanged: {
         if (processesUnavailable) {
-            Log.write(journal, "debug", "GPU popup: libksysguard says which GPU a process uses from Plasma 6.4, so no processes are listed");
+            Log.write(journal, "debug", "GPU popup: libksysguard says which GPU a process uses from Plasma 6.4, so no NVIDIA GPU's processes are listed");
         }
     }
 
@@ -108,7 +109,7 @@ PopupPage {
 
     ProcessScan {
         id: processScan
-        active: popup.processesReadable && popup.processSample === null
+        active: popup.nvidiaReadable && popup.processSample === null
         attributes: Processes.gpuAttributes
         reading: Processes.gpuReading
     }
@@ -168,10 +169,12 @@ PopupPage {
             temperatureGraphed: live.kind !== "integrated" || !popup.slots.some(slot => slot.kind === "discrete")
             first: popup.open.indexOf(live) === 0
             animated: popup.animated
-            processesShown: popup.processesShown
-            processes: Processes.topOnGpu(popup.processes, live.systemName, popup.processCount)
+            readonly property bool nvidia: live.vendor === "10de"
+            processesShown: nvidia ? popup.nvidiaListed : true
+            processes: Processes.topOnGpu(popup.processSample ?? (nvidia ? processScan.processes : popup.monitor.gpuProcesses),
+                                          nvidia ? live.systemName : live.bdf, popup.processCount, live.usage)
             processCount: popup.processCount
-            processesLoading: popup.processesLoading
+            processesLoading: popup.processSample === null && !(nvidia ? processScan.scanned : popup.monitor.gpuProcessesScanned)
         }
     }
 
@@ -232,8 +235,7 @@ PopupPage {
         property int processCount: 3
         property bool processesLoading: false
         // The list's height on the page, and what it would be with `count` rows.
-        readonly property real processListHeight: processList.visible
-            ? processList.implicitHeight + processList.Layout.bottomMargin : 0
+        readonly property real processListHeight: processList.visible ? processList.heightFor(processList.count) : 0
         function processListHeightFor(count) {
             return processList.heightFor(count);
         }
@@ -375,6 +377,7 @@ PopupPage {
             visible: section.processesShown && section.processCount > 0
             rows: section.processes
             count: section.processCount
+            memoryShown: section.slot.reportsVram
             loading: section.processesLoading && section.processes.length === 0
         }
     }

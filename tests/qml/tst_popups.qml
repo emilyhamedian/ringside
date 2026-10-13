@@ -49,6 +49,7 @@ TestRoot {
         id: integrated
         gpuOuter.kind: "integrated"
         gpuOuter.name: "AMD Radeon 780M Graphics"
+        gpuOuter.bdf: "0000:c4:00.0"
         gpuOuter.power: NaN
         gpuInner.present: false
     }
@@ -58,9 +59,11 @@ TestRoot {
         id: innerAsleep
         gpuOuter.kind: "integrated"
         gpuOuter.name: "AMD Radeon 780M Graphics"
+        gpuOuter.bdf: "0000:c4:00.0"
         gpuOuter.power: NaN
         gpuInner.kind: "discrete"
         gpuInner.name: "AMD Radeon RX 7700S"
+        gpuInner.bdf: "0000:03:00.0"
         gpuInner.phase: "asleep"
         gpuInner.knownVramTotal: 8 * innerAsleep.gib
     }
@@ -70,8 +73,11 @@ TestRoot {
         id: intel
         cpuModel: "Intel Core i7-12700H"
         gpuOuter.name: "NVIDIA GeForce RTX 3060 Laptop GPU"
+        gpuOuter.vendor: "10de"
         gpuOuter.temperatureLabel: ""
         gpuInner.name: "Intel Iris Xe Graphics"
+        gpuInner.vendor: "8086"
+        gpuInner.bdf: "0000:00:02.0"
         gpuInner.temperatureLabel: ""
         gpuInner.reportsTemperature: false
         gpuInner.reportsVram: false
@@ -1988,7 +1994,9 @@ TestRoot {
             const lists = all(popup, i => i.heightFor !== undefined);
             compare(lists.length, 2);
             const shown = lists.filter(l => l.visible);
-            shown.forEach(l => fuzzyCompare(l.implicitHeight + l.Layout.bottomMargin, l.heightFor(l.count), 0.5));
+            // The rows' own layout agrees with the height the list reckons.
+            shown.forEach(l => fuzzyCompare(l.children.reduce((sum, c) => sum + (c.visible ? c.height : 0), 0)
+                                            + l.spacing + l.Layout.bottomMargin, l.heightFor(l.count), 0.5));
             const rest = popup.implicitHeight - shown.reduce((sum, l) => sum + l.heightFor(l.count), 0);
             const count = popup.processCount;
             if (count > 0) {
@@ -2015,28 +2023,31 @@ TestRoot {
         }
 
         // nvidia-smi, which libksysguard reads NVIDIA GPUs' processes with,
-        // wakes them, so no GPU's processes are read, and no process model
-        // is made, unless every NVIDIA GPU is awake and on show. Other GPUs'
-        // are read from /proc whether they sleep or not.
+        // wakes them, so an NVIDIA GPU's processes are read, and a process
+        // model made, only while every NVIDIA GPU is awake and on show. The
+        // other GPUs' come from the monitor's reading of /proc, which wakes
+        // nothing, so their lists show whatever the NVIDIA GPU does.
         function test_nvidiaGate_data() {
             const nvidia = { id: "gpu1", vendor: "10de" };
             const amd = { id: "gpu1", vendor: "1002" };
-            return [{ tag: "NVIDIA awake", phase: "live", info: nvidia, gpus: [nvidia], read: true, lists: 2 },
-                    { tag: "NVIDIA resting", phase: "resting", info: nvidia, gpus: [nvidia], read: false, lists: 0 },
-                    { tag: "NVIDIA asleep", phase: "asleep", info: nvidia, gpus: [nvidia], read: false, lists: 0 },
-                    { tag: "NVIDIA not on show", phase: "live", info: amd, gpus: [amd, { id: "gpu2", vendor: "10de" }], read: false, lists: 0 },
-                    { tag: "AMD asleep", phase: "asleep", info: amd, gpus: [amd], read: true, lists: 1 },
-                    { tag: "NVIDIA asleep, live scan", phase: "asleep", info: nvidia, gpus: [nvidia], read: false, lists: 0, live: true },
-                    { tag: "NVIDIA awake, live scan", phase: "live", info: nvidia, gpus: [nvidia], read: true, live: true }];
+            return [{ tag: "NVIDIA awake", vendor: "10de", phase: "live", info: nvidia, gpus: [nvidia], read: true, lists: 2 },
+                    { tag: "NVIDIA resting", vendor: "10de", phase: "resting", info: nvidia, gpus: [nvidia], read: false, lists: 1 },
+                    { tag: "NVIDIA asleep", vendor: "10de", phase: "asleep", info: nvidia, gpus: [nvidia], read: false, lists: 1 },
+                    { tag: "NVIDIA not on show", vendor: "1002", phase: "live", info: amd, gpus: [amd, { id: "gpu2", vendor: "10de" }],
+                      read: false, lists: 2 },
+                    { tag: "AMD asleep", vendor: "1002", phase: "asleep", info: amd, gpus: [amd], read: false, lists: 1 },
+                    { tag: "NVIDIA asleep, live scan", vendor: "10de", phase: "asleep", info: nvidia, gpus: [nvidia], read: false, live: true },
+                    { tag: "NVIDIA awake, live scan", vendor: "10de", phase: "live", info: nvidia, gpus: [nvidia], read: true, live: true }];
         }
 
         function test_nvidiaGate(data) {
-            const values = { "gpuOuter.phase": data.phase, "gpuOuter.info": data.info, hardware: { gpus: data.gpus } };
+            const values = { "gpuOuter.vendor": data.vendor, "gpuOuter.phase": data.phase, "gpuOuter.info": data.info,
+                             hardware: { gpus: data.gpus } };
             if (data.live) {
                 values.gpuProcessSample = null;
             }
             const popup = load("GpuPopup", monitorWith(values));
-            compare(popup.processesReadable, data.read);
+            compare(popup.nvidiaReadable, data.read);
             if (data.lists !== undefined) {
                 compare(gpuLists(popup).length, data.lists);
             }
@@ -2046,6 +2057,22 @@ TestRoot {
                 compare(scans.length, 1);
                 compare(scans[0].model !== null, data.read, "a process model only while every NVIDIA GPU is awake");
             }
+        }
+
+        // A process whose usage the kernel doesn't count, as ROCm compute's,
+        // shows a dash for it, and an Intel GPU, which reports no video memory
+        // of its own, lists none.
+        function test_gpuRowsWithoutAReading() {
+            const dgpu = load("GpuPopup", monitorWith({ "gpuInner.present": false }));
+            const blender = gpuLists(dgpu)[0];
+            compare(blender.rows[0].name, "blender");
+            verify(Number.isNaN(blender.rows[0].usage));
+            const row = all(blender, c => c.entry !== undefined && c.index !== undefined)[0];
+            compare(row.usage, Format.fixed(NaN, 1));
+            verify(row.Accessible.name.startsWith("blender, usage not counted, "), row.Accessible.name);
+            const intelList = gpuLists(load("GpuPopup", intel))[0];
+            verify(!intelList.memoryShown);
+            compare(all(intelList, c => c.label === "VRAM" && c.visible).length, 0);
         }
 
         // Each temperature graph comes straight under the usage graph it

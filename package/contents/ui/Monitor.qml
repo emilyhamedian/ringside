@@ -211,6 +211,9 @@ Item {
     readonly property var gpuChoice: Hardware.assignGpus(hardware.gpus, config.outerGpu, config.innerGpu)
     readonly property var gpuOuter: readerFor(gpuChoice.outer)
     readonly property var gpuInner: readerFor(gpuChoice.inner)
+    // The AMD and Intel GPUs' processes, read while the GPU popup is open.
+    readonly property var gpuProcesses: gpuProcessReader.processes
+    readonly property bool gpuProcessesScanned: gpuProcessReader.scanned
 
     // Network
     readonly property bool networkBits: config.networkBits
@@ -777,6 +780,12 @@ Item {
     // The empty ring.
     GpuReader {
         id: noGpu
+    }
+
+    GpuProcessReader {
+        id: gpuProcessReader
+        command: helper.command("gpuprocs")
+        active: monitor.gpuShown && monitor.openPopup === "gpu"
     }
 
     PublicAddress {

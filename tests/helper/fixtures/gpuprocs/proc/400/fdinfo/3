@@ -1,0 +1,2 @@
+drm-driver:	nvidia-drm
+drm-client-id:	1

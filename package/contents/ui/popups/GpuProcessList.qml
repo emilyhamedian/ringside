@@ -21,6 +21,9 @@ ColumnLayout {
     // processes come and go.
     property int count: 3
     property bool loading: false
+    // Off for a GPU that reports no video memory of its own, as Intel's
+    // integrated ones don't.
+    property bool memoryShown: true
 
     // Each reading's column is as wide as its widest value, so the columns
     // line up down the rows and hold still as the values change.
@@ -41,6 +44,10 @@ ColumnLayout {
     Layout.leftMargin: Style.contentEdge(Kirigami.Units.largeSpacing)
     Layout.rightMargin: Layout.leftMargin
     Layout.bottomMargin: Math.round(Kirigami.Units.largeSpacing * 1.5)
+    // Reckoned rather than laid out: a hidden list doesn't lay itself out,
+    // so one whose count changed while its section was closed would
+    // otherwise open at its old height for a frame.
+    Layout.preferredHeight: heightFor(count) - Layout.bottomMargin
     spacing: Kirigami.Units.smallSpacing
 
     RowLayout {
@@ -61,6 +68,7 @@ ColumnLayout {
 
         Caption {
             id: vramHead
+            visible: list.memoryShown
             label: i18nc("@title:column a process's video memory", "VRAM")
             Layout.preferredWidth: list.vramWidth
             horizontalAlignment: Text.AlignRight
@@ -112,15 +120,21 @@ ColumnLayout {
                     required property int index
                     readonly property var entry: list.rows[index] || null
                     readonly property string usage: entry ? Format.fixed(entry.usage, 1) : ""
+                    readonly property bool counted: entry !== null && Number.isFinite(entry.usage)
                     readonly property var vram: entry ? Format.bytes(entry.memory) : { value: "", unit: "" }
 
                     Layout.fillWidth: true
                     spacing: Kirigami.Units.largeSpacing
                     Accessible.role: Accessible.StaticText
+                    readonly property string usageSpoken: counted ? i18nc("@info a percentage", "%1%", usage)
+                        : i18nc("@info a process's GPU usage, which the system doesn't count for compute work", "usage not counted")
                     Accessible.name: !entry ? ""
-                        : i18nc("@info accessible name of a GPU process row: the process, its share of the GPU, then its video memory, e.g. blender, 9.8%, 1.1 GiB",
-                                "%1, %2, %3", processName.text, i18nc("@info a percentage", "%1%", usage),
+                        : list.memoryShown
+                        ? i18nc("@info accessible name of a GPU process row: the process, its share of the GPU, then its video memory, e.g. blender, 9.8%, 1.1 GiB",
+                                "%1, %2, %3", processName.text, usageSpoken,
                                 i18nc("@info an amount of memory, e.g. 3.9 GiB", "%1 %2", vram.value, vram.unit))
+                        : i18nc("@info accessible name of a GPU process row: the process, then its share of the GPU, e.g. firefox, 9.8%",
+                                "%1, %2", processName.text, usageSpoken)
 
                     ProcessName {
                         id: processName
@@ -141,13 +155,14 @@ ColumnLayout {
                             id: usageReading
                             anchors.right: parent.right
                             value: row.usage
-                            unit: row.entry ? "%" : ""
+                            unit: row.counted ? "%" : ""
                             unitSpacing: 0
                             accessibleIgnored: true
                         }
                     }
 
                     Item {
+                        visible: list.memoryShown
                         Layout.preferredWidth: list.vramWidth
                         Layout.alignment: Qt.AlignBaseline
                         implicitHeight: vramReading.implicitHeight
