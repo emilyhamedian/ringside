@@ -85,8 +85,10 @@ unless there's a good reason to differ, and may is allowed but optional.
 
 See CONTRIBUTING.md for the checks, style and required approval. Each change
 must have its own branch and pull request, and land on `main` as one squashed
-commit. Agents must open pull requests as drafts; only the maintainer marks
-one ready and turns on auto-merge, and it then merges once CI passes. A
+commit. A branch is named `type/short-name`, the type one of `feat`, `fix`,
+`docs` or `ci`; a release's branch is `release/<version>`. Agents must open
+pull requests as drafts; only the maintainer marks one ready and turns on
+auto-merge, and it then merges once CI passes. A
 release must be its own pull request that only bumps the version and dates
 the changelog; once it lands, tag it on `main` and attach `ringside.plasmoid`
 from `scripts/package.sh`.
