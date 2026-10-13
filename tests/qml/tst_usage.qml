@@ -1950,16 +1950,20 @@ TestRoot {
             const popup = load("claude");
             const notice = resetNotice(popup);
             verify(notice.visible);
-            compare(root.texts(notice), ["You got an early reset", root.localized("3h ago"),
-                                         root.localized("Your weekly limit started over before it was due. The 62% you had used is back.")]);
+            compare(root.texts(notice), ["Weekly limit reset early", root.localized("3h ago"),
+                                         root.localized("Your usage went from 62% to 0%.")]);
             const ago = root.find(notice, i => i.text === root.localized("3h ago"));
             verify(/^\S+ hours \S+ minutes ago$/.test(ago.Accessible.name), ago.Accessible.name);
             verify(root.all(notice, i => i.textFormat !== undefined).every(t => t.textFormat === Text.PlainText));
+            // The smaller time stands on the headline's baseline.
+            const headline = root.find(notice, i => i.text === "Weekly limit reset early");
+            const baseline = i => i.mapToItem(notice, 0, i.baselineOffset).y;
+            fuzzyCompare(baseline(ago), baseline(headline), 0.5);
 
             setClaude({ weekly: entry.weekly,
                         scoped: [Object.assign({}, entry.scoped[0], { earlyReset: early(now - 20, 81) })] });
-            compare(root.texts(notice), ["You got an early reset", "just now",
-                                         root.localized("Your Fable limit started over before it was due. The 81% you had used is back.")]);
+            compare(root.texts(notice), ["Fable limit reset early", "just now",
+                                         root.localized("Your usage went from 81% to 0%.")]);
             monitor.usage.seenResets = { claude: Math.floor(now - 20) };
             verify(!notice.visible);
             monitor.usage.seenResets = {};
