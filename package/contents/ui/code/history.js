@@ -190,6 +190,22 @@ const TIERS = {
     day: { period: 600, length: 144 }
 };
 
+// When point `index` of a graph's `count` was read, in epoch milliseconds:
+// at a minute, readings `intervalMs` apart, the last at `lastMs`; at an
+// hour or a day, the start of its bucket, the last drawn being the one
+// before `lastMs`'s, which is still open and isn't drawn (see add()). NaN
+// before the first reading.
+function pointTime(span, index, count, lastMs, intervalMs) {
+    if (!Number.isFinite(lastMs) || index < 0 || index >= count) {
+        return NaN;
+    }
+    if (!(span in TIERS)) {
+        return lastMs - (count - 1 - index) * intervalMs;
+    }
+    const period = TIERS[span].period * 1000;
+    return (Math.floor(lastMs / period) - count + index) * period;
+}
+
 // A series' record: the minute's readings, as push() keeps them,
 // and a tier (see tier()) for the hour and one for the day.
 function series() {

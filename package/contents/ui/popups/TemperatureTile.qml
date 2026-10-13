@@ -9,6 +9,7 @@ import org.kde.kirigami as Kirigami
 import "../code/format.js" as Format
 import "../code/history.js" as History
 import "../code/style.js" as Style
+import ".."
 
 // A temperature's history, as quiet as the other graphs: no grid. The
 // scale comes from every reading the three spans keep, so it holds still
@@ -73,6 +74,7 @@ Tile {
     visible: graphed && (hasReading || monitor.graphSpan !== "minute" && extent.length > 0)
     caption: i18nc("@title:group", "Temperature")
     spans: monitor
+    graphReading: hover.index >= 0 ? words.pointText(history, highs, hover.index, c => words.degreesText(c)) : ""
     graphTop: {
         if (!Number.isFinite(shownPeak)) {
             return "";
@@ -120,6 +122,14 @@ Tile {
         implicitHeight: Kirigami.Units.gridUnit * Style.GRAPH_HEIGHT
         clip: true
 
+        GraphHover {
+            id: hover
+            anchors.fill: parent
+            points: graph.plot.points
+            reading: tile.graphReading
+            z: 1
+        }
+
         // Moved down from the top so that its line runs through hotY.
         LimitRule {
             id: rule
@@ -151,6 +161,11 @@ Tile {
             Stroke { lines: graph.lines(1); strokeColor: Style.levelColor(1, Kirigami.Theme) }
             Stroke { lines: graph.lines(2); strokeColor: Style.levelColor(2, Kirigami.Theme) }
         }
+    }
+
+    Words {
+        id: words
+        monitor: tile.monitor
     }
 
     component Stroke: ShapePath {

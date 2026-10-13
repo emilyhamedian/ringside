@@ -18,6 +18,9 @@ QtObject {
     property int sampleInterval: Math.min(interval, 1000)
     property int readInterval: sampleInterval - 250
     property string graphSpan: "minute"
+    // When the graphs last took a reading: a fixed afternoon, so renders
+    // and tests place their points the same way.
+    property real sampledAt: new Date(2026, 9, 13, 14, 15, 0).getTime()
     property int historyLength: graphSpan === "hour" ? 120 : graphSpan === "day" ? 144
                               : Math.max(2, Math.round(60000 / sampleInterval))
     readonly property bool bucketed: graphSpan !== "minute"

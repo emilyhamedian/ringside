@@ -29,6 +29,10 @@ PopupPage {
         property var history: []
         property var highs: []
         readonly property var tops: History.tops(history, highs)
+        // Writes the reading at a point (see Graph.describe).
+        property var describe: null
+
+        graphReading: rateGraph.reading
 
         Reading {
             readonly property var r: Format.rate(tile.rate, false)
@@ -38,7 +42,9 @@ PopupPage {
         }
 
         Graph {
+            id: rateGraph
             Layout.fillWidth: true
+            describe: tile.describe
             values: tile.history
             highs: tile.highs
             length: tile.spans.historyLength
@@ -86,6 +92,7 @@ PopupPage {
             caption: i18nc("@title:group disk reads", "Read")
             spans: popup.monitor
             graphTop: words.peakText(read.tops, false)
+            describe: i => words.pointText(read.history, read.highs, i, v => words.rateText(Format.rate(v, false)))
             rate: popup.monitor.diskRead
             history: popup.monitor.diskReadHistory
             highs: popup.monitor.diskReadHighs
@@ -96,6 +103,7 @@ PopupPage {
             caption: i18nc("@title:group disk writes", "Write")
             spans: popup.monitor
             graphTop: words.peakText(write.tops, false)
+            describe: i => words.pointText(write.history, write.highs, i, v => words.rateText(Format.rate(v, false)))
             rate: popup.monitor.diskWrite
             history: popup.monitor.diskWriteHistory
             highs: popup.monitor.diskWriteHighs

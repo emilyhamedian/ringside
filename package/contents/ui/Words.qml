@@ -555,6 +555,50 @@ QtObject {
         return format.replace(/[:.]ss?/, "");
     }
 
+    // When point `index` of a graph's `count` was read, as the time of day:
+    // to the second at a minute, and to the minute at an hour or a day,
+    // where a point stands for the readings from then on.
+    function pointTime(index, count) {
+        const at = History.pointTime(monitor.graphSpan, index, count, monitor.sampledAt, monitor.sampleInterval);
+        if (!Number.isFinite(at)) {
+            return "";
+        }
+        const date = new Date(at);
+        if (monitor.graphSpan !== "minute") {
+            return shortTime(date);
+        }
+        const locale = Qt.locale();
+        const format = locale.timeFormat(Locale.ShortFormat);
+        return date.toLocaleTimeString(locale, /s/.test(format) ? format : format.replace(/(m+)/, "$1:ss"));
+    }
+
+    // A graph point's reading, written by `text`, and when it was read: "30%
+    // · 2:14:05 PM". At an hour or a day a point is a stretch of readings,
+    // so it gives their average and the highest of them.
+    function pointText(values, highs, index, text) {
+        const v = values[index];
+        const reading = !Number.isFinite(v) ? i18nc("@info a point on a graph with no reading", "no reading")
+            : highs.length > index && Number.isFinite(highs[index])
+            ? i18nc("@info an hour's or a day's graph point: the average and the highest reading behind it, e.g. avg 30%, high 52%",
+                    "avg %1, high %2", text(v), text(highs[index]))
+            : text(v);
+        return pointAt(reading, index, values.length);
+    }
+
+    // A reading already written, and when point `index` of `count` was read.
+    function pointAt(reading, index, count) {
+        const when = pointTime(index, count);
+        return when ? i18nc("@info a graph point's reading and its time of day, e.g. 30% · 2:14:05 PM", "%1 · %2", reading, when)
+                    : reading;
+    }
+
+    // A temperature in the unit shown, as a graph's caption line writes one.
+    function degreesText(celsius) {
+        const t = Format.temperature(celsius, monitor.fahrenheit);
+        return monitor.fahrenheit ? i18nc("@info a temperature, e.g. 199 °F", "%1 °F", t)
+                                  : i18nc("@info a temperature, e.g. 93 °C", "%1 °C", t);
+    }
+
     // A percentage, "62%", in the locale's digits, as every view writes
     // one; a dash in place of the number without a reading.
     function percent(value) {

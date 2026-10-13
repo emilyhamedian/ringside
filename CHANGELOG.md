@@ -21,6 +21,10 @@ follows [Semantic Versioning](https://semver.org/).
   would otherwise outgrow the screen. Reading the lists never wakes a
   sleeping GPU: an NVIDIA GPU's wait until it's awake, and need Plasma 6.4 or
   later.
+- Pointing at a graph shows what it read there and when, in place of the
+  peak at the end of its caption: "30% · 2:14:05 PM", or for an hour or a
+  day the average and the highest of that stretch. From the keyboard, a
+  graph takes focus and the arrow keys move along it.
 
 ### Changed
 

@@ -306,9 +306,12 @@ PopupPage {
                 caption: i18nc("@title:group", "Usage")
                 spans: section.monitor
                 graphTop: sectionWords.percent(100)
+                graphReading: usageGraph.reading
 
                 Graph {
+                    id: usageGraph
                     Layout.fillWidth: true
+                    describe: i => sectionWords.pointText(values, highs, i, v => sectionWords.percent(v))
                     values: section.slot.history
                     highs: section.slot.highs
                     length: section.monitor.historyLength

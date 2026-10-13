@@ -115,6 +115,9 @@ Item {
     // Whether anything has been sampled yet: a store loaded before then
     // restores what it kept, and one loaded after saves what is held.
     property bool sampled: false
+    // When the graphs last took a reading, on the wall clock, which places
+    // each of their points in time (History.pointTime()).
+    property real sampledAt: NaN
     property var unsaved: []
 
     // The readings the panel shows, as of the last update interval. A
@@ -438,6 +441,7 @@ Item {
     function sample(nowMs) {
         const now = nowMs ?? Date.now();
         sampled = true;
+        sampledAt = now;
         const closed = { hour: [], day: [] };
         for (const entry of readings()) {
             const s = seriesOf(entry.key);

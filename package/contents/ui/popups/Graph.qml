@@ -17,7 +17,9 @@ import "../code/style.js" as Style
 // A new sample redraws the line at once, each point a slot to the left;
 // nothing on the graph moves on its own. An hour or a day draws each
 // bucket's average, under a fainter band up to its highest reading, and
-// leaves a gap where there was none (see History.add()).
+// leaves a gap where there was none (see History.add()). Under the pointer,
+// or the arrow keys once it has focus, it marks a point and gives its
+// reading, `reading`, for the tile to show (GraphHover).
 Item {
     id: graph
 
@@ -35,6 +37,9 @@ Item {
     property bool ceiling: true
     readonly property color color: Kirigami.Theme.textColor
     readonly property real fillOpacity: Style.AREA
+    // Writes the reading at a point's index, for `reading`; see Words.pointText().
+    property var describe: null
+    readonly property string reading: hover.index >= 0 && describe ? describe(hover.index) : ""
 
     // The top sits where the rule would, with or without it, so a rate's
     // peak sits under the caption line as 100 % does.
@@ -100,6 +105,15 @@ Item {
             capStyle: ShapePath.RoundCap
             PathMultiline { paths: graph.drawn.runs }
         }
+    }
+
+    GraphHover {
+        id: hover
+        anchors.fill: parent
+        points: graph.drawn.main
+        secondPoints: graph.drawn.second
+        reading: graph.reading
+        z: 1
     }
 
     Shape {

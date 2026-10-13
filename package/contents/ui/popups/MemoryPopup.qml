@@ -145,9 +145,12 @@ PopupPage {
             caption: i18nc("@title:group memory in use", "Used")
             spans: popup.monitor
             graphTop: words.percent(100)
+            graphReading: memoryGraph.reading
 
             Graph {
+                id: memoryGraph
                 Layout.fillWidth: true
+                describe: i => words.pointText(values, highs, i, v => words.percent(v))
                 values: popup.monitor.memoryHistory
                 highs: popup.monitor.memoryHighs
                 length: popup.monitor.historyLength
