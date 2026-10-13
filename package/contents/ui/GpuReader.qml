@@ -75,6 +75,9 @@ QtObject {
     // put on a ring: an older one may predate its going to sleep.
     readonly property bool subscribed: leading && wanted && ownPhase === "live" && (!gated || pmReadAt >= wantedSince)
     readonly property string name: present ? Format.gpuModel(info.name, nameSensor.value, info.pciName, info.vendor) : ""
+    // The name ksystemstats gives it, which libksysguard's process model
+    // also tags the processes using it with.
+    readonly property string systemName: present ? String(nameSensor.value ?? "") : ""
     // amdgpu's hwmon label for the sensor ksystemstats reads; Words.sensorName()
     // puts it in plain words.
     readonly property string temperatureLabel: vendor === "1002" ? "edge" : ""

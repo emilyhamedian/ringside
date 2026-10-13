@@ -10,8 +10,9 @@ import "../../package/contents/ui/popups"
 
 // The panel strip and the four popups with FakeMonitor's readings, then the
 // states they have to cope with, then the same under Breeze Light. The
-// top-process lists show FakeMonitor's processSample; only the CPU popup's
-// frequency, load average and per-thread bars read this machine.
+// top-process lists show FakeMonitor's processSample and gpuProcessSample;
+// only the CPU popup's frequency, load average and per-thread bars read this
+// machine.
 // scripts/gallery.sh renders it to a PNG; qml tests/qml/Gallery.qml shows it
 // in a window, and adding -- --snapshot out.png saves a PNG and quits.
 TestRoot {
@@ -158,6 +159,11 @@ TestRoot {
         gpuInner.vramUsed: NaN
         gpuInner.knownVramTotal: NaN
         gpuInner.clock: 1100
+        // Nothing of the user's on the Intel GPU.
+        gpuProcessSample: [
+            { name: "Cyberpunk2077.exe", usage: 58.2, memory: 1.9 * intel.gib, gpu: "NVIDIA GeForce RTX 3060 Laptop GPU" },
+            { name: "obs", usage: 4.1, memory: 412 * 1024 ** 2, gpu: "NVIDIA GeForce RTX 3060 Laptop GPU" }
+        ]
     }
 
     // The Codex ring with the OpenAI logo.

@@ -12,6 +12,9 @@ ColumnLayout {
     id: page
 
     required property var monitor
+    // The height the page has on screen: the screen's, less its panels and
+    // the popup's frame. A page that can grow keeps within it.
+    property real room: Infinity
     property alias systemMonitorShown: footer.systemMonitorShown
     property alias footerLeading: footer.leading
     default property alias sections: body.data

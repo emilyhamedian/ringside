@@ -23,9 +23,30 @@ function reading(columns, values) {
     return { name: values[columns.indexOf("name")], usage: value("usage"), memory: memory * 1024 };
 }
 
-// The heaviest processes by `key` ("usage" or "memory"). Processes sharing a
-// name (a browser's content processes, a compiler's jobs) add up to one row.
-function top(rows, key, count) {
+// The attributes the GPU list asks for: each process's GPU usage, its video
+// memory and which GPU it is on, from libksysguard's gpu plugin. Before
+// libksysguard 6.4 the plugin read only NVIDIA GPUs and didn't say which,
+// so without all three the list is left out.
+function gpuAttributes(available) {
+    const wanted = ["name", "gpu_usage", "gpu_memory", "gpu_module"];
+    return wanted.every(id => available.includes(id)) ? wanted : [];
+}
+
+// One process's use of a GPU, as reading() does for the CPU. The GPU is
+// named as ksystemstats names it.
+function gpuReading(columns, values) {
+    const value = id => values[columns.indexOf(id)];
+    return {
+        name: value("name"),
+        usage: Number(value("gpu_usage")),
+        memory: Number(value("gpu_memory")) * 1024,
+        gpu: String(value("gpu_module") ?? "")
+    };
+}
+
+// Processes sharing a name (a browser's content processes, a compiler's
+// jobs) added up to one.
+function grouped(rows) {
     const groups = new Map();
     for (const row of rows) {
         if (!row.name) {
@@ -37,8 +58,22 @@ function top(rows, key, count) {
         group.count += 1;
         groups.set(row.name, group);
     }
-    return Array.from(groups.values())
+    return Array.from(groups.values());
+}
+
+// The heaviest processes by `key` ("usage" or "memory").
+function top(rows, key, count) {
+    return grouped(rows)
         .filter(g => g[key] > 0)
         .sort((a, b) => b[key] - a[key] || a.name.localeCompare(b.name))
+        .slice(0, count);
+}
+
+// The processes using the GPU named `gpu`, busiest first. A process holding
+// video memory while idle still counts, after the busy ones.
+function topOnGpu(rows, gpu, count) {
+    return grouped(rows.filter(row => row.gpu === gpu))
+        .filter(g => g.usage > 0 || g.memory > 0)
+        .sort((a, b) => b.usage - a.usage || b.memory - a.memory || a.name.localeCompare(b.name))
         .slice(0, count);
 }

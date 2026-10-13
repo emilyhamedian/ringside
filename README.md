@@ -62,6 +62,8 @@ come with Plasma's System Monitor. A few extras need a little more:
 - Memory pressure needs Plasma 6.2 or later.
 - Intel GPUs need Plasma 6.4 or later with the i915 driver, or 6.8 or later
   with xe, and don't report a temperature or VRAM.
+- The processes using each GPU need Plasma 6.4 or later, and `nvidia-smi`
+  for NVIDIA GPUs. Only your own processes are listed.
 - Claude and Codex need Python 3.11 or later.
 - Keeping graph history across restarts needs Qt's LocalStorage module,
   packaged as `qml6-module-qtquick-localstorage` on Debian and Ubuntu.

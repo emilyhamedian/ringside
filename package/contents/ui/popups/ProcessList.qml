@@ -4,20 +4,14 @@
 pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Layouts
-import QtQuick.Shapes
 import org.kde.kirigami as Kirigami
-import org.kde.ksysguard.process as Process
-import org.kde.plasma.components as PlasmaComponents
 import "../code/format.js" as Format
 import "../code/processes.js" as Processes
 import "../code/style.js" as Style
 import ".."
 
-// The three heaviest processes by CPU or by memory. The process model scans
-// /proc every two seconds, so it only exists while its popup is open. Its
-// first scan, made with it, has each process's memory; a process's CPU share
-// is the time it ran between two scans, so that comes with the second. Until
-// the list has readings, a busy indicator stands in for its rows.
+// The three heaviest processes by CPU or by memory, read while its popup is
+// open. Until the list has readings, a busy indicator stands in for its rows.
 ColumnLayout {
     id: list
 
@@ -29,26 +23,8 @@ ColumnLayout {
     // Fixed rows ({ name, usage, memory, count }) stand in for the process
     // scan when set; the preview gallery uses them.
     property var sample: null
-    property var rows: sample || []
-    // Set once the scans that bring readings have run, so a list with none
-    // to show, as a quiet machine's CPU list can be, stops waiting.
-    property bool scanned: false
-    readonly property bool loading: rows.length === 0 && !scanned
-
-    function refresh() {
-        // The columns are the attributes the model took, in order.
-        const columns = Array.from(model.enabledAttributes);
-        const n = model.rowCount();
-        const found = [];
-        for (let r = 0; r < n; ++r) {
-            const values = [];
-            for (let c = 0; c < columns.length; ++c) {
-                values.push(model.data(model.index(r, c), Process.ProcessDataModel.Value));
-            }
-            found.push(Processes.reading(columns, values));
-        }
-        rows = Processes.top(found, key, 3);
-    }
+    readonly property var rows: sample || Processes.top(scan.processes, key, 3)
+    readonly property bool loading: rows.length === 0 && !scan.scanned
 
     Layout.fillWidth: true
     Layout.leftMargin: Style.contentEdge(Kirigami.Units.largeSpacing)
@@ -59,44 +35,10 @@ ColumnLayout {
     Layout.bottomMargin: Math.round(Kirigami.Units.largeSpacing * 1.25)
     spacing: Kirigami.Units.smallSpacing
 
-    Process.ProcessDataModel {
-        id: model
-        enabled: list.sample === null
-        // Plasma 6.0 to 6.2 lack "memory", so the list asks for what they offer.
-        enabledAttributes: Processes.attributes(model.availableAttributes)
-    }
-
-    // The model's first scan runs as it is made, before the connections
-    // below are made, so the list reads it here.
-    Component.onCompleted: {
-        if (sample === null) {
-            refresh();
-        }
-    }
-
-    // Each scan as soon as it lands, read once however many rows it changed.
-    Connections {
-        target: model
-        enabled: list.sample === null
-        function onModelReset() { Qt.callLater(list.refresh); }
-        function onRowsInserted() { Qt.callLater(list.refresh); }
-        function onRowsRemoved() { Qt.callLater(list.refresh); }
-        function onDataChanged() { Qt.callLater(list.refresh); }
-    }
-
-    // The model's timer starts a moment before its first scan, and a tick
-    // less than two seconds after the last scan scans nothing, so its first
-    // tick often goes by and the second scan waits until four seconds.
-    // Asked for its attributes again just after two seconds, the model scans
-    // then, unless a tick just has; either way the readings are in.
-    Timer {
-        interval: 2250
-        running: list.sample === null
-        onTriggered: {
-            model.enabledAttributes = Processes.attributes(model.availableAttributes);
-            list.refresh();
-            list.scanned = true;
-        }
+    // Plasma 6.0 to 6.2 lack "memory", so the list asks for what they offer.
+    ProcessScan {
+        id: scan
+        active: list.sample === null
     }
 
     Caption {
@@ -143,23 +85,11 @@ ColumnLayout {
                                 memory ? i18nc("@info an amount of memory, e.g. 3.9 GiB", "%1 %2", reading.value, reading.unit)
                                        : i18nc("@info a percentage", "%1%", reading.value))
 
-                    Text {
+                    ProcessName {
                         id: processName
+                        entry: row.entry
                         Layout.fillWidth: true
                         Layout.alignment: Qt.AlignBaseline
-                        text: !row.entry ? " "
-                            : row.entry.count > 1 ? i18nc("@info a process and how many of it run, e.g. chrome ×12", "%1 ×%2",
-                                                          row.entry.name, Format.whole(row.entry.count))
-                            : row.entry.name
-                        color: Kirigami.Theme.textColor
-                        font.family: Kirigami.Theme.fixedWidthFont?.family ?? "monospace" // qmllint disable redundant-optional-chaining
-                        font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.92
-                        elide: Text.ElideRight
-                        textFormat: Text.PlainText
-                        // Set, so the names move to the other edge in a
-                        // mirrored layout.
-                        horizontalAlignment: Text.AlignLeft
-                        Accessible.ignored: true
                     }
 
                     // Set like the tiles' readings, with a smaller, dimmer
@@ -175,54 +105,8 @@ ColumnLayout {
             }
         }
 
-        PlasmaComponents.BusyIndicator {
-            anchors.centerIn: parent
-            width: Kirigami.Units.iconSizes.smallMedium
-            height: width
+        ProcessesLoading {
             visible: list.loading
-            Accessible.name: i18nc("@info:status the top processes are being read", "Loading top processes")
-
-            // The theme's own indicator is drawn in its accent colour, which
-            // a widget can't change, so this stands in for it in the dim
-            // text colour of the popup's captions. Like the theme's, it
-            // holds still when animations are off or the window is hidden.
-            contentItem: Shape {
-                id: spinner
-
-                readonly property real stroke: Math.max(1, width / 13)
-                readonly property bool turning: visible && Window.visibility !== Window.Hidden
-                    && Style.animated(Kirigami.Units)
-
-                implicitWidth: Kirigami.Units.iconSizes.smallMedium
-                implicitHeight: implicitWidth
-                preferredRendererType: Shape.CurveRenderer
-
-                ShapePath {
-                    fillColor: "transparent"
-                    strokeColor: Style.dim(Kirigami.Theme.textColor)
-                    strokeWidth: spinner.stroke
-                    capStyle: ShapePath.RoundCap
-
-                    PathAngleArc {
-                        centerX: spinner.width / 2
-                        centerY: spinner.height / 2
-                        radiusX: Math.min(spinner.width, spinner.height) * 0.43 - spinner.stroke / 2
-                        radiusY: radiusX
-                        startAngle: 0
-                        sweepAngle: 270
-                    }
-                }
-
-                // The theme's fixed two seconds a turn: it doesn't follow
-                // the animation speed.
-                RotationAnimator on rotation {
-                    from: 0
-                    to: 360
-                    duration: 2000
-                    loops: Animation.Infinite
-                    running: spinner.turning
-                }
-            }
         }
     }
 }

@@ -33,6 +33,21 @@ QtObject {
         { name: "plasmashell", usage: 3.1 * 16, memory: 620 * 1024 ** 2, count: 1 },
         { name: "kwin_wayland", usage: 2.6 * 16, memory: 410 * 1024 ** 2, count: 1 }
     ]
+    // Stands in for the GPU popup's scan: processes as the model gives them,
+    // each on the GPU named as ksystemstats names it.
+    property var gpuProcessSample: [
+        { name: "blender", usage: 9.8, memory: 1.1 * 1024 ** 3, gpu: "AMD Radeon RX 7700S" },
+        { name: "steamwebhelper", usage: 0.9, memory: 120 * 1024 ** 2, gpu: "AMD Radeon RX 7700S" },
+        { name: "steamwebhelper", usage: 0.5, memory: 92 * 1024 ** 2, gpu: "AMD Radeon RX 7700S" },
+        { name: "steamwebhelper", usage: 0, memory: 40 * 1024 ** 2, gpu: "AMD Radeon RX 7700S" },
+        { name: "firefox", usage: 0.4, memory: 96 * 1024 ** 2, gpu: "AMD Radeon RX 7700S" },
+        { name: "kwin_wayland", usage: 2.1, memory: 212 * 1024 ** 2, gpu: "AMD Radeon 780M Graphics" },
+        { name: "plasmashell", usage: 0.6, memory: 148 * 1024 ** 2, gpu: "AMD Radeon 780M Graphics" },
+        { name: "firefox", usage: 0.2, memory: 40 * 1024 ** 2, gpu: "AMD Radeon 780M Graphics" },
+        { name: "firefox", usage: 0.1, memory: 21 * 1024 ** 2, gpu: "AMD Radeon 780M Graphics" },
+        { name: "Xwayland", usage: 0, memory: 0, gpu: "AMD Radeon 780M Graphics" },
+        { name: "baloo_file", usage: 0, memory: 0, gpu: "" }
+    ]
 
     signal systemMonitorRequested()
     signal configureRequested()
@@ -218,6 +233,10 @@ QtObject {
         property bool reportsVram: true
         property string kind: ""
         property string name: ""
+        property string systemName: name
+        property string vendor: ""
+        // The hardware facts a GpuReader is made from, where a test needs them.
+        property var info: null
         property string temperatureLabel: "edge"
         property real usage: NaN
         property real temperature: NaN
