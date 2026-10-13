@@ -6,6 +6,8 @@ import QtQuick
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
 import "../code/format.js" as Format
+import "../code/log.js" as Log
+import "../code/processes.js" as Processes
 import "../code/style.js" as Style
 import ".."
 
@@ -16,6 +18,8 @@ import ".."
 // wake it. A GPU that wakes opens its section at once and fades it in; one
 // that goes to sleep fades its section out with its last readings, and only
 // then gives way to its line, so the popup changes height once each way.
+// Each open section ends with the processes using its GPU, in as many rows
+// as fit the screen: none on a small screen with two GPUs awake.
 PopupPage {
     id: popup
 
@@ -29,6 +33,69 @@ PopupPage {
     // Off opens and closes sections at once, as at Plasma's Instant speed.
     property bool animated: Style.animated(Kirigami.Units)
 
+    // An AMD or Intel GPU's processes come from the monitor, which reads them
+    // from /proc and /sys and wakes nothing. An NVIDIA GPU's come from
+    // libksysguard, from Plasma 6.4, through nvidia-smi, which wakes each
+    // NVIDIA GPU it asks, so they're read only while every NVIDIA GPU is
+    // awake and on show.
+    readonly property bool nvidiaReadable: slots.some(slot => slot.vendor === "10de" && slot.phase !== "asleep")
+        && (popup.monitor.hardware?.gpus ?? []).every(gpu => gpu.vendor !== "10de"
+            || slots.some(slot => slot.info?.id === gpu.id && slot.live))
+    // Fixed processes ({ name, usage, memory, gpu }) stand in for both when
+    // set; the preview gallery uses them. An NVIDIA GPU's processes name it
+    // as ksystemstats does, the others' by its PCI address.
+    readonly property var processSample: popup.monitor.gpuProcessSample ?? null
+    // Before Plasma 6.4 libksysguard doesn't say which NVIDIA GPU a process
+    // uses, and their lists are left out.
+    readonly property bool nvidiaListed: nvidiaReadable && (processSample !== null || processScan.columns.length > 0)
+    // Two rows each when two sections share the popup, three for one, fewer
+    // where the page would outgrow its room, and none where even one row
+    // would.
+    readonly property int processCountWanted: open.length > 1 ? 2 : 3
+    property int processCount: processCountWanted
+
+    // Sets the rows to the most that fit. The page's height less its lists'
+    // doesn't depend on the rows, so the count settles on the first layout
+    // after a change rather than stepping down a row at a time.
+    function fitProcesses() {
+        // A Section is an inline component, which a cast can't name on Qt 6.6.
+        // qmllint disable missing-property
+        const shown = Array.from({ length: sections.count }, (_, i) => sections.itemAt(i))
+            .filter(section => section && section.visible && section.processesShown);
+        let count = processCountWanted;
+        if (shown.length > 0) {
+            const rest = implicitHeight - shown.reduce((sum, section) => sum + section.processListHeight, 0);
+            while (count > 0 && rest + shown.reduce((sum, section) => sum + section.processListHeightFor(count), 0) > room) {
+                --count;
+            }
+        }
+        // qmllint enable missing-property
+        if (count !== processCount) {
+            if (count < processCountWanted) {
+                Log.write(journal, "debug", "GPU popup: " + count + " process rows a GPU, to fit in " + Math.round(room) + " px");
+            }
+            processCount = count;
+        }
+    }
+
+    onImplicitHeightChanged: fitProcesses()
+    onRoomChanged: fitProcesses()
+    onProcessCountWantedChanged: fitProcesses()
+    onNvidiaListedChanged: fitProcesses()
+
+    // The NVIDIA process model is made, but says nothing of GPUs.
+    readonly property bool processesUnavailable: processScan.model !== null && processScan.columns.length === 0
+    onProcessesUnavailableChanged: {
+        if (processesUnavailable) {
+            Log.write(journal, "debug", "GPU popup: libksysguard says which GPU a process uses from Plasma 6.4, so no NVIDIA GPU's processes are listed");
+        }
+    }
+
+    property LoggingCategory journal: LoggingCategory {
+        name: "ringside.gpu"
+        defaultLogLevel: LoggingCategory.Info
+    }
+
     Component.onCompleted: open = awake
     onAwakeChanged: {
         if (animated && open.some(slot => !awake.includes(slot))) {
@@ -40,6 +107,13 @@ PopupPage {
         }
     }
 
+    ProcessScan {
+        id: processScan
+        active: popup.nvidiaReadable && popup.processSample === null
+        attributes: Processes.gpuAttributes
+        reading: Processes.gpuReading
+    }
+
     Timer {
         id: closing
         interval: Kirigami.Units.longDuration
@@ -48,6 +122,7 @@ PopupPage {
 
     // A section per GPU, kept as it sleeps and wakes.
     Repeater {
+        id: sections
         model: popup.slots.length
 
         delegate: Section {
@@ -94,6 +169,12 @@ PopupPage {
             temperatureGraphed: live.kind !== "integrated" || !popup.slots.some(slot => slot.kind === "discrete")
             first: popup.open.indexOf(live) === 0
             animated: popup.animated
+            readonly property bool nvidia: live.vendor === "10de"
+            processesShown: nvidia ? popup.nvidiaListed : true
+            processes: Processes.topOnGpu(popup.processSample ?? (nvidia ? processScan.processes : popup.monitor.gpuProcesses),
+                                          nvidia ? live.systemName : live.bdf, popup.processCount, live.usage)
+            processCount: popup.processCount
+            processesLoading: popup.processSample === null && !(nvidia ? processScan.scanned : popup.monitor.gpuProcessesScanned)
         }
     }
 
@@ -149,6 +230,15 @@ PopupPage {
         // Faded in while the GPU is awake and out while it sleeps.
         property bool awake: true
         property bool animated: true
+        property bool processesShown: false
+        property var processes: []
+        property int processCount: 3
+        property bool processesLoading: false
+        // The list's height on the page, and what it would be with `count` rows.
+        readonly property real processListHeight: processList.visible ? processList.heightFor(processList.count) : 0
+        function processListHeightFor(count) {
+            return processList.heightFor(count);
+        }
 
         // Intel GPUs publish no temperature, so theirs is left out rather than shown as a dash.
         readonly property bool temperatureShown: slot.reportsTemperature
@@ -280,6 +370,15 @@ PopupPage {
                     pointSize: section.tilePointSize
                 }
             }
+        }
+
+        GpuProcessList {
+            id: processList
+            visible: section.processesShown && section.processCount > 0
+            rows: section.processes
+            count: section.processCount
+            memoryShown: section.slot.reportsVram
+            loading: section.processesLoading && section.processes.length === 0
         }
     }
 }

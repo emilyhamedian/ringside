@@ -10,8 +10,9 @@ import "../../package/contents/ui/popups"
 
 // The panel strip and the four popups with FakeMonitor's readings, then the
 // states they have to cope with, then the same under Breeze Light. The
-// top-process lists show FakeMonitor's processSample; only the CPU popup's
-// frequency, load average and per-thread bars read this machine.
+// top-process lists show FakeMonitor's processSample and gpuProcessSample;
+// only the CPU popup's frequency, load average and per-thread bars read this
+// machine.
 // scripts/gallery.sh renders it to a PNG; qml tests/qml/Gallery.qml shows it
 // in a window, and adding -- --snapshot out.png saves a PNG and quits.
 TestRoot {
@@ -103,6 +104,7 @@ TestRoot {
         id: integrated
         gpuOuter.kind: "integrated"
         gpuOuter.name: "AMD Radeon 780M Graphics"
+        gpuOuter.bdf: "0000:c4:00.0"
         gpuOuter.usage: 18
         gpuOuter.temperature: 52
         gpuOuter.vramUsed: 0.4 * integrated.gib
@@ -125,6 +127,7 @@ TestRoot {
         id: innerAsleep
         gpuOuter.kind: "integrated"
         gpuOuter.name: "AMD Radeon 780M Graphics"
+        gpuOuter.bdf: "0000:c4:00.0"
         gpuOuter.usage: 18
         gpuOuter.temperature: 52
         gpuOuter.vramUsed: 0.4 * innerAsleep.gib
@@ -133,6 +136,7 @@ TestRoot {
         gpuOuter.power: NaN
         gpuInner.kind: "discrete"
         gpuInner.name: "AMD Radeon RX 7700S"
+        gpuInner.bdf: "0000:03:00.0"
         gpuInner.phase: "asleep"
         gpuInner.knownVramTotal: 8 * innerAsleep.gib
     }
@@ -143,6 +147,7 @@ TestRoot {
         cpuModel: "Intel Core i7-12700H"
         cpuTemperature: 78
         gpuOuter.name: "NVIDIA GeForce RTX 3060 Laptop GPU"
+        gpuOuter.vendor: "10de"
         gpuOuter.temperatureLabel: ""
         gpuOuter.usage: 64
         gpuOuter.temperature: 71
@@ -151,6 +156,8 @@ TestRoot {
         gpuOuter.clock: 1650
         gpuOuter.power: 62
         gpuInner.name: "Intel Iris Xe Graphics"
+        gpuInner.vendor: "8086"
+        gpuInner.bdf: "0000:00:02.0"
         gpuInner.temperatureLabel: ""
         gpuInner.reportsTemperature: false
         gpuInner.reportsVram: false
@@ -158,6 +165,12 @@ TestRoot {
         gpuInner.vramUsed: NaN
         gpuInner.knownVramTotal: NaN
         gpuInner.clock: 1100
+        // The Intel GPU reports no video memory of its own, so its list has none.
+        gpuProcessSample: [
+            { name: "Cyberpunk2077.exe", usage: 58.2, memory: 1.9 * intel.gib, gpu: "NVIDIA GeForce RTX 3060 Laptop GPU" },
+            { name: "obs", usage: 4.1, memory: 412 * 1024 ** 2, gpu: "NVIDIA GeForce RTX 3060 Laptop GPU" },
+            { name: "firefox", usage: 3.2, memory: 0, gpu: "0000:00:02.0" }
+        ]
     }
 
     // The Codex ring with the OpenAI logo.

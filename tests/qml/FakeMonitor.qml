@@ -33,6 +33,25 @@ QtObject {
         { name: "plasmashell", usage: 3.1 * 16, memory: 620 * 1024 ** 2, count: 1 },
         { name: "kwin_wayland", usage: 2.6 * 16, memory: 410 * 1024 ** 2, count: 1 }
     ]
+    // Stands in for the GPU popup's processes, before they are grouped, each
+    // on the GPU named by its PCI address, or for NVIDIA as ksystemstats
+    // names it. Blender's ROCm compute counts no usage.
+    property var gpuProcessSample: [
+        { name: "blender", usage: NaN, memory: 1.8 * 1024 ** 3, gpu: "0000:03:00.0" },
+        { name: "steamwebhelper", usage: 0.9, memory: 120 * 1024 ** 2, gpu: "0000:03:00.0" },
+        { name: "steamwebhelper", usage: 0.5, memory: 92 * 1024 ** 2, gpu: "0000:03:00.0" },
+        { name: "steamwebhelper", usage: 0, memory: 40 * 1024 ** 2, gpu: "0000:03:00.0" },
+        { name: "firefox", usage: 0.4, memory: 96 * 1024 ** 2, gpu: "0000:03:00.0" },
+        { name: "kwin_wayland", usage: 2.1, memory: 212 * 1024 ** 2, gpu: "0000:c4:00.0" },
+        { name: "plasmashell", usage: 0.6, memory: 148 * 1024 ** 2, gpu: "0000:c4:00.0" },
+        { name: "firefox", usage: 0.2, memory: 40 * 1024 ** 2, gpu: "0000:c4:00.0" },
+        { name: "firefox", usage: 0.1, memory: 21 * 1024 ** 2, gpu: "0000:c4:00.0" },
+        { name: "Xwayland", usage: 0, memory: 0, gpu: "0000:c4:00.0" },
+        { name: "baloo_file", usage: 0, memory: 0, gpu: "" }
+    ]
+    // The monitor's own reading of them, for a popup without the sample.
+    property var gpuProcesses: []
+    property bool gpuProcessesScanned: true
 
     signal systemMonitorRequested()
     signal configureRequested()
@@ -81,6 +100,8 @@ QtObject {
     property FakeGpu gpuOuter: FakeGpu {
         kind: "discrete"
         name: "AMD Radeon RX 7700S"
+        vendor: "1002"
+        bdf: "0000:03:00.0"
         usage: live ? 12 : resting ? 0 : NaN
         temperature: awake ? 48 : NaN
         vramUsed: awake ? 1.6 * monitor.gib : NaN
@@ -95,6 +116,8 @@ QtObject {
     property FakeGpu gpuInner: FakeGpu {
         kind: "integrated"
         name: "AMD Radeon 780M Graphics"
+        vendor: "1002"
+        bdf: "0000:c4:00.0"
         usage: live ? 3 : resting ? 0 : NaN
         temperature: awake ? 41 : NaN
         vramUsed: awake ? 0.4 * monitor.gib : NaN
@@ -218,6 +241,11 @@ QtObject {
         property bool reportsVram: true
         property string kind: ""
         property string name: ""
+        property string systemName: name
+        property string vendor: ""
+        property string bdf: ""
+        // The hardware facts a GpuReader is made from, where a test needs them.
+        property var info: null
         property string temperatureLabel: "edge"
         property real usage: NaN
         property real temperature: NaN

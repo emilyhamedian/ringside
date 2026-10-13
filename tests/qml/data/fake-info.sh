@@ -16,6 +16,14 @@ JSON
             printf '%s suspended auto\n' "$bdf"
         done
         ;;
+    gpuprocs)
+        # On the made-up discrete GPU: a game busy a quarter of the time
+        # since boot, and ROCm compute, which counts no usage.
+        up=$(cut -d ' ' -f 1 /proc/uptime)
+        printf 't %s\n' "$up"
+        awk -v up="$up" 'BEGIN { printf "drm 7 0000:fe:00.0 1 1024 gfx:%.0f game\n", up * 1e9 / 4 }'
+        echo "kfd 9 0000:fe:00.0 2147483648 blender"
+        ;;
     route) echo eth9 ;;
     egress) printf '4 eth9 0\n6  0\n' ;;
 esac

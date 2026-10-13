@@ -244,6 +244,36 @@ TestRoot {
             compare(follower.gpuOuter.pmReadAt, before);
         }
 
+        // The GPU popup's processes are read from the helper while it is open,
+        // with their usage once a second run is in, a moment after the first.
+        // They are kept between opens, so the popup opened again shows them
+        // at once, until a usage of its own replaces them.
+        function test_gpuProcessesFollowThePopup() {
+            compare(monitor.gpuProcesses.length, 0);
+            monitor.openPopup = "cpu";
+            wait(1500);
+            compare(monitor.gpuProcesses.length, 0, "not for another popup");
+            monitor.openPopup = "gpu";
+            wait(500);
+            compare(monitor.gpuProcesses.length, 0, "no processes before they have a usage");
+            verify(!monitor.gpuProcessesScanned);
+            tryVerify(() => monitor.gpuProcessesScanned, 3000, "a second run a moment later");
+            const game = monitor.gpuProcesses.find(p => p.name === "game");
+            fuzzyCompare(game.usage, 25, 0.5);
+            compare(game.gpu, "0000:fe:00.0");
+            const blender = monitor.gpuProcesses.find(p => p.name === "blender");
+            verify(Number.isNaN(blender.usage));
+            compare(blender.memory, 2147483648);
+            monitor.openPopup = "";
+            const kept = monitor.gpuProcesses;
+            compare(kept.length, 2, "kept when it closes");
+            verify(monitor.gpuProcessesScanned);
+            monitor.openPopup = "gpu";
+            compare(monitor.gpuProcesses, kept, "shown at once when it opens again");
+            tryVerify(() => monitor.gpuProcesses !== kept, 3000, "and read afresh a moment later");
+            fuzzyCompare(monitor.gpuProcesses.find(p => p.name === "game").usage, 25, 0.5);
+        }
+
         function powerStatesOf(m) {
             return Array.from(m.data).find(child => child.pendingSource !== undefined);
         }

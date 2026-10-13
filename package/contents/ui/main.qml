@@ -40,6 +40,14 @@ PlasmoidItem {
     readonly property real shift: Math.round((vertical ? height - Layout.minimumHeight : width - Layout.minimumWidth)
                                              * (lead - 0.5))
 
+    // The height an open popup's page has: the screen's, less its panels,
+    // the popup's frame and its gap from the screen's edges. Unknown, as in
+    // plasmawindowed, it has no limit.
+    readonly property real popupRoom: {
+        const screen = Plasmoid.containment?.availableScreenRect.height ?? 0;
+        return screen > 0 ? screen - popup.topPadding - popup.bottomPadding - 2 * popup.margin : Infinity;
+    }
+
     // The clicked item's name and cell; the popup follows the cell.
     property string openItem: ""
     // Cleared when the cell goes away, say when its item is switched off,
@@ -73,7 +81,8 @@ PlasmoidItem {
         popupContent.setSource(Qt.resolvedUrl("popups/" + ({ cpu: "CpuPopup", gpu: "GpuPopup", memory: "MemoryPopup",
                                                              network: "NetworkPopup", disk: "DiskPopup",
                                                              claude: "UsagePopup", codex: "UsagePopup" })[item] + ".qml"),
-                               Items.isUsage(item) ? { monitor: readings, item: item } : { monitor: readings });
+                               Items.isUsage(item) ? { monitor: readings, room: popupRoom, item: item }
+                                                   : { monitor: readings, room: popupRoom });
         popup.visible = true;
     }
 

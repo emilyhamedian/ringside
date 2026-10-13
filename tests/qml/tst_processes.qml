@@ -30,6 +30,21 @@ TestRoot {
         }
     }
 
+    Component {
+        id: gpuScan
+        ProcessScan {
+            attributes: Processes.gpuAttributes
+            reading: Processes.gpuReading
+        }
+    }
+
+    Component {
+        id: gpuList
+        GpuProcessList {
+            width: 380
+        }
+    }
+
     SignalSpy {
         id: spy
     }
@@ -45,8 +60,9 @@ TestRoot {
             spy.signalName = "";
         }
 
+        // The rows, rather than the names in them, which hold the row's entry too.
         function rowsOf(list) {
-            return root.all(list, c => c.entry !== undefined);
+            return root.all(list, c => c.entry !== undefined && c.index !== undefined);
         }
 
         function indicatorOf(list) {
@@ -55,11 +71,17 @@ TestRoot {
             return found[0];
         }
 
-        // The list's process model, among its resources.
-        function modelOf(list) {
-            const found = Array.from(list.resources).filter(o => o.availableAttributes !== undefined);
+        // The list's process scan, among its resources.
+        function scanOf(list) {
+            const found = Array.from(list.resources).filter(o => o.processes !== undefined);
             compare(found.length, 1);
             return found[0];
+        }
+
+        function modelOf(list) {
+            const model = scanOf(list).model;
+            verify(model && model.availableAttributes !== undefined);
+            return model;
         }
 
         // The attribute lists are cut down from what each libksysguard's
@@ -155,7 +177,7 @@ TestRoot {
             const waited = Date.now() - start;
             verify(waited >= 2000 && waited < 4000, "stopped waiting after " + waited + " ms");
             compare(spy.count, 1, "asked the model again");
-            verify(list.scanned);
+            verify(scanOf(list).scanned);
             compare(list.rows.length, 0);
             verify(!indicatorOf(list).visible);
         }
@@ -169,7 +191,7 @@ TestRoot {
             failOnWarning(/QModelIndex/);
             const list = createTemporaryObject(liveList, root);
             verify(list);
-            tryVerify(() => list.scanned, 5000);
+            tryVerify(() => scanOf(list).scanned, 5000);
             const model = modelOf(list);
             spy.target = list;
             spy.signalName = "rowsChanged";
@@ -274,6 +296,210 @@ TestRoot {
             compare(rows.length, 3);
             list.sample = [{ name: "firefox", usage: 8.4, memory: 3.9 * 1024 ** 3, count: 1 }];
             compare(rows.map(r => r.Accessible.name), [data.spoken, "", ""]);
+        }
+
+        // From libksysguard 6.4 its gpu plugin gives each process's GPU usage,
+        // video memory and GPU. Before, it read NVIDIA GPUs alone and didn't
+        // say which, and the GPU lists are left out.
+        function test_gpuAttributes_data() {
+            return [{ tag: "6.4", available: ["pid", "name", "usage", "memory", "gpu_usage", "gpu_memory", "gpu_module"],
+                      asked: ["name", "gpu_usage", "gpu_memory", "gpu_module"] },
+                    { tag: "6.3 with NVIDIA", available: ["pid", "name", "usage", "memory", "nvidia_usage", "nvidia_memory"], asked: [] },
+                    { tag: "6.0", available: ["pid", "name", "usage", "vmPSS", "vmURSS"], asked: [] },
+                    { tag: "nothing", available: [], asked: [] }];
+        }
+
+        function test_gpuAttributes(data) {
+            compare(Processes.gpuAttributes(data.available), data.asked);
+        }
+
+        // Values go with their columns, video memory arrives in KiB and leaves
+        // in bytes, and a process on no GPU has no GPU name.
+        function test_gpuReading() {
+            const columns = ["gpu_module", "name", "gpu_memory", "gpu_usage"];
+            const r = Processes.gpuReading(columns, ["AMD Radeon RX 7700S", "blender", 2048, 9.5]);
+            compare(r.name, "blender");
+            compare(r.usage, 9.5);
+            compare(r.memory, 2048 * 1024);
+            compare(r.gpu, "AMD Radeon RX 7700S");
+            compare(Processes.gpuReading(columns, [undefined, "baloo_file", 0, 0]).gpu, "");
+        }
+
+        // A GPU's processes, grouped by name: the busiest first, then those
+        // holding video memory while idle or with no usage counted, by how
+        // much; a process using neither is left out, as is every other GPU's.
+        function test_topOnGpu() {
+            const rows = [
+                { name: "blender", usage: NaN, memory: 1800, gpu: "dGPU" },
+                { name: "steam", usage: 0.9, memory: 120, gpu: "dGPU" },
+                { name: "steam", usage: 0.5, memory: 92, gpu: "dGPU" },
+                { name: "quiet", usage: 0, memory: 30, gpu: "dGPU" },
+                { name: "idle", usage: 0, memory: 500, gpu: "dGPU" },
+                { name: "alpha", usage: 0, memory: 30, gpu: "dGPU" },
+                { name: "nothing", usage: 0, memory: 0, gpu: "dGPU" },
+                { name: "kwin_wayland", usage: 50, memory: 200, gpu: "iGPU" },
+                { name: "baloo_file", usage: 0, memory: 0, gpu: "" }
+            ];
+            compare(Processes.topOnGpu(rows, "dGPU", 10).map(r => [r.name, r.count]),
+                    [["steam", 2], ["blender", 1], ["idle", 1], ["alpha", 1], ["quiet", 1]]);
+            const top = Processes.topOnGpu(rows, "dGPU", 2);
+            compare(top.map(r => r.name), ["steam", "blender"]);
+            fuzzyCompare(top[0].usage, 1.4, 1e-9);
+            compare(top[0].memory, 212);
+            verify(Number.isNaN(top[1].usage), "no usage counted, none made up");
+            compare(Processes.topOnGpu(rows, "iGPU", 3).map(r => r.name), ["kwin_wayland"]);
+            compare(Processes.topOnGpu(rows, "", 3).length, 0);
+            compare(Processes.topOnGpu(rows, "missing", 3).length, 0);
+        }
+
+        // A GPU busier than its counted processes add up to is doing work
+        // the uncounted ones do, so they lead; within a GPU's share the
+        // counted ones explain, they follow.
+        function test_topOnGpuLeadsWithUncountedWork_data() {
+            return [{ tag: "busy", busy: 100, first: "blender" },
+                    { tag: "explained", busy: 8, first: "steam" },
+                    { tag: "unknown", busy: NaN, first: "steam" }];
+        }
+
+        function test_topOnGpuLeadsWithUncountedWork(data) {
+            const rows = [{ name: "steam", usage: 1.4, memory: 212, gpu: "dGPU" },
+                          { name: "blender", usage: NaN, memory: 1800, gpu: "dGPU" }];
+            compare(Processes.topOnGpu(rows, "dGPU", 2, data.busy)[0].name, data.first);
+        }
+
+        // The helper's lines: DRM clients add up per process and GPU, ROCm's
+        // memory stands beside DRM's, and a name keeps its spaces.
+        function test_gpuScan() {
+            const scan = Processes.gpuScan([
+                "t 100.50",
+                "drm 7 0000:03:00.0 40 1024 gfx:1000,compute:500 Web Content",
+                "drm 7 0000:03:00.0 41 512 gfx:200 Web Content",
+                "drm 7 0000:c4:00.0 42 12 - Web Content",
+                "kfd 9 0000:03:00.0 1048576 blender",
+                "drm 9 0000:03:00.0 43 768 - blender",
+                "",
+                "garbage"
+            ].join("\n"));
+            compare(scan.time, 100.5);
+            compare(Object.keys(scan.uses).sort(), ["7 0000:03:00.0", "7 0000:c4:00.0", "9 0000:03:00.0"]);
+            const web = scan.uses["7 0000:03:00.0"];
+            compare(web.name, "Web Content");
+            compare(web.drm, 1536 * 1024);
+            compare(web.engines, { gfx: 1200, compute: 500 });
+            verify(web.counted);
+            const blender = scan.uses["9 0000:03:00.0"];
+            compare(blender.drm, 768 * 1024);
+            compare(blender.rocm, 1048576);
+            verify(!blender.counted);
+        }
+
+        // Usage is the busiest engine's share of the time between two scans,
+        // up to 100%; none without an earlier reading of the process or with
+        // no engine counted. Memory is the larger of DRM's and ROCm's.
+        function test_gpuProcesses() {
+            const before = Processes.gpuScan("t 10\ndrm 7 A 1 100 gfx:0,compute:0 game\ndrm 9 A 2 10 - blender\nkfd 9 A 4096 blender");
+            const after = Processes.gpuScan("t 12\ndrm 7 A 1 100 gfx:500000000,compute:1000000000 game\n"
+                                            + "drm 9 A 2 10 - blender\nkfd 9 A 4096 blender\ndrm 11 A 3 1 gfx:50 new");
+            const found = {};
+            Processes.gpuProcesses(before, after).forEach(p => found[p.name] = p);
+            fuzzyCompare(found.game.usage, 50, 1e-9);
+            compare(found.game.memory, 100 * 1024);
+            compare(found.game.gpu, "A");
+            verify(Number.isNaN(found.blender.usage));
+            compare(found.blender.memory, 4096 * 2.5);
+            verify(Number.isNaN(found.new.usage), "no earlier reading");
+            verify(Processes.gpuProcesses(null, after).every(p => Number.isNaN(p.usage)), "a first scan has no usage");
+            const hot = Processes.gpuScan("t 11\ndrm 7 A 1 100 gfx:9000000000 game");
+            compare(Processes.gpuProcesses(before, hot)[0].usage, 100);
+        }
+
+        // The GPU scan against the real process model. Where libksysguard
+        // offers the GPU attributes it asks for all four, and where it
+        // doesn't, none, which leaves the popup's lists out. Either way it
+        // reads every scan without a warning and stops waiting.
+        function test_gpuScanReadsTheModel() {
+            failOnWarning(/QModelIndex/);
+            const scan = createTemporaryObject(gpuScan, root);
+            verify(scan && scan.model);
+            const offered = ["gpu_usage", "gpu_memory", "gpu_module"].every(id => Array.from(scan.model.availableAttributes).includes(id));
+            compare(scan.columns.length, offered ? 4 : 0);
+            tryVerify(() => scan.scanned, 5000);
+            scan.processes.forEach(p => verify(typeof p.gpu === "string", p.name));
+        }
+
+        // The model only exists while the scan is active, so nothing it runs
+        // outlives it, and its readings go with it.
+        function test_scanOnlyWhileActive() {
+            const scan = createTemporaryObject(gpuScan, root, { active: false });
+            verify(scan);
+            compare(scan.model, null);
+            compare(scan.processes.length, 0);
+            scan.active = true;
+            verify(scan.model !== null);
+            tryVerify(() => scan.scanned, 5000);
+            scan.active = false;
+            compare(scan.model, null);
+            compare(scan.processes.length, 0);
+        }
+
+        // Each GPU row is spoken whole, its usage and video memory after the
+        // name, and an unfilled row says nothing.
+        function test_gpuRowsAreSpokenWhole() {
+            const list = createTemporaryObject(gpuList, root, {
+                rows: [{ name: "blender", usage: 9.8, memory: 1.1 * 1024 ** 3, count: 1 },
+                       { name: "steam", usage: 1.4, memory: 212 * 1024 ** 2, count: 3 }]
+            });
+            verify(list);
+            const rows = rowsOf(list);
+            compare(rows.length, 3);
+            compare(rows.map(r => r.Accessible.name),
+                    ["blender, " + Format.fixed(9.8, 1) + "%, " + Format.fixed(1.1, 1) + " GiB",
+                     "steam ×" + Format.whole(3) + ", " + Format.fixed(1.4, 1) + "%, " + Format.whole(212) + " MiB", ""]);
+        }
+
+        // Each reading ends at its column's head, the widest values included,
+        // and the usage column ends before the video memory's begins.
+        function test_gpuColumnsLineUp() {
+            const list = createTemporaryObject(gpuList, root, {
+                count: 2,
+                rows: [{ name: "a", usage: 100, memory: 1023 * 1024 ** 2, count: 1 },
+                       { name: "b", usage: 0.1, memory: 4 * 1024 ** 2, count: 1 }]
+            });
+            verify(list);
+            waitForRendering(list);
+            const left = i => i.mapToItem(list, Qt.point(0, 0)).x;
+            const right = i => i.mapToItem(list, Qt.point(i.width, 0)).x;
+            const usageHead = root.find(list, c => c.label === "Usage");
+            const vramHead = root.find(list, c => c.label === "VRAM");
+            verify(usageHead && vramHead);
+            for (const row of rowsOf(list)) {
+                const readings = root.all(row, c => c.numberWidth !== undefined);
+                compare(readings.length, 2);
+                fuzzyCompare(right(readings[0]), right(usageHead), 0.5);
+                fuzzyCompare(right(readings[1]), right(vramHead), 0.5);
+                verify(right(readings[0]) < left(readings[1]), right(readings[0]) + " before " + left(readings[1]));
+            }
+        }
+
+        // Until the first scans are in, a busy indicator lies over the rows;
+        // after them, a GPU nothing of the user's is using says so. The list
+        // keeps its height throughout.
+        function test_gpuListWhileEmpty() {
+            const list = createTemporaryObject(gpuList, root, { rows: [], loading: true, count: 2 });
+            verify(list);
+            waitForRendering(list);
+            const indicator = indicatorOf(list);
+            const empty = root.find(list, c => c.text === "Nothing of yours is using this GPU");
+            verify(indicator.visible);
+            verify(empty && !empty.visible);
+            const height = list.implicitHeight;
+            list.loading = false;
+            verify(!indicator.visible);
+            verify(empty.visible);
+            compare(list.implicitHeight, height);
+            list.rows = [{ name: "blender", usage: 9.8, memory: 1024 ** 3, count: 1 }];
+            verify(!empty.visible);
+            compare(list.implicitHeight, height);
         }
 
         function test_topGroupsRowsSharingAName() {

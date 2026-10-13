@@ -1,0 +1,5 @@
+t 1234.56
+drm 100 0000:03:00.0 440 1848424 - blender
+drm 200 0000:03:00.0 12 2048 gfx:5000000,compute:700 Web Content
+drm 300 0000:00:02.0 7 2048 render:300 firefox
+kfd 100 0000:03:00.0 1936691200 blender

@@ -49,6 +49,7 @@ TestRoot {
         id: integrated
         gpuOuter.kind: "integrated"
         gpuOuter.name: "AMD Radeon 780M Graphics"
+        gpuOuter.bdf: "0000:c4:00.0"
         gpuOuter.power: NaN
         gpuInner.present: false
     }
@@ -58,9 +59,11 @@ TestRoot {
         id: innerAsleep
         gpuOuter.kind: "integrated"
         gpuOuter.name: "AMD Radeon 780M Graphics"
+        gpuOuter.bdf: "0000:c4:00.0"
         gpuOuter.power: NaN
         gpuInner.kind: "discrete"
         gpuInner.name: "AMD Radeon RX 7700S"
+        gpuInner.bdf: "0000:03:00.0"
         gpuInner.phase: "asleep"
         gpuInner.knownVramTotal: 8 * innerAsleep.gib
     }
@@ -70,8 +73,11 @@ TestRoot {
         id: intel
         cpuModel: "Intel Core i7-12700H"
         gpuOuter.name: "NVIDIA GeForce RTX 3060 Laptop GPU"
+        gpuOuter.vendor: "10de"
         gpuOuter.temperatureLabel: ""
         gpuInner.name: "Intel Iris Xe Graphics"
+        gpuInner.vendor: "8086"
+        gpuInner.bdf: "0000:00:02.0"
         gpuInner.temperatureLabel: ""
         gpuInner.reportsTemperature: false
         gpuInner.reportsVram: false
@@ -1942,13 +1948,131 @@ TestRoot {
             compare(tile.floor, 40, "raised once well clear");
         }
 
+        // The room a popup has on a 1920 × 1080 screen at `scale`, under a
+        // 44 px panel, with 10 px for the dialog's margins, at Plasma's usual
+        // grid unit of 18 px.
+        function roomAt(scale) {
+            return (1080 / scale - 44 - 10) * Kirigami.Units.gridUnit / 18;
+        }
+
+        // The GPU sections' process lists on show.
+        function gpuLists(popup) {
+            return all(popup, i => i.heightFor !== undefined && i.visible);
+        }
+
         // Two GPUs, the integrated one without a temperature graph, fit a
-        // 1920 × 1080 screen at 150%, 720 px, under a 44 px panel, with 10 px
-        // for the dialog's margins, at Plasma's usual grid unit of 18 px.
-        function test_twoGpusFitASmallScreen() {
-            const popup = load("GpuPopup", normal);
-            verify(popup.implicitHeight <= (720 - 44 - 10) * Kirigami.Units.gridUnit / 18, popup.implicitHeight + " px at a grid unit of "
+        // 1920 × 1080 screen at 150% with their process lists left out; at
+        // 100% the lists have their two rows each. One GPU's three rows fit
+        // at 150%.
+        function test_gpusFitTheScreen_data() {
+            return [{ tag: "two GPUs at 150%", monitor: normal, scale: 1.5, rows: 0, lists: 0 },
+                    { tag: "two GPUs at 100%", monitor: normal, scale: 1, rows: 2, lists: 2 },
+                    { tag: "one GPU at 150%", monitor: asleep, scale: 1.5, rows: 3, lists: 1 }];
+        }
+
+        function test_gpusFitTheScreen(data) {
+            const popup = load("GpuPopup", data.monitor);
+            popup.room = roomAt(data.scale);
+            waitForRendering(popup);
+            verify(popup.implicitHeight <= popup.room, popup.implicitHeight + " px in " + popup.room + " at a grid unit of "
                    + Kirigami.Units.gridUnit);
+            compare(popup.processCount, data.rows);
+            compare(gpuLists(popup).length, data.lists);
+        }
+
+        // Whatever the room, the lists take as many rows as fit and no more,
+        // each list as tall as it reckons: the page less its lists, with one
+        // more row each, would outgrow the room.
+        function test_gpuRowsFillTheRoom_data() {
+            return [600, 650, 700, 750, 800, 850].map(px => ({ tag: px + " px", room: px * Kirigami.Units.gridUnit / 18 }));
+        }
+
+        function test_gpuRowsFillTheRoom(data) {
+            const popup = load("GpuPopup", normal);
+            popup.room = data.room;
+            waitForRendering(popup);
+            const lists = all(popup, i => i.heightFor !== undefined);
+            compare(lists.length, 2);
+            const shown = lists.filter(l => l.visible);
+            // The rows' own layout agrees with the height the list reckons.
+            shown.forEach(l => fuzzyCompare(l.children.reduce((sum, c) => sum + (c.visible ? c.height : 0), 0)
+                                            + l.spacing + l.Layout.bottomMargin, l.heightFor(l.count), 0.5));
+            const rest = popup.implicitHeight - shown.reduce((sum, l) => sum + l.heightFor(l.count), 0);
+            const count = popup.processCount;
+            if (count > 0) {
+                verify(popup.implicitHeight <= popup.room, popup.implicitHeight + " px in " + popup.room);
+            }
+            if (count < 2) {
+                verify(rest + lists.reduce((sum, l) => sum + l.heightFor(count + 1), 0) > popup.room, "room for another row");
+            }
+        }
+
+        // Each GPU's section lists the processes on that GPU, by name as
+        // ksystemstats names the GPU, and a sleeping GPU's line lists none.
+        function test_gpuProcessesBySection_data() {
+            return [{ tag: "two GPUs", monitor: normal,
+                      lists: [[["kwin_wayland", 1], ["plasmashell", 1]], [["blender", 1], ["steamwebhelper", 3]]] },
+                    { tag: "discrete asleep", monitor: asleep, lists: [[["kwin_wayland", 1], ["plasmashell", 1], ["firefox", 2]]] },
+                    { tag: "the only GPU asleep", monitor: onlyAsleep, lists: [] },
+                    { tag: "no process on either", monitor: intel, lists: [[], []] }];
+        }
+
+        function test_gpuProcessesBySection(data) {
+            const popup = load("GpuPopup", data.monitor);
+            compare(gpuLists(popup).map(l => l.rows.map(r => [r.name, r.count])), data.lists);
+        }
+
+        // nvidia-smi, which libksysguard reads NVIDIA GPUs' processes with,
+        // wakes them, so an NVIDIA GPU's processes are read, and a process
+        // model made, only while every NVIDIA GPU is awake and on show. The
+        // other GPUs' come from the monitor's reading of /proc, which wakes
+        // nothing, so their lists show whatever the NVIDIA GPU does.
+        function test_nvidiaGate_data() {
+            const nvidia = { id: "gpu1", vendor: "10de" };
+            const amd = { id: "gpu1", vendor: "1002" };
+            return [{ tag: "NVIDIA awake", vendor: "10de", phase: "live", info: nvidia, gpus: [nvidia], read: true, lists: 2 },
+                    { tag: "NVIDIA resting", vendor: "10de", phase: "resting", info: nvidia, gpus: [nvidia], read: false, lists: 1 },
+                    { tag: "NVIDIA asleep", vendor: "10de", phase: "asleep", info: nvidia, gpus: [nvidia], read: false, lists: 1 },
+                    { tag: "NVIDIA not on show", vendor: "1002", phase: "live", info: amd, gpus: [amd, { id: "gpu2", vendor: "10de" }],
+                      read: false, lists: 2 },
+                    { tag: "AMD asleep", vendor: "1002", phase: "asleep", info: amd, gpus: [amd], read: false, lists: 1 },
+                    { tag: "NVIDIA asleep, live scan", vendor: "10de", phase: "asleep", info: nvidia, gpus: [nvidia], read: false, live: true },
+                    { tag: "NVIDIA awake, live scan", vendor: "10de", phase: "live", info: nvidia, gpus: [nvidia], read: true, live: true }];
+        }
+
+        function test_nvidiaGate(data) {
+            const values = { "gpuOuter.vendor": data.vendor, "gpuOuter.phase": data.phase, "gpuOuter.info": data.info,
+                             hardware: { gpus: data.gpus } };
+            if (data.live) {
+                values.gpuProcessSample = null;
+            }
+            const popup = load("GpuPopup", monitorWith(values));
+            compare(popup.nvidiaReadable, data.read);
+            if (data.lists !== undefined) {
+                compare(gpuLists(popup).length, data.lists);
+            }
+            if (data.live) {
+                const scans = all(popup, () => true).reduce((found, i) => found.concat(Array.from(i.resources)), [])
+                    .filter(o => o.processes !== undefined && o.instantiator !== undefined);
+                compare(scans.length, 1);
+                compare(scans[0].model !== null, data.read, "a process model only while every NVIDIA GPU is awake");
+            }
+        }
+
+        // A process whose usage the kernel doesn't count, as ROCm compute's,
+        // shows a dash for it, and an Intel GPU, which reports no video memory
+        // of its own, lists none.
+        function test_gpuRowsWithoutAReading() {
+            const dgpu = load("GpuPopup", monitorWith({ "gpuInner.present": false }));
+            const blender = gpuLists(dgpu)[0];
+            compare(blender.rows[0].name, "blender");
+            verify(Number.isNaN(blender.rows[0].usage));
+            const row = all(blender, c => c.entry !== undefined && c.index !== undefined)[0];
+            compare(row.usage, Format.fixed(NaN, 1));
+            verify(row.Accessible.name.startsWith("blender, usage not counted, "), row.Accessible.name);
+            const intelList = gpuLists(load("GpuPopup", intel))[0];
+            verify(!intelList.memoryShown);
+            compare(all(intelList, c => c.label === "VRAM" && c.visible).length, 0);
         }
 
         // Each temperature graph comes straight under the usage graph it

@@ -13,6 +13,8 @@
 #                                 each family's traffic to the internet leaves
 #                                 through (empty without a route), and 1 when
 #                                 it is a tunnel, else 0; exits 3 without `ip`
+#   ringside-info.sh gpuprocs     the user's processes using each GPU (see
+#                                 gpuprocs below)
 #
 # It reads sysfs, procfs and udev's database as the logged-in user, and asks
 # `ip route get` for routes, which sends nothing. Nothing here touches a GPU
@@ -324,10 +326,94 @@ pm() {
     done
 }
 
+# The user's processes using each GPU, for the GPU popup, one per line:
+#   t SECONDS                    the uptime the scan began at
+#   drm PID BDF CLIENT KIB ENGINES NAME
+#                                a DRM client: its resident video memory
+#                                (amdgpu's vram, Intel's local or vram), each
+#                                engine's busy time so far, "gfx:NS,...", or
+#                                "-" where the kernel counts none
+#   kfd PID BDF BYTES NAME       the video memory ROCm compute holds, which
+#                                counts no engine time anywhere
+# Other users' processes can't be read. NVIDIA's nodes are left alone: the
+# popup reads their processes through nvidia-smi, only while they're awake.
+gpuprocs() {
+    printf 't %s\n' "$(cut -d ' ' -f 1 "$proc/uptime" 2>/dev/null)"
+    nodes=$(for n in "$sys"/class/drm/card[0-9]* "$sys"/class/drm/renderD[0-9]*; do
+        [ -e "$n/device/vendor" ] || continue
+        [ "$(first_line "$n/device/vendor")" = 0x10de ] && continue
+        d=$(readlink -f "$n/device")
+        printf '%s %s\n' "${n##*/}" "${d##*/}"
+    done)
+    # A process using a GPU maps its node: only those few have their file
+    # descriptors read, rather than every process's thousands.
+    grep -lE '/dev/(dri|kfd)' "$proc"/[0-9]*/maps 2>/dev/null | while IFS= read -r m; do
+        d=${m%/maps}
+        printf '%s/fd:\n' "$d"
+        ls -l "$d/fd" 2>/dev/null
+    done | awk -v proc="$proc" -v nodes="$nodes" '
+        BEGIN {
+            n = split(nodes, lines, "\n")
+            for (i = 1; i <= n; i++) {
+                split(lines[i], f, " ")
+                device[f[1]] = f[2]
+            }
+        }
+        /:$/ { pid = $0; sub("/fd:$", "", pid); sub(".*/", "", pid); next }
+        NF < 4 || pid == "" || $(NF - 1) != "->" || $NF !~ /^\/dev\/dri\// { next }
+        {
+            node = $NF
+            sub(".*/", "", node)
+            if (!(node in device)) next
+            file = proc "/" pid "/fdinfo/" $(NF - 2)
+            client = ""; kib = ""; legacy = ""; engines = ""
+            while ((getline line < file) > 0) {
+                key = line; sub(":.*", "", key)
+                rest = line; sub("^[^:]*:[ \t]*", "", rest)
+                split(rest, word, " ")
+                value = word[1]
+                # Sizes are in bytes, KiB or MiB, as the unit after them says.
+                size = word[2] == "KiB" ? value : word[2] == "MiB" ? value * 1024 : value / 1024
+                if (key == "drm-client-id") client = value
+                else if (key ~ /^drm-resident-(vram|local)[0-9]*$/) kib += size
+                else if (key == "drm-memory-vram") legacy = size
+                else if (key ~ /^drm-engine-/ && key !~ /^drm-engine-capacity-/) {
+                    sub("^drm-engine-", "", key)
+                    engines = engines (engines == "" ? "" : ",") key ":" value
+                }
+            }
+            close(file)
+            if (client == "" || seen[pid, client]++) next
+            comm = proc "/" pid "/comm"
+            name = ""
+            getline name < comm
+            close(comm)
+            printf "drm %s %s %s %d %s %s\n", pid, device[node], client, (kib != "" ? kib : legacy + 0), (engines == "" ? "-" : engines), name
+        }'
+    # KFD names its GPUs by an id of its own, and their PCI address by bus,
+    # device and function packed into location_id.
+    gpus=$(for d in "$sys"/class/kfd/kfd/topology/nodes/[0-9]*; do
+        id=$(first_line "$d/gpu_id")
+        case $id in ''|0) continue ;; esac
+        awk -v id="$id" '$1 == "location_id" { l = $2 } $1 == "domain" { d = $2 }
+            END { printf "%s %04x:%02x:%02x.%x\n", id, d, int(l / 256), int(l % 256 / 8), l % 8 }' "$d/properties"
+    done)
+    for p in "$sys"/class/kfd/kfd/proc/[0-9]*; do
+        pid=${p##*/}
+        [ -r "$proc/$pid/fdinfo" ] || continue
+        for v in "$p"/vram_*; do
+            [ -r "$v" ] || continue
+            bdf=$(printf '%s\n' "$gpus" | awk -v id="${v##*_}" '$1 == id { print $2 }')
+            [ -n "$bdf" ] && printf 'kfd %s %s %s %s\n' "$pid" "$bdf" "$(first_line "$v")" "$(first_line "$proc/$pid/comm")"
+        done
+    done
+}
+
 case ${1:-} in
     static) static ;;
     pm) shift; pm "$@" ;;
     route) printf '%s\n' "$(default_interface)" ;;
     egress) egress ;;
-    *) echo "usage: $0 static | pm BDF... | route | egress" >&2; exit 2 ;;
+    gpuprocs) gpuprocs ;;
+    *) echo "usage: $0 static | pm BDF... | route | egress | gpuprocs" >&2; exit 2 ;;
 esac

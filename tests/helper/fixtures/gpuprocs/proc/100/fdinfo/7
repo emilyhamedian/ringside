@@ -1,0 +1,8 @@
+pos:	0
+drm-driver:	amdgpu
+drm-client-id:	440
+drm-pdev:	0000:03:00.0
+drm-total-vram:	1848424 KiB
+drm-resident-vram:	1848424 KiB
+drm-resident-gtt:	8260 KiB
+drm-memory-vram:	1848424 KiB

@@ -12,6 +12,15 @@ follows [Semantic Versioning](https://semver.org/).
   space with its items at the start, middle or end, so it can keep to the
   far end of the panel without a spacer widget beside it. It's off by
   default.
+- The GPU popup lists your processes using each GPU, with each one's share
+  of the GPU and its video memory. Processes sharing a name add up to one
+  row. Compute work, such as a Blender render through ROCm, is listed with
+  its memory and a dash for its share, which the kernel doesn't count; when
+  the GPU is busier than the rest add up to, it comes first. Each GPU lists
+  three, or two each with two GPUs awake, and fewer or none where the popup
+  would otherwise outgrow the screen. Reading the lists never wakes a
+  sleeping GPU: an NVIDIA GPU's wait until it's awake, and need Plasma 6.4 or
+  later.
 
 ## [0.3.1] - 2026-10-11
 
