@@ -122,6 +122,10 @@ function gpuScan(text) {
     return scan;
 }
 
+// The longest time, in seconds, between two runs of gpuprocs that a usage
+// is taken over: a run's four seconds, with room for a slow one.
+const GPU_USAGE_SPAN = 10;
+
 // The processes as of `after`, with their usage since `before`: the busiest
 // engine's share of the time between the two scans. It is NaN without an
 // earlier reading of the process, or where the kernel counts no engine

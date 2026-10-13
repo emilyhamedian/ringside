@@ -244,16 +244,18 @@ TestRoot {
             compare(follower.gpuOuter.pmReadAt, before);
         }
 
-        // The GPU popup's processes are read from the helper while it is open:
-        // the first at once, their usage once a second run is in, and nothing
-        // once it closes.
+        // The GPU popup's processes are read from the helper while it is open,
+        // with their usage once a second run is in, a moment after the first.
+        // They are kept between opens, so the popup opened again shows them
+        // at once, until a usage of its own replaces them.
         function test_gpuProcessesFollowThePopup() {
             compare(monitor.gpuProcesses.length, 0);
             monitor.openPopup = "cpu";
             wait(1500);
             compare(monitor.gpuProcesses.length, 0, "not for another popup");
             monitor.openPopup = "gpu";
-            tryVerify(() => monitor.gpuProcesses.length === 2, 3000, "the first run");
+            wait(500);
+            compare(monitor.gpuProcesses.length, 0, "no processes before they have a usage");
             verify(!monitor.gpuProcessesScanned);
             tryVerify(() => monitor.gpuProcessesScanned, 3000, "a second run a moment later");
             const game = monitor.gpuProcesses.find(p => p.name === "game");
@@ -263,8 +265,13 @@ TestRoot {
             verify(Number.isNaN(blender.usage));
             compare(blender.memory, 2147483648);
             monitor.openPopup = "";
-            compare(monitor.gpuProcesses.length, 0);
-            verify(!monitor.gpuProcessesScanned);
+            const kept = monitor.gpuProcesses;
+            compare(kept.length, 2, "kept when it closes");
+            verify(monitor.gpuProcessesScanned);
+            monitor.openPopup = "gpu";
+            compare(monitor.gpuProcesses, kept, "shown at once when it opens again");
+            tryVerify(() => monitor.gpuProcesses !== kept, 3000, "and read afresh a moment later");
+            fuzzyCompare(monitor.gpuProcesses.find(p => p.name === "game").usage, 25, 0.5);
         }
 
         function powerStatesOf(m) {

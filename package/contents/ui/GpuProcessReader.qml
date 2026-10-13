@@ -8,7 +8,9 @@ import "code/processes.js" as Processes
 // The user's processes using AMD and Intel GPUs, from the helper's gpuprocs,
 // which reads them from /proc and /sys and wakes no GPU. It runs while the
 // GPU popup is open: at once, a second later for the first usage, then every
-// four seconds.
+// four seconds. Between opens it keeps the last processes, so a popup opened
+// again shows them at once rather than a busy indicator, until the first
+// usage of its own replaces them.
 QtObject {
     id: reader
 
@@ -25,9 +27,6 @@ QtObject {
 
     onActiveChanged: {
         if (!active) {
-            processes = [];
-            scanned = false;
-            last = null;
             runs = 0;
         }
     }
@@ -40,8 +39,12 @@ QtObject {
                 return;
             }
             const scan = Processes.gpuScan(data.stdout ?? "");
-            reader.processes = Processes.gpuProcesses(reader.last, scan);
-            reader.scanned = reader.last !== null;
+            // A run long after the last, from an earlier open, can't give a
+            // usage, so the last processes stand until the next run.
+            if (reader.last !== null && scan.time - reader.last.time < Processes.GPU_USAGE_SPAN) {
+                reader.processes = Processes.gpuProcesses(reader.last, scan);
+                reader.scanned = true;
+            }
             reader.last = scan;
         }
     }
