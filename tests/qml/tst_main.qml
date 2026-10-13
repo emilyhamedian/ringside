@@ -250,6 +250,28 @@ TestRoot {
             fuzzyCompare(data.vertical ? iconAt.y : iconAt.x, Math.round((length - 44) * data.lead), 0.5, "the icon's place");
         }
 
+        // A click in the room the applet fills, away from its items, closes
+        // an open popup, as a click elsewhere on the panel does. A
+        // right-click there is the panel's, and with no popup open a click
+        // does nothing.
+        function test_clickInTheFilledRoomClosesThePopup() {
+            Plasmoid.configuration = { ringsOnly: [], fillPanel: "end" };
+            const applet = panel(false, 44);
+            settle();
+            const s = strip(applet);
+            const room = s.mapToItem(applet, Qt.point(0, 0)).x / 2;
+            verify(room > 0, "room before the items");
+            mouseClick(applet, room, 22);
+            verify(!popup(applet).visible, "nothing to close");
+            applet.toggle("cpu", s.cellAt(0));
+            settle();
+            verify(popup(applet).visible);
+            mouseClick(applet, room, 22, Qt.RightButton);
+            verify(popup(applet).visible, "a right-click is the panel's");
+            mouseClick(applet, room, 22);
+            verify(!popup(applet).visible, "closed by a click in the room");
+        }
+
         function test_fillOff_data() {
             return [{ tag: "empty", fill: "" }, { tag: "unknown", fill: "left" }, { tag: "inherited", fill: "toString" }];
         }

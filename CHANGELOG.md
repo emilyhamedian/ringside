@@ -11,7 +11,7 @@ follows [Semantic Versioning](https://semver.org/).
 - *Panel space*, under Panel Items, lets Ringside fill the panel's free
   space with its items at the start, middle or end, so it can keep to the
   far end of the panel without a spacer widget beside it. It's off by
-  default.
+  default. A click in that space closes an open popup.
 - The GPU popup lists your processes using each GPU, with each one's share
   of the GPU and its video memory. Processes sharing a name add up to one
   row. Compute work, such as a Blender render through ROCm, is listed with
