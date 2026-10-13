@@ -220,5 +220,32 @@ TestRoot {
             root.pick(testCase, mode, 0);
             compare(page.cfg_ringsOnly, ["memory"]);
         }
+
+        // Panel space names the panel's ends as the panel runs, shows the
+        // stored choice, and stores each one picked.
+        function test_panelSpace_data() {
+            return [{ tag: "horizontal", vertical: false, mirrored: false, ends: ["on the left", "on the right"] },
+                    { tag: "right-to-left", vertical: false, mirrored: true, ends: ["on the right", "on the left"] },
+                    { tag: "vertical", vertical: true, mirrored: false, ends: ["at the top", "at the bottom"] }];
+        }
+        function test_panelSpace(data) {
+            Plasmoid.formFactor = data.vertical ? PlasmaCore.Types.Vertical : PlasmaCore.Types.Horizontal;
+            panelPage = Qt.createQmlObject(panelSource, root, Qt.resolvedUrl("../../package/contents/ui/config/ConfigItems.qml"));
+            const page = panelPage;
+            page.width = root.width;
+            page.height = root.height;
+            page.LayoutMirroring.enabled = data.mirrored;
+            page.cfg_fillPanel = "center";
+            waitForRendering(page);
+            const box = accessible(page, "Panel space");
+            verify(box && box.visible);
+            compare(box.currentIndex, 2);
+            compare(box.model[1], "Fill free space, items " + data.ends[0]);
+            compare(box.model[3], "Fill free space, items " + data.ends[1]);
+            for (const [row, place] of [[3, "end"], [1, "start"], [0, ""]]) {
+                root.pick(testCase, box, row);
+                compare(page.cfg_fillPanel, place);
+            }
+        }
     }
 }

@@ -245,6 +245,35 @@ ConfigPage {
             }
         }
 
+        RowLayout {
+            Layout.topMargin: Kirigami.Units.largeSpacing
+            spacing: Kirigami.Units.smallSpacing
+
+            QQC2.Label {
+                text: i18nc("@label:listbox", "Panel space:")
+            }
+            // The panel's start and end named as this panel runs; the page
+            // is mirrored when the panel is.
+            QQC2.ComboBox {
+                readonly property var places: ["", "start", "center", "end"]
+                readonly property string first: page.vertical
+                                                ? i18nc("@item:inlistbox how much of the panel Ringside takes", "Fill free space, items at the top")
+                                                : page.mirrored
+                                                ? i18nc("@item:inlistbox how much of the panel Ringside takes", "Fill free space, items on the right")
+                                                : i18nc("@item:inlistbox how much of the panel Ringside takes", "Fill free space, items on the left")
+                readonly property string last: page.vertical
+                                               ? i18nc("@item:inlistbox how much of the panel Ringside takes", "Fill free space, items at the bottom")
+                                               : page.mirrored
+                                               ? i18nc("@item:inlistbox how much of the panel Ringside takes", "Fill free space, items on the left")
+                                               : i18nc("@item:inlistbox how much of the panel Ringside takes", "Fill free space, items on the right")
+                model: [i18nc("@item:inlistbox how much of the panel Ringside takes", "Only what the items need"), first,
+                        i18nc("@item:inlistbox how much of the panel Ringside takes", "Fill free space, items in the middle"), last]
+                currentIndex: Math.max(0, places.indexOf(page.cfg_fillPanel))
+                Accessible.name: i18nc("@label:listbox", "Panel space")
+                onActivated: index => page.cfg_fillPanel = places[index]
+            }
+        }
+
         Note {
             visible: page.vertical
             text: i18nc("@info", "This panel is vertical, so the rings show without their readings.")
