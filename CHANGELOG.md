@@ -28,6 +28,10 @@ follows [Semantic Versioning](https://semver.org/).
   reset early", and says how far your usage fell, as "Your usage went from
   80% to 0%." Its time now sits level with its title.
 
+### Fixed
+
+- The rings no longer show a faint band of colour around their arcs.
+
 ## [0.3.1] - 2026-10-11
 
 ### Added
