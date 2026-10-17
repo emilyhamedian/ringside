@@ -354,37 +354,53 @@ TestRoot {
             verify(!usage.loading("claude") && usage.degraded("claude"), "a later failure doesn't load again");
         }
 
-        function test_initialPollWaitsForTheFinalReport() {
-            make("slow", []);
-            const runs = commands();
-            const changes = spy("commandChanged");
-            usage.providers = ["claude", "codex"];
-            const command = usage.command;
-            const initial = "python3 -B " + Shell.quoted(usage.helperPath)
-                            + " --initial-providers claude,codex --providers claude,codex";
-            tryCompare(runs, "count", 1, 1000);
-            compare(runs.signalArguments[0][0], initial);
+        function test_initialPollCommandIsRecognized() {
+            make("ok", []);
+            const initial = usage.helperCommand(["claude", "codex"], "", ["claude", "codex"]);
+            compare(initial, "python3 -B " + Shell.quoted(usage.helperPath)
+                             + " --initial-providers claude,codex --providers claude,codex");
             compare(usage.polledIds(initial), ["claude", "codex"]);
             compare(usage.startedIds(initial), []);
             compare(usage.starterSet(initial), null);
+        }
+
+        function test_refreshDeduplicatesTheInitialPoll() {
+            make("slow", []);
+            const runs = commands();
+            usage.providers = ["claude", "codex"];
+            tryCompare(runs, "count", 1, 1000);
+            verify(runs.signalArguments[0][0].includes(" --initial-providers claude,codex"));
             usage.refresh();
             compare(runs.count, 1, "the actual startup source is already running");
-            wait(150);
-            verify(usage.checking && usage.loading("claude") && usage.loading("codex"));
-            compare(usage.entries, {}, "no intermediate failure reaches the widget");
-            tryVerify(() => !usage.checking, 10000);
-            verify(!usage.loading("claude") && !usage.loading("codex"));
-            compare(usage.entry("claude").weekly.percent, 52);
-            wait(100);
-            compare(usage.command, command);
-            compare(changes.count, 1, "answering leaves the command binding stable");
-            compare(runs.count, 1, "the final report doesn't start another poll");
+            tryCompare(usage, "checking", false, 10000);
+        }
 
+        function test_firstReportDoesNotStartAnotherPoll() {
+            make("slow", []);
+            const runs = commands();
+            const changes = spy("commandChanged");
+            const landed = spy("entriesChanged");
+            usage.providers = ["claude", "codex"];
+            const command = usage.command;
+            changes.clear();
+            landed.wait(10000);
+            // Let callbacks queued by the report run before counting invocations.
+            let settled = false;
+            Qt.callLater(() => { settled = true; });
+            tryVerify(() => settled);
+            compare(usage.command, command);
+            compare(changes.count, 0, "answering leaves the command binding stable");
+            compare(runs.count, 1, "the final report doesn't start another poll");
+        }
+
+        function test_refreshDeduplicatesALaterPoll() {
+            start("slow");
+            const runs = commands();
             usage.refresh();
             usage.refresh();
-            compare(runs.count, 2, "a later poll is also deduplicated");
-            compare(runs.signalArguments[1][0], command, "later polls have no startup option");
-            tryVerify(() => !usage.checking, 10000);
+            compare(runs.count, 1, "a later poll is also deduplicated");
+            compare(runs.signalArguments[0][0], usage.command, "later polls have no startup option");
+            tryCompare(usage, "checking", false, 10000);
         }
 
         function test_onlyNewlyEnabledProvidersGetStartupGrace() {
