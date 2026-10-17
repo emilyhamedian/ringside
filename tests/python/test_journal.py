@@ -76,6 +76,17 @@ class Checks(Isolated):
         self.assertEqual(e, {"level": "debug", "provider": "claude", "kind": "check",
                              "message": f"Claude: checked in {e['ms']} ms", "ms": e["ms"]})
 
+    def test_initial_retries_are_debug_and_leave_out_transport_details(self):
+        failure = usage.CheckFailed("private transport details", "offline", "api.anthropic.com", retryable=True)
+        fetch = mock.Mock(side_effect=[failure, reading(5, 9)])
+        usage.EVENTS.clear()
+        with mock.patch.object(usage, "INITIAL_RETRY_DELAY", 0):
+            usage.collect({"claude": fetch}, 1000, initial=["claude"])
+        self.assertEqual(lines("level", "kind"), [{"level": "debug", "kind": "initial-retry"},
+                                                  {"level": "debug", "kind": "check"}])
+        self.assertEqual(usage.EVENTS[0]["message"], "Claude: connection not ready; retrying during first load")
+        self.assertNotIn("private transport details", json.dumps(usage.EVENTS))
+
     def test_recovery_is_logged_once(self):
         self.collect(1000, claude=self.failing(usage.CheckFailed("x", "offline", "api.anthropic.com")))
         self.collect(1300, claude=lambda: reading(5, 9))

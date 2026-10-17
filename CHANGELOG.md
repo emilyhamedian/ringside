@@ -6,6 +6,11 @@ follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Claude and Codex rings allow time for the connection to come up on first
+  load before showing a failure.
+
 ## [0.3.2] - 2026-10-13
 
 ### Added

@@ -14,7 +14,10 @@ other. Output shape:
          "codex":  {"status": "ok", "fetchedAt": ..., "weekly": {...}, "scoped": [...]}}}
 
 --providers claude,codex names the providers to poll and report; both by
-default. A window is {"percent": 0-100, "resetsAt": <epoch seconds>,
+default. --initial-providers names those awaiting their first report: safe
+connection failures retry at five-second intervals within one 30-second
+window, before a final result is cached. Existing readings and holds still
+apply. A window is {"percent": 0-100, "resetsAt": <epoch seconds>,
 "windowSeconds": <its length>, "history": [[<epoch seconds>, <percent>], ...]}.
 "weekly" is the all-models window; "scoped" lists the model-specific weekly
 windows, each a window with an "id" that stays stable across polls and a
@@ -40,7 +43,7 @@ session does too, and so does each starter with a time, at its next time
 or, without one, at its last; a starter with a last time also carries
 "atClockZone", the zone at that time.
 
-Every poll's result, a failure or a sign-out as much as a reading, is kept
+Every completed check's result, a failure or a sign-out as much as a reading, is kept
 in $XDG_CACHE_HOME/ringside for five minutes and served from there, so no
 widget, reload or restart spends another call on Anthropic's tightly
 rate-limited usage endpoint before then. A rate-limit reply is kept for as
@@ -102,6 +105,7 @@ import re
 import selectors
 import shutil
 import signal
+import socket
 import stat
 import subprocess
 import sys
@@ -146,8 +150,10 @@ CACHE_FILE = CACHE_DIR / "usage.json"
 HISTORY_FILE = CACHE_DIR / "usage-history.json"
 LOCK_FILE = CACHE_DIR / "usage.lock"
 CACHE_TTL = 5 * 60
+INITIAL_GRACE = 30
+INITIAL_RETRY_DELAY = 5
 # How long a run waits for another to finish before giving up. A poll takes
-# at most about 70 s (Codex, then a token refresh and a poll); a starter
+# at most about 100 s including first-load retries; a starter
 # send, which holds the lock throughout, about 130 s (a poll, a renewal,
 # the preflight and the send).
 LOCK_WAIT = 150
@@ -237,11 +243,12 @@ class CheckFailed(RuntimeError):
     "server", "not-installed" or "program", host the server that failed, or
     "" for the Codex CLI, and status the HTTP status a server answered with."""
 
-    def __init__(self, message, reason, host="", status=None):
+    def __init__(self, message, reason, host="", status=None, *, retryable=False):
         super().__init__(message)
         self.reason = reason
         self.host = host
         self.status = status
+        self.retryable = retryable
 
 
 class AppServerError(RuntimeError):
@@ -255,6 +262,12 @@ class AppServerError(RuntimeError):
 
 # How codex app-server words a missing login in its error reply.
 CODEX_SIGNED_OUT = re.compile(r"not logged in|logged out|unauthori[sz]ed|login required", re.IGNORECASE)
+# app-server wraps reqwest's transport errors this way. HTTP refusals and
+# unreadable replies have different forms and must keep their normal hold.
+CODEX_TRANSPORT = re.compile(
+    r"^failed to fetch codex rate limits: (?:error sending request(?: for url \([^\r\n]+\))?"
+    r"|route-aware request timed out)$"
+)
 
 
 # --- journal ---------------------------------------------------------------
@@ -280,6 +293,7 @@ MESSAGES = {
     "check": "{name}: checked in {ms} ms",
     "cached": "{name}: the reading taken {age} s ago still stands",
     "held": "{name}: next check in {wait} s, after {why}",
+    "initial-retry": "{name}: connection not ready; retrying during first load",
     "failed": "{name}: check failed after {ms} ms: {why}",
     "failed-again": "{name}: check failed again after {ms} ms: {why}",
     "recovered": "{name}: checked in {ms} ms, working again after: {why}",
@@ -495,7 +509,7 @@ def codex_rate_limits(binary):
                                          error["code"] if type(error.get("code")) is int else None)
                 return reply["result"]
         if time.monotonic() >= deadline:
-            raise CheckFailed(f"no answer from codex app-server in {ANSWER_TIMEOUT} s", "timeout")
+            raise CheckFailed(f"no answer from codex app-server in {ANSWER_TIMEOUT} s", "timeout", retryable=True)
         raise RuntimeError("app-server closed without answering")
     finally:
         stop_session(proc)
@@ -605,6 +619,9 @@ def codex_usage():
         event("debug", "codex", "cli-error", code="none" if err.code is None else err.code)
         if CODEX_SIGNED_OUT.search(str(err)):
             raise SignedOut() from err
+        if CODEX_TRANSPORT.fullmatch(str(err)):
+            reason = "timeout" if str(err).endswith("route-aware request timed out") else "offline"
+            raise CheckFailed(str(err), reason, retryable=True) from err
         raise
     return parse_codex(result)
 
@@ -653,11 +670,18 @@ def http_json(url, headers, body=None):
         # A socket error's str() leads with its errno, as in "[Errno -2] Name or
         # service not known"; strerror is the readable part.
         reason = getattr(err.reason, "strerror", None) or err.reason
+        # Only these failures prove a token refresh POST never left. A
+        # timeout or reset may come after its single-use token was spent.
+        unsent = isinstance(err.reason, (socket.gaierror, ConnectionRefusedError)) or (
+            isinstance(err.reason, OSError) and err.reason.errno in (errno.ENETUNREACH, errno.EHOSTUNREACH)
+        )
         raise CheckFailed(f"can't reach {host}: {reason}",
-                          "timeout" if isinstance(err.reason, TimeoutError) else "offline", host) from err
+                          "timeout" if isinstance(err.reason, TimeoutError) else "offline", host,
+                          retryable=data is None or unsent) from err
     except OSError as err:
         raise CheckFailed(f"can't reach {host}: {err.strerror or 'timed out'}",
-                          "timeout" if isinstance(err, TimeoutError) else "offline", host) from err
+                          "timeout" if isinstance(err, TimeoutError) else "offline", host,
+                          retryable=data is None) from err
     except ValueError as err:
         raise CheckFailed(f"unreadable reply from {host}", "server", host) from err
 
@@ -1005,7 +1029,7 @@ def windows(entry):
     yield from entry.get("scoped") or []
 
 
-def poll(fetch):
+def poll(fetch, *, initial=False):
     try:
         report = fetch()
     except SignedOut:
@@ -1019,6 +1043,8 @@ def poll(fetch):
         # For the journal only: hold() leaves it out of the cache.
         if getattr(err, "status", None) is not None:
             report["httpStatus"] = err.status
+        if initial and getattr(err, "retryable", False):
+            report["_retryable"] = True
         return report
     except Exception as err:  # noqa: BLE001 - every failure becomes a status
         # Anything else could carry request details, a token among them, so
@@ -1150,12 +1176,12 @@ def replay(entry, wait, now):
     return {"status": "error", "message": entry["message"], **failure}
 
 
-def collect(fetchers, now=None):
+def collect(fetchers, now=None, *, initial=()):
     """Poll each provider unless its last poll is recent enough to report
     again.
 
-    Every poll's result is cached, so no run from any widget polls a provider
-    twice within CACHE_TTL: a reading is served until it is that old, and a
+    Every completed check's result is cached, so other runs never poll a
+    provider within CACHE_TTL: a reading is served until it is that old, and a
     failure or a sign-out is reported again as it was. A rate-limit reply
     holds the provider back for as long as Retry-After asked, if that is
     longer, and reports the seconds left. A hold with more left than its own
@@ -1171,19 +1197,24 @@ def collect(fetchers, now=None):
     """
     with locked():
         now = int(time.time()) if now is None else now
-        providers, history = collect_locked(fetchers, now)
-        replan_starters(providers, now)
-    attach_history(providers, history, now)
+        started = time.monotonic()
+        providers, history = collect_locked(fetchers, now, initial=initial)
+        finished = now + int(time.monotonic() - started)
+        replan_starters(providers, finished)
+    attach_history(providers, history, finished)
     return providers
 
 
-def collect_locked(fetchers, now):
+def collect_locked(fetchers, now, *, initial=()):
     """collect's work, for a caller already holding the lock: the entries
     and the history, which isn't attached yet."""
     cache = read_cache()
     providers, polled = {}, {}
     stepped = False
-    for name, fetch in fetchers.items():
+    started = time.monotonic()
+    deadline = started + INITIAL_GRACE
+    pending = []
+    for name in fetchers:
         entry = cache.get(name)
         if isinstance(entry, dict) and type(entry.get("fetchedAt")) is int and entry["fetchedAt"] > now:
             entry["fetchedAt"] = now
@@ -1200,22 +1231,53 @@ def collect_locked(fetchers, now):
             providers[name] = replay(entry, wait, now)
             event("debug", name, "held", wait=wait, why=failure_why(name, entry))
             continue
-        started = time.monotonic()
-        report = poll(fetch)
-        ms = round((time.monotonic() - started) * 1000)
+        pending.append(name)
+
+    retry, first_at, last_at, fetched_at = {}, {}, {}, {}
+
+    def check(name):
+        first_at.setdefault(name, time.monotonic())
+        report = poll(fetchers[name], initial=name in initial)
+        again = report.pop("_retryable", False)
+        polled[name] = report
+        last_at[name] = time.monotonic()
+        fetched_at[name] = now + int(last_at[name] - started)
+        retry.pop(name, None)
+        if again and time.monotonic() < deadline:
+            retry[name] = time.monotonic() + INITIAL_RETRY_DELAY
+
+    for name in pending:
+        check(name)
+    while retry:
+        due = min(min(retry.values()), deadline)
+        time.sleep(max(0, due - time.monotonic()))
+        if time.monotonic() >= deadline:
+            break
+        for name in list(retry):
+            if time.monotonic() >= deadline:
+                break
+            if retry[name] <= time.monotonic():
+                event("debug", name, "initial-retry")
+                check(name)
+
+    finished = now + int(time.monotonic() - started)
+    for name, report in polled.items():
+        entry = cache.get(name)
+        ms = round((last_at[name] - first_at[name]) * 1000)
         if report["status"] == "ok":
-            report["fetchedAt"] = now
+            report["fetchedAt"] = fetched_at[name]
             cache[name] = providers[name] = report
         else:
-            cache[name] = hold(report, now, PROGRAMS.get(name, ""))
-            providers[name] = replay(cache[name], cache[name]["holdSeconds"], now)
+            cache[name] = hold(report, finished, PROGRAMS.get(name, ""))
+            providers[name] = replay(cache[name], cache[name]["holdSeconds"], finished)
         note_check(name, report, entry, ms, cache[name])
-        polled[name] = report
     history = read_history()
     if polled or stepped:
         write_private(CACHE_FILE, cache)
     if any(report["status"] == "ok" for report in polled.values()):
-        history = record_history(history, polled, now)
+        for name, report in polled.items():
+            if report["status"] == "ok":
+                history = record_history(history, {name: report}, fetched_at[name])
         write_private(HISTORY_FILE, history)
     return providers, history
 
@@ -2142,13 +2204,20 @@ def arguments(argv):
     parser = argparse.ArgumentParser(description="Report the weekly usage of Claude Code and Codex as JSON.")
     parser.add_argument("--providers", type=provider_list, default=list(PROVIDERS),
                         help="comma-separated providers to poll and report (default: claude,codex)")
+    parser.add_argument("--initial-providers", type=provider_list, default=[],
+                        help="providers awaiting their first report; briefly retry connection failures")
     parser.add_argument("--start", action="store_true",
                         help="run the session starter of each listed provider that is switched on and due")
     parser.add_argument("--starter-set", type=switch, action="append", default=[], metavar="PROVIDER=on|off",
                         help="switch a provider's session starter on or off for this user")
     parser.add_argument("--program", type=chosen_program, action="append", default=[], metavar="PROVIDER=PATH",
                         help="run the program at PATH for a provider rather than finding it; ~ is the home folder")
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if any(name not in args.providers for name in args.initial_providers):
+        parser.error("--initial-providers must be a subset of --providers")
+    if args.initial_providers and (args.start or args.starter_set):
+        parser.error("--initial-providers is only for usage checks")
+    return args
 
 
 def main(argv=None):
@@ -2176,7 +2245,7 @@ def main(argv=None):
                 event("warning", name, "starter-stopped", why=os_why(err))
     sources = fetchers()
     try:
-        providers = collect({name: sources[name] for name in ids})
+        providers = collect({name: sources[name] for name in ids}, initial=args.initial_providers)
     except Busy as err:
         providers = waiting(ids, str(err))
     report = {"fetchedAt": int(time.time()), "providers": providers, "events": EVENTS}
