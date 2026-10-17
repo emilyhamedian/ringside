@@ -10,6 +10,8 @@ follows [Semantic Versioning](https://semver.org/).
 
 - Claude and Codex rings allow time for the connection to come up on first
   load before showing a failure.
+- GPU monitoring no longer briefly subscribes to a sleeping GPU after a
+  power-state report.
 
 ## [0.3.2] - 2026-10-13
 

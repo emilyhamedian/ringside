@@ -72,9 +72,12 @@ QtObject {
     // live, resting or asleep, as the leader sees it.
     readonly property string phase: !present ? "asleep" : leading ? ownPhase : leader ? leader.phase : "asleep"
     readonly property bool live: phase === "live"
-    // A GPU that can sleep is only subscribed on a state read after it was
-    // put on a ring: an older one may predate its going to sleep.
-    readonly property bool subscribed: leading && wanted && ownPhase === "live" && (!gated || pmReadAt >= wantedSince)
+    // A GPU that can sleep needs a fresh, explicitly active report read
+    // since it was put on a ring, even while the cached gate is live.
+    // The shortest freshness bound is one poll, so include that boundary.
+    readonly property bool subscribed: leading && wanted && ownPhase === "live"
+        && (!gated || (pmStatus === "active" && pmReadAt >= wantedSince
+                       && timeMs - pmReadAt <= Gate.freshMs({ autosuspendMs: info.autosuspendMs, vendor: vendor })))
     readonly property string name: present ? Format.gpuModel(info.name, nameSensor.value, info.pciName, info.vendor) : ""
     // The name ksystemstats gives it, which libksysguard's process model
     // also tags the processes using it with.
