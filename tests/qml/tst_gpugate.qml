@@ -99,6 +99,34 @@ TestCase {
         verify(result === resting);
     }
 
+    function test_restingRequiresAFreshPostProbeStatus_data() {
+        return [
+            { tag: "delayedPoll", statusAt: 20000, delay: 5000, vendor: "1002", watched: false, phase: "resting" },
+            { tag: "delayedPollWithPopup", statusAt: 20000, delay: 5000, vendor: "1002", watched: true, phase: "resting" },
+            { tag: "amdAgeLimit", statusAt: 56000, delay: 5000, vendor: "1002", watched: false, phase: "resting" },
+            { tag: "amdFresh", statusAt: 56001, delay: 5000, vendor: "1002", watched: false, phase: "live" },
+            { tag: "defaultAgeLimit", statusAt: 58000, delay: 0, vendor: "1002", watched: false, phase: "resting" },
+            { tag: "defaultFresh", statusAt: 58001, delay: 0, vendor: "1002", watched: false, phase: "live" },
+            { tag: "nvidiaAgeLimit", statusAt: 50000, delay: 0, vendor: "10de", watched: false, phase: "resting" },
+            { tag: "nvidiaFresh", statusAt: 50001, delay: 0, vendor: "10de", watched: false, phase: "live" }
+        ];
+    }
+    function test_restingRequiresAFreshPostProbeStatus(data) {
+        const resting = { phase: "resting", since: 10000, quietSince: -1, holdMs: 10000 };
+        const result = Gate.step(resting, { now: 60000, status: "active", statusAt: data.statusAt, usage: undefined,
+                                            watched: data.watched, autosuspendMs: data.delay, vendor: data.vendor });
+        compare(result.phase, data.phase);
+        if (data.phase === "resting") {
+            verify(result === resting);
+            // A later fresh poll resumes monitoring and doubles the hold only once.
+            const fresh = Gate.step(result, { now: 61000, status: "active", statusAt: 61000, usage: undefined,
+                                              watched: data.watched, autosuspendMs: data.delay, vendor: data.vendor });
+            compare(fresh, { phase: "live", since: 61000, quietSince: -1, holdMs: 20000 });
+        } else {
+            compare(result, { phase: "live", since: 60000, quietSince: -1, holdMs: 20000 });
+        }
+    }
+
     // NVIDIA publishes no autosuspend delay and powers down up to ~10 s after idle.
     function test_nvidiaWaitsLongerBeforeTheProbe() {
         const resting = { phase: "resting", since: 0, quietSince: -1, holdMs: 10000 };
