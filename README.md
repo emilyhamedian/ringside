@@ -84,11 +84,12 @@ Turn them on in *Configure Ringside… → Panel Items*.
 
 The ring shows how much of your weekly limit you've used and how long until
 it resets. If your plan also has a per-model limit, that shows on an inner
-ring. When a check fails, the ring greys out, and if it keeps failing, it's
-struck through; the popup tells you why. If a limit resets before it was
-due, the popup says so and how much you got back, for a day or until you've
-seen it. If Plasma can't find `claude` or `codex`, you can tell it where they
-are under *AI Providers*.
+ring. On first load, connection failures retry for up to 30 seconds while
+the rings keep loading. When a check fails, the ring greys out, and if it
+keeps failing, it's struck through; the popup tells you why. If a limit
+resets before it was due, the popup says so and how much you got back, for a
+day or until you've seen it. If Plasma can't find `claude` or `codex`, you
+can tell it where they are under *AI Providers*.
 
 **Starting the next session.** A Claude five-hour session or Codex week only
 begins when you next send a message. With the switch at the bottom of the

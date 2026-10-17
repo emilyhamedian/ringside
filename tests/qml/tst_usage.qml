@@ -354,6 +354,76 @@ TestRoot {
             verify(!usage.loading("claude") && usage.degraded("claude"), "a later failure doesn't load again");
         }
 
+        function test_initialPollWaitsForTheFinalReport() {
+            make("slow", []);
+            const runs = commands();
+            const changes = spy("commandChanged");
+            usage.providers = ["claude", "codex"];
+            const command = usage.command;
+            const initial = "python3 -B " + Shell.quoted(usage.helperPath)
+                            + " --initial-providers claude,codex --providers claude,codex";
+            tryCompare(runs, "count", 1, 1000);
+            compare(runs.signalArguments[0][0], initial);
+            compare(usage.polledIds(initial), ["claude", "codex"]);
+            compare(usage.startedIds(initial), []);
+            compare(usage.starterSet(initial), null);
+            usage.refresh();
+            compare(runs.count, 1, "the actual startup source is already running");
+            wait(150);
+            verify(usage.checking && usage.loading("claude") && usage.loading("codex"));
+            compare(usage.entries, {}, "no intermediate failure reaches the widget");
+            tryVerify(() => !usage.checking, 10000);
+            verify(!usage.loading("claude") && !usage.loading("codex"));
+            compare(usage.entry("claude").weekly.percent, 52);
+            wait(100);
+            compare(usage.command, command);
+            compare(changes.count, 1, "answering leaves the command binding stable");
+            compare(runs.count, 1, "the final report doesn't start another poll");
+
+            usage.refresh();
+            usage.refresh();
+            compare(runs.count, 2, "a later poll is also deduplicated");
+            compare(runs.signalArguments[1][0], command, "later polls have no startup option");
+            tryVerify(() => !usage.checking, 10000);
+        }
+
+        function test_onlyNewlyEnabledProvidersGetStartupGrace() {
+            start("slow", ["claude"]);
+            const runs = commands();
+            usage.providers = ["claude", "codex"];
+            verify(!usage.loading("claude") && usage.loading("codex"));
+            tryCompare(runs, "count", 1, 1000);
+            const initial = "python3 -B " + Shell.quoted(usage.helperPath)
+                            + " --initial-providers codex --providers claude,codex";
+            compare(runs.signalArguments[0][0], initial);
+            usage.refresh();
+            compare(runs.count, 1);
+            tryVerify(() => !usage.checking, 10000);
+            compare(usage.answered, ["claude", "codex"]);
+            usage.providers = ["claude"];
+            compare(usage.answered, ["claude"]);
+            usage.providers = ["claude", "codex"];
+            verify(usage.loading("codex"));
+            tryCompare(runs, "count", 2, 1000);
+            compare(runs.signalArguments[1][0], initial, "enabling again starts a new first check");
+            tryVerify(() => !usage.checking, 10000);
+        }
+
+        function test_startupOptionNeverReachesStarterCommands() {
+            make("slow", []);
+            const runs = commands();
+            usage.providers = ["claude", "codex"];
+            tryCompare(runs, "count", 1, 1000);
+            verify(usage.loading("claude"));
+            usage.setStarter("claude", true);
+            compare(runs.count, 2);
+            verify(runs.signalArguments[1][0].endsWith(" --providers claude,codex --starter-set claude=on"));
+            verify(!runs.signalArguments[1][0].includes("--initial-providers"));
+            tryVerify(() => ran(runs, " --start").length === 1, 10000);
+            verify(!ran(runs, " --start")[0].includes("--initial-providers"));
+            tryVerify(() => runner().connectedSources.length === 0, 10000);
+        }
+
         // A first check that fails keeps the item, with the failure and no
         // readings, as any failed check that can't keep a reading. The
         // next good check fills it in.

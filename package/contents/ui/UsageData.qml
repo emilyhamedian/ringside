@@ -130,13 +130,14 @@ Item {
         return / --providers ([\w,]+) --start$/.exec(source)?.[1].split(",") ?? [];
     }
 
-    // The chosen programs come before --providers, so the patterns that
-    // read a run's ids and mode from its end never meet a path.
-    function helperCommand(providerIds, args) {
+    // The chosen programs and first-check ids come before --providers, so
+    // the patterns that read a run's ids and mode from its end stay fixed.
+    function helperCommand(providerIds, args, initialIds = []) {
         return providerIds.length > 0
             ? "python3 -B " + Shell.quoted(helperPath)
               + providerIds.filter(id => programs[id]).map(id => " --program " + Shell.quoted(id + "=" + programs[id]))
                            .join("")
+              + (args === "" && initialIds.length > 0 ? " --initial-providers " + initialIds.join(",") : "")
               + " --providers " + providerIds.join(",") + args : "";
     }
 
@@ -293,10 +294,13 @@ Item {
     }
 
     function refresh() {
-        if (command !== "" && !runner.connectedSources.includes(command)) {
+        // Snapshot the first-check ids for this run. Answering changes no
+        // command binding, so its report doesn't trigger another check.
+        const source = helperCommand(ids, "", ids.filter(id => !answered.includes(id)));
+        if (source !== "" && !runner.connectedSources.includes(source)) {
             // Set first: a source the engine still holds answers at once.
             checking = true;
-            runner.connectSource(command);
+            runner.connectSource(source);
         }
     }
 
