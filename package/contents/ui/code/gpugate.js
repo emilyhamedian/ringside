@@ -18,11 +18,10 @@
 //   live     awake; subscribed
 //   resting  awake; unsubscribed while waiting to see whether it suspends
 //
-// Nothing here wakes a GPU: asleep only turns live on a status read too
-// recently for the GPU to have gone back to sleep since, and resting only on
-// a status read after the GPU had its chance to suspend. An open popup keeps
-// a live GPU live but never cuts resting short, since that could subscribe a
-// GPU that suspended moments ago.
+// Both asleep and resting only turn live on a recent status read; resting
+// also waits for a read after the GPU had its chance to suspend. An open
+// popup keeps a live GPU live but never cuts resting short, since that could
+// subscribe a GPU that suspended moments ago.
 //
 // Times are milliseconds on the caller's monotonic clock, never wall time.
 
@@ -75,7 +74,7 @@ function step(state, input) {
     }
 
     if (state.phase === "resting") {
-        if (input.statusAt >= state.since + probeMs(input)) {
+        if (input.statusAt >= state.since + probeMs(input) && now - input.statusAt < freshMs(input)) {
             return { phase: "live", since: now, quietSince: -1,
                      holdMs: Math.min(state.holdMs * 2, MAX_HOLD_MS) };
         }
