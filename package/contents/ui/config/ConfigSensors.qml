@@ -92,7 +92,7 @@ ConfigPage {
             rows.push({
                 id: String(matches.data(index, Sensors.SensorTreeModel.SensorId)),
                 name: String(matches.data(index, Qt.DisplayRole) || ""),
-                groupName: String(tree.data(flat.mapToSource(matches.mapToSource(index)).parent, Qt.DisplayRole) || "")
+                groupName: String(tree.data(tree.parent(flat.mapToSource(matches.mapToSource(index))), Qt.DisplayRole) || "")
             });
         }
         fromTree = rows;
