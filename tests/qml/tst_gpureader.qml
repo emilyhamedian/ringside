@@ -23,6 +23,13 @@ TestRoot {
             GpuReader {}
         }
 
+        Component {
+            id: idleReaderComponent
+            GpuReader {
+                function read(index) { return 0; }
+            }
+        }
+
         // A fresh id per test: leadership lives in a library shared by the
         // whole engine, like every Ringside widget in plasmashell.
         function discrete(runtimePm) {
@@ -189,7 +196,11 @@ TestRoot {
 
         // A state read before the GPU went onto a ring may predate its going to
         // sleep, so the reader waits for a newer one.
-        function test_joiningARingWaitsForANewerState() {
+        function test_joiningARingWaitsForANewerState_data() {
+            return ["active", "suspended", "suspending", "resuming", "", "error", "unsupported"].map(status =>
+                ({ tag: status || "missing", status: status, subscribed: status === "active" }));
+        }
+        function test_joiningARingWaitsForANewerState(data) {
             reader.onRing = false;
             reader.takeStatus("active", "auto", 1000);
             reader.tick(1500);
@@ -199,8 +210,85 @@ TestRoot {
             reader.onRing = true;
             reader.tick(2000);
             compare(sensorStates(reader), off);
-            reader.takeStatus("active", "auto", 2000);
+            reader.timeMs = 2000;
+            const changes = [];
+            reader.subscribedChanged.connect(() => changes.push(reader.subscribed));
+            reader.takeStatus(data.status, "auto", 2000);
+            compare(sensorStates(reader), data.subscribed ? on : off, "before the gate's next tick");
+            compare(changes, data.subscribed ? [true] : [], "no brief subscription to a non-active GPU");
+        }
+
+        function test_nonActiveReportReleasesImmediately_data() {
+            return ["suspended", "suspending", "resuming", "", "error", "unsupported"].map(status =>
+                ({ tag: status || "missing", status: status }));
+        }
+        function test_nonActiveReportReleasesImmediately(data) {
+            reader.takeStatus("active", "auto", 1000);
+            reader.tick(1500);
             compare(sensorStates(reader), on);
+
+            reader.timeMs = 2000;
+            reader.takeStatus(data.status, "auto", 2000);
+            compare(reader.phase, "live", "the cached gate has not ticked yet");
+            compare(sensorStates(reader), off);
+        }
+
+        function test_subscriptionsRequireFreshReports_data() {
+            return [
+                { tag: "amd", vendor: "1002", delay: 5000, maxAge: 4000 },
+                { tag: "nvidia", vendor: "10de", delay: -1, maxAge: 10000 },
+                { tag: "no-delay", vendor: "1002", delay: -1, maxAge: 2000 }
+            ];
+        }
+        function test_subscriptionsRequireFreshReports(data) {
+            reader.info = Object.assign({}, reader.info, { vendor: data.vendor, autosuspendMs: data.delay });
+            reader.takeStatus("active", "auto", 1000);
+            reader.tick(1500);
+            compare(sensorStates(reader), on);
+
+            reader.timeMs = 1000 + data.maxAge;
+            compare(sensorStates(reader), on);
+            reader.timeMs += 1;
+            compare(reader.phase, "live");
+            compare(sensorStates(reader), off, "the active report expired without a gate transition");
+
+            reader.onRing = false;
+            reader.tick(reader.timeMs);
+            reader.onRing = true;
+            reader.timeMs += 1000;
+            reader.tick(reader.timeMs);
+            const rejoinedAt = reader.timeMs;
+            reader.timeMs += data.maxAge + 1;
+            reader.takeStatus("active", "auto", rejoinedAt);
+            compare(sensorStates(reader), off, "a delayed rejoin report is already too old");
+            reader.takeStatus("active", "auto", reader.timeMs);
+            compare(sensorStates(reader), on, "a fresh active report restores monitoring");
+        }
+
+        function test_regularPollingStillLetsAnIdleGpuRest_data() {
+            return test_subscriptionsRequireFreshReports_data();
+        }
+        function test_regularPollingStillLetsAnIdleGpuRest(data) {
+            reader = createTemporaryObject(idleReaderComponent, testCase, {
+                info: Object.assign(discrete(true), { id: "gpu" + (2900 + serial), vendor: data.vendor, autosuspendMs: data.delay }),
+                onRing: true
+            });
+            const changes = [];
+            reader.subscribedChanged.connect(() => changes.push(reader.subscribed));
+            reader.takeStatus("active", "auto", 0);
+            reader.tick(0);
+            // Monitor advances the clock and ticks before each asynchronous
+            // poll reply arrives, including at the shortest freshness bound.
+            for (let now = 1000; now <= 11000; now += 1000) {
+                reader.timeMs = now;
+                reader.tick(now);
+                if (now % 2000 === 0) {
+                    reader.takeStatus("active", "auto", now);
+                }
+            }
+            compare(reader.phase, "resting");
+            compare(sensorStates(reader), off);
+            compare(changes, [true, false], "one subscription followed by the idle release");
         }
 
         // TLP and the like switch power/control with the power source: "on"
