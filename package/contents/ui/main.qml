@@ -17,6 +17,9 @@ import "code/items.js" as Items
 PlasmoidItem {
     id: root
 
+    // main.xml supplies the keys at runtime, outside KConfigPropertyMap's static type.
+    readonly property var config: Plasmoid.configuration
+
     readonly property bool vertical: Plasmoid.formFactor === PlasmaCore.Types.Vertical
     readonly property real thickness: Plasmoid.formFactor === PlasmaCore.Types.Horizontal ? height
                                     : vertical ? width : Kirigami.Units.gridUnit * 2.5
@@ -29,7 +32,7 @@ PlasmoidItem {
     // Where the items sit when the applet takes the panel's free space, as
     // a panel spacer beside it would: 0, 1 or 2 for the panel's start,
     // middle or end, and -1 when it takes only the items' room.
-    readonly property int fillPlace: ["start", "center", "end"].indexOf(Plasmoid.configuration.fillPanel)
+    readonly property int fillPlace: ["start", "center", "end"].indexOf(root.config.fillPanel)
     readonly property bool fills: fillPlace >= 0 && (Plasmoid.formFactor === PlasmaCore.Types.Horizontal || vertical)
     // A right-to-left horizontal panel starts at the right. A test seam.
     property bool mirrored: Application.layoutDirection === Qt.RightToLeft
@@ -119,12 +122,11 @@ PlasmoidItem {
 
     Monitor {
         id: readings
-        config: Plasmoid.configuration
+        config: root.config
         // Keys the graphs' saved history to this widget.
         widgetId: String(Plasmoid.id)
-        // KPluginMetaData's version, there since Plasma 6.0; qmllint has no
-        // type information for KPluginMetaData.
-        version: Plasmoid.metaData?.version ?? "" // qmllint disable unresolved-type
+        // KPluginMetaData is always a value; older qmllint lacks its type information.
+        version: Plasmoid.metaData.version // qmllint disable unresolved-type
         openPopup: popup.visible ? root.openItem : ""
         onSystemMonitorRequested: root.openSystemMonitor()
         onConfigureRequested: {
@@ -165,7 +167,7 @@ PlasmoidItem {
             items: root.items
             vertical: root.vertical
             thickness: root.thickness
-            ringsOnly: Plasmoid.configuration.ringsOnly
+            ringsOnly: root.config.ringsOnly
             location: Plasmoid.location
             openItem: popup.visible ? root.openItem : ""
             egg: eggClock

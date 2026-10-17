@@ -1263,22 +1263,22 @@ TestRoot {
             compare(make(sensors).offered(data.id), data.offered);
         }
 
-        // The ids in this machine's sensor tree that the page offers.
+        // The offered sensors and their parent labels, from walking the tree directly.
         function offeredInTree(page) {
-            const ids = [];
+            const rows = [];
             const walk = parent => {
                 const count = parent ? tree.rowCount(parent) : tree.rowCount();
                 for (let row = 0; row < count; ++row) {
                     const index = parent ? tree.index(row, 0, parent) : tree.index(row, 0);
                     const id = String(tree.data(index, Sensors.SensorTreeModel.SensorId) || "");
                     if (page.offered(id)) {
-                        ids.push(id);
+                        rows.push({ id: id, groupName: parent ? String(tree.data(parent, Qt.DisplayRole) || "") : "" });
                     }
                     walk(index);
                 }
             };
             walk(null);
-            return ids;
+            return rows;
         }
 
         // collect() reads the rows the pickers use from the real tree, once
@@ -1296,12 +1296,16 @@ TestRoot {
                 skip("ksystemstats lists no temperature, network or disk sensor here, or isn't reachable");
             }
             tryVerify(() => page.fromTree.length > 0, 10000, "the page read nothing from the tree");
+            const offered = offeredInTree(page);
             for (const row of Array.from(page.fromTree)) {
                 compare(Object.keys(row).sort(), ["groupName", "id", "name"], JSON.stringify(row));
                 for (const key of ["id", "name", "groupName"]) {
                     compare(typeof row[key], "string", key + " of " + JSON.stringify(row));
                 }
                 verify(page.offered(row.id), row.id);
+                const expected = offered.find(sensor => sensor.id === row.id);
+                verify(expected !== undefined, row.id + " is in the source tree");
+                compare(row.groupName, expected.groupName, row.id + " keeps its source-tree parent label");
             }
         }
 

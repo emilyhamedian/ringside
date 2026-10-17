@@ -460,7 +460,7 @@ TestRoot {
         // User-Agent, doing without when there is none to read.
         function test_widgetReachesTheMonitor_data() {
             return [{ tag: "metadata", metaData: { version: "0.3.0" }, version: "0.3.0" },
-                    { tag: "none", metaData: undefined, version: "" }];
+                    { tag: "empty metadata", metaData: { version: "" }, version: "" }];
         }
         function test_widgetReachesTheMonitor(data) {
             const saved = Plasmoid.metaData;
