@@ -1319,7 +1319,7 @@ class Session(Isolated):
         self.assertIsNone(usage.parse_claude(body)["session"])
         body["five_hour"] = {"utilization": 12.4, "resets_at": "2026-09-02T02:00:00.512345+00:00"}
         self.assertEqual(usage.parse_claude(body)["session"],
-                         {"percent": 12, "resetsAt": 1788314400, "windowSeconds": SESSION})
+                         {"percent": 12, "exhausted": False, "resetsAt": 1788314400, "windowSeconds": SESSION})
         body["five_hour"] = {"utilization": 0, "resets_at": None}
         self.assertEqual(usage.parse_claude(body)["session"]["resetsAt"], None)
 

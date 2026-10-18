@@ -18,7 +18,9 @@ and reported alongside weekly usage, at most once per five minutes including
 failures. The widget supplies every enabled provider regardless of whether
 credits are shown. Codex credits reuse its weekly response. Credits have
 their own status and cached balance, independent of weekly readings. No
-credit-only check renews a login.
+credit-only check renews a login. A credit record's "spent" says a successful
+observation found a lower positive balance in the same currency and scale;
+it does not say when the balance was spent.
 
 --providers claude,codex names the providers to poll and report; both by
 default. --initial-providers names those awaiting their first report: safe
@@ -561,14 +563,14 @@ def stop_session(proc):
 def seven_day_window(limit):
     """The limit's window that spans exactly seven days; Codex may put it in either slot."""
     for window in (limit.get("primary"), limit.get("secondary")):
-        if window and window.get("windowDurationMins") == WEEK_MINUTES:
+        if isinstance(window, dict) and window.get("windowDurationMins") == WEEK_MINUTES:
             return window
     return None
 
 
 def weekly_window(limit):
     """Pick the seven-day window, falling back to the longest window present."""
-    windows = [w for w in (limit.get("primary"), limit.get("secondary")) if w]
+    windows = [w for w in (limit.get("primary"), limit.get("secondary")) if isinstance(w, dict) and w]
     if not windows:
         return None
     return seven_day_window(limit) or max(windows, key=lambda w: w.get("windowDurationMins", 0))
@@ -604,7 +606,16 @@ def parse_codex(result):
         if weekly:
             scoped.append({"id": limit_id, "label": other.get("limitName") or limit_id,
                            **codex_window(weekly)})
-    return {"weekly": codex_window(window), "scoped": scoped}
+    reading = {"weekly": codex_window(window), "scoped": scoped}
+    for candidate in (limit.get("primary"), limit.get("secondary")):
+        if not isinstance(candidate, dict):
+            continue
+        minutes = candidate.get("windowDurationMins")
+        if (type(minutes) is int and 0 < minutes * 60 < reading["weekly"]["windowSeconds"]
+                and finite_share(candidate.get("usedPercent"))):
+            with contextlib.suppress(ValueError, TypeError, OverflowError):
+                reading["session"] = codex_window(candidate)
+    return reading
 
 
 def cli_or_reason(name):
@@ -1105,9 +1116,16 @@ def credits_report(record):
     status = record.get("status")
     reason = record.get("reason")
     return {"status": status if status in ("ok", "disabled", "unavailable", "error") else "unavailable",
-            "balance": balance, "fetchedAt": record.get("fetchedAt") if type(record.get("fetchedAt")) is int else None,
+            "balance": balance, "spent": status == "ok" and balance is not None and record.get("spent") is True,
+            "fetchedAt": record.get("fetchedAt") if type(record.get("fetchedAt")) is int else None,
             "retryAt": record.get("retryAt") if type(record.get("retryAt")) is int else None,
             "reason": reason if reason in ("offline", "timeout", "server", "rate-limited", "signed-out", "other") else None}
+
+
+def credits_spent(record, balance):
+    previous = credits_report(record)["balance"]
+    return bool(previous and balance and previous["currency"] == balance["currency"]
+                and previous["precision"] == balance["precision"] and balance["amount"] < previous["amount"])
 
 
 def collect_credits(cache, providers, now):
@@ -1140,7 +1158,7 @@ def collect_credits(cache, providers, now):
                 # This newer provider refusal replaces any account's old balance;
                 # retaining its old identity would discard the refusal on eligibility.
                 record.pop("identity", None)
-                record.update(status="disabled", balance=None, fetchedAt=now, reason=None)
+                record.update(status="disabled", balance=None, fetchedAt=now, reason=None, spent=False)
     for name in context["eligible"] & providers.keys():
         record = records.setdefault(name, {})
         observed = context["observed"].get(name, {})
@@ -1164,7 +1182,8 @@ def collect_credits(cache, providers, now):
                 else:
                     try:
                         status, balance = parse_codex_credits(observed["raw"])
-                        record.update(status=status, balance=balance, fetchedAt=now, retryAt=None, reason=None)
+                        record.update(status=status, balance=balance, spent=credits_spent(record, balance),
+                                      fetchedAt=now, retryAt=None, reason=None)
                     except (ValueError, TypeError, AttributeError, OverflowError):
                         record.update(status="error", reason="other")
             elif providers[name].get("status") != "ok":
@@ -1195,7 +1214,7 @@ def collect_credits(cache, providers, now):
                         "x-organization-uuid": snapshot[1],
                     }, timeout=CREDITS_TIMEOUT, redirects=False, max_bytes=65536)
                     balance = parse_claude_credits(body)
-                    record.update(status="ok", balance=balance,
+                    record.update(status="ok", balance=balance, spent=credits_spent(record, balance),
                                   fetchedAt=now + int(time.monotonic() - attempt_started), reason=None)
                 except RateLimited as err:
                     response_at = now + math.ceil(time.monotonic() - attempt_started)
@@ -1211,6 +1230,8 @@ def collect_credits(cache, providers, now):
                 if claude_credit_identity() != snapshot:
                     record = records[name] = {"status": "unavailable", "balance": None, "fetchedAt": None,
                                              "retryAt": record["retryAt"], "reason": "signed-out"}
+        if record.get("status") != "ok":
+            record["spent"] = False
         # Copy the base entry before adding report-only fields to a cache hit.
         providers[name] = dict(providers[name], credits=credits_report(record))
     if records:
@@ -1259,7 +1280,8 @@ def epoch_seconds(value):
 
 
 def window_from(percent, resets_at, seconds):
-    return {"percent": clamp_percent(percent), "resetsAt": epoch_seconds(resets_at), "windowSeconds": seconds}
+    return {"percent": clamp_percent(percent), "exhausted": finite_share(percent) and percent >= 100,
+            "resetsAt": epoch_seconds(resets_at), "windowSeconds": seconds}
 
 
 def windows(entry):

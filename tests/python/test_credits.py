@@ -34,6 +34,25 @@ class CreditParsing(unittest.TestCase):
         with self.assertRaises(ValueError):
             usage.parse_claude_credits({"balance": {"amount": 10, "currency": "USD"}})
 
+    def test_spent_requires_two_valid_positive_balances_in_the_same_currency_and_scale(self):
+        current = {"amount": 9, "currency": "USD", "precision": 2}
+        for previous in (None, {"amount": 0, "currency": "USD", "precision": 2},
+                         {"amount": float("nan"), "currency": "USD", "precision": 2},
+                         {"amount": 10, "currency": "EUR", "precision": 2},
+                         {"amount": 10, "currency": "USD", "precision": 0},
+                         {"amount": 9, "currency": "USD", "precision": 2},
+                         {"amount": 8, "currency": "USD", "precision": 2}):
+            self.assertFalse(usage.credits_spent({"balance": previous}, current))
+        self.assertTrue(usage.credits_spent({"balance": dict(current, amount=10)}, current))
+        self.assertFalse(usage.credits_spent({"balance": dict(current, amount=10)}, None))
+
+    def test_spent_report_rejects_failure_missing_balance_and_non_boolean_cache_flags(self):
+        balance = {"amount": 9, "currency": "USD", "precision": 2}
+        for status in ("disabled", "unavailable", "error"):
+            self.assertIs(usage.credits_report({"status": status, "balance": balance, "spent": True})["spent"], False)
+        self.assertIs(usage.credits_report({"status": "ok", "balance": balance, "spent": 1})["spent"], False)
+        self.assertIs(usage.credits_report({"status": "ok", "balance": None, "spent": True})["spent"], False)
+
     def test_codex_credits_are_provider_units_and_validate_flags(self):
         def parse(**credits):
             return usage.parse_codex_credits({"rateLimits": {"credits": credits}})
@@ -91,7 +110,7 @@ class Credits(Isolated):
         with mock.patch.object(usage, "http_json", return_value={"amount": 1234, "currency": "USD"}) as get:
             result = self.collect(1001, fetch=fetch)
         self.assertEqual(result["credits"], {"status": "ok", "balance": {"amount": 12.34, "currency": "USD", "precision": 2},
-                                             "fetchedAt": 1001, "retryAt": 1301, "reason": None})
+                                             "spent": False, "fetchedAt": 1001, "retryAt": 1301, "reason": None})
         args, kwargs = get.call_args
         self.assertEqual(args[0], "https://api.anthropic.com/api/oauth/organizations/" + ORG + "/prepaid/credits")
         self.assertEqual(args[1], {"Authorization": "Bearer test-access", "Content-Type": "application/json",
@@ -127,6 +146,79 @@ class Credits(Isolated):
         credit_url = "https://api.anthropic.com/api/oauth/organizations/" + ORG + "/prepaid/credits"
         self.assertEqual([call.args[0] for call in get.call_args_list],
                          [usage.CLAUDE_USAGE_URL, credit_url, usage.CLAUDE_USAGE_URL, credit_url])
+
+    def test_claude_balance_drop_is_cached_until_the_next_successful_observation(self):
+        self.base()
+        balances = [(1000, "USD", False), (900, "USD", True), (900, "USD", False),
+                    (1000, "USD", False), (0, "USD", False), (500, "USD", False),
+                    (100, "JPY", False), (90, "JPY", True)]
+        for index, (amount, currency, spent) in enumerate(balances):
+            at = 1001 + 300 * index
+            with self.subTest(amount=amount, currency=currency), \
+                    mock.patch.object(usage, "http_json", return_value={"amount": amount, "currency": currency}) as get:
+                result = self.collect(at)["credits"]
+                self.assertIs(result["spent"], spent)
+                self.assertIs(self.cache()["_credits"]["claude"]["spent"], spent)
+                cached = self.collect(at + 1)["credits"]
+                self.assertEqual(cached, result)
+                get.assert_called_once()
+
+    def test_claude_failure_hides_spent_without_losing_last_balance_for_the_next_observation(self):
+        self.base()
+        with mock.patch.object(usage, "http_json", side_effect=[{"amount": 1000, "currency": "USD"},
+                                 {"amount": 900, "currency": "USD"}, usage.CheckFailed("offline", "offline"),
+                                 {"amount": 800, "currency": "USD"}]):
+            self.collect(1001)
+            self.assertIs(self.collect(1301)["credits"]["spent"], True)
+            error = self.collect(1601)["credits"]
+            self.assertIs(error["spent"], False)
+            self.assertEqual((error["balance"]["amount"], error["fetchedAt"]), (9, 1301))
+            self.assertIs(self.collect(1602)["credits"]["spent"], False)
+            self.assertIs(self.collect(1901)["credits"]["spent"], True)
+
+    def test_account_and_credential_generation_changes_do_not_count_as_spending(self):
+        for change in (lambda: self.account(OTHER),
+                       lambda: usage.CLAUDE_CREDENTIALS.write_text(json.dumps({"claudeAiOauth": {
+                           **self.credentials["claudeAiOauth"], "refreshToken": "changed-refresh"}}))):
+            self.base()
+            self.account()
+            usage.CLAUDE_CREDENTIALS.write_text(json.dumps(self.credentials))
+            with mock.patch.object(usage, "http_json", side_effect=[{"amount": 1000, "currency": "USD"},
+                                     {"amount": 900, "currency": "USD"}]):
+                self.collect(1001)
+                change()
+                self.assertIs(self.collect(1301)["credits"]["spent"], False)
+
+    def test_codex_balance_drop_reuses_rpc_and_clears_spent_on_failure_or_unavailability(self):
+        raw = fixture("codex_rate_limits.json")
+        credits = {"hasCredits": True, "unlimited": False, "balance": "10"}
+        raw["rateLimitsByLimitId"]["codex"]["credits"] = credits
+        with mock.patch.object(usage, "find_cli", return_value=("codex", "")), \
+                mock.patch.object(usage, "codex_rate_limits", return_value=raw) as rpc:
+            def collect(at):
+                return self.collect(at, provider="codex", fetch=usage.codex_usage, eligible=("codex",))["credits"]
+            self.assertIs(collect(1000)["spent"], False)
+            credits["balance"] = "9"
+            drop = collect(1300)
+            self.assertIs(drop["spent"], True)
+            self.assertEqual(collect(1301), drop)
+            self.assertEqual(rpc.call_count, 2)
+            rpc.side_effect = usage.CheckFailed("offline", "offline")
+            error = collect(1600)
+            self.assertIs(error["spent"], False)
+            self.assertEqual(error["balance"]["amount"], 9)
+            rpc.side_effect = None
+            raw["rateLimitsByLimitId"]["codex"].pop("credits")
+            self.assertIs(collect(1900)["spent"], False)
+            credits["balance"] = "8"
+            raw["rateLimitsByLimitId"]["codex"]["credits"] = credits
+            self.assertIs(collect(2200)["spent"], False)
+            credits["balance"] = "7"
+            self.assertIs(collect(2500)["spent"], True)
+            credits["unlimited"] = True
+            self.assertIs(collect(2800)["spent"], False)
+            credits["hasCredits"] = False
+            self.assertIs(collect(3100)["spent"], False)
 
     def test_failure_preserves_balance_and_zero_replaces_it(self):
         self.base()
