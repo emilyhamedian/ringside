@@ -135,7 +135,8 @@ PopupPage {
             property var last: null
             readonly property var readings: [live.phase, live.usage, live.temperature, live.vramUsed, live.knownVramTotal,
                                              live.clock, live.power, live.history, live.temperatureHistory, live.highs,
-                                             live.temperatureHighs, live.temperatureExtent]
+                                             live.temperatureHighs, live.temperatureExtent,
+                                             live.reportsTemperature, live.reportsVram]
 
             function keep() {
                 if (live.phase === "asleep") {
@@ -248,7 +249,6 @@ PopupPage {
             return processList.heightFor(count);
         }
 
-        // Intel GPUs publish no temperature, so theirs is left out rather than shown as a dash.
         readonly property bool temperatureShown: slot.reportsTemperature
         readonly property bool hasPower: Number.isFinite(slot.power)
         // Smaller than other popups' tiles' (Style.tilePointSize()), so a

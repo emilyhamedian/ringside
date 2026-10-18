@@ -61,7 +61,8 @@ come with Plasma's System Monitor. A few extras need a little more:
 
 - Memory pressure needs Plasma 6.2 or later.
 - Intel GPUs need Plasma 6.4 or later with the i915 driver, or 6.8 or later
-  with xe, and don't report a temperature or VRAM.
+  with xe. i915 doesn't report temperature or VRAM; xe can report package
+  temperature and dedicated VRAM where the hardware and kernel support it.
 - The processes using an NVIDIA GPU need Plasma 6.4 or later and
   `nvidia-smi`. Only your own processes are listed, and the kernel doesn't
   count compute work's share of a GPU (ROCm's, say), so that shows as a dash.

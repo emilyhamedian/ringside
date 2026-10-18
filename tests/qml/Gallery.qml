@@ -141,7 +141,7 @@ TestRoot {
         gpuInner.knownVramTotal: 8 * innerAsleep.gib
     }
 
-    // A hybrid laptop: Intel publishes no GPU temperature.
+    // A hybrid laptop whose Intel i915 GPU publishes no temperature.
     FakeMonitor {
         id: intel
         cpuModel: "Intel Core i7-12700H"
@@ -171,6 +171,21 @@ TestRoot {
             { name: "obs", usage: 4.1, memory: 412 * 1024 ** 2, gpu: "NVIDIA GeForce RTX 3060 Laptop GPU" },
             { name: "firefox", usage: 3.2, memory: 0, gpu: "0000:00:02.0" }
         ]
+    }
+
+    // A discrete Intel xe GPU with temperature and dedicated video memory.
+    FakeMonitor {
+        id: xe
+        gpuOuter.name: "Intel Arc B580"
+        gpuOuter.vendor: "8086"
+        gpuOuter.temperatureLabel: ""
+        gpuOuter.usage: 38
+        gpuOuter.temperature: 62
+        gpuOuter.vramUsed: 2.4 * xe.gib
+        gpuOuter.knownVramTotal: 12 * xe.gib
+        gpuOuter.clock: 1800
+        gpuOuter.power: 76
+        gpuInner.present: false
     }
 
     // The Codex ring with the OpenAI logo.
@@ -555,6 +570,11 @@ TestRoot {
                 label: "Memory · every string a third longer"
                 LongMemoryPopup { monitor: normal }
             }
+        }
+
+        GalleryFrame {
+            label: "GPU · Intel xe · temperature and dedicated VRAM"
+            GpuPopup { monitor: xe }
         }
 
         RowLayout {

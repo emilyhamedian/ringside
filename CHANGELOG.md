@@ -6,6 +6,11 @@ follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Intel GPUs using xe show package temperature and dedicated VRAM when
+  available.
+
 ### Changed
 
 - System Monitor link has an activity icon in the popup footer and underlines on hover or keyboard focus.

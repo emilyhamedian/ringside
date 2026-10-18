@@ -240,7 +240,7 @@ QtObject {
         readonly property bool live: phase === "live"
         readonly property bool resting: phase === "resting"
         readonly property bool awake: phase !== "asleep"
-        // False for Intel GPUs, which publish no temperature.
+        // False when the backend has no temperature reading, as with i915.
         property bool reportsTemperature: true
         property bool reportsVram: true
         property string kind: ""

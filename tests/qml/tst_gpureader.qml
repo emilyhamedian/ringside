@@ -30,6 +30,14 @@ TestRoot {
             }
         }
 
+        Component {
+            id: sampledReaderComponent
+            GpuReader {
+                property var samples: [0, NaN, NaN, NaN, NaN, NaN]
+                function read(index) { return samples[index]; }
+            }
+        }
+
         // A fresh id per test: leadership lives in a library shared by the
         // whole engine, like every Ringside widget in plasmashell.
         function discrete(runtimePm) {
@@ -124,7 +132,9 @@ TestRoot {
             return [
                 { tag: "amd", vendor: "1002", kind: "discrete", keys: common.concat(["power1"]), gated: true },
                 { tag: "nvidia", vendor: "10de", kind: "discrete", keys: common.concat(["power"]), gated: true },
-                { tag: "integrated", vendor: "1002", kind: "integrated", keys: common, gated: false }
+                { tag: "integrated", vendor: "1002", kind: "integrated", keys: common, gated: false },
+                { tag: "xeDiscrete", vendor: "8086", kind: "discrete", keys: common.concat(["power"]), gated: true },
+                { tag: "xeIntegrated", vendor: "8086", kind: "integrated", keys: common, gated: false }
             ];
         }
         function test_sensorIds(data) {
@@ -142,6 +152,125 @@ TestRoot {
             compare(reader.gated, data.gated);
             compare(reader.phase, data.gated ? "asleep" : "live");
             compare(sensorStates(reader), data.keys.map(() => !data.gated));
+        }
+
+        function intelReader(kind, samples) {
+            return createTemporaryObject(sampledReaderComponent, testCase, {
+                info: Object.assign(discrete(kind === "discrete"), {
+                    id: "gpu" + (3900 + serial), vendor: "8086", kind: kind
+                }), onRing: true, samples: samples
+            });
+        }
+
+        function test_otherVendorsKeepCapabilities_data() {
+            return [{ tag: "amd", vendor: "1002" }, { tag: "nvidia", vendor: "10de" }];
+        }
+        function test_otherVendorsKeepCapabilities(data) {
+            const r = createTemporaryObject(sampledReaderComponent, testCase, {
+                info: Object.assign(discrete(true), { id: "gpu" + (4900 + serial), vendor: data.vendor }), onRing: true
+            });
+            compare(r.phase, "asleep");
+            verify(r.reportsTemperature);
+            verify(r.reportsVram);
+        }
+
+        function test_intelCapabilitiesNeedValidReadings_data() {
+            return [
+                { tag: "missing", temperature: NaN, total: NaN, heat: false, vram: false },
+                { tag: "uninitialised", temperature: 0, total: 0, heat: false, vram: false },
+                { tag: "absurd", temperature: 1e30, total: -1, heat: false, vram: false },
+                { tag: "negative", temperature: -1, total: Infinity, heat: false, vram: false },
+                { tag: "xeIntegrated", temperature: 51, total: 0, heat: true, vram: false },
+                { tag: "xeDedicated", temperature: 62, total: 8 * 1024 ** 3, heat: true, vram: true }
+            ];
+        }
+        function test_intelCapabilitiesNeedValidReadings(data) {
+            const r = intelReader("integrated", [20, data.temperature, 0, data.total, 800]);
+            verify(r.subscribed);
+            compare(r.reportsTemperature, data.heat);
+            compare(r.reportsVram, data.vram);
+            compare(r.temperature, data.heat ? data.temperature : NaN);
+        }
+
+        function test_intelCapabilitiesSurviveMissingSamplesAndSleep() {
+            const r = intelReader("discrete", [20, 0, 0, 0, 800, 10]);
+            compare(sensorStates(r), off);
+            verify(!r.reportsTemperature);
+            verify(!r.reportsVram);
+            r.takeStatus("active", "auto", 1000);
+            r.tick(1500);
+            compare(sensorStates(r), on);
+            verify(!r.reportsTemperature);
+            verify(!r.reportsVram);
+
+            r.samples = [20, 62, 2 * 1024 ** 3, 8 * 1024 ** 3, 800, 10];
+            verify(r.reportsTemperature);
+            verify(r.reportsVram);
+            compare(r.held.temperature, 62);
+            compare(r.knownVramTotal, 8 * 1024 ** 3);
+            for (const invalid of [NaN, 0, 1e30]) {
+                r.samples = [20, invalid, NaN, 0, 800, 10];
+                verify(r.reportsTemperature);
+                verify(r.reportsVram);
+                compare(r.temperature, NaN);
+                compare(r.held.temperature, 62);
+                compare(r.knownVramTotal, 8 * 1024 ** 3);
+            }
+            r.gate = { phase: "resting", since: 1500, quietSince: -1, holdMs: 10000 };
+            compare(sensorStates(r), off);
+            compare(r.temperature, 62);
+            verify(r.reportsTemperature);
+            verify(r.reportsVram);
+            r.takeStatus("suspended", "auto", 2000);
+            r.tick(2500);
+            compare(r.phase, "asleep");
+            compare(sensorStates(r), off);
+            compare(r.temperature, NaN);
+            verify(r.reportsTemperature);
+            verify(r.reportsVram);
+        }
+
+        function test_intelFollowersShareCapabilitiesWithoutSubscriptions() {
+            const r = intelReader("discrete", [20, 62, 2 * 1024 ** 3, 8 * 1024 ** 3, 800, 10]);
+            const other = createTemporaryObject(sampledReaderComponent, testCase, { info: r.info, onRing: true });
+            compare(sensorStates(r), off);
+            compare(sensorStates(other), off);
+            verify(!other.reportsTemperature);
+            verify(!other.reportsVram);
+            r.takeStatus("active", "auto", 1000);
+            r.tick(1500);
+            other.tick(1500);
+            verify(!other.leading);
+            compare(sensorStates(r), on);
+            compare(sensorStates(other), off);
+            compare(other.held.temperature, undefined, "a follower has no held temperature of its own");
+            verify(other.reportsTemperature);
+            verify(other.reportsVram);
+            compare(other.temperature, 62);
+            compare(other.knownVramTotal, 8 * 1024 ** 3);
+            r.takeStatus("suspended", "auto", 2000);
+            r.tick(2500);
+            compare(sensorStates(r), off);
+            compare(sensorStates(other), off);
+            verify(other.reportsTemperature);
+            verify(other.reportsVram);
+
+            r.destroy();
+            wait(0);
+            other.tick(3000);
+            verify(other.leading);
+            compare(sensorStates(other), off);
+            verify(!other.reportsTemperature, "taking over asleep needs a fresh valid sample");
+            verify(!other.reportsVram);
+            other.samples = [20, 0, 0, 0, 800, 10];
+            other.takeStatus("active", "auto", 3000);
+            other.tick(3500);
+            compare(sensorStates(other), on);
+            verify(!other.reportsTemperature);
+            verify(!other.reportsVram);
+            other.samples = [20, 59, 1024 ** 3, 8 * 1024 ** 3, 800, 10];
+            verify(other.reportsTemperature);
+            verify(other.reportsVram);
         }
 
         function test_anOpenPopupDoesNotWakeASleepingGpu() {
