@@ -8,7 +8,7 @@ follows [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
-- System Monitor link has an activity icon in the popup footer.
+- System Monitor link has an activity icon in the popup footer and underlines on hover or keyboard focus.
 
 ### Fixed
 

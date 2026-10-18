@@ -34,7 +34,7 @@ PlasmaExtras.PlasmoidHeading {
             text: i18nc("@action:button", "System Monitor")
             Accessible.name: i18nc("@action:button", "Open System Monitor")
             normalColor: Style.dim(Kirigami.Theme.textColor)
-            font.underline: false
+            font.underline: mouseArea.containsMouse || activeFocus
             leftPadding: LayoutMirroring.enabled ? 0 : activity.width + Kirigami.Units.smallSpacing * 2
             rightPadding: LayoutMirroring.enabled ? activity.width + Kirigami.Units.smallSpacing * 2 : 0
             topPadding: Math.max(0, (activity.height - contentHeight) / 2)

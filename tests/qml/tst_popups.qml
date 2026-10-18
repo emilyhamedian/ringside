@@ -1904,14 +1904,26 @@ TestRoot {
                 compare(x(link, link.leftPadding), x(icon, icon.width) + gap);
                 compare(x(button, button.width - button.rightPadding - slack), footer.width - contentEdge);
             }
+            button.forceActiveFocus();
+            mouseMove(root, root.width - 1, root.height - 1);
+            tryCompare(link.mouseArea, "containsMouse", false);
+            verify(!link.font.underline);
+            mouseMove(link, link.leftPadding + link.contentWidth / 2, link.height / 2);
+            tryCompare(link.mouseArea, "containsMouse", true);
+            verify(link.font.underline, "hover underlines the link");
+            mouseMove(root, root.width - 1, root.height - 1);
+            tryCompare(link.mouseArea, "containsMouse", false);
+            verify(!link.font.underline, "leaving removes the underline");
             const spy = createTemporaryObject(spyComponent, root, { target: normal, signalName: "systemMonitorRequested" });
             verify(spy.valid);
             mouseClick(icon);
             compare(spy.count, 1, "the icon shares the link's click target");
             mouseClick(link, link.leftPadding + link.contentWidth / 2, link.height / 2);
             compare(spy.count, 2, "the label opens System Monitor once");
+            mouseMove(root, root.width - 1, root.height - 1);
             link.forceActiveFocus();
             verify(link.activeFocus);
+            verify(link.font.underline && link.font.bold, "keyboard focus remains visible without hover");
             keyClick(Qt.Key_Return);
             compare(spy.count, 3);
             keyClick(Qt.Key_Space);
