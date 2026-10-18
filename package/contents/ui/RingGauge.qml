@@ -32,6 +32,7 @@ Item {
     property Egg egg: null
     // The colour below the alert levels.
     property color color: Kirigami.Theme.textColor
+    property bool levelColors: true
     // Raises the ring's level, for a hot temperature the panel has no room
     // to show.
     property int minimumLevel: 0
@@ -275,8 +276,7 @@ Item {
         if (!(settle > 0)) {
             breathe.stop();
             breath = 0;
-            outer.stopReset();
-            innerArc.stopReset();
+            stopResets();
         }
     }
     // A ring that starts cancelled, as a popup opening on a failed check,
@@ -329,7 +329,7 @@ Item {
     }
 
     function tone(level) {
-        const live = Style.levelColor(level, Kirigami.Theme, color);
+        const live = levelColors ? Style.levelColor(level, Kirigami.Theme, color) : color;
         return greyed > 0 ? outer.mix(live, Qt.alpha(color, 0.42 * color.a), greyed) : live;
     }
 
@@ -366,6 +366,11 @@ Item {
             innerArc.playReset(clamped(innerReset.from), innerColor(Format.level(innerReset.from)),
                                innerReset.early);
         }
+    }
+
+    function stopResets() {
+        outer.stopReset();
+        innerArc.stopReset();
     }
 
     // Each arc follows the whole percent its reading prints, so a reading

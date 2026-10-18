@@ -4,6 +4,7 @@
 import QtQuick
 import "../../package/contents/ui/code/limits.js" as Limits
 import "../../package/contents/ui/code/reset.js" as Reset
+import "../../package/contents/ui/code/credits.js" as Credits
 
 // Fixed Claude and Codex readings in the shape of UsageData.qml, for the
 // tests and the preview gallery: every property, signal and function the
@@ -47,6 +48,10 @@ QtObject {
     function credit(id) {
         return showCredits && ids.includes(id) ? credits[id] ?? null : null;
     }
+
+    function creditUsed(id, nowMs) {
+        return ids.includes(id) && Credits.used(entry(id), credits[id], refreshMinutes, nowMs);
+    }
     // Stands in for claudeInnerLimit and codexInnerLimit.
     property var innerChoices: ({ claude: "", codex: "" })
     // The session starter per provider, as the helper reports it.
@@ -82,6 +87,7 @@ QtObject {
     function window(percent, left, points) {
         return {
             percent: percent,
+            exhausted: percent >= 100,
             resetsAt: createdAt + left,
             windowSeconds: 7 * day,
             clockZone: { offset: -4 * 3600, abbreviation: "EDT" },

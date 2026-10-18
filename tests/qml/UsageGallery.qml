@@ -95,6 +95,25 @@ ColumnLayout {
 
     CreditViews {}
 
+    FakeMonitor {
+        id: creditSpending
+        usage: FakeUsage {
+            id: spendingUsage
+            entries: ({
+                claude: { status: "ok", fetchedAt: spendingUsage.createdAt,
+                          weekly: spendingUsage.window(100, 2 * spendingUsage.day, section.history(5, 100)),
+                          scoped: [Object.assign({ id: "Fable", label: "Fable" }, spendingUsage.window(100, spendingUsage.day, []))] },
+                codex: { status: "ok", fetchedAt: spendingUsage.createdAt,
+                         weekly: spendingUsage.window(24, 5 * spendingUsage.day, section.history(2, 24)), scoped: [],
+                         session: spendingUsage.window(100, 3600, []) }
+            })
+            credits: ({
+                claude: { status: "ok", spent: true, balance: { amount: 18.42, currency: "USD", precision: 2 }, fetchedAt: spendingUsage.createdAt },
+                codex: { status: "ok", spent: true, balance: { amount: 1250.5, currency: "", precision: 2 }, fetchedAt: spendingUsage.createdAt }
+            })
+        }
+    }
+
     // Claude at 81 % is amber, and runs out before its reset at this pace;
     // Fable over 90 % and Codex at its limit are red.
     FakeMonitor {
@@ -377,6 +396,19 @@ ColumnLayout {
     }
 
     Panel {
+        label: "Claude & Codex · credits used since the previous check · full blue rings, neutral weekly readings"
+        thickness: 46
+        monitor: creditSpending
+    }
+
+    Panel {
+        label: "Claude & Codex · credits used · right to left"
+        thickness: 46
+        monitor: creditSpending
+        mirrored: true
+    }
+
+    Panel {
         label: "Claude & Codex · panel · 46 px · Claude 52 % with Fable 78 % inside (amber), Codex 24 %"
         thickness: 46
     }
@@ -597,6 +629,19 @@ ColumnLayout {
         }
 
         CreditViews { flat: true }
+
+        Panel {
+            label: "Breeze Light · Claude & Codex · credits used since the previous check"
+            thickness: 46
+            monitor: creditSpending
+        }
+
+        Panel {
+            label: "Breeze Light · Claude & Codex · credits used · right to left"
+            thickness: 46
+            monitor: creditSpending
+            mirrored: true
+        }
 
         Panel {
             label: "Breeze Light · Claude · panel · 46 px · Claude 77 % (amber), lasts to the reset"

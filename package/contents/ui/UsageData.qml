@@ -5,6 +5,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import org.kde.plasma.plasma5support as P5Support
 import "code/items.js" as Items
+import "code/credits.js" as Credits
 import "code/limits.js" as Limits
 import "code/log.js" as Log
 import "code/report.js" as Report
@@ -112,6 +113,10 @@ Item {
 
     function credit(id) {
         return config.showCredits === true && ids.includes(id) ? credits[id] ?? null : null;
+    }
+
+    function creditUsed(id, nowMs) {
+        return ids.includes(id) && Credits.used(entry(id), credits[id], refreshMinutes, nowMs);
     }
 
     // The time in whole epoch seconds, as the helper gives its times.
@@ -409,6 +414,13 @@ Item {
         }
         const reported = ids.filter(id => report.providers[id] && !answered.includes(id));
         const events = Reset.detect(entries, merged, at);
+        // A credit ring represents spending, so it must not replay a weekly
+        // percentage's reset when entering or leaving that display.
+        for (const id of ids) {
+            if (creditUsed(id, now * 1000) || Credits.used(merged[id], balances[id], refreshMinutes, now * 1000)) {
+                Object.keys(events).filter(key => key.startsWith(id + ".")).forEach(key => { delete events[key]; });
+            }
+        }
         if (Object.keys(events).length > 0) {
             resetsDetected(events);
         }

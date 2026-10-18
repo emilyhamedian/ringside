@@ -77,7 +77,9 @@ Nothing, until you turn on something that needs it.
 - **Claude and Codex readings** are kept in `~/.cache/ringside/`. The same
   private cache keeps each balance, when it was read, when it may be checked
   again, and the identity needed to keep it with the right login. It does
-  not keep credentials. Failed balance reads preserve the last successful
+  not keep credentials. It records whether the balance fell since the
+  previous successful check for the blue ring; failed reads clear that
+  indication. Failed balance reads preserve the last successful
   value; a new zero or disabled result clears it. Hiding the rows keeps the
   cache available for when they are shown again or another widget uses it.
 - **Graph history** stays in memory, unless you turn on *Keep the last hour

@@ -10,6 +10,8 @@ follows [Semantic Versioning](https://semver.org/).
 
 - Claude and Codex popups show remaining usage credits below the week graph
   by default, with one setting to hide them.
+- Claude and Codex rings pulse blue when a limit is reached and the credit
+  balance has fallen since the previous check.
 - Hovering a graph marks the same moment on the other graphs in its popup.
 - Intel GPUs using xe show package temperature and dedicated VRAM when
   available.

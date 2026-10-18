@@ -9,6 +9,7 @@ import org.kde.kirigami as Kirigami
 import "../../package/contents/ui"
 import "../../package/contents/ui/popups"
 import "../../package/contents/ui/code/format.js" as Format
+import "../../package/contents/ui/code/credits.js" as Credits
 import "../../package/contents/ui/code/report.js" as Report
 import "../../package/contents/ui/code/shell.js" as Shell
 import "../../package/contents/ui/code/style.js" as Style
@@ -98,6 +99,56 @@ TestRoot {
     Component {
         id: host
         Loader {}
+    }
+
+    Component {
+        id: creditStripComponent
+        Strip { items: ["claude", "codex"]; vertical: false; thickness: 46; ringsOnly: [] }
+    }
+
+    TestCase {
+        name: "Credits"
+
+        function test_recentSpending_data() {
+            return [
+                { tag: "weekly", active: true }, { tag: "session", window: "session", active: true },
+                { tag: "scoped", window: "scoped", active: true }, { tag: "rounded99.5", exact: false, active: false },
+                { tag: "missing exact flag", exact: null, active: false }, { tag: "expired", left: 0, active: false },
+                { tag: "missing reset", left: null, active: false }, { tag: "no decrease", spent: false, active: false },
+                { tag: "error", status: "error", active: false }, { tag: "disabled", status: "disabled", active: false },
+                { tag: "unavailable", status: "unavailable", active: false }, { tag: "absent", absent: true, active: false },
+                { tag: "zero", amount: 0, active: false }, { tag: "negative", amount: -1, active: false },
+                { tag: "malformed amount", amount: "18.42", active: false },
+                { tag: "weekly error", entryStatus: "error", active: false },
+                { tag: "weekly last error", failed: true, active: false },
+                { tag: "no week", noWeek: true, active: false },
+                { tag: "stale week", weekAge: 601, active: false }, { tag: "stale balance", creditAge: 601, active: false },
+                { tag: "future week", weekAge: -1, active: false }, { tag: "future balance", creditAge: -1, active: false },
+                { tag: "two intervals", weekAge: 600, creditAge: 600, active: true },
+                { tag: "longer refresh", minutes: 15, weekAge: 1799, creditAge: 1799, active: true },
+                { tag: "five minute floor", minutes: 1, weekAge: 599, creditAge: 599, active: true }
+            ];
+        }
+
+        function test_recentSpending(data) {
+            const now = 100000;
+            const exhausted = { percent: 100, exhausted: data.exact === null ? undefined : data.exact ?? true,
+                                resetsAt: data.left === null ? null : now + (data.left ?? 300) };
+            const entry = { status: data.entryStatus ?? "ok", fetchedAt: now - (data.weekAge ?? 0),
+                            weekly: { percent: 52, exhausted: false, resetsAt: now + 86400 }, scoped: [] };
+            if (data.window === "session") {
+                entry.session = exhausted;
+            } else if (data.window === "scoped") {
+                entry.scoped = [exhausted];
+            } else {
+                entry.weekly = exhausted;
+            }
+            if (data.failed) entry.lastError = "failed";
+            if (data.noWeek) delete entry.weekly;
+            const credit = { status: data.status ?? "ok", spent: data.spent ?? true,
+                             fetchedAt: now - (data.creditAge ?? 0), balance: { amount: data.amount ?? 18.42 } };
+            compare(Credits.used(entry, data.absent ? null : credit, data.minutes ?? 5, now * 1000), data.active);
+        }
     }
 
     TestCase {
@@ -309,6 +360,29 @@ TestRoot {
             tryCompare(usage, "checking", false, 5000);
             wait(0);
             compare(runs.count, 0, "the in-flight check is the only helper run");
+        }
+
+        function test_creditModeSuppressesResetEventsOnEntryAndExit() {
+            start("ok");
+            const events = spy("resetsDetected");
+            const at = usage.nowSeconds();
+            const credit = { status: "ok", spent: true, balance: { amount: 18.42 }, fetchedAt: at };
+            const initial = { status: "ok", fetchedAt: at, scoped: [],
+                              weekly: { percent: 52, exhausted: false, resetsAt: at + 100, windowSeconds: 7 * 86400 },
+                              session: { percent: 100, exhausted: true, resetsAt: at + 1000 } };
+            usage.entries = { claude: initial };
+            const reset = percent => Object.assign({}, initial, { weekly: { percent: percent, exhausted: false,
+                resetsAt: at + 7 * 86400, windowSeconds: 7 * 86400 } });
+            usage.merge({ fetchedAt: at, providers: { claude: Object.assign(reset(2), { credits: credit }) } });
+            verify(usage.creditUsed("claude", at * 1000));
+            compare(events.count, 0, "entering blue suppresses a real weekly reset");
+            usage.entries = { claude: Object.assign({}, initial, { weekly: Object.assign({}, initial.weekly, { percent: 80 }) }) };
+            usage.merge({ fetchedAt: at, providers: { claude: Object.assign(reset(1), { credits: Object.assign({}, credit, { spent: false }) }) } });
+            verify(!usage.creditUsed("claude", at * 1000));
+            compare(events.count, 0, "leaving blue does not reset a full indicator as a weekly percentage");
+            usage.entries = { claude: initial };
+            usage.merge({ fetchedAt: at, providers: { claude: reset(3) } });
+            compare(events.count, 1, "ordinary weekly resets still reach the ring");
         }
 
         // A popup that closes having shown an early reset remembers the
@@ -1540,6 +1614,77 @@ TestRoot {
         function test_pulse(data) {
             claudeAt(data.percent, lastHours);
             compare(cell("claude").children[0].pulsing, data.pulsing);
+        }
+
+        function test_creditRing_data() {
+            return [{ tag: "Claude", item: "claude" }, { tag: "Codex", item: "codex" },
+                    { tag: "hidden rows", item: "claude", hidden: true }, { tag: "instant", item: "codex", instant: true }];
+        }
+
+        function test_creditRing(data) {
+            const usage = monitor.usage;
+            const now = usage.createdAt;
+            const entry = { status: "ok", fetchedAt: now, weekly: usage.window(92, lastHours, []),
+                            session: Object.assign(usage.window(100, 3600, []), { exhausted: true }),
+                            scoped: [Object.assign(usage.window(78, lastHours, []), { id: "Fable", label: "Fable" })] };
+            usage.entries = { [data.item]: entry };
+            usage.credits = { [data.item]: { status: "ok", spent: true, balance: { amount: 18.42 }, fetchedAt: now } };
+            usage.showCredits = !data.hidden;
+            const c = cell(data.item);
+            const gauge = c.children[0];
+            if (data.instant) gauge.settle = 0;
+            verify(c.creditUsed);
+            compare(gauge.value, 100);
+            compare(gauge.inner, false);
+            compare(gauge.levelColors, false);
+            verify(gauge.color.b > gauge.color.r && gauge.color.b > gauge.color.g, "credit use stays blue with a custom accent");
+            compare(outerArc(c).color, gauge.color);
+            compare(line(c, "first").text, root.localized("92%"));
+            compare(line(c, "first").color, Kirigami.Theme.textColor);
+            compare(String(line(c, "second").color), String(Style.dim(Kirigami.Theme.textColor)));
+            verify(gauge.pulsing);
+            if (data.instant) verify(!gauge.breathing);
+            verify(c.accessibleDescription.includes("Credits used since the previous check."));
+            const opacity = middle(c).opacity;
+            gauge.breath = 0.5;
+            compare(middle(c).opacity, opacity, "the provider mark stays steady while the blue ring breathes");
+            usage.resetsDetected({ [data.item + ".weekly"]: { from: 100, early: false } });
+            verify(!outerArc(c).animating, "the credit indicator does not replay a weekly reset");
+            usage.credits = { [data.item]: Object.assign({}, usage.credits[data.item], { spent: false }) };
+            verify(!c.creditUsed);
+            compare(gauge.value, 92);
+            compare(gauge.inner, true);
+            compare(gauge.levelColors, true);
+            compare(line(c, "first").color, Kirigami.Theme.negativeTextColor);
+            verify(!c.accessibleDescription.includes("Credits used since the previous check."));
+        }
+
+        function test_creditModeInterruptsAnEarlierReset() {
+            const usage = monitor.usage;
+            claudeAt(52, lastHours);
+            setEntry("claude", Object.assign({}, usage.entries.claude, {
+                session: Object.assign(usage.window(100, 3600, []), { exhausted: true }) }));
+            const c = cell("claude");
+            monitor.usage.resetsDetected({ "claude.weekly": { from: 100, early: false } });
+            verify(outerArc(c).animating);
+            usage.credits = { claude: { status: "ok", spent: true, balance: { amount: 18.42 }, fetchedAt: usage.createdAt } };
+            verify(c.creditUsed);
+            verify(!outerArc(c).animating);
+            tryVerify(() => c.children[0].still, 2000);
+            compare(outerArc(c).head, 100);
+        }
+
+        function test_creditRingHasATooltipWithVisibleReadings() {
+            const usage = monitor.usage;
+            setEntry("claude", Object.assign({}, usage.entries.claude, {
+                session: Object.assign(usage.window(100, 3600, []), { exhausted: true }) }));
+            usage.credits = { claude: { status: "ok", spent: true, balance: { amount: 1 }, fetchedAt: usage.createdAt } };
+            const strip = creditStripComponent.createObject(root, { monitor: monitor });
+            made.push(strip);
+            verify(strip.cellAt(0).parent.active);
+            verify(strip.cellAt(0).description.includes("Credits used since the previous check."));
+            strip.openItem = "claude";
+            verify(!strip.cellAt(0).parent.active);
         }
 
         // Weekly and model readings as [percent, seconds to the reset],
