@@ -408,7 +408,7 @@ TestRoot {
 
         // A graph's hover overlay, and the tile around it.
         function hoverOf(tile) {
-            return find(tile, i => i.keyIndex !== undefined && i.secondPoints !== undefined);
+            return find(tile, i => i.points !== undefined && i.secondPoints !== undefined && i.index !== undefined);
         }
 
         function graphTile(popup, caption) {
@@ -460,29 +460,16 @@ TestRoot {
             compare(top.text, before, "the top comes back");
         }
 
-        // From the keyboard: the graph takes focus, starts at the newest
-        // point, steps with the arrows and jumps with Home and End, and a
-        // screen reader hears the reading.
-        function test_graphPointsFromTheKeyboard() {
+        // Graph inspection is pointer-only; accessible text still follows
+        // the reading without adding a stop to the popup's Tab order.
+        function test_graphInspectionIsPointerOnly() {
             const popup = load("CpuPopup", normal);
             const tile = graphTile(popup, "Usage");
             const hover = hoverOf(tile);
-            verify(hover.activeFocusOnTab);
+            verify(!hover.activeFocusOnTab);
             compare(hover.index, -1);
-            hover.forceActiveFocus();
-            const last = hover.points.length - 1;
-            compare(hover.index, last);
-            keyClick(Qt.Key_Left);
-            compare(hover.index, last - 1);
-            keyClick(Qt.Key_Right);
-            keyClick(Qt.Key_Right);
-            compare(hover.index, last, "stops at the newest");
-            keyClick(Qt.Key_Home);
-            compare(hover.index, 0);
-            keyClick(Qt.Key_Left);
-            compare(hover.index, 0, "stops at the oldest");
-            keyClick(Qt.Key_End);
-            compare(hover.index, last);
+            mouseMove(hover, hover.width - 1, hover.height / 2);
+            tryCompare(hover, "index", hover.points.length - 1);
             verify(tile.graphReading !== "");
             compare(hover.Accessible.name, tile.graphReading);
         }
@@ -2972,8 +2959,7 @@ TestRoot {
             compare(host.escapes, 1, "the next Escape is the popup's");
         }
 
-        // Every graph's span is a stop in the popup's Tab order, and so is
-        // the graph itself, for its points from the keyboard.
+        // Tab moves between span controls without stopping on the graphs.
         function test_spansAreInTheTabOrder() {
             const popup = load("CpuPopup", normal, false, widePage);
             const spans = all(popup, i => i.objectName === "span" && i.visible);
@@ -2981,10 +2967,7 @@ TestRoot {
             spans.forEach(s => compare(s.focusPolicy, Qt.StrongFocus));
             spans[0].forceActiveFocus(Qt.TabFocusReason);
             keyClick(Qt.Key_Tab);
-            const usageGraph = find(popup, i => i.keyIndex !== undefined && i.activeFocus);
-            verify(usageGraph, "Tab goes on to the usage graph's points");
-            keyClick(Qt.Key_Tab);
-            verify(spans[1].activeFocus, "and then to the temperature's span");
+            verify(spans[1].activeFocus, "Tab goes on to the temperature's span");
         }
 
         // A third longer in every string, the page keeps its width and

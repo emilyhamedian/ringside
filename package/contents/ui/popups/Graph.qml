@@ -18,8 +18,8 @@ import "../code/style.js" as Style
 // nothing on the graph moves on its own. An hour or a day draws each
 // bucket's average, under a fainter band up to its highest reading, and
 // leaves a gap where there was none (see History.add()). Under the pointer,
-// or the arrow keys once it has focus, it marks a point and gives its
-// reading, `reading`, for the tile to show (GraphHover).
+// it marks a point and gives its reading, `reading`, for the tile to show
+// (GraphHover).
 Item {
     id: graph
 

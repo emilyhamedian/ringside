@@ -5,8 +5,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import org.kde.kirigami as Kirigami
 
-// The point of a graph under the pointer, or the one the arrow keys have
-// reached while the graph has focus: a line down the graph through it and a
+// The point of a graph under the pointer: a line down the graph through it and a
 // dot on each series there. The tile around the graph writes that point's
 // reading in its caption line (Tile.graphReading), which is also what a
 // screen reader hears.
@@ -18,14 +17,11 @@ Item {
     property var points: []
     property var secondPoints: []
     property color color: Kirigami.Theme.textColor
-    // The focused graph's reading, spoken as it changes.
+    // The selected reading, also exposed to assistive technology.
     property string reading: ""
 
     // The point shown, or -1.
-    readonly property int index: pointer.hovered ? nearest(pointer.point.position.x)
-                               : activeFocus ? Math.min(keyIndex, points.length - 1) : -1
-    // Where the arrow keys have got to: the newest point when focus comes.
-    property int keyIndex: 0
+    readonly property int index: pointer.hovered ? nearest(pointer.point.position.x) : -1
     readonly property var point: index >= 0 ? points[index] : null
 
     function nearest(x) {
@@ -41,27 +37,8 @@ Item {
         return best;
     }
 
-    function step(by) {
-        keyIndex = Math.max(0, Math.min(points.length - 1, keyIndex + by));
-    }
-
-    // Time runs left to right in every language, so the arrows follow it
-    // whatever the layout's direction.
+    // Time runs left to right in every language.
     LayoutMirroring.enabled: false
-    activeFocusOnTab: points.length > 0
-    onActiveFocusChanged: {
-        if (activeFocus) {
-            keyIndex = points.length - 1;
-        }
-    }
-    Keys.onLeftPressed: step(-1)
-    Keys.onRightPressed: step(1)
-    Keys.onPressed: event => {
-        if (event.key === Qt.Key_Home || event.key === Qt.Key_End) {
-            keyIndex = event.key === Qt.Key_Home ? 0 : points.length - 1;
-            event.accepted = true;
-        }
-    }
 
     Accessible.role: Accessible.StaticText
     Accessible.name: reading
