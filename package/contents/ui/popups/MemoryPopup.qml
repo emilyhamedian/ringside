@@ -48,7 +48,7 @@ PopupPage {
         Layout.fillWidth: true
         Layout.leftMargin: Style.contentEdge(Kirigami.Units.largeSpacing)
         Layout.rightMargin: Layout.leftMargin
-        Layout.topMargin: Math.round(Kirigami.Units.smallSpacing / 2)
+        Layout.topMargin: Math.round(Kirigami.Units.smallSpacing * 1.5)
         Layout.bottomMargin: Math.round(Kirigami.Units.largeSpacing * 1.25)
         spacing: Math.round(Kirigami.Units.smallSpacing * 1.5)
 

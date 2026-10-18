@@ -20,6 +20,7 @@ follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Memory usage bar has the same header spacing as the other system popups.
 - Network graph legend keeps even padding and aligned text across fonts.
 - GPU names wrap in the popup so the full name is visible.
 - Empty process sections no longer take up space in the CPU, memory and GPU
