@@ -76,10 +76,8 @@ KCM.SimpleKCM {
     property string cfg_claudeInnerLimitDefault
     property string cfg_codexInnerLimit
     property string cfg_codexInnerLimitDefault
-    property bool cfg_claudeCredits
-    property bool cfg_claudeCreditsDefault
-    property bool cfg_codexCredits
-    property bool cfg_codexCreditsDefault
+    property bool cfg_showCredits
+    property bool cfg_showCreditsDefault
     property string cfg_codexMark
     property string cfg_codexMarkDefault
     property string cfg_claudeProgram

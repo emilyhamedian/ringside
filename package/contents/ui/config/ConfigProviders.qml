@@ -221,11 +221,22 @@ ConfigPage {
             text: i18nc("@info", "Applies while any provider's item is on in Panel Items.")
         }
 
+        QQC2.CheckBox {
+            text: i18nc("@option:check", "Show remaining credits")
+            Accessible.name: text
+            checked: page.cfg_showCredits
+            onToggled: page.cfg_showCredits = checked
+        }
+
+        Note {
+            text: i18nc("@info", "Applies to all enabled providers. Balances are checked even when hidden: Claude makes an extra read from Anthropic alongside its usage check, at most once every 5 minutes. Codex uses existing usage checks.")
+        }
+
         // Each provider's section shows only while it has something to set.
         Item {
             Kirigami.FormData.isSection: true
             Kirigami.FormData.label: i18nc("@title:group settings for the Claude item", "Claude")
-            visible: page.claudeOn || page.claudeHasLimits || page.claudeProgramShown
+            visible: page.claudeHasLimits || page.claudeProgramShown
         }
 
         Picker {
@@ -258,23 +269,10 @@ ConfigPage {
             program: claudeProgram
         }
 
-        QQC2.CheckBox {
-            visible: page.claudeOn
-            text: i18nc("@option:check", "Show remaining credits")
-            Accessible.name: i18nc("@option:check", "Show Claude remaining credits")
-            checked: page.cfg_claudeCredits
-            onToggled: page.cfg_claudeCredits = checked
-        }
-
-        Note {
-            visible: page.claudeOn
-            text: i18nc("@info", "Reads your extra usage balance from Anthropic alongside usage checks, at most once every 5 minutes. Checks continue while hidden.")
-        }
-
         Item {
             Kirigami.FormData.isSection: true
             Kirigami.FormData.label: i18nc("@title:group settings for the OpenAI item, whose limits are read through Codex", "OpenAI")
-            visible: page.codexOn || page.codexShown && page.codexRuns || page.codexProgramShown
+            visible: page.codexShown && page.codexRuns || page.codexProgramShown
         }
 
         // Codex's settings wait until its program runs.
@@ -323,19 +321,6 @@ ConfigPage {
 
         ProgramNote {
             program: codexProgram
-        }
-
-        QQC2.CheckBox {
-            visible: page.codexOn
-            text: i18nc("@option:check", "Show remaining credits")
-            Accessible.name: i18nc("@option:check", "Show OpenAI remaining credits")
-            checked: page.cfg_codexCredits
-            onToggled: page.cfg_codexCredits = checked
-        }
-
-        Note {
-            visible: page.codexOn
-            text: i18nc("@info", "Shows the credit balance returned by your existing Codex usage checks.")
         }
     }
 }

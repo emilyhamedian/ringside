@@ -41,7 +41,6 @@ ColumnLayout {
         id: creditsMonitor
         usage: FakeUsage {
             id: creditUsage
-            creditIds: ["claude", "codex"]
             credits: ({
                 claude: { status: "ok", balance: { amount: 18.42, currency: "USD", precision: 2 }, fetchedAt: creditUsage.createdAt },
                 codex: { status: "ok", balance: { amount: 1250.5, currency: "", precision: 2 }, fetchedAt: creditUsage.createdAt }
@@ -53,7 +52,6 @@ ColumnLayout {
         id: cachedCredits
         usage: FakeUsage {
             id: cachedCreditUsage
-            creditIds: ["claude"]
             credits: ({ claude: { status: "error", balance: { amount: 18.42, currency: "USD", precision: 2 },
                                  fetchedAt: cachedCreditUsage.createdAt - 3600, reason: "offline" } })
         }
@@ -63,7 +61,6 @@ ColumnLayout {
         id: zeroCredits
         usage: FakeUsage {
             id: zeroCreditUsage
-            creditIds: ["codex"]
             credits: ({ codex: { status: "ok", balance: { amount: 0, currency: "", precision: 2 },
                                 fetchedAt: zeroCreditUsage.createdAt } })
         }

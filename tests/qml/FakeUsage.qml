@@ -41,10 +41,11 @@ QtObject {
     })
     property string helperError: ""
     property var credits: ({})
-    property var creditIds: []
+    property bool showCredits: true
+    property var ids: ["claude", "codex"]
 
     function credit(id) {
-        return creditIds.includes(id) ? credits[id] ?? null : null;
+        return showCredits && ids.includes(id) ? credits[id] ?? null : null;
     }
     // Stands in for claudeInnerLimit and codexInnerLimit.
     property var innerChoices: ({ claude: "", codex: "" })

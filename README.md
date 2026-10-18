@@ -100,9 +100,9 @@ resets before it was due, the popup says so and how much you got back, for a
 day or until you've seen it. If Plasma can't find `claude` or `codex`, you
 can tell it where they are under *AI Providers*.
 
-**Remaining credits.** Enabled providers collect balances automatically.
-Turn on *Show remaining credits* for either provider under *AI Providers*
-to show its balance below the popup's graph. Balances update with
+**Remaining credits.** Enabled providers collect balances automatically and
+show them below their popup's graph. *Show remaining credits* under *AI
+Providers* hides or shows the rows for both providers. Balances update with
 the usage checks, at most once every five minutes. Claude makes a separate
 balance request; Codex uses its existing response. Disabled credits and
 empty balances take up no space. A failed check keeps the last balance

@@ -47,7 +47,6 @@ Item {
     property var entries: ({})
     // Credit reports stay independent of the weekly reading kept on failure.
     property var credits: ({})
-    readonly property var creditIds: ids.filter(id => config[id + "Credits"] === true)
     // Why the helper itself gave no report; empty once one arrives.
     property string helperError: ""
     // Bound to a bool, so they notify only when they flip, not on every poll.
@@ -112,7 +111,7 @@ Item {
     }
 
     function credit(id) {
-        return creditIds.includes(id) ? credits[id] ?? null : null;
+        return config.showCredits === true && ids.includes(id) ? credits[id] ?? null : null;
     }
 
     // The time in whole epoch seconds, as the helper gives its times.

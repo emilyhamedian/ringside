@@ -212,15 +212,13 @@ TestRoot {
             return usage.resources.filter(r => r.triggeredOnStart !== undefined);
         }
 
-        function test_creditsIndependentOfWeeklyFailure() {
+        function test_creditsDefaultOnAndIndependentOfWeeklyFailure() {
             start("ok");
-            config.claudeCredits = true;
-            config.codexCredits = true;
             const balance = { status: "ok", balance: { amount: 18.42, currency: "USD", precision: 2 },
                               fetchedAt: usage.nowSeconds(), retryAt: null, reason: null };
             usage.merge({ providers: { claude: { status: "error", message: "weekly failed", credits: balance } } });
             compare(usage.entry("claude").weekly.percent, 52);
-            verify(config.claudeCredits && config.codexCredits);
+            verify(config.showCredits);
             compare(usage.credit("claude"), balance);
             wait(0);
             tryCompare(usage, "checking", false, 5000);
@@ -231,8 +229,7 @@ TestRoot {
             usage.merge({ providers: { claude: { status: "error", credits: unavailable } } });
             compare(usage.credit("claude"), unavailable);
             usage.credits = Object.assign({}, usage.credits, { codex: balance });
-            config.claudeCredits = false;
-            config.codexCredits = false;
+            config.showCredits = false;
             compare(usage.credit("claude"), null, "opting out immediately hides shared cached data");
             compare(usage.credit("codex"), null);
             usage.providers = ["codex"];
@@ -272,8 +269,7 @@ TestRoot {
             const runs = commands();
             const changes = spy("commandChanged");
             const command = usage.command;
-            config.claudeCredits = false;
-            config.codexCredits = false;
+            config.showCredits = false;
             const at = usage.nowSeconds();
             const record = amount => ({ status: "ok", balance: { amount: amount, currency: "", precision: 2 }, fetchedAt: at });
             const claude = record(18.42);
@@ -282,16 +278,14 @@ TestRoot {
             compare(usage.credit("claude"), null);
             compare(usage.credit("codex"), null);
             compare(usage.credits.codex, codex, "hidden readings still update");
-            config.claudeCredits = true;
-            config.codexCredits = true;
+            config.showCredits = true;
             compare(usage.credit("claude"), claude);
             compare(usage.credit("codex"), codex, "showing again uses the latest cached record immediately");
             wait(0);
             compare(usage.command, command);
             compare(changes.count, 0);
             compare(runs.count, 0, "changing visibility starts no helper");
-            config.claudeCredits = false;
-            config.codexCredits = false;
+            config.showCredits = false;
             usage.openPopup = "codex";
             usage.openPopup = "";
             wait(0);
@@ -308,12 +302,10 @@ TestRoot {
             tryCompare(usage, "checking", true);
             const runs = commands();
             usage.openPopup = "claude";
-            config.claudeCredits = false;
-            config.codexCredits = false;
+            config.showCredits = false;
             usage.openPopup = "codex";
             usage.openPopup = "";
-            config.claudeCredits = true;
-            config.codexCredits = true;
+            config.showCredits = true;
             tryCompare(usage, "checking", false, 5000);
             wait(0);
             compare(runs.count, 0, "the in-flight check is the only helper run");
@@ -2071,7 +2063,6 @@ TestRoot {
 
         function test_creditRow(data) {
             const at = monitor.usage.createdAt - 3600;
-            monitor.usage.creditIds = [data.item];
             monitor.usage.credits = { [data.item]: { status: data.status, balance: { amount: data.amount,
                 currency: data.currency, precision: data.precision }, fetchedAt: at, reason: "offline" } };
             const popup = load(data.item, data.mirrored);
@@ -2094,7 +2085,7 @@ TestRoot {
         }
 
         function test_creditRowHiddenWithoutPositiveEnabledBalance() {
-            monitor.usage.creditIds = [];
+            monitor.usage.showCredits = false;
             const popup = load("claude");
             const row = root.find(popup, i => i.credit !== undefined);
             const height = popup.implicitHeight;
@@ -2102,7 +2093,7 @@ TestRoot {
                                fetchedAt: monitor.usage.createdAt };
             monitor.usage.credits = { claude: positive };
             verify(!row.visible, "display off hides cached data");
-            monitor.usage.creditIds = ["claude"];
+            monitor.usage.showCredits = true;
             tryVerify(() => row.visible);
             tryVerify(() => popup.implicitHeight > height);
             for (const credit of [null, { status: "disabled", balance: positive.balance, fetchedAt: positive.fetchedAt },

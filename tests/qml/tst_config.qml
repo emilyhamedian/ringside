@@ -758,12 +758,8 @@ TestRoot {
                   saved: { diskTemperatureSensor: "none" } },
                 { tag: "usageRefreshMinutes", source: providers, drive: page => spinUp(page, "Check every"),
                   saved: { usageRefreshMinutes: 10 } },
-                { tag: "claudeCredits", source: providers, start: { itemOrder: ["claude"], hiddenItems: [] },
-                  drive: page => { accessible(page, "Show Claude remaining credits").toggle();
-                                   accessible(page, "Show Claude remaining credits").toggled(); }, saved: { claudeCredits: true } },
-                { tag: "codexCredits", source: providers, start: { itemOrder: ["codex"], hiddenItems: [] },
-                  drive: page => { accessible(page, "Show OpenAI remaining credits").toggle();
-                                   accessible(page, "Show OpenAI remaining credits").toggled(); }, saved: { codexCredits: true } },
+                { tag: "showCredits", source: providers,
+                  drive: page => press(page, "Show remaining credits"), saved: { showCredits: false } },
                 { tag: "claudeInnerLimit", source: providers, start: limits, drive: page => pickIn(page, "Claude inner ring", 2),
                   saved: { claudeInnerLimit: "opus" } },
                 { tag: "codexInnerLimit", source: providers, start: limits, drive: page => pickIn(page, "OpenAI inner ring", 2),
@@ -1461,21 +1457,25 @@ TestRoot {
             verify(!heading(bare, "OpenAI").visible);
         }
 
-        function test_creditConsentWithOneLimitOrNoReportedLimits() {
-            const page = make(providers, { cfg_itemOrder: ["claude", "codex"], cfg_hiddenItems: [], knownLimits: {} });
-            for (const [name, key] of [["Claude", "claude"], ["OpenAI", "codex"]]) {
-                const box = accessible(page, "Show " + name + " remaining credits");
-                verify(box.visible && !box.checked);
-                verify(heading(page, name).visible);
-                box.toggle();
-                box.toggled();
-                verify(page["cfg_" + key + "Credits"]);
-                compare(page["cfg_" + key + "InnerLimit"], "");
-            }
+        function test_creditSettingAppliesToAllProviders() {
+            const page = make(providers, { cfg_itemOrder: ["claude", "codex"], cfg_hiddenItems: [],
+                                           cfg_showCredits: true, knownLimits: {} });
+            const box = accessible(page, "Show remaining credits");
+            verify(box.visible && box.checked);
+            compare(all(page, i => i.text === "Show remaining credits" && i.toggled !== undefined).length, 1);
+            verify(!heading(page, "Claude").visible, "a lone Claude window needs no provider settings");
+            const shared = heading(page, "All Providers");
+            verify(box.mapToItem(page, 0, 0).y > shared.mapToItem(page, 0, 0).y);
+            verify(box.mapToItem(page, 0, 0).y < heading(page, "OpenAI").mapToItem(page, 0, 0).y);
+            box.toggle();
+            box.toggled();
+            verify(!page.cfg_showCredits);
             page.cfg_hiddenItems = ["claude", "codex"];
-            verify(!accessible(page, "Show Claude remaining credits").visible);
-            verify(!accessible(page, "Show OpenAI remaining credits").visible);
-            verify(page.cfg_claudeCredits && page.cfg_codexCredits, "turning items off keeps the preference");
+            verify(box.visible && !box.checked, "the shared switch stays available with both items off");
+            page.cfg_hiddenItems = [];
+            verify(!page.cfg_showCredits, "turning items on again keeps the opt-out");
+            compare(page.cfg_claudeInnerLimit, "");
+            compare(page.cfg_codexInnerLimit, "");
         }
 
         // Codex is chosen until the setting says openai, and each choice

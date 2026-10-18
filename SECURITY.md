@@ -48,8 +48,8 @@ Nothing, until you turn on something that needs it.
   reads back, honoring any longer wait Anthropic requests. Codex credits
   come from its existing usage response, with no extra request.
   Neither balance check sends a model request or starts a session. *Show
-  remaining credits* is off by default for each provider and only controls
-  whether its row appears; hiding it does not stop balance collection.
+  remaining credits* is on by default and only controls whether the rows
+  appear; hiding them does not stop balance collection.
 - **The session starter** sends "Hi" through the Claude Code or Codex CLI
   when a session or week ends. It counts against your limits like any other
   message. To pick Codex's model it reads `~/.codex/models_cache.json`.
