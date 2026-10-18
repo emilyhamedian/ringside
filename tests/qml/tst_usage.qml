@@ -2685,9 +2685,8 @@ TestRoot {
             return root.find(popup, i => i.objectName === "configureButton");
         }
 
-        // The packaged gear's stroke keeps 2.04 px free at each side of its
-        // 24 px viewBox; the footer aligns its painted edge with the readings.
-        readonly property real iconSlack: Kirigami.Units.iconSizes.smallMedium * 2.04 / 24
+        // Include the centred 18 px gear's room and its 24 px viewBox's inset.
+        readonly property real iconSlack: Kirigami.Units.iconSizes.smallMedium * (2 / 22 + 18 / 22 * 2.04 / 24)
 
         function setStarter(item, starter) {
             monitor.usage.starters = Object.assign({}, monitor.usage.starters, { [item]: Object.assign({ at: null, next: null, reason: null }, starter) });

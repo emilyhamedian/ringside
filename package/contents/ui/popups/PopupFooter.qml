@@ -62,18 +62,25 @@ PlasmaExtras.PlasmoidHeading {
             Layout.topMargin: leadItem?.Layout.topMargin ?? 0
             Layout.bottomMargin: leadItem?.Layout.bottomMargin ?? 0
             objectName: "configureButton"
-            // The gear's stroke runs from x=2.04 to 21.96 in its 24 px viewBox.
+            readonly property real glyphSize: Kirigami.Units.iconSizes.smallMedium * 18 / 22
+            // Include the centred glyph's room and its 24 px viewBox's inset.
+            readonly property real paintedInset: (Kirigami.Units.iconSizes.smallMedium - glyphSize) / 2 + glyphSize * 2.04 / 24
             // Put its painted edge on the readings' edge.
             Layout.rightMargin: Math.round(Style.contentEdge(Kirigami.Units.largeSpacing) - footer.rightPadding - configure.rightPadding
-                                           - Kirigami.Units.iconSizes.smallMedium * 2.04 / 24)
-            contentItem: KSvg.SvgItem {
+                                           - configure.paintedInset)
+            contentItem: Item {
                 implicitWidth: Kirigami.Units.iconSizes.smallMedium
                 implicitHeight: Kirigami.Units.iconSizes.smallMedium
-                imagePath: Qt.resolvedUrl("../../icons/settings.svg")
-                Kirigami.Theme.inherit: false
-                Kirigami.Theme.textColor: configure.Kirigami.Theme.textColor
-                opacity: !configure.enabled ? 0.4 : configure.hovered || configure.visualFocus || configure.down ? 1 : Style.dim(Kirigami.Theme.textColor).a
-                Accessible.ignored: true
+                KSvg.SvgItem {
+                    anchors.centerIn: parent
+                    width: configure.glyphSize
+                    height: width
+                    imagePath: Qt.resolvedUrl("../../icons/settings.svg")
+                    Kirigami.Theme.inherit: false
+                    Kirigami.Theme.textColor: configure.Kirigami.Theme.textColor
+                    opacity: !configure.enabled ? 0.4 : configure.hovered || configure.visualFocus || configure.down ? 1 : Style.dim(Kirigami.Theme.textColor).a
+                    Accessible.ignored: true
+                }
             }
             display: T.AbstractButton.IconOnly
             text: i18nc("@action:button", "Configure Ringside…")

@@ -8,7 +8,7 @@ follows [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
-- Popup settings buttons use an outline gear.
+- Popup settings buttons use a smaller outline gear.
 
 ### Fixed
 

@@ -1872,8 +1872,12 @@ TestRoot {
             const link = all(footer, i => i.visible && i.text === "Open System Monitor")[0];
             const button = all(footer, i => i.visible && i.objectName === "configureButton")[0];
             verify(link && button);
-            const glyph = button.contentItem;
+            const glyph = find(button, i => i.imagePath?.endsWith("/icons/settings.svg"));
             verify(glyph.imagePath.endsWith("/icons/settings.svg"));
+            compare(glyph.width, Kirigami.Units.iconSizes.smallMedium * 18 / 22);
+            compare(glyph.height, glyph.width);
+            compare(button.contentItem.implicitWidth, Kirigami.Units.iconSizes.smallMedium);
+            compare(button.contentItem.implicitHeight, Kirigami.Units.iconSizes.smallMedium);
             verify(glyph.Accessible.ignored, "the gear adds no accessible control");
             compare(button.Accessible.role, Accessible.Button);
             compare(button.Accessible.name, "Configure Ringside…");
@@ -1889,7 +1893,7 @@ TestRoot {
             const middle = i => i.mapToItem(footer, Qt.point(0, i.height / 2)).y;
             fuzzyCompare(middle(button), middle(link), 0.5);
             // On the readings' edges: the link's text and the gear's stroke.
-            const slack = Kirigami.Units.iconSizes.smallMedium * 2.04 / 24;
+            const slack = (Kirigami.Units.iconSizes.smallMedium - glyph.width) / 2 + glyph.width * 2.04 / 24;
             const x = (i, at) => i.mapToItem(footer, Qt.point(at, 0)).x;
             if (data.mirrored) {
                 compare(x(link, link.width), footer.width - contentEdge);
@@ -1911,7 +1915,7 @@ TestRoot {
             button.Kirigami.Theme.inherit = false;
             button.Kirigami.Theme.textColor = data.color;
             button.forceActiveFocus(Qt.TabFocusReason);
-            const glyph = button.contentItem;
+            const glyph = find(button, i => i.imagePath?.endsWith("/icons/settings.svg"));
             tryCompare(glyph, "opacity", 1);
             waitForRendering(popup);
             const image = grabImage(popup);
