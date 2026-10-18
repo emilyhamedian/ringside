@@ -1500,12 +1500,10 @@ TestRoot {
             compare(disk.titleEdge, contentEdge, "the title on the near edge");
         }
 
-        // Every header's title and digits sit as far below its top as the CPU
-        // header's do, with a ring or without, with a third line, without a
-        // reading, or with the countdown's parts, so the popups read level
-        // with each other. A third line hangs below; a header with a ring is
-        // as tall as the CPU's, which is as tall as its tallest part. Plain
-        // and mirrored.
+        // Every header's title and digits have the CPU header's baselines
+        // within their columns, with or without a ring or reading, or with
+        // the countdown's parts. A GPU name can grow its band; a third line
+        // hangs below the subtitle. Plain and mirrored.
         function test_headersLevel_data() {
             return [{ tag: "plain", mirrored: false }, { tag: "mirrored", mirrored: true }];
         }
@@ -1531,7 +1529,11 @@ TestRoot {
                          digits: digits ? digits.mapToItem(header, Qt.point(0, digits.baselineOffset)).y : null,
                          ring: ring ? ring.mapToItem(header, Qt.point(0, 0)).y : null,
                          height: header.height,
-                         tallest: Math.max(...header.children.filter(c => c.visible).map(c => c.height)) };
+                         tallest: Math.max(...header.children.filter(c => c.visible).map(c => c.height)),
+                         nameTop: header.nameTop, valueTop: header.valueTop,
+                         ringTop: Math.round((header.bandHeight - header.ringSize) / 2),
+                         bandHeight: header.bandHeight,
+                         wrapped: header.titleWrapped && title.lineCount > 1 };
             };
             const cpu = place(found[0]);
             compare(found[0].title, "CPU");
@@ -1541,15 +1543,15 @@ TestRoot {
             found.forEach(header => {
                 const tag = header.title + (header.detail !== "" ? " (three lines)" : "");
                 const p = place(header);
-                compare(p.title, cpu.title, tag + ": the title's baseline");
+                compare(p.title - (p.wrapped ? p.nameTop - cpu.nameTop : 0), cpu.title, tag + ": the title's baseline in its column");
                 if (p.digits === null) {
                     withoutDigits.push(header.title);
                 } else {
-                    compare(p.digits, cpu.digits, tag + ": the digits' baseline");
+                    compare(p.digits - (p.wrapped ? p.valueTop - cpu.valueTop : 0), cpu.digits, tag + ": the digits' baseline in their column");
                 }
                 if (p.ring !== null) {
-                    compare(p.ring, cpu.ring, tag + ": the ring");
-                    compare(p.height, cpu.height, tag + ": the height of a header with a ring");
+                    compare(p.ring, p.wrapped ? p.ringTop : cpu.ring, tag + ": the ring centred on its band");
+                    compare(p.height, p.wrapped ? p.bandHeight : cpu.height, tag + ": the height of its band");
                 } else {
                     const detail = shownText(header, header.detail);
                     verify(detail, tag + ": a third line");
@@ -1661,7 +1663,8 @@ TestRoot {
 
         // Every GPU header is laid out as the CPU popup's is, on the
         // content's edges and with its tiles as far under it, plain and
-        // mirrored. Each section's parts sit where the CPU header's do. An
+        // mirrored. Each section's parts sit in their band as the CPU's do,
+        // with a taller name expanding the band. An
         // NVIDIA GPU names no sensor, yet its temperature stays level with
         // its name; the Intel GPU after it has no reading to line up.
         function test_gpuHeadersMatchTheCpu_data() {
@@ -1685,14 +1688,15 @@ TestRoot {
                 const top = header.mapToItem(popup, Qt.point(0, 0)).y;
                 const tiles = all(popup, i => i.visible && i.graphTop !== undefined)
                     .map(t => t.mapToItem(popup, Qt.point(0, 0)).y).filter(y => y > top);
+                compare(header.height, header.bandHeight, header.title + ": the header contains its band");
                 return {
                     edges: [header.mapToItem(popup, Qt.point(0, 0)).x, popup.width - header.mapToItem(popup, Qt.point(header.width, 0)).x],
-                    height: header.height,
-                    ring: [at(ring).x, at(ring).y, ring.width],
-                    title: [at(title).x, baseline(title), title.font.pointSize],
-                    subtitle: [at(subtitle).x, baseline(subtitle)],
-                    headline: headline ? [at(headline).x + (data.mirrored ? 0 : headline.width), baseline(headline), headline.pointSize] : null,
-                    caption: caption ? [at(caption).x + (data.mirrored ? 0 : caption.width), baseline(caption)] : null,
+                    height: header.height - header.bandHeight,
+                    ring: [at(ring).x, at(ring).y - Math.round((header.bandHeight - ring.height) / 2), ring.width],
+                    title: [at(title).x, baseline(title) - header.nameTop, title.font.pointSize],
+                    subtitle: [at(subtitle).x, baseline(subtitle) - header.nameTop - title.implicitHeight],
+                    headline: headline ? [at(headline).x + (data.mirrored ? 0 : headline.width), baseline(headline) - header.valueTop, headline.pointSize] : null,
+                    caption: caption ? [at(caption).x + (data.mirrored ? 0 : caption.width), baseline(caption) - header.nameTop - title.implicitHeight] : null,
                     tiles: Math.min(...tiles) - top - header.height
                 };
             });
@@ -1767,36 +1771,115 @@ TestRoot {
             gpu.forEach((g, n) => compare(look(g), look(cpu[0]), "GPU " + (n + 1)));
         }
 
-        // A long name elides in its header at the page widths a popup
-        // takes, short of the temperature, which keeps its full width.
+        // Full GPU names wrap within the room left by the ring and reading,
+        // including names with no spaces. The subtitle follows every line,
+        // and the larger header leaves less room for processes.
         function test_gpuLongNamesFit_data() {
             const rows = [];
+            const names = [[integrated.gpuOuter.name, intel.gpuOuter.name],
+                           [longGpuNames.gpuOuter.name, longGpuNames.gpuInner.name],
+                           ["AMDRadeon780MGraphicsUnspacedModel", "NVIDIAGeForceRTX4090LaptopGPUUnspacedModel"]];
             for (const width of [Kirigami.Units.gridUnit * 20, Math.round(Kirigami.Units.gridUnit * 20 * 14 / 18)]) {
-                rows.push({ tag: width + " px", width: width, mirrored: false });
-                rows.push({ tag: width + " px mirrored", width: width, mirrored: true });
+                for (const mirrored of [false, true]) {
+                    for (const temperature of [false, true]) {
+                        for (const count of [1, 2]) {
+                            names.forEach((pair, n) => rows.push({
+                                tag: [width, mirrored, temperature, count, n].join(" / "),
+                                width: width, mirrored: mirrored, temperature: temperature, count: count, names: pair
+                            }));
+                        }
+                    }
+                }
             }
             return rows;
         }
 
         function test_gpuLongNamesFit(data) {
+            const monitor = monitorWith({
+                "gpuOuter.name": data.names[0], "gpuInner.name": data.names[1],
+                "gpuOuter.reportsTemperature": data.temperature, "gpuInner.reportsTemperature": data.temperature,
+                "gpuInner.present": data.count === 2
+            });
             const loader = createTemporaryObject(data.mirrored ? mirroredHost : host, root, { width: data.width });
-            loader.setSource(Qt.resolvedUrl("../../package/contents/ui/popups/GpuPopup.qml"), { monitor: longGpuNames });
+            loader.setSource(Qt.resolvedUrl("../../package/contents/ui/popups/GpuPopup.qml"), { monitor: monitor });
             const popup = loader.item;
+            popup.room = roomAt(1);
             waitForRendering(popup);
             compare(popup.width, data.width);
+            compare(popup.implicitWidth, Kirigami.Units.gridUnit * 20, "the names do not widen the popup");
             const left = i => i.mapToItem(popup, Qt.point(0, 0)).x;
             const headers = all(popup, i => i.visible && i.partsShown !== undefined);
-            compare(headers.length, 2);
+            compare(headers.length, data.count);
             headers.forEach(h => {
                 const title = shownText(h, h.title);
-                verify(title.truncated, h.title + " elides");
+                compare(title.elide, Text.ElideNone);
+                compare(title.wrapMode, Text.Wrap);
+                probe.font = title.font;
+                probe.text = title.text;
+                if (probe.advanceWidth > title.width) {
+                    verify(title.lineCount > 1, h.title + " wraps");
+                }
+                verify(!title.truncated, h.title + " is shown in full");
+                verify(title.contentWidth <= title.width + 0.5, "even an unspaced name fits the column");
+                verify(title.height >= title.contentHeight, "all title lines fit");
+                const subtitle = shownText(h, h.subtitle);
+                const bottom = i => i.mapToItem(h, Qt.point(0, i.height)).y;
+                verify(subtitle.mapToItem(h, Qt.point(0, 0)).y >= bottom(title), "the subtitle follows the full name");
+                compare(h.nameHeight, title.implicitHeight + subtitle.implicitHeight);
+                compare(h.height, h.bandHeight);
+                verify(bottom(subtitle) <= h.height, "the header contains the name and subtitle");
+                const ring = gauges(h)[0];
+                compare(ring.y, Math.round((h.bandHeight - ring.height) / 2), "the ring stays centred");
+                const [before, after] = data.mirrored ? [title, ring] : [ring, title];
+                verify(left(before) + before.width <= left(after) + 0.5, "the name stops short of the ring");
                 const headline = readings(h).find(r => r.visible);
-                verify(headline.width >= headline.implicitWidth - 0.5, "the temperature keeps its width");
-                const [near, far] = data.mirrored ? [headline, title] : [title, headline];
-                verify(left(near) + near.width <= left(far) + 0.5, "the name stops short of the temperature");
+                compare(!!headline, data.temperature);
+                if (headline) {
+                    verify(headline.width >= headline.implicitWidth - 0.5, "the temperature keeps its width");
+                    const [near, far] = data.mirrored ? [headline, title] : [title, headline];
+                    verify(left(near) + near.width <= left(far) + 0.5, "the name stops short of the temperature");
+                    compare(headline.mapToItem(h, Qt.point(0, 0)).y, h.valueTop, "the temperature stays in its band");
+                }
                 compare(left(h), contentEdge);
                 compare(left(h) + h.width, popup.width - contentEdge);
+                const top = h.mapToItem(popup, Qt.point(0, 0)).y;
+                const tiles = all(popup, i => i.visible && i.graphTop !== undefined)
+                    .map(t => t.mapToItem(popup, Qt.point(0, 0)).y).filter(y => y > top);
+                verify(Math.min(...tiles) >= top + h.height, "the graphs follow the full header");
             });
+            verify(popup.implicitHeight <= popup.room, "the popup fits after making room for the full names");
+        }
+
+        function test_gpuSleepingNamesFit_data() {
+            const rows = [];
+            for (const width of [Kirigami.Units.gridUnit * 20, Math.round(Kirigami.Units.gridUnit * 20 * 14 / 18)]) {
+                for (const mirrored of [false, true]) {
+                    for (const awake of [false, true]) {
+                        rows.push({ tag: [width, mirrored, awake].join(" / "), width: width, mirrored: mirrored, awake: awake });
+                    }
+                }
+            }
+            return rows;
+        }
+
+        function test_gpuSleepingNamesFit(data) {
+            const monitor = monitorWith({ "gpuOuter.name": longGpuNames.gpuOuter.name,
+                                          "gpuOuter.phase": "asleep", "gpuInner.present": data.awake });
+            const popup = load("GpuPopup", monitor, data.mirrored, data.width);
+            const line = shownText(popup, monitor.gpuOuter.name + " · off");
+            verify(line, "the off-state line includes the full name");
+            compare(line.elide, Text.ElideNone);
+            compare(line.wrapMode, Text.Wrap);
+            verify(line.lineCount > 1);
+            verify(!line.truncated);
+            verify(line.contentWidth <= line.width + 0.5);
+            verify(line.height >= line.contentHeight);
+            const left = line.mapToItem(popup, Qt.point(0, 0)).x;
+            compare(left, contentEdge);
+            compare(left + line.width, popup.width - contentEdge);
+            compare(popup.width, data.width);
+            compare(popup.implicitWidth, Kirigami.Units.gridUnit * 20);
+            verify(line.mapToItem(popup, Qt.point(0, line.height)).y <= popup.height, "the popup contains the full off-state line");
         }
 
         // The CPU and GPU headers' captions show the plain words, and none

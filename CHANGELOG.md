@@ -8,6 +8,7 @@ follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- GPU names wrap in the popup so the full name is visible.
 - Stale awake reports no longer restart GPU monitoring after an idle pause.
 - Claude and Codex rings allow time for the connection to come up on first
   load before showing a failure.

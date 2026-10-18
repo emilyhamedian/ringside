@@ -25,6 +25,7 @@ RowLayout {
     // How often a system reading updates, for the ring: see RingGauge.
     property int interval: 0
     property string title: ""
+    property bool titleWrapped: false
     property string subtitle: ""
     // A second line under the subtitle, in its style, for what would be lost
     // at the end of a long one.
@@ -59,7 +60,7 @@ RowLayout {
     readonly property real valueTop: Math.round((bandHeight - valueHeight) / 2)
     // How far the caption moves to sit on the subtitle's baseline, as the
     // two columns' second lines miss by a few pixels; the digits stay level
-    // with the title. Applied as a transform, so moving the caption never
+    // with a single-line title. Applied as a transform, so moving the caption never
     // lays the row out again.
     readonly property real captionShift: Math.round(nameTop + titleText.implicitHeight + subtitleText.baselineOffset
                                                     - (valueTop + valueHeight - captionText.implicitHeight + captionText.baselineOffset))
@@ -95,6 +96,9 @@ RowLayout {
 
     ColumnLayout {
         Layout.fillWidth: true
+        // A wrapped name takes the room left by the ring and reading,
+        // rather than making the popup as wide as the unbroken title.
+        Layout.preferredWidth: header.titleWrapped ? 0 : -1
         Layout.alignment: Qt.AlignTop
         Layout.topMargin: header.nameTop
         spacing: 0
@@ -105,7 +109,10 @@ RowLayout {
             text: header.title
             level: 3
             font.weight: Font.DemiBold
-            elide: Text.ElideRight
+            elide: header.titleWrapped ? Text.ElideNone : Text.ElideRight
+            wrapMode: header.titleWrapped ? Text.Wrap : Text.NoWrap
+            leftPadding: header.titleWrapped && header.LayoutMirroring.enabled ? 1 : 0
+            rightPadding: header.titleWrapped && !header.LayoutMirroring.enabled ? 1 : 0
             textFormat: Text.PlainText
             horizontalAlignment: Text.AlignLeft
         }
