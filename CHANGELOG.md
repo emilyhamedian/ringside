@@ -8,6 +8,8 @@ follows [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Claude and Codex popups show remaining usage credits below the week graph
+  when enabled.
 - Hovering a graph marks the same moment on the other graphs in its popup.
 - Intel GPUs using xe show package temperature and dedicated VRAM when
   available.

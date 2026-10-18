@@ -106,6 +106,12 @@
       <label>ksystemstats id, "none", or empty for automatic</label>
       <default></default>
     </entry>
+    <entry name="claudeCredits" type="Bool">
+      <default>false</default>
+    </entry>
+    <entry name="codexCredits" type="Bool">
+      <default>false</default>
+    </entry>
     <entry name="claudeInnerLimit" type="String">
       <label>Per-model limit on Claude's inner ring: empty for automatic, "none", or its id</label>
       <default></default>

@@ -758,6 +758,12 @@ TestRoot {
                   saved: { diskTemperatureSensor: "none" } },
                 { tag: "usageRefreshMinutes", source: providers, drive: page => spinUp(page, "Check every"),
                   saved: { usageRefreshMinutes: 10 } },
+                { tag: "claudeCredits", source: providers, start: { itemOrder: ["claude"], hiddenItems: [] },
+                  drive: page => { accessible(page, "Show Claude remaining credits").toggle();
+                                   accessible(page, "Show Claude remaining credits").toggled(); }, saved: { claudeCredits: true } },
+                { tag: "codexCredits", source: providers, start: { itemOrder: ["codex"], hiddenItems: [] },
+                  drive: page => { accessible(page, "Show OpenAI remaining credits").toggle();
+                                   accessible(page, "Show OpenAI remaining credits").toggled(); }, saved: { codexCredits: true } },
                 { tag: "claudeInnerLimit", source: providers, start: limits, drive: page => pickIn(page, "Claude inner ring", 2),
                   saved: { claudeInnerLimit: "opus" } },
                 { tag: "codexInnerLimit", source: providers, start: limits, drive: page => pickIn(page, "OpenAI inner ring", 2),
@@ -1453,6 +1459,23 @@ TestRoot {
             verify(heading(bare, "All Providers").visible);
             verify(!heading(bare, "Claude").visible);
             verify(!heading(bare, "OpenAI").visible);
+        }
+
+        function test_creditConsentWithOneLimitOrNoReportedLimits() {
+            const page = make(providers, { cfg_itemOrder: ["claude", "codex"], cfg_hiddenItems: [], knownLimits: {} });
+            for (const [name, key] of [["Claude", "claude"], ["OpenAI", "codex"]]) {
+                const box = accessible(page, "Show " + name + " remaining credits");
+                verify(box.visible && !box.checked);
+                verify(heading(page, name).visible);
+                box.toggle();
+                box.toggled();
+                verify(page["cfg_" + key + "Credits"]);
+                compare(page["cfg_" + key + "InnerLimit"], "");
+            }
+            page.cfg_hiddenItems = ["claude", "codex"];
+            verify(!accessible(page, "Show Claude remaining credits").visible);
+            verify(!accessible(page, "Show OpenAI remaining credits").visible);
+            verify(page.cfg_claudeCredits && page.cfg_codexCredits, "turning items off keeps the preference");
         }
 
         // Codex is chosen until the setting says openai, and each choice

@@ -14,8 +14,8 @@ are the two helper scripts it runs as you:
 - [`usage.py`](package/contents/code/usage.py) runs the Claude and Codex
   items. It reads Claude Code's login to ask Anthropic for your limits, and
   when the login expires it renews it and saves it back the way Claude Code
-  does, under the same lock, so the two never fight over it. For Codex it
-  only checks that `~/.codex/auth.json` exists, then asks the Codex CLI.
+  does. For Codex it asks the Codex CLI; with remaining credits on, it also
+  reads the CLI's login file to keep cached balances with the right login.
 - [`ringside-info.sh`](package/contents/code/ringside-info.sh) reads `/proc`,
   `/sys` and udev. While the network popup shows your public address, it
   also runs `ip route get` every 3 seconds to see which interface you're
@@ -41,6 +41,13 @@ Nothing, until you turn on something that needs it.
   day.
 - **Codex** only talks to `codex app-server` on your computer, which reaches
   OpenAI with the Codex CLI's own login.
+- **Remaining credits** are off by default for each provider. Claude asks
+  `api.anthropic.com` for its organization's prepaid balance only while the
+  popup is open, at most once every 15 minutes across all Ringside widgets.
+  Failed attempts count too. The request uses the existing login and does
+  not renew it solely for credits. A rate limit holds both Claude reads
+  back. Codex credits come from its existing usage response, with no extra
+  request. Neither balance check sends a model request or starts a session.
 - **The session starter** sends "Hi" through the Claude Code or Codex CLI
   when a session or week ends. It counts against your limits like any other
   message. To pick Codex's model it reads `~/.codex/models_cache.json`.
@@ -65,7 +72,13 @@ Nothing, until you turn on something that needs it.
 
 ## What stays on your computer
 
-- **Claude and Codex readings** are kept in `~/.cache/ringside/`.
+- **Claude and Codex readings** are kept in `~/.cache/ringside/`. With
+  remaining credits on, the same private cache keeps each balance, when it
+  was read, when it may be checked again, and the identity needed to keep it
+  with the right login. It does not keep credentials. Failed balance reads
+  preserve the last successful value; a new zero or disabled result clears
+  it. Turning the option off hides the balance without deleting a cache
+  another widget may still use.
 - **Graph history** stays in memory, unless you turn on *Keep the last hour
   and day across restarts* under General. Then each widget saves the
   average and peak of every graph for each 30-second and 10-minute step,

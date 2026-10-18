@@ -13,6 +13,13 @@ other. Output shape:
          "claude": {"status": "ok", "fetchedAt": ..., "weekly": {...}, "scoped": [...]},
          "codex":  {"status": "ok", "fetchedAt": ..., "weekly": {...}, "scoped": [...]}}}
 
+--credits-providers names providers whose prepaid credits may be reported.
+--credits-open names the subset whose popup is open: only an open Claude
+popup may fetch credits, at most once per fifteen minutes including failures.
+Codex credits reuse its weekly response. Credits have their own status and
+cached balance, independent of weekly readings. Neither flag is enabled by
+default, and no credit-only check renews a login.
+
 --providers claude,codex names the providers to poll and report; both by
 default. --initial-providers names those awaiting their first report: safe
 connection failures retry at five-second intervals within one 30-second
@@ -96,8 +103,10 @@ replan_starters()).
 
 import argparse
 import contextlib
+import contextvars
 import errno
 import fcntl
+import hashlib
 import json
 import math
 import os
@@ -113,6 +122,7 @@ import tempfile
 import time
 import urllib.error
 import urllib.request
+import uuid
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from pathlib import Path
@@ -150,6 +160,10 @@ CACHE_FILE = CACHE_DIR / "usage.json"
 HISTORY_FILE = CACHE_DIR / "usage-history.json"
 LOCK_FILE = CACHE_DIR / "usage.lock"
 CACHE_TTL = 5 * 60
+CREDITS_INTERVAL = 15 * 60
+CREDITS_TIMEOUT = 5
+# A collection shares the raw replies with credits without changing the weekly parsers.
+CREDITS_CONTEXT = contextvars.ContextVar("credits", default=None)
 INITIAL_GRACE = 30
 INITIAL_RETRY_DELAY = 5
 # How long a run waits for another to finish before giving up. A poll takes
@@ -612,6 +626,8 @@ def codex_usage():
     if reason:
         raise CheckFailed("codex CLI not found", reason)
     event("debug", "codex", "cli", cli=shown_path(binary))
+    context = CREDITS_CONTEXT.get()
+    identity = credential_digest(CODEX_AUTH) if context and "codex" in context["consent"] else None
     try:
         result = codex_rate_limits(binary)
     except AppServerError as err:
@@ -623,6 +639,9 @@ def codex_usage():
             reason = "timeout" if str(err).endswith("route-aware request timed out") else "offline"
             raise CheckFailed(str(err), reason, retryable=True) from err
         raise
+    context = CREDITS_CONTEXT.get()
+    if context is not None:
+        context["observed"]["codex"] = {"raw": result, "identity": identity}
     return parse_codex(result)
 
 
@@ -652,14 +671,25 @@ def retry_seconds(value):
     return max(1, math.ceil(at.timestamp() - time.time()))
 
 
-def http_json(url, headers, body=None):
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def http_json(url, headers, body=None, *, timeout=ANSWER_TIMEOUT, redirects=True, max_bytes=None):
     host = url.split("/")[2]
     data = json.dumps(body).encode() if body is not None else None
     request = urllib.request.Request(url, data=data, headers={"User-Agent": USER_AGENT, **headers},
                                      method="POST" if data else "GET")
     try:
-        with urllib.request.urlopen(request, timeout=ANSWER_TIMEOUT) as response:
-            return json.load(response)
+        open_request = urllib.request.urlopen if redirects else urllib.request.build_opener(NoRedirect()).open
+        with open_request(request, timeout=timeout) as response:
+            if max_bytes is None:
+                return json.load(response)
+            raw = response.read(max_bytes + 1)
+            if len(raw) > max_bytes:
+                raise ValueError("reply too large")
+            return json.loads(raw)
     except urllib.error.HTTPError as err:
         if err.code == 401:
             raise SignedOut() from err
@@ -975,7 +1005,217 @@ def claude_usage():
         "anthropic-beta": CLAUDE_BETA_HEADER,
         "Content-Type": "application/json",
     })
+    context = CREDITS_CONTEXT.get()
+    if context is not None:
+        context["observed"]["claude"] = {"raw": usage, "token": token}
     return parse_claude(usage)
+
+
+# --- prepaid credits -------------------------------------------------------
+
+
+def credential_digest(path):
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError:
+        return None
+
+
+def claude_credit_identity():
+    """Bind a balance to both CLI account and credential generation."""
+    folder = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude")
+    primary = folder / ".claude.json" if os.environ.get("CLAUDE_CONFIG_DIR") else Path.home() / ".claude.json"
+    legacy = folder / ".config.json"
+    path = primary
+    try:
+        info = legacy.stat()
+        if stat.S_ISREG(info.st_mode) and (info.st_size > 0 or info.st_mode & 0o222 and not primary.exists()):
+            path = legacy
+    except OSError:
+        pass
+    try:
+        config = read_json(path)
+        account = config.get("oauthAccount") if isinstance(config, dict) else None
+        if not isinstance(account, dict):
+            return None
+        account_id = str(uuid.UUID(account["accountUuid"]))
+        org = str(uuid.UUID(account["organizationUuid"]))
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        return None
+    digest = credential_digest(CLAUDE_CREDENTIALS)
+    if digest:
+        identity = hashlib.sha256((account_id + org + digest).encode()).hexdigest()
+        return identity, org
+    return None
+
+
+def parse_claude_credits(body):
+    if not isinstance(body, dict):
+        raise ValueError("invalid credits")
+    amount, currency = body.get("amount"), body.get("currency")
+    if not finite_share(amount) or amount < 0 or not isinstance(currency, str) or not re.fullmatch(r"[A-Z]{3}", currency):
+        raise ValueError("invalid credits")
+    # Claude Code's shipped formatter uses whole units for these three,
+    # hundredths for every other currency; the endpoint does not give a scale.
+    precision = 0 if currency in ("JPY", "KRW", "VND") else 2
+    return {"amount": amount / (100 if precision else 1), "currency": currency, "precision": precision} if amount else None
+
+
+def codex_credit_limit(raw):
+    if not isinstance(raw, dict):
+        return {}
+    by_id = raw.get("rateLimitsByLimitId")
+    limit = (by_id.get("codex") if isinstance(by_id, dict) else None) or raw.get("rateLimits")
+    return limit if isinstance(limit, dict) else {}
+
+
+def parse_codex_credits(raw):
+    credits = codex_credit_limit(raw).get("credits")
+    if not isinstance(credits, dict):
+        return "unavailable", None
+    if credits.get("hasCredits") is False:
+        return "disabled", None
+    if credits.get("hasCredits") is not True or type(credits.get("unlimited")) is not bool:
+        raise ValueError("invalid credits")
+    if credits["unlimited"]:
+        return "ok", None
+    value = credits.get("balance")
+    if not isinstance(value, str) or not re.fullmatch(r"[0-9]+(?:\.[0-9]+)?", value):
+        raise ValueError("invalid credits")
+    amount = float(value)
+    if not math.isfinite(amount):
+        raise ValueError("invalid credits")
+    return "ok", {"amount": amount, "currency": "", "precision": 2} if amount else None
+
+
+def anthropic_hold(cache, now):
+    at = cache.get("_anthropicHold")
+    return max(0, at - now) if type(at) is int else 0
+
+
+def credits_report(record):
+    balance = record.get("balance")
+    if not (isinstance(balance, dict) and finite_share(balance.get("amount")) and balance["amount"] > 0
+            and type(balance.get("precision")) is int and balance["precision"] in (0, 2)
+            and isinstance(balance.get("currency"), str) and (
+                balance["currency"] == "" or re.fullmatch(r"[A-Z]{3}", balance["currency"]))):
+        balance = None
+    elif balance:
+        balance = {key: balance[key] for key in ("amount", "currency", "precision")}
+    status = record.get("status")
+    reason = record.get("reason")
+    return {"status": status if status in ("ok", "disabled", "unavailable", "error") else "unavailable",
+            "balance": balance, "fetchedAt": record.get("fetchedAt") if type(record.get("fetchedAt")) is int else None,
+            "retryAt": record.get("retryAt") if type(record.get("retryAt")) is int else None,
+            "reason": reason if reason in ("offline", "timeout", "server", "rate-limited", "signed-out", "other") else None}
+
+
+def collect_credits(cache, providers, now):
+    context = CREDITS_CONTEXT.get()
+    if context is None:
+        return False
+    before = json.dumps(cache, sort_keys=True)
+    records = cache.get("_credits")
+    if not isinstance(records, dict):
+        records = {}
+    records = {name: dict(record) for name, record in records.items() if isinstance(record, dict)}
+    for record in records.values():
+        if type(record.get("retryAt")) is not int:
+            record.pop("retryAt", None)
+    # Remember an explicit opt-out reported by the weekly endpoint even when
+    # credits have not been enabled in this widget.
+    for name, observed in context["observed"].items():
+        raw = observed["raw"]
+        if name == "claude":
+            extra = raw.get("extra_usage") if isinstance(raw, dict) else None
+            enabled = extra.get("is_enabled") if isinstance(extra, dict) else None
+        else:
+            limit = codex_credit_limit(raw)
+            extra = limit.get("credits") if isinstance(limit, dict) else None
+            enabled = extra.get("hasCredits") if isinstance(extra, dict) else None
+        if type(enabled) is bool:
+            record = records.setdefault(name, {})
+            record["enabled"] = enabled
+            if not enabled:
+                # This newer provider refusal replaces any account's old balance;
+                # retaining its old identity would discard the refusal on consent.
+                record.pop("identity", None)
+                record.update(status="disabled", balance=None, fetchedAt=now, reason=None)
+    for name in context["consent"] & providers.keys():
+        record = records.setdefault(name, {})
+        observed = context["observed"].get(name, {})
+        snapshot = claude_credit_identity() if name == "claude" else credential_digest(CODEX_AUTH)
+        identity = snapshot[0] if name == "claude" and snapshot else snapshot
+        if not identity or record.get("identity") != identity:
+            # Retain the attempt deadline across login changes and missing files.
+            keep_enabled = "identity" not in record or bool(observed)
+            record = records[name] = {key: record[key] for key in ("retryAt", "enabled")
+                                      if key in record and (key != "enabled" or keep_enabled)}
+            if identity:
+                record["identity"] = identity
+        if not identity:
+            record.update(status="unavailable", balance=None, fetchedAt=None, reason="signed-out")
+        elif record.get("enabled") is False:
+            record.update(status="disabled", balance=None, fetchedAt=None, reason=None)
+        elif name == "codex":
+            if observed:
+                if observed.get("identity") != identity:
+                    record.update(status="unavailable", balance=None, fetchedAt=None, reason="signed-out")
+                else:
+                    try:
+                        status, balance = parse_codex_credits(observed["raw"])
+                        record.update(status=status, balance=balance, fetchedAt=now, retryAt=None, reason=None)
+                    except (ValueError, TypeError, AttributeError, OverflowError):
+                        record.update(status="error", reason="other")
+            elif providers[name].get("status") != "ok":
+                reason = "signed-out" if providers[name].get("status") == "signed_out" else providers[name].get("reason", "other")
+                record.update(status="error", reason=reason, retryAt=providers[name].get("retryAt"))
+        elif name in context["open"]:
+            wait = max(anthropic_hold(cache, now), held(cache.get(name), now, PROGRAMS.get(name, "")))
+            if wait:
+                record.update(status="error", retryAt=max(record.get("retryAt") or 0, now + wait),
+                              reason="rate-limited" if anthropic_hold(cache, now) or cache.get(name, {}).get("status") == "rate_limited" else "other")
+            elif now >= (record.get("retryAt") or 0):
+                # The deadline is persisted before the GET so interruption does
+                # not turn a restart into another attempt.
+                attempt_started = time.monotonic()
+                record["retryAt"] = now + CREDITS_INTERVAL
+                cache["_credits"] = records
+                write_private(CACHE_FILE, cache)
+                try:
+                    oauth = read_oauth(CLAUDE_CREDENTIALS)
+                    if expired(oauth, 0):
+                        raise SignedOut()
+                    token = observed.get("token") or oauth["accessToken"]
+                    if token != oauth["accessToken"] or claude_credit_identity() != snapshot:
+                        raise SignedOut()
+                    body = http_json("https://api.anthropic.com/api/oauth/organizations/" + snapshot[1] + "/prepaid/credits", {
+                        "Authorization": "Bearer " + token, "Content-Type": "application/json",
+                        "anthropic-version": "2023-06-01", "anthropic-client-platform": "claude_code_cli",
+                        "x-organization-uuid": snapshot[1],
+                    }, timeout=CREDITS_TIMEOUT, redirects=False, max_bytes=65536)
+                    balance = parse_claude_credits(body)
+                    record.update(status="ok", balance=balance,
+                                  fetchedAt=now + int(time.monotonic() - attempt_started), reason=None)
+                except RateLimited as err:
+                    response_at = now + math.ceil(time.monotonic() - attempt_started)
+                    cache["_anthropicHold"] = response_at + max(CREDITS_INTERVAL, err.retry_after)
+                    record.update(status="error", retryAt=cache["_anthropicHold"], reason="rate-limited")
+                except SignedOut:
+                    record.update(status="error", reason="signed-out")
+                except Exception as err:  # noqa: BLE001 - no response text leaves this path
+                    reason = getattr(err, "reason", "other")
+                    record.update(status="error", reason=reason if reason in ("offline", "timeout", "server") else "other")
+                    if getattr(err, "status", None) == 403:
+                        record["retryAt"] = now + math.ceil(time.monotonic() - attempt_started) + 3600
+                if claude_credit_identity() != snapshot:
+                    record = records[name] = {"status": "unavailable", "balance": None, "fetchedAt": None,
+                                             "retryAt": record["retryAt"], "reason": "signed-out"}
+        # Copy the base entry before adding report-only fields to a cache hit.
+        providers[name] = dict(providers[name], credits=credits_report(record))
+    if records:
+        cache["_credits"] = records
+    return json.dumps(cache, sort_keys=True) != before
 
 
 # --- shared ----------------------------------------------------------------
@@ -1176,7 +1416,7 @@ def replay(entry, wait, now):
     return {"status": "error", "message": entry["message"], **failure}
 
 
-def collect(fetchers, now=None, *, initial=()):
+def collect(fetchers, now=None, *, initial=(), credits=(), credits_open=()):
     """Poll each provider unless its last poll is recent enough to report
     again.
 
@@ -1198,7 +1438,11 @@ def collect(fetchers, now=None, *, initial=()):
     with locked():
         now = int(time.time()) if now is None else now
         started = time.monotonic()
-        providers, history = collect_locked(fetchers, now, initial=initial)
+        context_token = CREDITS_CONTEXT.set({"consent": set(credits), "open": set(credits_open), "observed": {}})
+        try:
+            providers, history = collect_locked(fetchers, now, initial=initial)
+        finally:
+            CREDITS_CONTEXT.reset(context_token)
         finished = now + int(time.monotonic() - started)
         replan_starters(providers, finished)
     attach_history(providers, history, finished)
@@ -1223,6 +1467,12 @@ def collect_locked(fetchers, now, *, initial=()):
             providers[name] = entry
             event("debug", name, "cached", age=now - entry["fetchedAt"])
             continue
+        shared = anthropic_hold(cache, now) if name == "claude" else 0
+        if shared:
+            providers[name] = replay(hold({"status": "rate_limited", "retryAfter": shared,
+                                           "reason": "rate-limited", "host": "api.anthropic.com"},
+                                          now, ""), shared, now)
+            continue
         wait = held(entry, now, PROGRAMS.get(name, ""))
         if wait:
             if entry["heldUntil"] - now > wait:
@@ -1242,6 +1492,11 @@ def collect_locked(fetchers, now, *, initial=()):
         polled[name] = report
         last_at[name] = time.monotonic()
         fetched_at[name] = now + int(last_at[name] - started)
+        context = CREDITS_CONTEXT.get()
+        credit_records = cache.get("_credits")
+        if name == "claude" and report["status"] == "rate_limited" and (
+                context and "claude" in context["consent"] or isinstance(credit_records, dict) and "claude" in credit_records):
+            cache["_anthropicHold"] = now + math.ceil(last_at[name] - started) + max(CREDITS_INTERVAL, report["retryAfter"])
         retry.pop(name, None)
         if again and time.monotonic() < deadline:
             retry[name] = time.monotonic() + INITIAL_RETRY_DELAY
@@ -1271,8 +1526,9 @@ def collect_locked(fetchers, now, *, initial=()):
             cache[name] = hold(report, finished, PROGRAMS.get(name, ""))
             providers[name] = replay(cache[name], cache[name]["holdSeconds"], finished)
         note_check(name, report, entry, ms, cache[name])
+    credits_changed = collect_credits(cache, providers, finished)
     history = read_history()
-    if polled or stepped:
+    if polled or stepped or credits_changed:
         write_private(CACHE_FILE, cache)
     if any(report["status"] == "ok" for report in polled.values()):
         for name, report in polled.items():
@@ -1437,7 +1693,7 @@ def record_history(history, polled, now):
     return updated
 
 
-def waiting(ids, message):
+def waiting(ids, message, *, credits=()):
     """What a run that couldn't get the lock reports: what the cache would
     serve, read without the lock since the cache is only ever replaced whole,
     and the message for the rest."""
@@ -1457,6 +1713,19 @@ def waiting(ids, message):
         else:
             providers[name] = {"status": "error", "message": message, "reason": "busy", "host": "", "retryAt": now}
             event("warning", name, "busy", wait=LOCK_WAIT)
+    records = cache.get("_credits")
+    for name in set(credits) & providers.keys():
+        record = records.get(name) if isinstance(records, dict) else None
+        snapshot = claude_credit_identity() if name == "claude" else credential_digest(CODEX_AUTH)
+        identity = snapshot[0] if name == "claude" and snapshot else snapshot
+        if identity and isinstance(record, dict) and record.get("identity") == identity:
+            if record.get("status") == "disabled" or record.get("enabled") is False:
+                report = credits_report(dict(record, status="disabled", balance=None))
+            else:
+                report = credits_report(dict(record, status="error", reason="other"))
+        else:
+            report = credits_report({"status": "unavailable", "reason": "signed-out"})
+        providers[name] = dict(providers[name], credits=report)
     attach_history(providers, read_history(), now)
     return providers
 
@@ -2204,6 +2473,10 @@ def arguments(argv):
     parser = argparse.ArgumentParser(description="Report the weekly usage of Claude Code and Codex as JSON.")
     parser.add_argument("--providers", type=provider_list, default=list(PROVIDERS),
                         help="comma-separated providers to poll and report (default: claude,codex)")
+    parser.add_argument("--credits-providers", type=provider_list, default=[],
+                        help="providers whose prepaid credits may be reported")
+    parser.add_argument("--credits-open", type=provider_list, default=[],
+                        help="consented providers whose popup is open")
     parser.add_argument("--initial-providers", type=provider_list, default=[],
                         help="providers awaiting their first report; briefly retry connection failures")
     parser.add_argument("--start", action="store_true",
@@ -2213,6 +2486,10 @@ def arguments(argv):
     parser.add_argument("--program", type=chosen_program, action="append", default=[], metavar="PROVIDER=PATH",
                         help="run the program at PATH for a provider rather than finding it; ~ is the home folder")
     args = parser.parse_args(argv)
+    if any(name not in args.providers for name in args.credits_providers):
+        parser.error("--credits-providers must be a subset of --providers")
+    if any(name not in args.credits_providers for name in args.credits_open):
+        parser.error("--credits-open must be a subset of --credits-providers")
     if any(name not in args.providers for name in args.initial_providers):
         parser.error("--initial-providers must be a subset of --providers")
     if args.initial_providers and (args.start or args.starter_set):
@@ -2245,9 +2522,10 @@ def main(argv=None):
                 event("warning", name, "starter-stopped", why=os_why(err))
     sources = fetchers()
     try:
-        providers = collect({name: sources[name] for name in ids}, initial=args.initial_providers)
+        providers = collect({name: sources[name] for name in ids}, initial=args.initial_providers,
+                            credits=args.credits_providers, credits_open=args.credits_open)
     except Busy as err:
-        providers = waiting(ids, str(err))
+        providers = waiting(ids, str(err), credits=args.credits_providers)
     report = {"fetchedAt": int(time.time()), "providers": providers, "events": EVENTS}
     attach_starters(providers, report["fetchedAt"])
     for name, entry in providers.items():

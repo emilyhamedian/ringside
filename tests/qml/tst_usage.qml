@@ -3,6 +3,7 @@
 
 import QtCore
 import QtQuick
+import QtQuick.Layouts
 import QtTest
 import org.kde.kirigami as Kirigami
 import "../../package/contents/ui"
@@ -209,6 +210,88 @@ TestRoot {
 
         function timers() {
             return usage.resources.filter(r => r.triggeredOnStart !== undefined);
+        }
+
+        function test_creditsAreOptInAndIndependentOfWeeklyFailure() {
+            start("ok");
+            const balance = { status: "ok", balance: { amount: 18.42, currency: "USD", precision: 2 },
+                              fetchedAt: usage.nowSeconds(), retryAt: null, reason: null };
+            usage.merge({ providers: { claude: { status: "error", message: "weekly failed", credits: balance } } });
+            compare(usage.entry("claude").weekly.percent, 52);
+            compare(usage.credit("claude"), null);
+            verify(!config.claudeCredits && !config.codexCredits, "reports never consent for the account holder");
+            config.claudeCredits = true;
+            compare(usage.credit("claude"), balance);
+            wait(0);
+            tryCompare(usage, "checking", false, 5000);
+            poll("traceback");
+            compare(usage.credit("claude").status, "error");
+            compare(usage.credit("claude").balance, balance.balance, "a helper failure keeps the balance as cached");
+            const unavailable = Object.assign({}, balance, { status: "error", reason: "offline" });
+            usage.merge({ providers: { claude: { status: "error", credits: unavailable } } });
+            compare(usage.credit("claude"), unavailable);
+            config.claudeCredits = false;
+            compare(usage.credit("claude"), null, "opting out immediately hides shared cached data");
+            usage.providers = ["codex"];
+            compare(usage.credits.claude, undefined);
+            wait(0);
+            tryCompare(usage, "checking", false, 5000);
+        }
+
+        function test_creditCommandAndPopupDoNotChangePollSchedule() {
+            start("ok");
+            config.claudeCredits = true;
+            config.codexCredits = true;
+            tryCompare(usage, "checking", false, 5000);
+            wait(0);
+            const runs = commands();
+            const changes = spy("commandChanged");
+            const lastRun = usage.lastRun;
+            const poller = timers().find(t => t.triggeredOnStart);
+            const command = usage.command;
+            verify(command.includes(" --credits-providers claude,codex --providers claude,codex"));
+            usage.openPopup = "claude";
+            tryCompare(runs, "count", 1);
+            verify(runs.signalArguments[0][0].includes(" --credits-open claude --providers claude,codex"));
+            compare(usage.polledIds(runs.signalArguments[0][0]), ["claude", "codex"]);
+            compare(usage.lastRun, lastRun);
+            verify(poller.running);
+            usage.openPopup = "";
+            tryCompare(usage, "checking", false, 5000);
+            wait(0);
+            compare(runs.count, 1, "closing starts no helper");
+            compare(changes.count, 0, "the command binding ignores popup state");
+            compare(usage.command, command);
+            compare(usage.lastRun, lastRun);
+        }
+
+        function test_creditRefreshQueuesOnlyWhilePopupStillConsented() {
+            start("slow");
+            config.claudeCredits = true;
+            tryCompare(usage, "checking", true);
+            const runs = commands();
+            usage.openPopup = "claude";
+            verify(usage.creditRefreshPending);
+            tryCompare(runs, "count", 1, 5000);
+            verify(runs.signalArguments[0][0].includes(" --credits-open claude"));
+            tryCompare(usage, "checking", false, 5000);
+            usage.openPopup = "";
+            usage.refresh();
+            usage.openPopup = "claude";
+            verify(usage.creditRefreshPending);
+            usage.openPopup = "";
+            verify(!usage.creditRefreshPending);
+            tryCompare(usage, "checking", false, 5000);
+            wait(0);
+            compare(runs.count, 2, "closing discards the queued check");
+            usage.refresh();
+            usage.openPopup = "claude";
+            verify(usage.creditRefreshPending);
+            config.claudeCredits = false;
+            verify(!usage.creditRefreshPending);
+            tryCompare(usage, "checking", false, 5000);
+            wait(0);
+            verify(!runs.signalArguments.slice(2).some(a => a[0].includes(" --credits-open")));
         }
 
         // A popup that closes having shown an early reset remembers the
@@ -1948,6 +2031,65 @@ TestRoot {
 
         function graph(popup) {
             return root.find(popup, i => i.mainPoints !== undefined);
+        }
+
+        function test_creditRow_data() {
+            return [
+                { tag: "Claude fresh", item: "claude", amount: 18.42, currency: "EUR", precision: 2, value: "18.42", status: "ok" },
+                { tag: "Codex fresh", item: "codex", amount: 1250.5, currency: "", precision: 2, value: "1250.5", status: "ok" },
+                { tag: "Codex integer", item: "codex", amount: 1250, currency: "", precision: 2, value: "1250", status: "ok" },
+                { tag: "cached", item: "claude", amount: 18.42, currency: "USD", precision: 2, value: "18.42", status: "error" },
+                { tag: "small", item: "claude", amount: 0.001, currency: "USD", precision: 2, value: "<0.01", status: "ok" },
+                { tag: "whole", item: "claude", amount: 18, currency: "JPY", precision: 0, value: "18", status: "ok", mirrored: true }
+            ];
+        }
+
+        function test_creditRow(data) {
+            const at = monitor.usage.createdAt - 3600;
+            monitor.usage.creditIds = [data.item];
+            monitor.usage.credits = { [data.item]: { status: data.status, balance: { amount: data.amount,
+                currency: data.currency, precision: data.precision }, fetchedAt: at, reason: "offline" } };
+            const popup = load(data.item, data.mirrored);
+            const row = root.find(popup, i => i.credit !== undefined);
+            verify(row.visible);
+            compare(row.value, root.localized(data.value));
+            compare(row.unit, data.currency || "credits");
+            compare(row.label, data.status === "ok" ? "Credits remaining" : "Credits remaining · cached");
+            const when = new Date(at * 1000).toLocaleString(Qt.locale(), Locale.ShortFormat);
+            verify(row.detail.includes(when));
+            compare(row.Accessible.description, row.detail);
+            verify(row.Accessible.name.includes(row.value) && row.Accessible.name.includes(row.unit));
+            const reading = root.find(row, i => i.accessibleIgnored !== undefined);
+            compare(reading.LayoutMirroring.enabled, false, "the value and unit keep their order in RTL");
+            compare(String(reading.color), String(data.status === "ok" ? Kirigami.Theme.textColor : Style.dim(Kirigami.Theme.textColor)));
+            verify(row.mapToItem(popup, 0, 0).y >= graph(popup).mapToItem(popup, 0, graph(popup).height).y);
+            if (data.status !== "ok") {
+                verify(row.detail.includes("could not be reached"));
+            }
+        }
+
+        function test_creditRowHiddenWithoutPositiveEnabledBalance() {
+            const popup = load("claude");
+            const row = root.find(popup, i => i.credit !== undefined);
+            const height = popup.implicitHeight;
+            const positive = { status: "ok", balance: { amount: 18.42, currency: "USD", precision: 2 },
+                               fetchedAt: monitor.usage.createdAt };
+            monitor.usage.credits = { claude: positive };
+            verify(!row.visible, "off by default even with cached data");
+            monitor.usage.creditIds = ["claude"];
+            tryVerify(() => row.visible);
+            tryVerify(() => popup.implicitHeight > height);
+            for (const credit of [null, { status: "disabled", balance: positive.balance, fetchedAt: positive.fetchedAt },
+                                  Object.assign({}, positive, { balance: { amount: 0, currency: "USD", precision: 2 } }),
+                                  Object.assign({}, positive, { balance: { amount: "18", currency: "USD", precision: 2 } }),
+                                  Object.assign({}, positive, { balance: { amount: 1, currency: "usd", precision: 2 } }),
+                                  Object.assign({}, positive, { fetchedAt: null })]) {
+                monitor.usage.credits = { claude: credit };
+                verify(!row.visible);
+                tryCompare(popup, "implicitHeight", height);
+                compare(row.Layout.bottomMargin, 0);
+                compare(row.Accessible.ignored, true);
+            }
         }
 
         function header(popup) {

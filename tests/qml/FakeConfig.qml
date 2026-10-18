@@ -33,6 +33,8 @@ QtObject {
     property string diskTemperatureSensor: ""
     property string claudeInnerLimit: ""
     property string codexInnerLimit: ""
+    property bool claudeCredits: false
+    property bool codexCredits: false
     property string codexMark: "codex"
     property string claudeProgram: ""
     property string codexProgram: ""

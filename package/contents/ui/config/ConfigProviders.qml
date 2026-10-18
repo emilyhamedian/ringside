@@ -225,7 +225,7 @@ ConfigPage {
         Item {
             Kirigami.FormData.isSection: true
             Kirigami.FormData.label: i18nc("@title:group settings for the Claude item", "Claude")
-            visible: page.claudeHasLimits || page.claudeProgramShown
+            visible: page.claudeOn || page.claudeHasLimits || page.claudeProgramShown
         }
 
         Picker {
@@ -258,10 +258,23 @@ ConfigPage {
             program: claudeProgram
         }
 
+        QQC2.CheckBox {
+            visible: page.claudeOn
+            text: i18nc("@option:check", "Show remaining credits")
+            Accessible.name: i18nc("@option:check", "Show Claude remaining credits")
+            checked: page.cfg_claudeCredits
+            onToggled: page.cfg_claudeCredits = checked
+        }
+
+        Note {
+            visible: page.claudeOn
+            text: i18nc("@info", "Reads your extra usage balance from Anthropic while the popup is open, at most once every 15 minutes.")
+        }
+
         Item {
             Kirigami.FormData.isSection: true
             Kirigami.FormData.label: i18nc("@title:group settings for the OpenAI item, whose limits are read through Codex", "OpenAI")
-            visible: page.codexShown && page.codexRuns || page.codexProgramShown
+            visible: page.codexOn || page.codexShown && page.codexRuns || page.codexProgramShown
         }
 
         // Codex's settings wait until its program runs.
@@ -310,6 +323,19 @@ ConfigPage {
 
         ProgramNote {
             program: codexProgram
+        }
+
+        QQC2.CheckBox {
+            visible: page.codexOn
+            text: i18nc("@option:check", "Show remaining credits")
+            Accessible.name: i18nc("@option:check", "Show OpenAI remaining credits")
+            checked: page.cfg_codexCredits
+            onToggled: page.cfg_codexCredits = checked
+        }
+
+        Note {
+            visible: page.codexOn
+            text: i18nc("@info", "Shows the credit balance returned by your existing Codex usage checks.")
         }
     }
 }

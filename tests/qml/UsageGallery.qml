@@ -37,6 +37,67 @@ ColumnLayout {
 
     spacing: 2 * Kirigami.Units.gridUnit
 
+    FakeMonitor {
+        id: creditsMonitor
+        usage: FakeUsage {
+            id: creditUsage
+            creditIds: ["claude", "codex"]
+            credits: ({
+                claude: { status: "ok", balance: { amount: 18.42, currency: "USD", precision: 2 }, fetchedAt: creditUsage.createdAt },
+                codex: { status: "ok", balance: { amount: 1250.5, currency: "", precision: 2 }, fetchedAt: creditUsage.createdAt }
+            })
+        }
+    }
+
+    FakeMonitor {
+        id: cachedCredits
+        usage: FakeUsage {
+            id: cachedCreditUsage
+            creditIds: ["claude"]
+            credits: ({ claude: { status: "error", balance: { amount: 18.42, currency: "USD", precision: 2 },
+                                 fetchedAt: cachedCreditUsage.createdAt - 3600, reason: "offline" } })
+        }
+    }
+
+    FakeMonitor {
+        id: zeroCredits
+        usage: FakeUsage {
+            id: zeroCreditUsage
+            creditIds: ["codex"]
+            credits: ({ codex: { status: "ok", balance: { amount: 0, currency: "", precision: 2 },
+                                fetchedAt: zeroCreditUsage.createdAt } })
+        }
+    }
+
+    component CreditViews: RowLayout {
+        id: creditViews
+        property bool flat: false
+        spacing: 2 * Kirigami.Units.gridUnit
+
+        GalleryFrame {
+            label: "Claude · credits remaining"
+            flat: creditViews.flat
+            UsagePopup { monitor: creditsMonitor; item: "claude" }
+        }
+        GalleryFrame {
+            label: "Codex · credits remaining"
+            flat: creditViews.flat
+            UsagePopup { monitor: creditsMonitor; item: "codex" }
+        }
+        GalleryFrame {
+            label: "Claude · cached credits remaining"
+            flat: creditViews.flat
+            UsagePopup { monitor: cachedCredits; item: "claude" }
+        }
+        GalleryFrame {
+            label: "Codex · zero credits (row hidden)"
+            flat: creditViews.flat
+            UsagePopup { monitor: zeroCredits; item: "codex" }
+        }
+    }
+
+    CreditViews {}
+
     // Claude at 81 % is amber, and runs out before its reset at this pace;
     // Fable over 90 % and Codex at its limit are red.
     FakeMonitor {
@@ -537,6 +598,8 @@ ColumnLayout {
             thickness: 46
             monitor: hot
         }
+
+        CreditViews { flat: true }
 
         Panel {
             label: "Breeze Light · Claude · panel · 46 px · Claude 77 % (amber), lasts to the reset"

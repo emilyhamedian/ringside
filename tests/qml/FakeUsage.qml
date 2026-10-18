@@ -40,6 +40,12 @@ QtObject {
         }
     })
     property string helperError: ""
+    property var credits: ({})
+    property var creditIds: []
+
+    function credit(id) {
+        return creditIds.includes(id) ? credits[id] ?? null : null;
+    }
     // Stands in for claudeInnerLimit and codexInnerLimit.
     property var innerChoices: ({ claude: "", codex: "" })
     // The session starter per provider, as the helper reports it.
