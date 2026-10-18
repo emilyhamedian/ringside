@@ -27,9 +27,8 @@ import "../code/style.js" as Style
 // that goes fades out where and as it was, the marker for now and a first
 // reading's dot fade in and out, and a week that starts over while the
 // popup is open fades out the last week's line, run-out and marker. Any
-// other change is drawn at once. Under the pointer, or the arrow keys once
-// it has focus, it marks a poll and gives its reading, `reading`, for the
-// tile to show (GraphHover).
+// other change is drawn at once. Under the pointer it marks a poll and
+// gives its reading, `reading`, for the tile to show (GraphHover).
 Item {
     id: graph
 

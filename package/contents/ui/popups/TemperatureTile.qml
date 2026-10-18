@@ -40,6 +40,8 @@ Tile {
     property var extent: []
     // False leaves the graph out whatever it has read.
     property bool graphed: true
+    property GraphCursor cursor: null
+    property bool inspectionEnabled: true
 
     readonly property bool fahrenheit: monitor.fahrenheit
     // Samples and thresholds in the unit shown, so the floor is a round
@@ -126,6 +128,8 @@ Tile {
             id: hover
             anchors.fill: parent
             points: graph.plot.points
+            cursor: tile.cursor
+            inspectionEnabled: tile.inspectionEnabled
             reading: tile.graphReading
             z: 1
         }

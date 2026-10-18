@@ -74,6 +74,7 @@ PopupPage {
 
             Graph {
                 id: cpuGraph
+                cursor: popup.graphCursor
                 Layout.fillWidth: true
                 describe: i => words.pointText(values, highs, i, v => words.percent(v))
                 values: popup.monitor.cpuHistory
@@ -85,6 +86,7 @@ PopupPage {
         // Under the usage it follows, on the same span and width, so a
         // burst of load lines up with the rise it causes.
         TemperatureTile {
+            cursor: popup.graphCursor
             Layout.columnSpan: 2
             monitor: popup.monitor
             history: popup.monitor.cpuTemperatureHistory

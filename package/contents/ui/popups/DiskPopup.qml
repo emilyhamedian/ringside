@@ -31,6 +31,7 @@ PopupPage {
         readonly property var tops: History.tops(history, highs)
         // Writes the reading at a point (see Graph.describe).
         property var describe: null
+        property GraphCursor cursor: null
 
         graphReading: rateGraph.reading
 
@@ -43,6 +44,7 @@ PopupPage {
 
         Graph {
             id: rateGraph
+            cursor: tile.cursor
             Layout.fillWidth: true
             describe: tile.describe
             values: tile.history
@@ -89,6 +91,7 @@ PopupPage {
 
         DiskRate {
             id: read
+            cursor: popup.graphCursor
             caption: i18nc("@title:group disk reads", "Read")
             spans: popup.monitor
             graphTop: words.peakText(read.tops, false)
@@ -100,6 +103,7 @@ PopupPage {
 
         DiskRate {
             id: write
+            cursor: popup.graphCursor
             caption: i18nc("@title:group disk writes", "Write")
             spans: popup.monitor
             graphTop: words.peakText(write.tops, false)
@@ -111,6 +115,7 @@ PopupPage {
 
         // Last, after the rates the popup is for.
         TemperatureTile {
+            cursor: popup.graphCursor
             monitor: popup.monitor
             history: popup.monitor.diskTemperatureHistory
             highs: popup.monitor.diskTemperatureHighs

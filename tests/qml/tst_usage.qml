@@ -2033,8 +2033,9 @@ TestRoot {
             const popup = load("claude");
             const tile = root.find(popup, i => i.graphReading !== undefined && i.caption === "This week");
             verify(tile);
-            const hover = root.find(tile, i => i.keyIndex !== undefined && i.secondPoints !== undefined);
+            const hover = root.find(tile, i => i.points !== undefined && i.secondPoints !== undefined && i.index !== undefined);
             verify(hover && hover.points.length > 1);
+            verify(!hover.activeFocusOnTab);
             compare(tile.graphReading, "");
             const last = hover.points[hover.points.length - 1];
             mouseMove(hover, last.x, hover.height / 2);

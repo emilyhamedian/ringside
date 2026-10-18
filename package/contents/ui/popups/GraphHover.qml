@@ -5,8 +5,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import org.kde.kirigami as Kirigami
 
-// The point of a graph under the pointer, or the one the arrow keys have
-// reached while the graph has focus: a line down the graph through it and a
+// The point of a graph under the pointer: a line down the graph through it and a
 // dot on each series there. The tile around the graph writes that point's
 // reading in its caption line (Tile.graphReading), which is also what a
 // screen reader hears.
@@ -18,15 +17,73 @@ Item {
     property var points: []
     property var secondPoints: []
     property color color: Kirigami.Theme.textColor
-    // The focused graph's reading, spoken as it changes.
+    // The selected reading, also exposed to assistive technology.
     property string reading: ""
+    property GraphCursor cursor: null
+    property bool inspectionEnabled: true
+    property GraphCursor attachedCursor: null
+    property point lastPointerPosition: Qt.point(NaN, NaN)
+
+    readonly property bool inspectable: inspectionEnabled && visible && enabled && width > 0
+    readonly property int localIndex: inspectable && pointer.hovered ? nearest(pointer.point.position.x) : -1
+    readonly property real markerX: !inspectable ? NaN
+        : cursor ? cursor.owner !== null && Number.isFinite(cursor.position) ? cursor.position * width : NaN
+        : localIndex >= 0 ? points[localIndex].x : NaN
 
     // The point shown, or -1.
-    readonly property int index: pointer.hovered ? nearest(pointer.point.position.x)
-                               : activeFocus ? Math.min(keyIndex, points.length - 1) : -1
-    // Where the arrow keys have got to: the newest point when focus comes.
-    property int keyIndex: 0
+    readonly property int index: !inspectable ? -1 : cursor ? matchingIndex() : localIndex
     readonly property var point: index >= 0 ? points[index] : null
+
+    function matchingIndex() {
+        if (!Number.isFinite(markerX)) {
+            return -1;
+        }
+        const i = nearest(markerX);
+        // A shorter history must not substitute its first reading for an
+        // older slot, nor a neighbouring reading for a gap.
+        return i >= 0 && Math.abs(points[i].x - markerX) < 0.000001 && Number.isFinite(points[i].y) ? i : -1;
+    }
+
+    function publish() {
+        if (inspectable && pointer.hovered && cursor) {
+            const i = nearest(pointer.point.position.x);
+            cursor.publish(hover, i >= 0 ? Math.max(0, Math.min(1, points[i].x / width)) : NaN);
+        }
+    }
+
+    function inspectPointer() {
+        const at = pointer.point.scenePosition;
+        if (at.x !== lastPointerPosition.x || at.y !== lastPointerPosition.y) {
+            lastPointerPosition = Qt.point(at.x, at.y);
+            publish();
+        }
+    }
+
+    function release() {
+        if (cursor) {
+            cursor.release(hover);
+        }
+    }
+
+    function updateOwner() {
+        if (!inspectable) {
+            release();
+        } else if (cursor && cursor.owner === hover) {
+            publish();
+        }
+    }
+
+    onCursorChanged: {
+        if (attachedCursor) {
+            attachedCursor.release(hover);
+        }
+        attachedCursor = cursor;
+    }
+    onInspectableChanged: updateOwner()
+    onLocalIndexChanged: updateOwner()
+    onPointsChanged: updateOwner()
+    onWidthChanged: updateOwner()
+    Component.onDestruction: release()
 
     function nearest(x) {
         let best = -1;
@@ -41,38 +98,34 @@ Item {
         return best;
     }
 
-    function step(by) {
-        keyIndex = Math.max(0, Math.min(points.length - 1, keyIndex + by));
-    }
-
-    // Time runs left to right in every language, so the arrows follow it
-    // whatever the layout's direction.
+    // Time runs left to right in every language.
     LayoutMirroring.enabled: false
-    activeFocusOnTab: points.length > 0
-    onActiveFocusChanged: {
-        if (activeFocus) {
-            keyIndex = points.length - 1;
-        }
-    }
-    Keys.onLeftPressed: step(-1)
-    Keys.onRightPressed: step(1)
-    Keys.onPressed: event => {
-        if (event.key === Qt.Key_Home || event.key === Qt.Key_End) {
-            keyIndex = event.key === Qt.Key_Home ? 0 : points.length - 1;
-            event.accepted = true;
-        }
-    }
 
     Accessible.role: Accessible.StaticText
     Accessible.name: reading
 
     HoverHandler {
         id: pointer
+        enabled: hover.inspectable
+        onHoveredChanged: {
+            if (hovered) {
+                hover.inspectPointer();
+            } else {
+                hover.release();
+                // A pointer leave permits re-entry at the same position;
+                // hiding keeps it so reopening needs movement.
+                if (hover.inspectable) {
+                    hover.lastPointerPosition = Qt.point(NaN, NaN);
+                }
+            }
+        }
+        // Qt can send the same point again after data or visibility changes.
+        onPointChanged: if (hovered) hover.inspectPointer()
     }
 
     Rectangle {
-        visible: hover.point !== null
-        x: hover.point ? Math.round(hover.point.x) : 0
+        visible: Number.isFinite(hover.markerX)
+        x: visible ? Math.max(0, Math.min(hover.width - width, Math.round(hover.markerX))) : 0
         width: 1
         height: parent.height
         color: Qt.alpha(hover.color, 0.45 * hover.color.a)

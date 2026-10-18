@@ -18,8 +18,8 @@ import "../code/style.js" as Style
 // nothing on the graph moves on its own. An hour or a day draws each
 // bucket's average, under a fainter band up to its highest reading, and
 // leaves a gap where there was none (see History.add()). Under the pointer,
-// or the arrow keys once it has focus, it marks a point and gives its
-// reading, `reading`, for the tile to show (GraphHover).
+// it marks a point and gives its reading, `reading`, for the tile to show
+// (GraphHover).
 Item {
     id: graph
 
@@ -39,6 +39,8 @@ Item {
     readonly property real fillOpacity: Style.AREA
     // Writes the reading at a point's index, for `reading`; see Words.pointText().
     property var describe: null
+    property GraphCursor cursor: null
+    property bool inspectionEnabled: true
     readonly property string reading: hover.index >= 0 && describe ? describe(hover.index) : ""
 
     // The top sits where the rule would, with or without it, so a rate's
@@ -112,6 +114,8 @@ Item {
         anchors.fill: parent
         points: graph.drawn.main
         secondPoints: graph.drawn.second
+        cursor: graph.cursor
+        inspectionEnabled: graph.inspectionEnabled
         reading: graph.reading
         z: 1
     }
