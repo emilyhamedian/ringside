@@ -6,6 +6,10 @@ follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- Popup settings buttons use a smaller outline gear.
+
 ### Fixed
 
 - Empty process sections no longer take up space in the CPU, memory and GPU

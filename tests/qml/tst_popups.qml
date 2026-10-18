@@ -245,6 +245,11 @@ TestRoot {
     }
 
     Component {
+        id: spyComponent
+        SignalSpy {}
+    }
+
+    Component {
         id: host
         Loader {}
     }
@@ -1865,23 +1870,67 @@ TestRoot {
             verify(footer.systemMonitorShown);
             compare(all(footer, i => i.visualPosition !== undefined).length, 0, "no switch");
             const link = all(footer, i => i.visible && i.text === "Open System Monitor")[0];
-            const button = all(footer, i => i.visible && i.icon !== undefined && i.icon.name === "configure")[0];
+            const button = all(footer, i => i.visible && i.objectName === "configureButton")[0];
             verify(link && button);
+            const glyph = find(button, i => i.imagePath?.endsWith("/icons/settings.svg"));
+            verify(glyph.imagePath.endsWith("/icons/settings.svg"));
+            compare(glyph.width, Kirigami.Units.iconSizes.smallMedium * 18 / 22);
+            compare(glyph.height, glyph.width);
+            compare(button.contentItem.implicitWidth, Kirigami.Units.iconSizes.smallMedium);
+            compare(button.contentItem.implicitHeight, Kirigami.Units.iconSizes.smallMedium);
+            verify(glyph.Accessible.ignored, "the gear adds no accessible control");
+            compare(button.Accessible.role, Accessible.Button);
+            compare(button.Accessible.name, "Configure Ringside…");
+            compare(glyph.opacity, Style.dim(glyph.Kirigami.Theme.textColor).a);
+            const spy = createTemporaryObject(spyComponent, root, { target: normal, signalName: "configureRequested" });
+            mouseClick(button);
+            compare(spy.count, 1, "a click configures");
+            button.forceActiveFocus();
+            keyClick(Qt.Key_Space);
+            compare(spy.count, 2, "Space configures");
+            compare(all(button, i => i !== button && i.activeFocusOnTab).length, 0, "one focus stop");
             compare(footer.height, footer.topPadding + footer.bottomPadding + Math.max(link.implicitHeight, button.implicitHeight));
             const middle = i => i.mapToItem(footer, Qt.point(0, i.height / 2)).y;
             fuzzyCompare(middle(button), middle(link), 0.5);
-            // On the readings' edges: the link's text, and the icon's drawing
-            // inside the button's padding and the 3 px Breeze's 22 px icon
-            // keeps free around it.
-            const slack = Kirigami.Units.iconSizes.smallMedium * 3 / 22;
+            // On the readings' edges: the link's text and the gear's stroke.
+            const slack = (Kirigami.Units.iconSizes.smallMedium - glyph.width) / 2 + glyph.width * 2.04 / 24;
             const x = (i, at) => i.mapToItem(footer, Qt.point(at, 0)).x;
             if (data.mirrored) {
                 compare(x(link, link.width), footer.width - contentEdge);
-                compare(x(button, button.leftPadding + slack), contentEdge);
+                fuzzyCompare(x(button, button.leftPadding + slack), contentEdge, 0.5);
             } else {
                 compare(x(link, 0), contentEdge);
-                compare(x(button, button.width - button.rightPadding - slack), footer.width - contentEdge);
+                fuzzyCompare(x(button, button.width - button.rightPadding - slack), footer.width - contentEdge, 0.5);
             }
+        }
+
+        function test_configureGearFollowsTheme_data() {
+            return [{ tag: "light", color: "#232629" }, { tag: "dark", color: "#eff0f1" }];
+        }
+
+        // Local SVGs need KSvg's theme colours even when Qt uses its software renderer.
+        function test_configureGearFollowsTheme(data) {
+            const popup = load("CpuPopup", normal);
+            const button = find(popup, i => i.objectName === "configureButton");
+            button.Kirigami.Theme.inherit = false;
+            button.Kirigami.Theme.textColor = data.color;
+            button.forceActiveFocus(Qt.TabFocusReason);
+            const glyph = find(button, i => i.imagePath?.endsWith("/icons/settings.svg"));
+            tryCompare(glyph, "opacity", 1);
+            waitForRendering(popup);
+            const image = grabImage(popup);
+            const origin = glyph.mapToItem(popup, Qt.point(0, 0));
+            let painted = 0;
+            for (let y = Math.ceil(origin.y); y < origin.y + glyph.height; ++y) {
+                for (let x = Math.ceil(origin.x); x < origin.x + glyph.width; ++x) {
+                    if (Qt.colorEqual(image.pixel(x, y), data.color)) {
+                        ++painted;
+                    }
+                }
+            }
+            verify(painted > 5, "the gear's stroke uses the theme's text colour");
+            button.enabled = false;
+            compare(glyph.opacity, 0.4);
         }
 
         function temperatureTiles(popup) {
