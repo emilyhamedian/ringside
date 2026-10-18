@@ -8,6 +8,7 @@ follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Empty process sections no longer take up space in the CPU, memory and GPU popups.
 - Stale awake reports no longer restart GPU monitoring after an idle pause.
 - Claude and Codex rings allow time for the connection to come up on first
   load before showing a failure.

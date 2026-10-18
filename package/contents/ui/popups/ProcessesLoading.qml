@@ -7,10 +7,9 @@ import org.kde.kirigami as Kirigami
 import org.kde.plasma.components as PlasmaComponents
 import "../code/style.js" as Style
 
-// Stands over a process list's rows, centred, until it has readings.
+// Beside the popup's title until its process scan has readings.
 PlasmaComponents.BusyIndicator {
-    anchors.centerIn: parent
-    width: Kirigami.Units.iconSizes.smallMedium
+    width: 18
     height: width
     Accessible.name: i18nc("@info:status the top processes are being read", "Loading top processes")
 
@@ -21,11 +20,11 @@ PlasmaComponents.BusyIndicator {
     contentItem: Shape {
         id: spinner
 
-        readonly property real stroke: Math.max(1, width / 13)
+        readonly property real stroke: 2
         readonly property bool turning: visible && Window.visibility !== Window.Hidden
             && Style.animated(Kirigami.Units)
 
-        implicitWidth: Kirigami.Units.iconSizes.smallMedium
+        implicitWidth: 18
         implicitHeight: implicitWidth
         preferredRendererType: Shape.CurveRenderer
 
@@ -38,19 +37,17 @@ PlasmaComponents.BusyIndicator {
             PathAngleArc {
                 centerX: spinner.width / 2
                 centerY: spinner.height / 2
-                radiusX: Math.min(spinner.width, spinner.height) * 0.43 - spinner.stroke / 2
+                radiusX: (Math.min(spinner.width, spinner.height) - spinner.stroke) / 2
                 radiusY: radiusX
                 startAngle: 0
                 sweepAngle: 270
             }
         }
 
-        // The theme's fixed two seconds a turn: it doesn't follow
-        // the animation speed.
         RotationAnimator on rotation {
             from: 0
             to: 360
-            duration: 2000
+            duration: 1400
             loops: Animation.Infinite
             running: spinner.turning
         }

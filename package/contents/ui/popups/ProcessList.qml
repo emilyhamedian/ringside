@@ -10,9 +10,8 @@ import "../code/processes.js" as Processes
 import "../code/style.js" as Style
 import ".."
 
-// The three heaviest processes by CPU or by memory, read while its popup is
-// open and the list is shown. Until the list has readings, a busy indicator
-// stands in for its rows.
+// The three heaviest processes by CPU or by memory. An empty list keeps
+// scanning while its popup is open, so later readings can show it again.
 ColumnLayout {
     id: list
 
@@ -20,12 +19,15 @@ ColumnLayout {
     required property string key
     // ProcessDataModel's usage is per core; divide by threads for the share of the CPU.
     required property int threads
+    property bool active: true
 
     // Fixed rows ({ name, usage, memory, count }) stand in for the process
     // scan when set; the preview gallery uses them.
     property var sample: null
     readonly property var rows: sample || Processes.top(scan.processes, key, 3)
-    readonly property bool loading: rows.length === 0 && !scan.scanned
+    readonly property bool loading: active && rows.length === 0 && !scan.scanned
+
+    visible: active && rows.length > 0
 
     Layout.fillWidth: true
     Layout.leftMargin: Style.contentEdge(Kirigami.Units.largeSpacing)
@@ -39,7 +41,7 @@ ColumnLayout {
     // Plasma 6.0 to 6.2 lack "memory", so the list asks for what they offer.
     ProcessScan {
         id: scan
-        active: list.sample === null && list.visible
+        active: list.sample === null && list.active
     }
 
     Caption {
@@ -47,8 +49,7 @@ ColumnLayout {
         Layout.fillWidth: true
     }
 
-    // Three rows always, so the popup keeps its height while the first scans
-    // run, with a busy indicator over them until there are readings.
+    // Three rows keep the section's height steady as readings change.
     Item {
         Layout.fillWidth: true
         implicitHeight: rowsColumn.implicitHeight
@@ -104,10 +105,6 @@ ColumnLayout {
                     }
                 }
             }
-        }
-
-        ProcessesLoading {
-            visible: list.loading
         }
     }
 }

@@ -31,6 +31,27 @@ TestRoot {
     }
 
     Component {
+        id: popupHeader
+        PopupHeader {
+            width: 380
+            processesExpected: true
+            title: "CPU"
+            subtitle: "8C / 16T"
+            value: "61"
+            degreeUnit: "C"
+        }
+    }
+
+    Component {
+        id: indicatorWindow
+        Window {
+            width: 400
+            height: 100
+            visible: true
+        }
+    }
+
+    Component {
         id: gpuScan
         ProcessScan {
             attributes: Processes.gpuAttributes
@@ -141,7 +162,6 @@ TestRoot {
             verify(list);
             verify(list.rows.length > 0, "read as the list is made");
             verify(!list.loading);
-            verify(!indicatorOf(list).visible);
             verify(list.rows[0].name.length > 0);
             verify(list.rows[0].memory > 0);
         }
@@ -153,14 +173,13 @@ TestRoot {
             const list = createTemporaryObject(liveList, root, { key: "usage" });
             verify(list);
             tryVerify(() => !list.loading, 5000);
-            verify(!indicatorOf(list).visible);
             list.rows.forEach(r => verify(r.usage > 0, r.name));
         }
 
         // Just after two seconds the list asks the model for its attributes
         // again, which scans then unless a tick just has, and stops waiting
         // even with nothing to show. By a key no process has, the list never
-        // has rows, so the indicator shows until then.
+        // has rows, so loading lasts until then.
         function test_listAsksAgainAndStopsWaiting() {
             failOnWarning(/QModelIndex/);
             const start = Date.now();
@@ -169,9 +188,9 @@ TestRoot {
             spy.target = modelOf(list);
             spy.signalName = "enabledAttributesChanged";
             waitForRendering(list);
-            verify(list.loading && indicatorOf(list).visible, "waiting at first");
+            verify(list.loading && !list.visible, "waiting at first");
             wait(Math.max(0, 1800 - (Date.now() - start)));
-            verify(list.loading && indicatorOf(list).visible, "still waiting at 1.8 s");
+            verify(list.loading && !list.visible, "still waiting at 1.8 s");
             compare(spy.count, 0);
             tryVerify(() => !list.loading, 4000);
             const waited = Date.now() - start;
@@ -179,7 +198,6 @@ TestRoot {
             compare(spy.count, 1, "asked the model again");
             verify(scanOf(list).scanned);
             compare(list.rows.length, 0);
-            verify(!indicatorOf(list).visible);
         }
 
         // After that the list reads each scan as the model reports it, with
@@ -203,52 +221,60 @@ TestRoot {
             verify(list.rows.length > 0);
         }
 
-        // Until the list has readings a busy indicator lies over its empty rows,
-        // which keep the list's height, and a screen reader hears what it waits
-        // for. The first readings take its place.
+        // Loading belongs to the header while the list has no rows. The
+        // reserved slot keeps the header's dimensions and readings steady.
         function test_busyUntilTheFirstReadings_data() {
-            return [{ tag: "usage" }, { tag: "memory" }];
+            return [{ tag: "usage", key: "usage", mirrored: false },
+                    { tag: "memory", key: "memory", mirrored: false },
+                    { tag: "mirrored", key: "usage", mirrored: true }];
         }
 
         function test_busyUntilTheFirstReadings(data) {
-            const list = createTemporaryObject(sampleList, root, { key: data.tag });
-            verify(list);
-            waitForRendering(list);
-            const indicator = indicatorOf(list);
-            verify(list.loading);
+            const list = createTemporaryObject(sampleList, root, { key: data.key });
+            const header = createTemporaryObject(popupHeader, root, {
+                processesLoading: Qt.binding(() => list.loading)
+            });
+            verify(list && header);
+            header.LayoutMirroring.enabled = data.mirrored;
+            header.LayoutMirroring.childrenInherit = true;
+            waitForRendering(header);
+            const indicator = indicatorOf(header);
+            verify(list.loading && !list.visible);
             verify(indicator.visible && indicator.running);
-            // Qt gives the control its role once a screen reader is active.
             compare(indicator.Accessible.name, "Loading top processes");
             verify(!indicator.Accessible.ignored);
-            const rows = rowsOf(list);
-            compare(rows.length, 3);
-            verify(rows.every(r => r.entry === null && r.Accessible.name === ""), "no rows yet");
-            const area = rows[0].parent;
-            const middle = indicator.mapToItem(area, Qt.point(indicator.width / 2, indicator.height / 2));
-            verify(Math.abs(middle.x - area.width / 2) <= 0.5 && Math.abs(middle.y - area.height / 2) <= 0.5,
-                   "over the rows' middle: " + JSON.stringify(middle) + " in " + area.width + "×" + area.height);
-            verify(indicator.height <= area.height, indicator.height + " in " + area.height);
-            const height = list.implicitHeight;
-
+            compare(indicator.width, 18);
+            compare(indicator.height, 18);
+            const title = root.find(header, c => c.text === "CPU");
+            const reading = root.find(header, c => c.numberWidth !== undefined && c.value === "61");
+            const position = i => i.mapToItem(header, Qt.point(0, 0));
+            const titleWidth = Math.min(title.implicitWidth, title.width);
+            verify(data.mirrored ? position(indicator).x + indicator.width <= position(title).x + title.width - titleWidth
+                                 : position(indicator).x >= position(title).x + titleWidth, "beside the title");
+            fuzzyCompare(position(indicator).y + indicator.height / 2, position(title).y + title.height / 2, 0.5);
+            const before = [header.implicitWidth, header.implicitHeight, title.width, position(title), position(reading)];
             list.sample = [{ name: "firefox", usage: 8.4, memory: 3.9 * 1024 ** 3, count: 1 }];
-            waitForRendering(list);
-            verify(!list.loading);
-            verify(!indicator.visible, "gone with the readings");
-            compare(list.implicitHeight, height, "the list keeps its height");
+            waitForRendering(header);
+            verify(!list.loading && list.visible);
+            verify(!indicator.visible);
+            compare([header.implicitWidth, header.implicitHeight, title.width, position(title), position(reading)], before);
+            verify(root.all(list, c => c.running !== undefined).length === 0, "no row overlay");
         }
 
         // The theme draws its busy indicator in the accent colour, which the
-        // widget can't change, so the list draws its own in the popup's dim
+        // widget can't change, so the header draws its own in the popup's dim
         // text colour: the stroke is made from that colour, whatever the
         // accent.
         function test_busyIndicatorIsMonochrome() {
-            const list = createTemporaryObject(sampleList, root, { key: "usage" });
-            verify(list);
-            waitForRendering(list);
-            const indicator = indicatorOf(list);
+            const header = createTemporaryObject(popupHeader, root, { processesLoading: true });
+            verify(header);
+            waitForRendering(header);
+            const indicator = indicatorOf(header);
             verify(indicator.visible);
             const strokes = Array.from(indicator.contentItem.data).filter(o => o.strokeColor !== undefined);
             compare(strokes.length, 1);
+            compare(strokes[0].strokeWidth, 2);
+            compare(strokes[0].pathElements[0].sweepAngle, 270);
             const text = Kirigami.Theme.textColor;
             verify(Qt.colorEqual(strokes[0].strokeColor, Style.dim(text)), "stroke " + strokes[0].strokeColor);
             for (const accent of [Kirigami.Theme.highlightColor, Kirigami.Theme.focusColor]) {
@@ -258,14 +284,27 @@ TestRoot {
 
         // The indicator turns while it shows and holds still when it doesn't.
         function test_busyIndicatorTurnsOnlyWhileShown() {
-            const list = createTemporaryObject(sampleList, root, { key: "usage" });
-            verify(list);
-            waitForRendering(list);
-            const spinner = indicatorOf(list).contentItem;
+            const header = createTemporaryObject(popupHeader, root, { processesLoading: true });
+            verify(header);
+            waitForRendering(header);
+            const spinner = indicatorOf(header).contentItem;
             verify(spinner.turning, "turns while shown");
-            list.sample = [{ name: "firefox", usage: 8.4, memory: 3.9 * 1024 ** 3, count: 1 }];
-            waitForRendering(list);
+            header.processesLoading = false;
+            waitForRendering(header);
             verify(!spinner.turning, "stops once hidden");
+        }
+
+        function test_busyIndicatorStopsWithItsWindow() {
+            const window = createTemporaryObject(indicatorWindow, root);
+            const header = createTemporaryObject(popupHeader, window.contentItem, { processesLoading: true });
+            verify(window && header);
+            waitForRendering(header);
+            const spinner = indicatorOf(header).contentItem;
+            verify(spinner.turning);
+            window.hide();
+            tryCompare(spinner, "turning", false);
+            window.show();
+            tryCompare(spinner, "turning", true);
         }
 
         // A list made with its rows, as the gallery's are, never shows the
@@ -273,7 +312,10 @@ TestRoot {
         function test_sampleShowsNoIndicator() {
             const list = createTemporaryObject(sampleList, root, { key: "usage", sample: [{ name: "firefox", usage: 8.4, memory: 3.9 * 1024 ** 3, count: 1 }] });
             verify(list);
-            const indicator = indicatorOf(list);
+            const header = createTemporaryObject(popupHeader, root, {
+                processesLoading: Qt.binding(() => list.loading)
+            });
+            const indicator = indicatorOf(header);
             verify(!list.loading && !indicator.visible, "not at first");
             spy.target = indicator;
             spy.signalName = "visibleChanged";
@@ -481,25 +523,28 @@ TestRoot {
             }
         }
 
-        // Until the first scans are in, a busy indicator lies over the rows;
-        // after them, a GPU nothing of the user's is using says so. The list
-        // keeps its height throughout.
-        function test_gpuListWhileEmpty() {
-            const list = createTemporaryObject(gpuList, root, { rows: [], loading: true, count: 2 });
+        // A hidden empty section must keep its scanner alive, so readings
+        // from a later scan can show the list again.
+        function test_emptyListKeepsScanning() {
+            const list = createTemporaryObject(liveList, root, { key: "none" });
             verify(list);
-            waitForRendering(list);
-            const indicator = indicatorOf(list);
-            const empty = root.find(list, c => c.text === "Nothing of yours is using this GPU");
-            verify(indicator.visible);
-            verify(empty && !empty.visible);
-            const height = list.implicitHeight;
-            list.loading = false;
-            verify(!indicator.visible);
-            verify(empty.visible);
-            compare(list.implicitHeight, height);
-            list.rows = [{ name: "blender", usage: 9.8, memory: 1024 ** 3, count: 1 }];
-            verify(!empty.visible);
-            compare(list.implicitHeight, height);
+            const scan = scanOf(list);
+            const model = modelOf(list);
+            tryVerify(() => scan.scanned, 5000);
+            verify(!list.visible && !list.loading);
+            compare(scan.model, model);
+            list.key = "usage";
+            scan.processes = [{ name: "firefox", usage: 1, memory: 1024 }];
+            verify(list.visible);
+            scan.processes = [];
+            verify(!list.visible && !list.loading);
+            compare(scan.model, model);
+            spy.target = list;
+            spy.signalName = "rowsChanged";
+            model.dataChanged(model.index(0, 0), model.index(0, 0));
+            tryVerify(() => spy.count > 0, 500);
+            list.active = false;
+            compare(scan.model, null);
         }
 
         function test_topGroupsRowsSharingAName() {

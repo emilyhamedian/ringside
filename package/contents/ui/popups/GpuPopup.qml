@@ -170,11 +170,15 @@ PopupPage {
             first: popup.open.indexOf(live) === 0
             animated: popup.animated
             readonly property bool nvidia: live.vendor === "10de"
-            processesShown: nvidia ? popup.nvidiaListed : true
-            processes: Processes.topOnGpu(popup.processSample ?? (nvidia ? processScan.processes : popup.monitor.gpuProcesses),
-                                          nvidia ? live.systemName : live.bdf, popup.processCount, live.usage)
+            readonly property var availableProcesses: Processes.topOnGpu(
+                popup.processSample ?? (nvidia ? processScan.processes : popup.monitor.gpuProcesses),
+                nvidia ? live.systemName : live.bdf, popup.processCountWanted, live.usage)
+            processesShown: (!nvidia || popup.nvidiaListed) && availableProcesses.length > 0
+            onProcessesShownChanged: Qt.callLater(popup.fitProcesses)
+            processes: availableProcesses.slice(0, popup.processCount)
             processCount: popup.processCount
-            processesLoading: popup.processSample === null && !(nvidia ? processScan.scanned : popup.monitor.gpuProcessesScanned)
+            processesLoading: (!nvidia || popup.nvidiaListed) && availableProcesses.length === 0
+                && popup.processSample === null && !(nvidia ? processScan.scanned : popup.monitor.gpuProcessesScanned)
         }
     }
 
@@ -266,6 +270,8 @@ PopupPage {
         }
 
         PopupHeader {
+            processesLoading: section.processesLoading
+            processesExpected: true
             ringValue: section.slot.usage
             interval: section.monitor.sampleInterval
             title: section.slot.name
@@ -381,7 +387,6 @@ PopupPage {
             rows: section.processes
             count: section.processCount
             memoryShown: section.slot.reportsVram
-            loading: section.processesLoading && section.processes.length === 0
         }
     }
 }
