@@ -23,6 +23,8 @@ PopupPage {
 
     PopupHeader {
         id: header
+        processesLoading: processList.loading
+        processesExpected: true
 
         readonly property var used: Format.bytes(popup.monitor.memoryUsed)
 
@@ -191,13 +193,13 @@ PopupPage {
         }
     }
 
-    // Left out until the monitor says process models may be made.
     Divider {
-        visible: popup.monitor.processesReadable
+        visible: processList.visible
     }
 
     ProcessList {
-        visible: popup.monitor.processesReadable
+        id: processList
+        active: popup.visible && popup.monitor.processesReadable
         key: "memory"
         threads: popup.monitor.cpuThreads
         sample: popup.monitor.processSample || null
