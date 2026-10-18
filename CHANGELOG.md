@@ -8,6 +8,10 @@ follows [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Claude and Codex popups show remaining usage credits below the week graph
+  by default, with one setting to hide them.
+- Claude and Codex rings pulse blue when a limit is reached and the credit
+  balance has fallen since the previous check.
 - Hovering a graph marks the same moment on the other graphs in its popup.
 - Intel GPUs using xe show package temperature and dedicated VRAM when
   available.
@@ -21,6 +25,7 @@ follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Provider logos stay steady while their rings pulse.
 - Memory usage bar has the same header spacing as the other system popups.
 - Network graph legend keeps even padding and aligned text across fonts.
 - GPU names wrap in the popup so the full name is visible.

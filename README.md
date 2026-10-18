@@ -100,6 +100,20 @@ resets before it was due, the popup says so and how much you got back, for a
 day or until you've seen it. If Plasma can't find `claude` or `codex`, you
 can tell it where they are under *AI Providers*.
 
+**Remaining credits.** Enabled providers collect balances automatically and
+show them below their popup's graph. *Show remaining credits* under *AI
+Providers* hides or shows the rows for both providers. Balances update with
+the usage checks, at most once every five minutes. Claude makes a separate
+balance request; Codex uses its existing response. Disabled credits and
+empty balances take up no space. A failed check keeps the last balance
+marked as cached; hover over it to see when it was read.
+
+When a reported limit is exhausted and the balance falls between checks,
+the panel shows one full blue ring that breathes around the provider's mark.
+The percentage and countdown still show the week. Blue means credits were
+used since the previous check; it uses the same readings, with no extra
+requests. Hiding the balance rows keeps this indication.
+
 **Starting the next session.** A Claude five-hour session or Codex week only
 begins when you next send a message. With the switch at the bottom of the
 popup turned on, Ringside starts the next one for you as soon as the last one

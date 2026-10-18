@@ -50,7 +50,7 @@ def fixture(name):
 
 
 def window(percent, resets_at, seconds=WEEK):
-    return {"percent": percent, "resetsAt": resets_at, "windowSeconds": seconds}
+    return {"percent": percent, "exhausted": percent >= 100, "resetsAt": resets_at, "windowSeconds": seconds}
 
 
 def reading(percent, resets_at, **scoped):
@@ -106,9 +106,9 @@ class CodexParsing(Isolated):
     def test_reads_all_models_and_scoped_weekly_windows(self):
         report = usage.parse_codex(fixture("codex_rate_limits.json"))
         self.assertEqual(report, {
-            "weekly": {"percent": 34, "resetsAt": 1788926677, "windowSeconds": WEEK},
+            "weekly": window(34, 1788926677),
             "scoped": [{"id": "codex_bengalfox", "label": "GPT-5.3-Codex-Spark",
-                        "percent": 5, "resetsAt": 1788926677, "windowSeconds": WEEK}]})
+                        **window(5, 1788926677)}]})
 
     def test_scoped_window_may_sit_in_primary(self):
         result = fixture("codex_rate_limits.json")
@@ -171,6 +171,48 @@ class CodexParsing(Isolated):
                 with self.assertRaises(RuntimeError):
                     usage.parse_codex(result)
 
+    def test_account_short_window_is_retained_in_either_slot(self):
+        for swap in (False, True):
+            result = fixture("codex_rate_limits.json")
+            limit = result["rateLimitsByLimitId"]["codex"]
+            limit["secondary"] = {"usedPercent": 100, "windowDurationMins": 300, "resetsAt": 1788920000}
+            if swap:
+                limit["primary"], limit["secondary"] = limit["secondary"], limit["primary"]
+            report = usage.parse_codex(result)
+            self.assertEqual(report["weekly"], window(34, 1788926677))
+            self.assertEqual(report["session"], window(100, 1788920000, 300 * 60))
+
+    def test_invalid_extra_window_does_not_hide_weekly_reading(self):
+        for short in (None, [], "invalid", {"windowDurationMins": 300},
+                      {"usedPercent": float("nan"), "windowDurationMins": 300},
+                      {"usedPercent": 10**400, "windowDurationMins": 300},
+                      {"usedPercent": 100, "windowDurationMins": "300"},
+                      {"usedPercent": 100, "windowDurationMins": -1},
+                      {"usedPercent": 100, "windowDurationMins": 300, "resetsAt": float("inf")}):
+            with self.subTest(short=short):
+                result = fixture("codex_rate_limits.json")
+                result["rateLimitsByLimitId"]["codex"]["secondary"] = short
+                report = usage.parse_codex(result)
+                self.assertEqual(report["weekly"], window(34, 1788926677))
+                self.assertNotIn("session", report)
+
+    def test_single_short_window_used_as_weekly_is_not_duplicated_as_session(self):
+        result = {"rateLimits": {"primary": {"usedPercent": 100, "windowDurationMins": 300}}}
+        report = usage.parse_codex(result)
+        self.assertEqual(report["weekly"]["windowSeconds"], 300 * 60)
+        self.assertNotIn("session", report)
+
+    def test_raw_caps_are_kept_for_weekly_scoped_and_session_windows(self):
+        for percent, exhausted in ((99.5, False), (100, True)):
+            result = fixture("codex_rate_limits.json")
+            limit = result["rateLimitsByLimitId"]["codex"]
+            limit["primary"]["usedPercent"] = percent
+            limit["secondary"] = {"usedPercent": percent, "windowDurationMins": 300}
+            result["rateLimitsByLimitId"]["codex_bengalfox"]["secondary"]["usedPercent"] = percent
+            report = usage.parse_codex(result)
+            for value in (report["weekly"], report["scoped"][0], report["session"]):
+                self.assertEqual((value["percent"], value["exhausted"]), (100, exhausted))
+
     def test_window_length_is_the_picked_windows(self):
         result = fixture("codex_rate_limits.json")
         result["rateLimitsByLimitId"]["codex"]["primary"]["windowDurationMins"] = 1440
@@ -182,10 +224,20 @@ class CodexParsing(Isolated):
 class ClaudeParsing(Isolated):
     def test_reads_weekly_and_scoped_windows(self):
         report = usage.parse_claude(fixture("claude_usage.json"))
-        self.assertEqual(report["weekly"], {"percent": 62, "resetsAt": 1788537600, "windowSeconds": WEEK})
+        self.assertEqual(report["weekly"], window(62, 1788537600))
         self.assertEqual(report["scoped"], [
-            {"id": "Fable", "label": "Fable", "percent": 78, "resetsAt": 1788537600, "windowSeconds": WEEK},
-            {"id": "Opus", "label": "Opus", "percent": 9, "resetsAt": 1788537600, "windowSeconds": WEEK}])
+            {"id": "Fable", "label": "Fable", **window(78, 1788537600)},
+            {"id": "Opus", "label": "Opus", **window(9, 1788537600)}])
+
+    def test_exhaustion_uses_original_share_before_rounding_in_every_window(self):
+        for percent, exhausted in ((99.5, False), (100, True)):
+            body = fixture("claude_usage.json")
+            body["seven_day"]["utilization"] = percent
+            body["limits"][2]["percent"] = percent
+            body["five_hour"] = {"utilization": percent, "resets_at": 1788920000}
+            report = usage.parse_claude(body)
+            for value in (report["weekly"], report["scoped"][0], report["session"]):
+                self.assertEqual((value["percent"], value["exhausted"]), (100, exhausted))
 
     def test_scoped_skips_duplicates_and_nameless_scopes(self):
         usage_body = fixture("claude_usage.json")

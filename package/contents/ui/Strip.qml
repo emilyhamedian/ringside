@@ -74,7 +74,8 @@ GridLayout {
         // Where the readings are hidden, or a Claude or Codex check failed,
         // whose cause and times only the words give, or is still running.
         active: (!entry.textShown || Items.isUsage(entry.item) && (strip.monitor.usage.degraded(entry.item)
-                                                                    || strip.monitor.usage.loading(entry.item)))
+                                                                    || strip.monitor.usage.loading(entry.item)
+                                                                    || cell.contentItem?.creditUsed === true))
             && !cell.open
         mainText: cell.title
         subText: cell.description

@@ -221,6 +221,17 @@ ConfigPage {
             text: i18nc("@info", "Applies while any provider's item is on in Panel Items.")
         }
 
+        QQC2.CheckBox {
+            text: i18nc("@option:check", "Show remaining credits")
+            Accessible.name: text
+            checked: page.cfg_showCredits
+            onToggled: page.cfg_showCredits = checked
+        }
+
+        Note {
+            text: i18nc("@info", "Applies to all enabled providers. Balances are checked even when hidden: Claude makes an extra read from Anthropic alongside its usage check, at most once every 5 minutes. Codex uses existing usage checks.")
+        }
+
         // Each provider's section shows only while it has something to set.
         Item {
             Kirigami.FormData.isSection: true

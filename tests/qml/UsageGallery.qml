@@ -37,6 +37,83 @@ ColumnLayout {
 
     spacing: 2 * Kirigami.Units.gridUnit
 
+    FakeMonitor {
+        id: creditsMonitor
+        usage: FakeUsage {
+            id: creditUsage
+            credits: ({
+                claude: { status: "ok", balance: { amount: 18.42, currency: "USD", precision: 2 }, fetchedAt: creditUsage.createdAt },
+                codex: { status: "ok", balance: { amount: 1250.5, currency: "", precision: 2 }, fetchedAt: creditUsage.createdAt }
+            })
+        }
+    }
+
+    FakeMonitor {
+        id: cachedCredits
+        usage: FakeUsage {
+            id: cachedCreditUsage
+            credits: ({ claude: { status: "error", balance: { amount: 18.42, currency: "USD", precision: 2 },
+                                 fetchedAt: cachedCreditUsage.createdAt - 3600, reason: "offline" } })
+        }
+    }
+
+    FakeMonitor {
+        id: zeroCredits
+        usage: FakeUsage {
+            id: zeroCreditUsage
+            credits: ({ codex: { status: "ok", balance: { amount: 0, currency: "", precision: 2 },
+                                fetchedAt: zeroCreditUsage.createdAt } })
+        }
+    }
+
+    component CreditViews: RowLayout {
+        id: creditViews
+        property bool flat: false
+        spacing: 2 * Kirigami.Units.gridUnit
+
+        GalleryFrame {
+            label: "Claude · credits remaining"
+            flat: creditViews.flat
+            UsagePopup { monitor: creditsMonitor; item: "claude" }
+        }
+        GalleryFrame {
+            label: "Codex · credits remaining"
+            flat: creditViews.flat
+            UsagePopup { monitor: creditsMonitor; item: "codex" }
+        }
+        GalleryFrame {
+            label: "Claude · cached credits remaining"
+            flat: creditViews.flat
+            UsagePopup { monitor: cachedCredits; item: "claude" }
+        }
+        GalleryFrame {
+            label: "Codex · zero credits (row hidden)"
+            flat: creditViews.flat
+            UsagePopup { monitor: zeroCredits; item: "codex" }
+        }
+    }
+
+    CreditViews {}
+
+    FakeMonitor {
+        id: creditSpending
+        usage: FakeUsage {
+            id: spendingUsage
+            entries: ({
+                claude: { status: "ok", fetchedAt: spendingUsage.createdAt,
+                          weekly: spendingUsage.window(100, 2 * spendingUsage.day, section.history(5, 100)),
+                          scoped: [Object.assign({ id: "Fable", label: "Fable" }, spendingUsage.window(100, spendingUsage.day, []))] },
+                codex: { status: "ok", fetchedAt: spendingUsage.createdAt,
+                         weekly: spendingUsage.window(24, 5 * spendingUsage.day, section.history(2, 24)), scoped: [],
+                         session: spendingUsage.window(100, 3600, []) }
+            })
+            credits: ({
+                claude: { status: "ok", spent: true, balance: { amount: 18.42, currency: "USD", precision: 2 }, fetchedAt: spendingUsage.createdAt },
+                codex: { status: "ok", spent: true, balance: { amount: 1250.5, currency: "", precision: 2 }, fetchedAt: spendingUsage.createdAt }
+            })
+        }
+    }
+
     // Claude at 81 % is amber, and runs out before its reset at this pace;
     // Fable over 90 % and Codex at its limit are red.
     FakeMonitor {
@@ -319,6 +396,19 @@ ColumnLayout {
     }
 
     Panel {
+        label: "Claude & Codex · credits used since the previous check · full blue rings, neutral weekly readings"
+        thickness: 46
+        monitor: creditSpending
+    }
+
+    Panel {
+        label: "Claude & Codex · credits used · right to left"
+        thickness: 46
+        monitor: creditSpending
+        mirrored: true
+    }
+
+    Panel {
         label: "Claude & Codex · panel · 46 px · Claude 52 % with Fable 78 % inside (amber), Codex 24 %"
         thickness: 46
     }
@@ -536,6 +626,21 @@ ColumnLayout {
             label: "Breeze Light · Claude & Codex · panel · 46 px · Claude 81 % (amber), Codex 100 % (red)"
             thickness: 46
             monitor: hot
+        }
+
+        CreditViews { flat: true }
+
+        Panel {
+            label: "Breeze Light · Claude & Codex · credits used since the previous check"
+            thickness: 46
+            monitor: creditSpending
+        }
+
+        Panel {
+            label: "Breeze Light · Claude & Codex · credits used · right to left"
+            thickness: 46
+            monitor: creditSpending
+            mirrored: true
         }
 
         Panel {

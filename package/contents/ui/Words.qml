@@ -129,7 +129,7 @@ QtObject {
         const used = weekly ? weekly.percent : NaN;
         const left = spelled(countdownParts(weekly ? weekly.resetsAt : null, nowMs, true)) || "–";
         const failed = !entry || entry.lastError !== undefined;
-        return lines(reading(used), failed ? 0 : Format.level(used), failed, left, 0);
+        return lines(reading(used), failed || monitor.usage.creditUsed(item, nowMs) ? 0 : Format.level(used), failed, left, 0);
     }
 
     // The memory in use as the panel can show it, in the units it shows: up
@@ -213,6 +213,9 @@ QtObject {
             text = left ? i18nc("@info:tooltip weekly share used and time to the reset, e.g. 62% used, resets in 2 days 21 hours",
                                 "%1 used, resets in %2", used, left)
                         : i18nc("@info:tooltip weekly share used, e.g. 62% used", "%1 used", used);
+        }
+        if (usage.creditUsed(item, nowMs)) {
+            text += "\n" + i18nc("@info:tooltip a credit balance fell between the two most recent checks", "Credits used since the previous check.");
         }
         return entry.lastError === undefined ? text : failedText(item, entry, text, nowMs);
     }

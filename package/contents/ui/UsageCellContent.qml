@@ -10,7 +10,9 @@ import "code/style.js" as Style
 // and beside it the weekly percentage over the time left until the week
 // resets. The ring and its percentage turn amber or red with the weekly
 // reading, and the inner ring with the model's limit. The ring breathes from
-// 90 % until the limit is hit. A failed check keeps the last reading in
+// 90 % until the limit is hit. Recent credit spending past an exhausted
+// limit shows one full blue ring; the figures still give the weekly reading.
+// A failed check keeps the last reading in
 // grey while it is under two check intervals old and its week runs; after
 // that the ring is struck through and the readings go to dashes, until a
 // check succeeds. While the first check runs the ring waits (see RingGauge)
@@ -33,6 +35,12 @@ Item {
     readonly property var entry: usage.entry(item)
     readonly property var weekly: entry && entry.weekly ? entry.weekly : null
     readonly property var innerLimit: usage.inner(item)
+    readonly property bool creditUsed: usage.creditUsed(item, nowMs)
+    // Credit use stays blue even with a different accent hue; the theme
+    // supplies its saturation and lightness.
+    readonly property color creditColor: Qt.hsla(210 / 360, Kirigami.Theme.linkColor.hslSaturation,
+                                               Kirigami.Theme.linkColor.hslLightness, Kirigami.Theme.linkColor.a)
+    onCreditUsedChanged: gauge.stopResets()
     // Stepped by the minute timer below, for the countdown, and with each
     // report, so a ring is struck by the check that finds its reading too old.
     property real nowMs: Date.now()
@@ -75,6 +83,9 @@ Item {
         target: content.usage
 
         function onResetsDetected(events) {
+            if (content.creditUsed) {
+                return;
+            }
             const limit = content.innerLimit;
             gauge.playResets(events[content.item + ".weekly"] ?? null,
                              limit ? events[content.item + ".scoped." + limit.id] ?? null : null);
@@ -86,10 +97,12 @@ Item {
         anchors.left: parent.left
         width: content.ring
         height: content.ring
-        value: content.weekly ? content.weekly.percent : NaN
-        inner: content.innerLimit !== null
+        value: content.creditUsed ? 100 : content.weekly ? content.weekly.percent : NaN
+        color: content.creditUsed ? content.creditColor : Kirigami.Theme.textColor
+        levelColors: !content.creditUsed
+        inner: !content.creditUsed && content.innerLimit !== null
         innerValue: content.innerLimit ? content.innerLimit.percent : NaN
-        pulsing: value >= 90 && value < 100
+        pulsing: content.creditUsed || value >= 90 && value < 100
         cancelled: content.failed && !content.staleShown
         stale: content.staleShown
         loading: content.loading

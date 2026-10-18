@@ -32,6 +32,7 @@ Item {
     property Egg egg: null
     // The colour below the alert levels.
     property color color: Kirigami.Theme.textColor
+    property bool levelColors: true
     // Raises the ring's level, for a hot temperature the panel has no room
     // to show.
     property int minimumLevel: 0
@@ -43,12 +44,12 @@ Item {
     // Shown in the middle of a single ring large enough to read it.
     property string text: ""
     property real textScale: 0.33
-    // Breathes, as a Claude or Codex ring does close to its limit: the face
-    // dims to half and back every two seconds, easing in and out. A breath
+    // Breathes, as a Claude or Codex ring does close to its limit: the arcs
+    // dim to half and back every two seconds, easing in and out. A breath
     // under way when the pulse stops finishes; at Instant there is none.
     property bool pulsing: false
     readonly property bool breathing: pulsing && !cancelled && !stale && settle > 0
-    // How far through a breath the face is, 0 to 1.
+    // How far through a breath the arcs are, 0 to 1.
     property real breath: 0
     onBreathingChanged: {
         if (breathing && !breathe.running) {
@@ -56,7 +57,7 @@ Item {
         }
     }
 
-    // The rest of a breath, from where the face is.
+    // The rest of a breath, from where the arcs are.
     function takeBreath() {
         breathe.duration = 2000 * (1 - breath);
         breathe.restart();
@@ -275,8 +276,7 @@ Item {
         if (!(settle > 0)) {
             breathe.stop();
             breath = 0;
-            outer.stopReset();
-            innerArc.stopReset();
+            stopResets();
         }
     }
     // A ring that starts cancelled, as a popup opening on a failed check,
@@ -329,7 +329,7 @@ Item {
     }
 
     function tone(level) {
-        const live = Style.levelColor(level, Kirigami.Theme, color);
+        const live = levelColors ? Style.levelColor(level, Kirigami.Theme, color) : color;
         return greyed > 0 ? outer.mix(live, Qt.alpha(color, 0.42 * color.a), greyed) : live;
     }
 
@@ -366,6 +366,11 @@ Item {
             innerArc.playReset(clamped(innerReset.from), innerColor(Format.level(innerReset.from)),
                                innerReset.early);
         }
+    }
+
+    function stopResets() {
+        outer.stopReset();
+        innerArc.stopReset();
     }
 
     // Each arc follows the whole percent its reading prints, so a reading
@@ -415,6 +420,14 @@ Item {
     Accessible.description: hasValue ? i18nc("@info a percentage", "%1%", Format.percent(value))
                           : loading ? i18nc("@info:status waiting for a first reading", "checking")
                                     : i18nc("@info:status no reading", "unavailable")
+
+    // Names and marks keep still while the arcs breathe. They still dim
+    // for an old reading, a pending check or a struck ring.
+    Item {
+        id: middle
+        anchors.fill: parent
+        opacity: 1 - Math.max(0.85 * gauge.struck, 0.6 * Math.max(gauge.greyed, gauge.waitDim))
+    }
 
     Item {
         id: face
@@ -523,15 +536,6 @@ Item {
             trackColor: Qt.alpha(gauge.color, 0.22 * 0.55 * gauge.color.a)
             gap: gauge.gap
             shading: 1 - gauge.greyed
-        }
-
-        // The name or mark, greyed out further while the ring is grey or
-        // waits, and fainter still once it is struck, so the stroke in the
-        // track's grey reads across it unbroken.
-        Item {
-            id: middle
-            anchors.fill: parent
-            opacity: 1 - Math.max(0.85 * gauge.struck, 0.6 * Math.max(gauge.greyed, gauge.waitDim))
         }
 
         // Draws the hidden animation over the arcs while it plays; see

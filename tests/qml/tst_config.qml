@@ -758,6 +758,8 @@ TestRoot {
                   saved: { diskTemperatureSensor: "none" } },
                 { tag: "usageRefreshMinutes", source: providers, drive: page => spinUp(page, "Check every"),
                   saved: { usageRefreshMinutes: 10 } },
+                { tag: "showCredits", source: providers,
+                  drive: page => press(page, "Show remaining credits"), saved: { showCredits: false } },
                 { tag: "claudeInnerLimit", source: providers, start: limits, drive: page => pickIn(page, "Claude inner ring", 2),
                   saved: { claudeInnerLimit: "opus" } },
                 { tag: "codexInnerLimit", source: providers, start: limits, drive: page => pickIn(page, "OpenAI inner ring", 2),
@@ -1453,6 +1455,27 @@ TestRoot {
             verify(heading(bare, "All Providers").visible);
             verify(!heading(bare, "Claude").visible);
             verify(!heading(bare, "OpenAI").visible);
+        }
+
+        function test_creditSettingAppliesToAllProviders() {
+            const page = make(providers, { cfg_itemOrder: ["claude", "codex"], cfg_hiddenItems: [],
+                                           cfg_showCredits: true, knownLimits: {} });
+            const box = accessible(page, "Show remaining credits");
+            verify(box.visible && box.checked);
+            compare(all(page, i => i.text === "Show remaining credits" && i.toggled !== undefined).length, 1);
+            verify(!heading(page, "Claude").visible, "a lone Claude window needs no provider settings");
+            const shared = heading(page, "All Providers");
+            verify(box.mapToItem(page, 0, 0).y > shared.mapToItem(page, 0, 0).y);
+            verify(box.mapToItem(page, 0, 0).y < heading(page, "OpenAI").mapToItem(page, 0, 0).y);
+            box.toggle();
+            box.toggled();
+            verify(!page.cfg_showCredits);
+            page.cfg_hiddenItems = ["claude", "codex"];
+            verify(box.visible && !box.checked, "the shared switch stays available with both items off");
+            page.cfg_hiddenItems = [];
+            verify(!page.cfg_showCredits, "turning items on again keeps the opt-out");
+            compare(page.cfg_claudeInnerLimit, "");
+            compare(page.cfg_codexInnerLimit, "");
         }
 
         // Codex is chosen until the setting says openai, and each choice

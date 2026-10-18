@@ -5,6 +5,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import org.kde.plasma.plasma5support as P5Support
 import "code/items.js" as Items
+import "code/credits.js" as Credits
 import "code/limits.js" as Limits
 import "code/log.js" as Log
 import "code/report.js" as Report
@@ -45,6 +46,8 @@ Item {
     property string helperPath: Shell.path(Qt.resolvedUrl("../code/usage.py"))
     // The merged entry per polled id, in the helper's shape (see usage.py).
     property var entries: ({})
+    // Credit reports stay independent of the weekly reading kept on failure.
+    property var credits: ({})
     // Why the helper itself gave no report; empty once one arrives.
     property string helperError: ""
     // Bound to a bool, so they notify only when they flip, not on every poll.
@@ -108,6 +111,14 @@ Item {
         return entries[id] ?? null;
     }
 
+    function credit(id) {
+        return config.showCredits === true && ids.includes(id) ? credits[id] ?? null : null;
+    }
+
+    function creditUsed(id, nowMs) {
+        return ids.includes(id) && Credits.used(entry(id), credits[id], refreshMinutes, nowMs);
+    }
+
     // The time in whole epoch seconds, as the helper gives its times.
     function nowSeconds() {
         return Math.floor(Date.now() / 1000);
@@ -138,6 +149,7 @@ Item {
               + providerIds.filter(id => programs[id]).map(id => " --program " + Shell.quoted(id + "=" + programs[id]))
                            .join("")
               + (args === "" && initialIds.length > 0 ? " --initial-providers " + initialIds.join(",") : "")
+              + (args === "" ? " --credits-providers " + providerIds.join(",") : "")
               + " --providers " + providerIds.join(",") + args : "";
     }
 
@@ -344,7 +356,7 @@ Item {
             ids.filter(id => map[id] !== undefined).forEach(id => { kept[id] = map[id]; });
             return kept;
         };
-        for (const name of ["entries", "starters", "starterWanted", "startFailures", "switchFailures"]) {
+        for (const name of ["entries", "credits", "starters", "starterWanted", "startFailures", "switchFailures"]) {
             if (Object.keys(usage[name]).some(id => !ids.includes(id))) {
                 usage[name] = only(usage[name]);
             }
@@ -367,9 +379,13 @@ Item {
         const merged = {};
         const latest = {};
         const starting = Object.assign({}, starters);
+        const balances = Object.assign({}, credits);
         for (const id of ids) {
             const was = entries[id];
             const next = report.providers[id];
+            if (next && next.credits !== undefined) {
+                balances[id] = next.credits;
+            }
             if (next?.starter) {
                 starting[id] = next.starter;
             }
@@ -398,10 +414,18 @@ Item {
         }
         const reported = ids.filter(id => report.providers[id] && !answered.includes(id));
         const events = Reset.detect(entries, merged, at);
+        // A credit ring represents spending, so it must not replay a weekly
+        // percentage's reset when entering or leaving that display.
+        for (const id of ids) {
+            if (creditUsed(id, now * 1000) || Credits.used(merged[id], balances[id], refreshMinutes, now * 1000)) {
+                Object.keys(events).filter(key => key.startsWith(id + ".")).forEach(key => { delete events[key]; });
+            }
+        }
         if (Object.keys(events).length > 0) {
             resetsDetected(events);
         }
         entries = merged;
+        credits = balances;
         statuses = latest;
         if (reported.length > 0) {
             answered = answered.concat(reported);
@@ -559,6 +583,11 @@ Item {
                 // A provider still loading that this run polled fails with
                 // the rest; one that only another run polls waits for it.
                 const polled = usage.polledIds(source);
+                const balances = Object.assign({}, usage.credits);
+                polled.filter(id => usage.ids.includes(id) && balances[id]?.balance).forEach(id => {
+                    balances[id] = Object.assign({}, balances[id], { status: "error", reason: "helper" });
+                });
+                usage.credits = balances;
                 const first = usage.ids.filter(id => polled.includes(id) && usage.loading(id));
                 const loaded = Object.assign({}, usage.entries);
                 first.forEach(id => { loaded[id] = { status: "error" }; });

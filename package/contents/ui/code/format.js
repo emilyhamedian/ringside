@@ -249,6 +249,26 @@ function fixed(v, digits) {
     return usable(v) ? decimal(v, digits) : DASH;
 }
 
+// Credit precision comes from the provider; a small positive balance must
+// never round to zero. The caller translates the less-than wrapper.
+function credit(amount, precision, trim) {
+    const threshold = 10 ** -precision;
+    if (amount > 0 && amount < threshold) {
+        return { value: decimal(threshold, precision), below: true };
+    }
+    let value = fixed(amount, precision);
+    if (trim && precision > 0) {
+        const locale = Qt.locale();
+        while (value.endsWith(locale.zeroDigit)) {
+            value = value.slice(0, -1);
+        }
+        if (value.endsWith(locale.decimalPoint)) {
+            value = value.slice(0, -locale.decimalPoint.length);
+        }
+    }
+    return { value: value, below: false };
+}
+
 // Time left until `resetsAt` (epoch seconds), to the nearest minute, as
 // { days, hours, minutes }; null once it has passed or without a time.
 function timeLeft(resetsAt, nowMs) {

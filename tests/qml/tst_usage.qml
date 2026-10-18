@@ -3,11 +3,13 @@
 
 import QtCore
 import QtQuick
+import QtQuick.Layouts
 import QtTest
 import org.kde.kirigami as Kirigami
 import "../../package/contents/ui"
 import "../../package/contents/ui/popups"
 import "../../package/contents/ui/code/format.js" as Format
+import "../../package/contents/ui/code/credits.js" as Credits
 import "../../package/contents/ui/code/report.js" as Report
 import "../../package/contents/ui/code/shell.js" as Shell
 import "../../package/contents/ui/code/style.js" as Style
@@ -97,6 +99,56 @@ TestRoot {
     Component {
         id: host
         Loader {}
+    }
+
+    Component {
+        id: creditStripComponent
+        Strip { items: ["claude", "codex"]; vertical: false; thickness: 46; ringsOnly: [] }
+    }
+
+    TestCase {
+        name: "Credits"
+
+        function test_recentSpending_data() {
+            return [
+                { tag: "weekly", active: true }, { tag: "session", window: "session", active: true },
+                { tag: "scoped", window: "scoped", active: true }, { tag: "rounded99.5", exact: false, active: false },
+                { tag: "missing exact flag", exact: null, active: false }, { tag: "expired", left: 0, active: false },
+                { tag: "missing reset", left: null, active: false }, { tag: "no decrease", spent: false, active: false },
+                { tag: "error", status: "error", active: false }, { tag: "disabled", status: "disabled", active: false },
+                { tag: "unavailable", status: "unavailable", active: false }, { tag: "absent", absent: true, active: false },
+                { tag: "zero", amount: 0, active: false }, { tag: "negative", amount: -1, active: false },
+                { tag: "malformed amount", amount: "18.42", active: false },
+                { tag: "weekly error", entryStatus: "error", active: false },
+                { tag: "weekly last error", failed: true, active: false },
+                { tag: "no week", noWeek: true, active: false },
+                { tag: "stale week", weekAge: 601, active: false }, { tag: "stale balance", creditAge: 601, active: false },
+                { tag: "future week", weekAge: -1, active: false }, { tag: "future balance", creditAge: -1, active: false },
+                { tag: "two intervals", weekAge: 600, creditAge: 600, active: true },
+                { tag: "longer refresh", minutes: 15, weekAge: 1799, creditAge: 1799, active: true },
+                { tag: "five minute floor", minutes: 1, weekAge: 599, creditAge: 599, active: true }
+            ];
+        }
+
+        function test_recentSpending(data) {
+            const now = 100000;
+            const exhausted = { percent: 100, exhausted: data.exact === null ? undefined : data.exact ?? true,
+                                resetsAt: data.left === null ? null : now + (data.left ?? 300) };
+            const entry = { status: data.entryStatus ?? "ok", fetchedAt: now - (data.weekAge ?? 0),
+                            weekly: { percent: 52, exhausted: false, resetsAt: now + 86400 }, scoped: [] };
+            if (data.window === "session") {
+                entry.session = exhausted;
+            } else if (data.window === "scoped") {
+                entry.scoped = [exhausted];
+            } else {
+                entry.weekly = exhausted;
+            }
+            if (data.failed) entry.lastError = "failed";
+            if (data.noWeek) delete entry.weekly;
+            const credit = { status: data.status ?? "ok", spent: data.spent ?? true,
+                             fetchedAt: now - (data.creditAge ?? 0), balance: { amount: data.amount ?? 18.42 } };
+            compare(Credits.used(entry, data.absent ? null : credit, data.minutes ?? 5, now * 1000), data.active);
+        }
     }
 
     TestCase {
@@ -209,6 +261,128 @@ TestRoot {
 
         function timers() {
             return usage.resources.filter(r => r.triggeredOnStart !== undefined);
+        }
+
+        function test_creditsDefaultOnAndIndependentOfWeeklyFailure() {
+            start("ok");
+            const balance = { status: "ok", balance: { amount: 18.42, currency: "USD", precision: 2 },
+                              fetchedAt: usage.nowSeconds(), retryAt: null, reason: null };
+            usage.merge({ providers: { claude: { status: "error", message: "weekly failed", credits: balance } } });
+            compare(usage.entry("claude").weekly.percent, 52);
+            verify(config.showCredits);
+            compare(usage.credit("claude"), balance);
+            wait(0);
+            tryCompare(usage, "checking", false, 5000);
+            poll("traceback");
+            compare(usage.credit("claude").status, "error");
+            compare(usage.credit("claude").balance, balance.balance, "a helper failure keeps the balance as cached");
+            const unavailable = Object.assign({}, balance, { status: "error", reason: "offline" });
+            usage.merge({ providers: { claude: { status: "error", credits: unavailable } } });
+            compare(usage.credit("claude"), unavailable);
+            usage.credits = Object.assign({}, usage.credits, { codex: balance });
+            config.showCredits = false;
+            compare(usage.credit("claude"), null, "opting out immediately hides shared cached data");
+            compare(usage.credit("codex"), null);
+            usage.providers = ["codex"];
+            compare(usage.credits.claude, undefined);
+            wait(0);
+            tryCompare(usage, "checking", false, 5000);
+        }
+
+        function test_creditCommandAndPopupDoNotChangePollSchedule() {
+            start("ok");
+            tryCompare(usage, "checking", false, 5000);
+            wait(0);
+            const runs = commands();
+            const changes = spy("commandChanged");
+            const lastRun = usage.lastRun;
+            const poller = timers().find(t => t.triggeredOnStart);
+            const command = usage.command;
+            verify(command.includes(" --credits-providers claude,codex --providers claude,codex"));
+            usage.openPopup = "claude";
+            compare(usage.lastRun, lastRun);
+            verify(poller.running);
+            usage.openPopup = "codex";
+            usage.openPopup = "";
+            wait(0);
+            compare(runs.count, 0, "opening and closing start no helper");
+            compare(changes.count, 0, "the command binding ignores popup state");
+            compare(usage.command, command);
+            compare(usage.lastRun, lastRun);
+            usage.refresh();
+            tryCompare(runs, "count", 1);
+            compare(runs.signalArguments[0][0], command, "the normal poll requests credit balances with both popups closed");
+            tryCompare(usage, "checking", false, 5000);
+        }
+
+        function test_creditVisibilityKeepsAutomaticChecksAndLatestCachedBalance() {
+            start("ok");
+            const runs = commands();
+            const changes = spy("commandChanged");
+            const command = usage.command;
+            config.showCredits = false;
+            const at = usage.nowSeconds();
+            const record = amount => ({ status: "ok", balance: { amount: amount, currency: "", precision: 2 }, fetchedAt: at });
+            const claude = record(18.42);
+            const codex = record(1250.5);
+            usage.merge({ providers: { claude: { status: "error", credits: claude }, codex: { status: "error", credits: codex } } });
+            compare(usage.credit("claude"), null);
+            compare(usage.credit("codex"), null);
+            compare(usage.credits.codex, codex, "hidden readings still update");
+            config.showCredits = true;
+            compare(usage.credit("claude"), claude);
+            compare(usage.credit("codex"), codex, "showing again uses the latest cached record immediately");
+            wait(0);
+            compare(usage.command, command);
+            compare(changes.count, 0);
+            compare(runs.count, 0, "changing visibility starts no helper");
+            config.showCredits = false;
+            usage.openPopup = "codex";
+            usage.openPopup = "";
+            wait(0);
+            compare(runs.count, 0, "a hidden balance's popup also starts no helper");
+            usage.refresh();
+            tryCompare(runs, "count", 1);
+            compare(runs.signalArguments[0][0], command, "hidden balances are collected by the ordinary poll");
+            tryCompare(usage, "checking", false, 5000);
+        }
+
+        function test_creditPopupsAndVisibilityQueueNothingDuringPoll() {
+            start("slow");
+            usage.refresh();
+            tryCompare(usage, "checking", true);
+            const runs = commands();
+            usage.openPopup = "claude";
+            config.showCredits = false;
+            usage.openPopup = "codex";
+            usage.openPopup = "";
+            config.showCredits = true;
+            tryCompare(usage, "checking", false, 5000);
+            wait(0);
+            compare(runs.count, 0, "the in-flight check is the only helper run");
+        }
+
+        function test_creditModeSuppressesResetEventsOnEntryAndExit() {
+            start("ok");
+            const events = spy("resetsDetected");
+            const at = usage.nowSeconds();
+            const credit = { status: "ok", spent: true, balance: { amount: 18.42 }, fetchedAt: at };
+            const initial = { status: "ok", fetchedAt: at, scoped: [],
+                              weekly: { percent: 52, exhausted: false, resetsAt: at + 100, windowSeconds: 7 * 86400 },
+                              session: { percent: 100, exhausted: true, resetsAt: at + 1000 } };
+            usage.entries = { claude: initial };
+            const reset = percent => Object.assign({}, initial, { weekly: { percent: percent, exhausted: false,
+                resetsAt: at + 7 * 86400, windowSeconds: 7 * 86400 } });
+            usage.merge({ fetchedAt: at, providers: { claude: Object.assign(reset(2), { credits: credit }) } });
+            verify(usage.creditUsed("claude", at * 1000));
+            compare(events.count, 0, "entering blue suppresses a real weekly reset");
+            usage.entries = { claude: Object.assign({}, initial, { weekly: Object.assign({}, initial.weekly, { percent: 80 }) }) };
+            usage.merge({ fetchedAt: at, providers: { claude: Object.assign(reset(1), { credits: Object.assign({}, credit, { spent: false }) }) } });
+            verify(!usage.creditUsed("claude", at * 1000));
+            compare(events.count, 0, "leaving blue does not reset a full indicator as a weekly percentage");
+            usage.entries = { claude: initial };
+            usage.merge({ fetchedAt: at, providers: { claude: reset(3) } });
+            compare(events.count, 1, "ordinary weekly resets still reach the ring");
         }
 
         // A popup that closes having shown an early reset remembers the
@@ -358,7 +532,7 @@ TestRoot {
             make("ok", []);
             const initial = usage.helperCommand(["claude", "codex"], "", ["claude", "codex"]);
             compare(initial, "python3 -B " + Shell.quoted(usage.helperPath)
-                             + " --initial-providers claude,codex --providers claude,codex");
+                             + " --initial-providers claude,codex --credits-providers claude,codex --providers claude,codex");
             compare(usage.polledIds(initial), ["claude", "codex"]);
             compare(usage.startedIds(initial), []);
             compare(usage.starterSet(initial), null);
@@ -410,7 +584,7 @@ TestRoot {
             verify(!usage.loading("claude") && usage.loading("codex"));
             tryCompare(runs, "count", 1, 1000);
             const initial = "python3 -B " + Shell.quoted(usage.helperPath)
-                            + " --initial-providers codex --providers claude,codex";
+                            + " --initial-providers codex --credits-providers claude,codex --providers claude,codex";
             compare(runs.signalArguments[0][0], initial);
             usage.refresh();
             compare(runs.count, 1);
@@ -823,7 +997,7 @@ TestRoot {
             usage.helperPath = "/nonexistent/it's/usage.py";
             compare(usage.command, "");
             usage.providers = ["codex", "cpu", "claude", "bogus"];
-            compare(usage.command, "python3 -B '/nonexistent/it'\\''s/usage.py' --providers claude,codex");
+            compare(usage.command, "python3 -B '/nonexistent/it'\\''s/usage.py' --credits-providers claude,codex --providers claude,codex");
             // python3 can't open it; the helper failure says so.
             tryVerify(() => usage.helperError.startsWith("The usage helper exited with code 2"), 10000, usage.helperError);
         }
@@ -851,7 +1025,7 @@ TestRoot {
             usage.helperPath = "/x/usage.py";
             config.codexProgram = "~/bin/codex";
             usage.providers = ["claude", "codex"];
-            compare(usage.command, "python3 -B '/x/usage.py' --program 'codex=~/bin/codex' --providers claude,codex");
+            compare(usage.command, "python3 -B '/x/usage.py' --program 'codex=~/bin/codex' --credits-providers claude,codex --providers claude,codex");
             config.claudeProgram = "/opt/it's/claude";
             compare(usage.helperCommand(["claude"], " --start"),
                     "python3 -B '/x/usage.py' --program 'claude=/opt/it'\\''s/claude' --providers claude --start");
@@ -859,9 +1033,9 @@ TestRoot {
                     "python3 -B '/x/usage.py' --program 'claude=/opt/it'\\''s/claude' --program 'codex=~/bin/codex'"
                     + " --providers claude,codex --starter-set codex=on");
             // Only the providers a run is for.
-            compare(usage.helperCommand(["codex"], ""), "python3 -B '/x/usage.py' --program 'codex=~/bin/codex' --providers codex");
+            compare(usage.helperCommand(["codex"], ""), "python3 -B '/x/usage.py' --program 'codex=~/bin/codex' --credits-providers codex --providers codex");
             config.codexProgram = "";
-            compare(usage.helperCommand(["codex"], ""), "python3 -B '/x/usage.py' --providers codex");
+            compare(usage.helperCommand(["codex"], ""), "python3 -B '/x/usage.py' --credits-providers codex --providers codex");
         }
 
         // Each path reaches the helper exactly as chosen, through whatever
@@ -881,7 +1055,7 @@ TestRoot {
             }
             compare(runs.count, nastyPaths.length, "one check per change, none waiting for the timer");
             compare(runs.signalArguments.map(a => a[0]), nastyPaths.map(path => "python3 -B " + Shell.quoted(usage.helperPath)
-                + " --program '" + ("codex=" + path).replace(/'/g, "'\\''") + "' --providers claude,codex"));
+                + " --program '" + ("codex=" + path).replace(/'/g, "'\\''") + "' --credits-providers claude,codex --providers claude,codex"));
             // A starter run passes them too, and is still read as one.
             const polled = spy("statusesChanged");
             config.claudeProgram = nastyPaths[5];
@@ -1442,6 +1616,77 @@ TestRoot {
             compare(cell("claude").children[0].pulsing, data.pulsing);
         }
 
+        function test_creditRing_data() {
+            return [{ tag: "Claude", item: "claude" }, { tag: "Codex", item: "codex" },
+                    { tag: "hidden rows", item: "claude", hidden: true }, { tag: "instant", item: "codex", instant: true }];
+        }
+
+        function test_creditRing(data) {
+            const usage = monitor.usage;
+            const now = usage.createdAt;
+            const entry = { status: "ok", fetchedAt: now, weekly: usage.window(92, lastHours, []),
+                            session: Object.assign(usage.window(100, 3600, []), { exhausted: true }),
+                            scoped: [Object.assign(usage.window(78, lastHours, []), { id: "Fable", label: "Fable" })] };
+            usage.entries = { [data.item]: entry };
+            usage.credits = { [data.item]: { status: "ok", spent: true, balance: { amount: 18.42 }, fetchedAt: now } };
+            usage.showCredits = !data.hidden;
+            const c = cell(data.item);
+            const gauge = c.children[0];
+            if (data.instant) gauge.settle = 0;
+            verify(c.creditUsed);
+            compare(gauge.value, 100);
+            compare(gauge.inner, false);
+            compare(gauge.levelColors, false);
+            verify(gauge.color.b > gauge.color.r && gauge.color.b > gauge.color.g, "credit use stays blue with a custom accent");
+            compare(outerArc(c).color, gauge.color);
+            compare(line(c, "first").text, root.localized("92%"));
+            compare(line(c, "first").color, Kirigami.Theme.textColor);
+            compare(String(line(c, "second").color), String(Style.dim(Kirigami.Theme.textColor)));
+            verify(gauge.pulsing);
+            if (data.instant) verify(!gauge.breathing);
+            verify(c.accessibleDescription.includes("Credits used since the previous check."));
+            const opacity = middle(c).opacity;
+            gauge.breath = 0.5;
+            compare(middle(c).opacity, opacity, "the provider mark stays steady while the blue ring breathes");
+            usage.resetsDetected({ [data.item + ".weekly"]: { from: 100, early: false } });
+            verify(!outerArc(c).animating, "the credit indicator does not replay a weekly reset");
+            usage.credits = { [data.item]: Object.assign({}, usage.credits[data.item], { spent: false }) };
+            verify(!c.creditUsed);
+            compare(gauge.value, 92);
+            compare(gauge.inner, true);
+            compare(gauge.levelColors, true);
+            compare(line(c, "first").color, Kirigami.Theme.negativeTextColor);
+            verify(!c.accessibleDescription.includes("Credits used since the previous check."));
+        }
+
+        function test_creditModeInterruptsAnEarlierReset() {
+            const usage = monitor.usage;
+            claudeAt(52, lastHours);
+            setEntry("claude", Object.assign({}, usage.entries.claude, {
+                session: Object.assign(usage.window(100, 3600, []), { exhausted: true }) }));
+            const c = cell("claude");
+            monitor.usage.resetsDetected({ "claude.weekly": { from: 100, early: false } });
+            verify(outerArc(c).animating);
+            usage.credits = { claude: { status: "ok", spent: true, balance: { amount: 18.42 }, fetchedAt: usage.createdAt } };
+            verify(c.creditUsed);
+            verify(!outerArc(c).animating);
+            tryVerify(() => c.children[0].still, 2000);
+            compare(outerArc(c).head, 100);
+        }
+
+        function test_creditRingHasATooltipWithVisibleReadings() {
+            const usage = monitor.usage;
+            setEntry("claude", Object.assign({}, usage.entries.claude, {
+                session: Object.assign(usage.window(100, 3600, []), { exhausted: true }) }));
+            usage.credits = { claude: { status: "ok", spent: true, balance: { amount: 1 }, fetchedAt: usage.createdAt } };
+            const strip = creditStripComponent.createObject(root, { monitor: monitor });
+            made.push(strip);
+            verify(strip.cellAt(0).parent.active);
+            verify(strip.cellAt(0).description.includes("Credits used since the previous check."));
+            strip.openItem = "claude";
+            verify(!strip.cellAt(0).parent.active);
+        }
+
         // Weekly and model readings as [percent, seconds to the reset],
         // read `polledAgo` seconds before now, and the tones they give the
         // ring, the inner ring and the percentage. Only the reading sets the
@@ -1514,9 +1759,9 @@ TestRoot {
 
         // The ring's middle, which holds the mark, and the stroke.
         function middle(cell) {
-            const face = outerArc(cell).parent;
+            const gauge = cell.children[0];
             let item = mark(cell);
-            while (item.parent !== face) {
+            while (item.parent !== gauge) {
                 item = item.parent;
             }
             return item;
@@ -1948,6 +2193,65 @@ TestRoot {
 
         function graph(popup) {
             return root.find(popup, i => i.mainPoints !== undefined);
+        }
+
+        function test_creditRow_data() {
+            return [
+                { tag: "Claude fresh", item: "claude", amount: 18.42, currency: "EUR", precision: 2, value: "18.42", status: "ok" },
+                { tag: "Codex fresh", item: "codex", amount: 1250.5, currency: "", precision: 2, value: "1250.5", status: "ok" },
+                { tag: "Codex integer", item: "codex", amount: 1250, currency: "", precision: 2, value: "1250", status: "ok" },
+                { tag: "cached", item: "claude", amount: 18.42, currency: "USD", precision: 2, value: "18.42", status: "error" },
+                { tag: "small", item: "claude", amount: 0.001, currency: "USD", precision: 2, value: "<0.01", status: "ok" },
+                { tag: "whole", item: "claude", amount: 18, currency: "JPY", precision: 0, value: "18", status: "ok", mirrored: true }
+            ];
+        }
+
+        function test_creditRow(data) {
+            const at = monitor.usage.createdAt - 3600;
+            monitor.usage.credits = { [data.item]: { status: data.status, balance: { amount: data.amount,
+                currency: data.currency, precision: data.precision }, fetchedAt: at, reason: "offline" } };
+            const popup = load(data.item, data.mirrored);
+            const row = root.find(popup, i => i.credit !== undefined);
+            verify(row.visible);
+            compare(row.value, root.localized(data.value));
+            compare(row.unit, data.currency || "credits");
+            compare(row.label, data.status === "ok" ? "Credits remaining" : "Credits remaining · cached");
+            const when = new Date(at * 1000).toLocaleString(Qt.locale(), Locale.ShortFormat);
+            verify(row.detail.includes(when));
+            compare(row.Accessible.description, row.detail);
+            verify(row.Accessible.name.includes(row.value) && row.Accessible.name.includes(row.unit));
+            const reading = root.find(row, i => i.accessibleIgnored !== undefined);
+            compare(reading.LayoutMirroring.enabled, false, "the value and unit keep their order in RTL");
+            compare(String(reading.color), String(data.status === "ok" ? Kirigami.Theme.textColor : Style.dim(Kirigami.Theme.textColor)));
+            verify(row.mapToItem(popup, 0, 0).y >= graph(popup).mapToItem(popup, 0, graph(popup).height).y);
+            if (data.status !== "ok") {
+                verify(row.detail.includes("could not be reached"));
+            }
+        }
+
+        function test_creditRowHiddenWithoutPositiveEnabledBalance() {
+            monitor.usage.showCredits = false;
+            const popup = load("claude");
+            const row = root.find(popup, i => i.credit !== undefined);
+            const height = popup.implicitHeight;
+            const positive = { status: "ok", balance: { amount: 18.42, currency: "USD", precision: 2 },
+                               fetchedAt: monitor.usage.createdAt };
+            monitor.usage.credits = { claude: positive };
+            verify(!row.visible, "display off hides cached data");
+            monitor.usage.showCredits = true;
+            tryVerify(() => row.visible);
+            tryVerify(() => popup.implicitHeight > height);
+            for (const credit of [null, { status: "disabled", balance: positive.balance, fetchedAt: positive.fetchedAt },
+                                  Object.assign({}, positive, { balance: { amount: 0, currency: "USD", precision: 2 } }),
+                                  Object.assign({}, positive, { balance: { amount: "18", currency: "USD", precision: 2 } }),
+                                  Object.assign({}, positive, { balance: { amount: 1, currency: "usd", precision: 2 } }),
+                                  Object.assign({}, positive, { fetchedAt: null })]) {
+                monitor.usage.credits = { claude: credit };
+                verify(!row.visible);
+                tryCompare(popup, "implicitHeight", height);
+                compare(row.Layout.bottomMargin, 0);
+                compare(row.Accessible.ignored, true);
+            }
         }
 
         function header(popup) {
