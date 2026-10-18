@@ -268,7 +268,7 @@ ConfigPage {
 
         Note {
             visible: page.claudeOn
-            text: i18nc("@info", "Reads your extra usage balance from Anthropic while the popup is open, at most once every 15 minutes.")
+            text: i18nc("@info", "Reads your extra usage balance from Anthropic alongside usage checks, at most once every 5 minutes. Checks continue while hidden.")
         }
 
         Item {

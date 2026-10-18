@@ -13,12 +13,12 @@ other. Output shape:
          "claude": {"status": "ok", "fetchedAt": ..., "weekly": {...}, "scoped": [...]},
          "codex":  {"status": "ok", "fetchedAt": ..., "weekly": {...}, "scoped": [...]}}}
 
---credits-providers names providers whose prepaid credits may be reported.
---credits-open names the subset whose popup is open: only an open Claude
-popup may fetch credits, at most once per fifteen minutes including failures.
-Codex credits reuse its weekly response. Credits have their own status and
-cached balance, independent of weekly readings. Neither flag is enabled by
-default, and no credit-only check renews a login.
+--credits-providers names providers whose prepaid credits may be collected
+and reported alongside weekly usage, at most once per five minutes including
+failures. The widget supplies every enabled provider regardless of whether
+credits are shown. Codex credits reuse its weekly response. Credits have
+their own status and cached balance, independent of weekly readings. No
+credit-only check renews a login.
 
 --providers claude,codex names the providers to poll and report; both by
 default. --initial-providers names those awaiting their first report: safe
@@ -160,7 +160,7 @@ CACHE_FILE = CACHE_DIR / "usage.json"
 HISTORY_FILE = CACHE_DIR / "usage-history.json"
 LOCK_FILE = CACHE_DIR / "usage.lock"
 CACHE_TTL = 5 * 60
-CREDITS_INTERVAL = 15 * 60
+CREDITS_INTERVAL = CACHE_TTL
 CREDITS_TIMEOUT = 5
 # A collection shares the raw replies with credits without changing the weekly parsers.
 CREDITS_CONTEXT = contextvars.ContextVar("credits", default=None)
@@ -627,7 +627,7 @@ def codex_usage():
         raise CheckFailed("codex CLI not found", reason)
     event("debug", "codex", "cli", cli=shown_path(binary))
     context = CREDITS_CONTEXT.get()
-    identity = credential_digest(CODEX_AUTH) if context and "codex" in context["consent"] else None
+    identity = credential_digest(CODEX_AUTH) if context and "codex" in context["eligible"] else None
     try:
         result = codex_rate_limits(binary)
     except AppServerError as err:
@@ -1122,8 +1122,8 @@ def collect_credits(cache, providers, now):
     for record in records.values():
         if type(record.get("retryAt")) is not int:
             record.pop("retryAt", None)
-    # Remember an explicit opt-out reported by the weekly endpoint even when
-    # credits have not been enabled in this widget.
+    # Remember an explicit provider refusal even when a caller does not ask
+    # for credits, so another widget cannot retry a disabled balance.
     for name, observed in context["observed"].items():
         raw = observed["raw"]
         if name == "claude":
@@ -1138,10 +1138,10 @@ def collect_credits(cache, providers, now):
             record["enabled"] = enabled
             if not enabled:
                 # This newer provider refusal replaces any account's old balance;
-                # retaining its old identity would discard the refusal on consent.
+                # retaining its old identity would discard the refusal on eligibility.
                 record.pop("identity", None)
                 record.update(status="disabled", balance=None, fetchedAt=now, reason=None)
-    for name in context["consent"] & providers.keys():
+    for name in context["eligible"] & providers.keys():
         record = records.setdefault(name, {})
         observed = context["observed"].get(name, {})
         snapshot = claude_credit_identity() if name == "claude" else credential_digest(CODEX_AUTH)
@@ -1170,7 +1170,7 @@ def collect_credits(cache, providers, now):
             elif providers[name].get("status") != "ok":
                 reason = "signed-out" if providers[name].get("status") == "signed_out" else providers[name].get("reason", "other")
                 record.update(status="error", reason=reason, retryAt=providers[name].get("retryAt"))
-        elif name in context["open"]:
+        else:
             wait = max(anthropic_hold(cache, now), held(cache.get(name), now, PROGRAMS.get(name, "")))
             if wait:
                 record.update(status="error", retryAt=max(record.get("retryAt") or 0, now + wait),
@@ -1416,7 +1416,7 @@ def replay(entry, wait, now):
     return {"status": "error", "message": entry["message"], **failure}
 
 
-def collect(fetchers, now=None, *, initial=(), credits=(), credits_open=()):
+def collect(fetchers, now=None, *, initial=(), credits=()):
     """Poll each provider unless its last poll is recent enough to report
     again.
 
@@ -1438,7 +1438,7 @@ def collect(fetchers, now=None, *, initial=(), credits=(), credits_open=()):
     with locked():
         now = int(time.time()) if now is None else now
         started = time.monotonic()
-        context_token = CREDITS_CONTEXT.set({"consent": set(credits), "open": set(credits_open), "observed": {}})
+        context_token = CREDITS_CONTEXT.set({"eligible": set(credits), "observed": {}})
         try:
             providers, history = collect_locked(fetchers, now, initial=initial)
         finally:
@@ -1495,7 +1495,7 @@ def collect_locked(fetchers, now, *, initial=()):
         context = CREDITS_CONTEXT.get()
         credit_records = cache.get("_credits")
         if name == "claude" and report["status"] == "rate_limited" and (
-                context and "claude" in context["consent"] or isinstance(credit_records, dict) and "claude" in credit_records):
+                context and "claude" in context["eligible"] or isinstance(credit_records, dict) and "claude" in credit_records):
             cache["_anthropicHold"] = now + math.ceil(last_at[name] - started) + max(CREDITS_INTERVAL, report["retryAfter"])
         retry.pop(name, None)
         if again and time.monotonic() < deadline:
@@ -2475,8 +2475,6 @@ def arguments(argv):
                         help="comma-separated providers to poll and report (default: claude,codex)")
     parser.add_argument("--credits-providers", type=provider_list, default=[],
                         help="providers whose prepaid credits may be reported")
-    parser.add_argument("--credits-open", type=provider_list, default=[],
-                        help="consented providers whose popup is open")
     parser.add_argument("--initial-providers", type=provider_list, default=[],
                         help="providers awaiting their first report; briefly retry connection failures")
     parser.add_argument("--start", action="store_true",
@@ -2488,8 +2486,6 @@ def arguments(argv):
     args = parser.parse_args(argv)
     if any(name not in args.providers for name in args.credits_providers):
         parser.error("--credits-providers must be a subset of --providers")
-    if any(name not in args.credits_providers for name in args.credits_open):
-        parser.error("--credits-open must be a subset of --credits-providers")
     if any(name not in args.providers for name in args.initial_providers):
         parser.error("--initial-providers must be a subset of --providers")
     if args.initial_providers and (args.start or args.starter_set):
@@ -2523,7 +2519,7 @@ def main(argv=None):
     sources = fetchers()
     try:
         providers = collect({name: sources[name] for name in ids}, initial=args.initial_providers,
-                            credits=args.credits_providers, credits_open=args.credits_open)
+                            credits=args.credits_providers)
     except Busy as err:
         providers = waiting(ids, str(err), credits=args.credits_providers)
     report = {"fetchedAt": int(time.time()), "providers": providers, "events": EVENTS}

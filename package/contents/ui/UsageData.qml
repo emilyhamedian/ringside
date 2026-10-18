@@ -48,7 +48,6 @@ Item {
     // Credit reports stay independent of the weekly reading kept on failure.
     property var credits: ({})
     readonly property var creditIds: ids.filter(id => config[id + "Credits"] === true)
-    property bool creditRefreshPending: false
     // Why the helper itself gave no report; empty once one arrives.
     property string helperError: ""
     // Bound to a bool, so they notify only when they flip, not on every poll.
@@ -116,18 +115,6 @@ Item {
         return creditIds.includes(id) ? credits[id] ?? null : null;
     }
 
-    function refreshCredits() {
-        if (!creditIds.includes(openPopup)) {
-            creditRefreshPending = false;
-            return;
-        }
-        creditRefreshPending = true;
-        if (!checking) {
-            creditRefreshPending = false;
-            refresh();
-        }
-    }
-
     // The time in whole epoch seconds, as the helper gives its times.
     function nowSeconds() {
         return Math.floor(Date.now() / 1000);
@@ -152,14 +139,13 @@ Item {
 
     // The chosen programs and first-check ids come before --providers, so
     // the patterns that read a run's ids and mode from its end stay fixed.
-    function helperCommand(providerIds, args, initialIds = [], creditOpen = false) {
+    function helperCommand(providerIds, args, initialIds = []) {
         return providerIds.length > 0
             ? "python3 -B " + Shell.quoted(helperPath)
               + providerIds.filter(id => programs[id]).map(id => " --program " + Shell.quoted(id + "=" + programs[id]))
                            .join("")
               + (args === "" && initialIds.length > 0 ? " --initial-providers " + initialIds.join(",") : "")
-              + (args === "" && creditIds.length > 0 ? " --credits-providers " + creditIds.join(",") : "")
-              + (args === "" && creditOpen && creditIds.includes(openPopup) ? " --credits-open " + openPopup : "")
+              + (args === "" ? " --credits-providers " + providerIds.join(",") : "")
               + " --providers " + providerIds.join(",") + args : "";
     }
 
@@ -318,7 +304,7 @@ Item {
     function refresh() {
         // Snapshot the first-check ids for this run. Answering changes no
         // command binding, so its report doesn't trigger another check.
-        const source = helperCommand(ids, "", ids.filter(id => !answered.includes(id)), true);
+        const source = helperCommand(ids, "", ids.filter(id => !answered.includes(id)));
         if (source !== "" && !runner.connectedSources.includes(source)) {
             // Set first: a source the engine still holds answers at once.
             checking = true;
@@ -535,13 +521,6 @@ Item {
             markSeen(lastPopup);
         }
         lastPopup = openPopup;
-        refreshCredits();
-    }
-
-    onCreditIdsChanged: {
-        if (!creditIds.includes(openPopup)) {
-            creditRefreshPending = false;
-        }
     }
 
     // A changed list polls at once; ids no longer polled go straight away.
@@ -594,7 +573,7 @@ Item {
                 // the rest; one that only another run polls waits for it.
                 const polled = usage.polledIds(source);
                 const balances = Object.assign({}, usage.credits);
-                polled.filter(id => usage.creditIds.includes(id) && balances[id]?.balance).forEach(id => {
+                polled.filter(id => usage.ids.includes(id) && balances[id]?.balance).forEach(id => {
                     balances[id] = Object.assign({}, balances[id], { status: "error", reason: "helper" });
                 });
                 usage.credits = balances;
@@ -629,9 +608,6 @@ Item {
             if (set) {
                 usage.writeStarter();
                 usage.startDue();
-            }
-            if (usage.creditRefreshPending) {
-                Qt.callLater(usage.refreshCredits);
             }
         }
     }

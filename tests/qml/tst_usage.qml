@@ -212,15 +212,15 @@ TestRoot {
             return usage.resources.filter(r => r.triggeredOnStart !== undefined);
         }
 
-        function test_creditsAreOptInAndIndependentOfWeeklyFailure() {
+        function test_creditsIndependentOfWeeklyFailure() {
             start("ok");
+            config.claudeCredits = true;
+            config.codexCredits = true;
             const balance = { status: "ok", balance: { amount: 18.42, currency: "USD", precision: 2 },
                               fetchedAt: usage.nowSeconds(), retryAt: null, reason: null };
             usage.merge({ providers: { claude: { status: "error", message: "weekly failed", credits: balance } } });
             compare(usage.entry("claude").weekly.percent, 52);
-            compare(usage.credit("claude"), null);
-            verify(!config.claudeCredits && !config.codexCredits, "reports never consent for the account holder");
-            config.claudeCredits = true;
+            verify(config.claudeCredits && config.codexCredits);
             compare(usage.credit("claude"), balance);
             wait(0);
             tryCompare(usage, "checking", false, 5000);
@@ -230,8 +230,11 @@ TestRoot {
             const unavailable = Object.assign({}, balance, { status: "error", reason: "offline" });
             usage.merge({ providers: { claude: { status: "error", credits: unavailable } } });
             compare(usage.credit("claude"), unavailable);
+            usage.credits = Object.assign({}, usage.credits, { codex: balance });
             config.claudeCredits = false;
+            config.codexCredits = false;
             compare(usage.credit("claude"), null, "opting out immediately hides shared cached data");
+            compare(usage.credit("codex"), null);
             usage.providers = ["codex"];
             compare(usage.credits.claude, undefined);
             wait(0);
@@ -240,8 +243,6 @@ TestRoot {
 
         function test_creditCommandAndPopupDoNotChangePollSchedule() {
             start("ok");
-            config.claudeCredits = true;
-            config.codexCredits = true;
             tryCompare(usage, "checking", false, 5000);
             wait(0);
             const runs = commands();
@@ -251,47 +252,71 @@ TestRoot {
             const command = usage.command;
             verify(command.includes(" --credits-providers claude,codex --providers claude,codex"));
             usage.openPopup = "claude";
-            tryCompare(runs, "count", 1);
-            verify(runs.signalArguments[0][0].includes(" --credits-open claude --providers claude,codex"));
-            compare(usage.polledIds(runs.signalArguments[0][0]), ["claude", "codex"]);
             compare(usage.lastRun, lastRun);
             verify(poller.running);
+            usage.openPopup = "codex";
             usage.openPopup = "";
-            tryCompare(usage, "checking", false, 5000);
             wait(0);
-            compare(runs.count, 1, "closing starts no helper");
+            compare(runs.count, 0, "opening and closing start no helper");
             compare(changes.count, 0, "the command binding ignores popup state");
             compare(usage.command, command);
             compare(usage.lastRun, lastRun);
+            usage.refresh();
+            tryCompare(runs, "count", 1);
+            compare(runs.signalArguments[0][0], command, "the normal poll requests credit balances with both popups closed");
+            tryCompare(usage, "checking", false, 5000);
         }
 
-        function test_creditRefreshQueuesOnlyWhilePopupStillConsented() {
-            start("slow");
+        function test_creditVisibilityKeepsAutomaticChecksAndLatestCachedBalance() {
+            start("ok");
+            const runs = commands();
+            const changes = spy("commandChanged");
+            const command = usage.command;
+            config.claudeCredits = false;
+            config.codexCredits = false;
+            const at = usage.nowSeconds();
+            const record = amount => ({ status: "ok", balance: { amount: amount, currency: "", precision: 2 }, fetchedAt: at });
+            const claude = record(18.42);
+            const codex = record(1250.5);
+            usage.merge({ providers: { claude: { status: "error", credits: claude }, codex: { status: "error", credits: codex } } });
+            compare(usage.credit("claude"), null);
+            compare(usage.credit("codex"), null);
+            compare(usage.credits.codex, codex, "hidden readings still update");
             config.claudeCredits = true;
+            config.codexCredits = true;
+            compare(usage.credit("claude"), claude);
+            compare(usage.credit("codex"), codex, "showing again uses the latest cached record immediately");
+            wait(0);
+            compare(usage.command, command);
+            compare(changes.count, 0);
+            compare(runs.count, 0, "changing visibility starts no helper");
+            config.claudeCredits = false;
+            config.codexCredits = false;
+            usage.openPopup = "codex";
+            usage.openPopup = "";
+            wait(0);
+            compare(runs.count, 0, "a hidden balance's popup also starts no helper");
+            usage.refresh();
+            tryCompare(runs, "count", 1);
+            compare(runs.signalArguments[0][0], command, "hidden balances are collected by the ordinary poll");
+            tryCompare(usage, "checking", false, 5000);
+        }
+
+        function test_creditPopupsAndVisibilityQueueNothingDuringPoll() {
+            start("slow");
+            usage.refresh();
             tryCompare(usage, "checking", true);
             const runs = commands();
             usage.openPopup = "claude";
-            verify(usage.creditRefreshPending);
-            tryCompare(runs, "count", 1, 5000);
-            verify(runs.signalArguments[0][0].includes(" --credits-open claude"));
-            tryCompare(usage, "checking", false, 5000);
-            usage.openPopup = "";
-            usage.refresh();
-            usage.openPopup = "claude";
-            verify(usage.creditRefreshPending);
-            usage.openPopup = "";
-            verify(!usage.creditRefreshPending);
-            tryCompare(usage, "checking", false, 5000);
-            wait(0);
-            compare(runs.count, 2, "closing discards the queued check");
-            usage.refresh();
-            usage.openPopup = "claude";
-            verify(usage.creditRefreshPending);
             config.claudeCredits = false;
-            verify(!usage.creditRefreshPending);
+            config.codexCredits = false;
+            usage.openPopup = "codex";
+            usage.openPopup = "";
+            config.claudeCredits = true;
+            config.codexCredits = true;
             tryCompare(usage, "checking", false, 5000);
             wait(0);
-            verify(!runs.signalArguments.slice(2).some(a => a[0].includes(" --credits-open")));
+            compare(runs.count, 0, "the in-flight check is the only helper run");
         }
 
         // A popup that closes having shown an early reset remembers the
@@ -441,7 +466,7 @@ TestRoot {
             make("ok", []);
             const initial = usage.helperCommand(["claude", "codex"], "", ["claude", "codex"]);
             compare(initial, "python3 -B " + Shell.quoted(usage.helperPath)
-                             + " --initial-providers claude,codex --providers claude,codex");
+                             + " --initial-providers claude,codex --credits-providers claude,codex --providers claude,codex");
             compare(usage.polledIds(initial), ["claude", "codex"]);
             compare(usage.startedIds(initial), []);
             compare(usage.starterSet(initial), null);
@@ -493,7 +518,7 @@ TestRoot {
             verify(!usage.loading("claude") && usage.loading("codex"));
             tryCompare(runs, "count", 1, 1000);
             const initial = "python3 -B " + Shell.quoted(usage.helperPath)
-                            + " --initial-providers codex --providers claude,codex";
+                            + " --initial-providers codex --credits-providers claude,codex --providers claude,codex";
             compare(runs.signalArguments[0][0], initial);
             usage.refresh();
             compare(runs.count, 1);
@@ -906,7 +931,7 @@ TestRoot {
             usage.helperPath = "/nonexistent/it's/usage.py";
             compare(usage.command, "");
             usage.providers = ["codex", "cpu", "claude", "bogus"];
-            compare(usage.command, "python3 -B '/nonexistent/it'\\''s/usage.py' --providers claude,codex");
+            compare(usage.command, "python3 -B '/nonexistent/it'\\''s/usage.py' --credits-providers claude,codex --providers claude,codex");
             // python3 can't open it; the helper failure says so.
             tryVerify(() => usage.helperError.startsWith("The usage helper exited with code 2"), 10000, usage.helperError);
         }
@@ -934,7 +959,7 @@ TestRoot {
             usage.helperPath = "/x/usage.py";
             config.codexProgram = "~/bin/codex";
             usage.providers = ["claude", "codex"];
-            compare(usage.command, "python3 -B '/x/usage.py' --program 'codex=~/bin/codex' --providers claude,codex");
+            compare(usage.command, "python3 -B '/x/usage.py' --program 'codex=~/bin/codex' --credits-providers claude,codex --providers claude,codex");
             config.claudeProgram = "/opt/it's/claude";
             compare(usage.helperCommand(["claude"], " --start"),
                     "python3 -B '/x/usage.py' --program 'claude=/opt/it'\\''s/claude' --providers claude --start");
@@ -942,9 +967,9 @@ TestRoot {
                     "python3 -B '/x/usage.py' --program 'claude=/opt/it'\\''s/claude' --program 'codex=~/bin/codex'"
                     + " --providers claude,codex --starter-set codex=on");
             // Only the providers a run is for.
-            compare(usage.helperCommand(["codex"], ""), "python3 -B '/x/usage.py' --program 'codex=~/bin/codex' --providers codex");
+            compare(usage.helperCommand(["codex"], ""), "python3 -B '/x/usage.py' --program 'codex=~/bin/codex' --credits-providers codex --providers codex");
             config.codexProgram = "";
-            compare(usage.helperCommand(["codex"], ""), "python3 -B '/x/usage.py' --providers codex");
+            compare(usage.helperCommand(["codex"], ""), "python3 -B '/x/usage.py' --credits-providers codex --providers codex");
         }
 
         // Each path reaches the helper exactly as chosen, through whatever
@@ -964,7 +989,7 @@ TestRoot {
             }
             compare(runs.count, nastyPaths.length, "one check per change, none waiting for the timer");
             compare(runs.signalArguments.map(a => a[0]), nastyPaths.map(path => "python3 -B " + Shell.quoted(usage.helperPath)
-                + " --program '" + ("codex=" + path).replace(/'/g, "'\\''") + "' --providers claude,codex"));
+                + " --program '" + ("codex=" + path).replace(/'/g, "'\\''") + "' --credits-providers claude,codex --providers claude,codex"));
             // A starter run passes them too, and is still read as one.
             const polled = spy("statusesChanged");
             config.claudeProgram = nastyPaths[5];
@@ -2069,13 +2094,14 @@ TestRoot {
         }
 
         function test_creditRowHiddenWithoutPositiveEnabledBalance() {
+            monitor.usage.creditIds = [];
             const popup = load("claude");
             const row = root.find(popup, i => i.credit !== undefined);
             const height = popup.implicitHeight;
             const positive = { status: "ok", balance: { amount: 18.42, currency: "USD", precision: 2 },
                                fetchedAt: monitor.usage.createdAt };
             monitor.usage.credits = { claude: positive };
-            verify(!row.visible, "off by default even with cached data");
+            verify(!row.visible, "display off hides cached data");
             monitor.usage.creditIds = ["claude"];
             tryVerify(() => row.visible);
             tryVerify(() => popup.implicitHeight > height);

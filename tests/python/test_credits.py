@@ -72,18 +72,18 @@ class Credits(Isolated):
     def base(self, now=1000, **extra):
         self.write_cache({"claude": dict(status="ok", fetchedAt=now, **reading(1, 50000)), **extra})
 
-    def collect(self, now, *, consent=("claude",), opened=("claude",), fetch=None, provider="claude"):
+    def collect(self, now, *, eligible=("claude",), fetch=None, provider="claude"):
         return usage.collect({provider: fetch or mock.Mock(return_value=reading(2, 50000))}, now,
-                             credits=consent, credits_open=opened)[provider]
+                             credits=eligible)[provider]
 
     def cache(self):
         return json.loads(usage.CACHE_FILE.read_text())
 
-    def test_opt_out_never_resolves_credit_identity_or_fetches(self):
+    def test_ineligible_provider_never_resolves_credit_identity_or_fetches(self):
         self.base()
         with mock.patch.object(usage, "claude_credit_identity", side_effect=AssertionError), \
                 mock.patch.object(usage, "http_json", side_effect=AssertionError):
-            self.assertNotIn("credits", self.collect(1001, consent=(), opened=()))
+            self.assertNotIn("credits", self.collect(1001, eligible=()))
 
     def test_cached_weekly_still_allows_due_credits_with_exact_request(self):
         self.base()
@@ -91,7 +91,7 @@ class Credits(Isolated):
         with mock.patch.object(usage, "http_json", return_value={"amount": 1234, "currency": "USD"}) as get:
             result = self.collect(1001, fetch=fetch)
         self.assertEqual(result["credits"], {"status": "ok", "balance": {"amount": 12.34, "currency": "USD", "precision": 2},
-                                             "fetchedAt": 1001, "retryAt": 1901, "reason": None})
+                                             "fetchedAt": 1001, "retryAt": 1301, "reason": None})
         args, kwargs = get.call_args
         self.assertEqual(args[0], "https://api.anthropic.com/api/oauth/organizations/" + ORG + "/prepaid/credits")
         self.assertEqual(args[1], {"Authorization": "Bearer test-access", "Content-Type": "application/json",
@@ -100,31 +100,47 @@ class Credits(Isolated):
         self.assertEqual(kwargs, {"timeout": 5, "redirects": False, "max_bytes": 65536})
         self.assertNotIn("credits", self.cache()["claude"])
 
-    def test_closed_popup_does_not_fetch_and_open_attempts_have_fifteen_minute_floor(self):
+    def test_eligible_provider_collects_automatically_with_five_minute_shared_attempt_floor(self):
         self.base()
         with mock.patch.object(usage, "http_json", return_value={"amount": 100, "currency": "USD"}) as get:
-            self.assertEqual(self.collect(1001, opened=())["credits"]["status"], "unavailable")
-            get.assert_not_called()
-            self.collect(1002)
-            for at in (1003, 1302, 1901):
+            self.assertEqual(self.collect(1001)["credits"]["status"], "ok")
+            for at in (1002, 1100, 1300):
                 self.collect(at)
             self.assertEqual(get.call_count, 1)
-            self.collect(1902)
+            self.collect(1301)
             self.assertEqual(get.call_count, 2)
+
+    def test_normal_claude_poll_collects_both_reads_once_per_five_minutes_without_popup_state(self):
+        raw = fixture("claude_usage.json")
+        credit = {"amount": 100, "currency": "USD"}
+        with mock.patch.object(usage, "claude_access_token", return_value="test-access") as token, \
+                mock.patch.object(usage, "http_json", side_effect=[raw, credit, raw, credit]) as get:
+            first = self.collect(1000, fetch=usage.claude_usage)
+            self.assertEqual((first["status"], first["credits"]["status"]), ("ok", "ok"))
+            self.collect(1001, fetch=usage.claude_usage)
+            self.collect(1299, fetch=usage.claude_usage)
+            self.assertEqual(get.call_count, 2)
+            self.assertEqual(token.call_count, 1)
+            self.collect(1300, fetch=usage.claude_usage)
+            self.assertEqual(get.call_count, 4)
+            self.assertEqual(token.call_count, 2)
+        credit_url = "https://api.anthropic.com/api/oauth/organizations/" + ORG + "/prepaid/credits"
+        self.assertEqual([call.args[0] for call in get.call_args_list],
+                         [usage.CLAUDE_USAGE_URL, credit_url, usage.CLAUDE_USAGE_URL, credit_url])
 
     def test_failure_preserves_balance_and_zero_replaces_it(self):
         self.base()
         with mock.patch.object(usage, "http_json", side_effect=[{"amount": 100, "currency": "USD"},
                                  usage.CheckFailed("private response", "offline"), {"amount": 0, "currency": "USD"}]) as get:
             self.collect(1001)
-            error = self.collect(1901)["credits"]
+            error = self.collect(1301)["credits"]
             self.assertEqual(error["status"], "error")
             self.assertEqual(error["balance"]["amount"], 1)
             self.assertEqual(error["fetchedAt"], 1001)
-            self.collect(1902)
+            self.collect(1302)
             self.assertEqual(get.call_count, 2)
-            zero = self.collect(2801)["credits"]
-            self.assertEqual((zero["status"], zero["balance"], zero["fetchedAt"]), ("ok", None, 2801))
+            zero = self.collect(1601)["credits"]
+            self.assertEqual((zero["status"], zero["balance"], zero["fetchedAt"]), ("ok", None, 1601))
 
     def test_credits_failures_do_not_change_weekly_or_renew_auth(self):
         self.base()
@@ -150,14 +166,14 @@ class Credits(Isolated):
             self.collect(1901)
             get.assert_called_once()
 
-    def test_credit_429_persists_shared_hold_across_opt_out_account_change_and_restart(self):
+    def test_credit_429_persists_shared_hold_across_ineligible_account_change_and_restart(self):
         self.base()
         with mock.patch.object(usage, "http_json", side_effect=usage.RateLimited(2000)) as get:
             result = self.collect(1001)
             self.assertEqual(result["credits"]["retryAt"], 3001)
             self.account(OTHER)
             fetch = mock.Mock(side_effect=AssertionError("held weekly endpoint"))
-            result = self.collect(1500, consent=(), opened=(), fetch=fetch)
+            result = self.collect(1500, eligible=(), fetch=fetch)
             self.assertEqual(result["status"], "rate_limited")
             result = self.collect(1901, fetch=fetch)
             self.assertIsNone(result["credits"]["balance"])
@@ -173,8 +189,8 @@ class Credits(Isolated):
                 self.assertEqual(self.cache()["_credits"]["claude"]["retryAt"],
                                  4600 if isinstance(failure, usage.RateLimited) else 1300)
 
-    def test_shared_429_has_fifteen_minute_floor_and_honors_longer_explicit_retry_after(self):
-        for requested, wait in ((1, 900), (3 * 86400, 3 * 86400)):
+    def test_shared_429_has_five_minute_floor_and_honors_longer_explicit_retry_after(self):
+        for requested, wait in ((1, 300), (3 * 86400, 3 * 86400)):
             self.base()
             with mock.patch.object(usage, "http_json", side_effect=usage.RateLimited(requested)) as get:
                 self.assertEqual(self.collect(1001)["credits"]["retryAt"], 1001 + wait)
@@ -183,7 +199,7 @@ class Credits(Isolated):
                     result = self.collect(1001 + 86401, fetch=fetch)
                     self.assertEqual(result["retryAt"], 1001 + wait)
                     self.assertEqual(result["credits"]["retryAt"], 1001 + wait)
-                    self.collect(1001 + 86402, consent=(), opened=(), fetch=fetch)
+                    self.collect(1001 + 86402, eligible=(), fetch=fetch)
                     get.assert_called_once()
 
     def test_weekly_explicit_retry_after_longer_than_day_is_shared(self):
@@ -202,29 +218,29 @@ class Credits(Isolated):
         self.assertEqual(result["status"], "error")
         self.assertEqual(result["credits"]["balance"]["amount"], 1)
 
-    def test_opt_out_preserves_private_balance_for_another_widget(self):
+    def test_ineligible_provider_preserves_private_balance_for_another_widget(self):
         self.base()
         with mock.patch.object(usage, "http_json", return_value={"amount": 100, "currency": "USD"}):
             self.collect(1001)
         saved = self.cache()["_credits"]
         with mock.patch.object(usage, "claude_credit_identity", side_effect=AssertionError), \
                 mock.patch.object(usage, "http_json", side_effect=AssertionError):
-            result = self.collect(1002, consent=(), opened=())
+            result = self.collect(1002, eligible=())
         self.assertNotIn("credits", result)
         self.assertEqual(self.cache()["_credits"], saved)
 
-    def test_cached_provider_disabled_flag_prevents_get_after_later_consent(self):
+    def test_cached_provider_disabled_flag_prevents_get_after_later_eligibility(self):
         raw = fixture("claude_usage.json")
         raw["extra_usage"] = {"is_enabled": False}
         with mock.patch.object(usage, "http_json", return_value=raw), \
                 mock.patch.object(usage, "claude_credit_identity", side_effect=AssertionError):
-            result = self.collect(1000, fetch=usage.claude_usage, consent=(), opened=())
+            result = self.collect(1000, fetch=usage.claude_usage, eligible=())
         self.assertNotIn("credits", result)
         with mock.patch.object(usage, "http_json", side_effect=AssertionError):
             result = self.collect(1001)
         self.assertEqual(result["credits"]["status"], "disabled")
 
-    def test_disabled_observed_while_opted_out_survives_prior_account_identity(self):
+    def test_disabled_observed_while_ineligible_survives_prior_account_identity(self):
         self.base()
         with mock.patch.object(usage, "http_json", return_value={"amount": 100, "currency": "USD"}):
             self.collect(1001)
@@ -233,7 +249,7 @@ class Credits(Isolated):
         raw["extra_usage"] = {"is_enabled": False}
         with mock.patch.object(usage, "http_json", return_value=raw) as get, \
                 mock.patch.object(usage, "claude_credit_identity", side_effect=AssertionError):
-            self.collect(1901, fetch=usage.claude_usage, consent=(), opened=())
+            self.collect(1901, fetch=usage.claude_usage, eligible=())
             get.assert_called_once()
         with mock.patch.object(usage, "http_json", side_effect=AssertionError("disabled account requested credits")):
             result = self.collect(1902)
@@ -269,7 +285,7 @@ class Credits(Isolated):
             self.assertIsNone(result["balance"])
             self.assertIsNone(result["fetchedAt"])
 
-    def test_busy_opt_out_does_not_validate_identity_or_expose_credits(self):
+    def test_busy_ineligible_provider_does_not_validate_identity_or_expose_credits(self):
         self.base()
         with mock.patch.object(usage, "collect", side_effect=usage.Busy()), \
                 mock.patch.object(usage, "claude_credit_identity", side_effect=AssertionError), \
@@ -289,7 +305,7 @@ class Credits(Isolated):
         self.assertEqual(result["status"], "disabled")
         self.assertIsNone(result["balance"])
 
-    def test_busy_codex_validates_identity_without_reading_an_unconsented_provider(self):
+    def test_busy_codex_validates_identity_without_reading_an_ineligible_provider(self):
         self.write_cache({"_credits": {"codex": {"identity": usage.credential_digest(usage.CODEX_AUTH),
                           "status": "ok", "balance": {"amount": 5, "currency": "", "precision": 2}, "fetchedAt": 1000}}})
         with mock.patch.object(usage, "claude_credit_identity", side_effect=AssertionError):
@@ -304,7 +320,7 @@ class Credits(Isolated):
         self.base()
         elapsed = [0]
         def response(*args, **kwargs):
-            self.assertEqual(self.cache()["_credits"]["claude"]["retryAt"], 1901)
+            self.assertEqual(self.cache()["_credits"]["claude"]["retryAt"], 1301)
             elapsed[0] = 4.2
             raise usage.RateLimited(3600)
         with mock.patch.object(usage.time, "monotonic", side_effect=lambda: elapsed[0]), \
@@ -348,7 +364,7 @@ class Credits(Isolated):
             with mock.patch.object(usage, "http_json", side_effect=response):
                 result = self.collect(1001)["credits"]
             self.assertEqual((result["status"], result["balance"]), ("unavailable", None))
-            self.assertEqual(result["retryAt"], 1901)
+            self.assertEqual(result["retryAt"], 1301)
 
     def test_legacy_config_precedes_primary_and_malformed_selected_file_does_not_fall_back(self):
         legacy = self.config.parent / ".config.json"
@@ -386,14 +402,14 @@ class Credits(Isolated):
         raw = {"rateLimits": {"credits": {"hasCredits": True, "unlimited": False, "balance": "23.25"}}}
         with mock.patch.object(usage, "find_cli", return_value=("codex", "")), \
                 mock.patch.object(usage, "codex_rate_limits", return_value=raw) as rpc:
-            result = self.collect(1000, provider="codex", fetch=usage.codex_usage, consent=("codex",), opened=("codex",))
+            result = self.collect(1000, provider="codex", fetch=usage.codex_usage, eligible=("codex",))
             self.assertEqual(result["status"], "error")
             self.assertEqual(result["credits"]["balance"]["amount"], 23.25)
-            self.collect(1001, provider="codex", fetch=usage.codex_usage, consent=("codex",), opened=("codex",))
+            self.collect(1001, provider="codex", fetch=usage.codex_usage, eligible=("codex",))
             rpc.assert_called_once()
         self.write_cache({"codex": dict(status="ok", fetchedAt=1000, **reading(1, 5000))})
         fetch = mock.Mock(side_effect=AssertionError)
-        result = self.collect(1001, provider="codex", fetch=fetch, consent=("codex",), opened=("codex",))
+        result = self.collect(1001, provider="codex", fetch=fetch, eligible=("codex",))
         self.assertEqual(result["credits"]["status"], "unavailable")
 
     def test_codex_failed_read_keeps_matching_balance_as_cached(self):
@@ -401,16 +417,16 @@ class Credits(Isolated):
         raw["rateLimitsByLimitId"]["codex"]["credits"] = {"hasCredits": True, "unlimited": False, "balance": "5"}
         with mock.patch.object(usage, "find_cli", return_value=("codex", "")), \
                 mock.patch.object(usage, "codex_rate_limits", return_value=raw) as rpc:
-            self.collect(1000, provider="codex", fetch=usage.codex_usage, consent=("codex",), opened=("codex",))
-            fresh = self.collect(1001, provider="codex", fetch=usage.codex_usage, consent=("codex",), opened=("codex",))
+            self.collect(1000, provider="codex", fetch=usage.codex_usage, eligible=("codex",))
+            fresh = self.collect(1001, provider="codex", fetch=usage.codex_usage, eligible=("codex",))
             self.assertEqual(fresh["credits"]["status"], "ok")
             rpc.side_effect = usage.CheckFailed("private response", "offline")
-            failed = self.collect(1300, provider="codex", fetch=usage.codex_usage, consent=("codex",), opened=("codex",))
+            failed = self.collect(1300, provider="codex", fetch=usage.codex_usage, eligible=("codex",))
             self.assertEqual(failed["credits"]["status"], "error")
             self.assertEqual(failed["credits"]["reason"], "offline")
             self.assertEqual(failed["credits"]["balance"]["amount"], 5)
             self.assertEqual(failed["credits"]["fetchedAt"], 1000)
-            held = self.collect(1301, provider="codex", fetch=usage.codex_usage, consent=("codex",), opened=("codex",))
+            held = self.collect(1301, provider="codex", fetch=usage.codex_usage, eligible=("codex",))
             self.assertEqual(held["credits"], failed["credits"])
             self.assertEqual(rpc.call_count, 2)
 
@@ -422,13 +438,13 @@ class Credits(Isolated):
             return raw
         with mock.patch.object(usage, "find_cli", return_value=("codex", "")), \
                 mock.patch.object(usage, "codex_rate_limits", side_effect=response):
-            result = self.collect(1000, provider="codex", fetch=usage.codex_usage, consent=("codex",), opened=("codex",))
+            result = self.collect(1000, provider="codex", fetch=usage.codex_usage, eligible=("codex",))
         self.assertIsNone(result["credits"]["balance"])
         self.assertEqual(result["credits"]["status"], "unavailable")
 
     def test_cli_validates_credit_subsets(self):
         for argv in (("--credits-providers", "codex", "--providers", "claude"),
-                     ("--credits-open", "claude"), ("--credits-providers", "bogus")):
+                     ("--credits-providers", "bogus")):
             with mock.patch("sys.stderr", new=io.StringIO()), self.assertRaises(SystemExit):
                 usage.arguments(argv)
 
