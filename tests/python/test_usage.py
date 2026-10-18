@@ -706,7 +706,8 @@ answer({"id": 2, "result": {"clientVersion": info["version"]}})
                                 ({"message": "no"}, ("no", None)), ({"code": "7"}, ("app-server error", None)),
                                 (None, ("app-server error", None))):
             with self.subTest(error=error):
-                binary = self.server(f"#!/bin/sh\necho '{json.dumps({'id': 2, 'error': error})}'\n")
+                binary = self.server(f"#!/bin/sh\nread -r request\nread -r request\nread -r request\n"
+                                     f"echo '{json.dumps({'id': 2, 'error': error})}'\n")
                 with self.assertRaises(usage.AppServerError) as caught:
                     usage.codex_rate_limits(binary)
                 self.assertEqual((str(caught.exception), caught.exception.code), expected)
@@ -724,7 +725,8 @@ answer({"id": 2, "result": {"clientVersion": info["version"]}})
     # A process the server starts in a session of its own survives the kill
     # and keeps stdout open; the deadline still holds.
     def test_deadline_holds_when_a_survivor_keeps_stdout_open(self):
-        binary = self.server("#!/bin/sh\nsetsid sleep 8 &\nexit 0\n")
+        binary = self.server("#!/bin/sh\nread -r request\nread -r request\nread -r request\n"
+                             "setsid sleep 8 &\nexit 0\n")
         start = time.monotonic()
         with mock.patch.object(usage, "ANSWER_TIMEOUT", 1), \
                 self.assertRaisesRegex(RuntimeError, r"^no answer from codex app-server in 1 s$"):
