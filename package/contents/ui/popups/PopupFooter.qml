@@ -5,6 +5,7 @@ import QtQuick
 import QtQuick.Layouts
 import QtQuick.Templates as T
 import org.kde.kirigami as Kirigami
+import org.kde.ksvg as KSvg
 import org.kde.plasma.components as PlasmaComponents
 import org.kde.plasma.extras as PlasmaExtras
 import "../code/style.js" as Style
@@ -60,14 +61,31 @@ PlasmaExtras.PlasmoidHeading {
             Layout.alignment: Qt.AlignVCenter
             Layout.topMargin: leadItem?.Layout.topMargin ?? 0
             Layout.bottomMargin: leadItem?.Layout.bottomMargin ?? 0
-            // The icon's drawing on the readings' far edge, in every popup
-            // alike. Breeze's 22 px icons keep 3 px free around the drawing,
-            // so the icon sits that much past the edge.
-            Layout.rightMargin: Style.contentEdge(Kirigami.Units.largeSpacing) - footer.rightPadding - configure.rightPadding
-                                - Kirigami.Units.iconSizes.smallMedium * 3 / 22
-            icon.name: "configure"
+            objectName: "configureButton"
+            readonly property real glyphSize: Kirigami.Units.iconSizes.smallMedium * 18 / 22
+            // Include the centred glyph's room and its 24 px viewBox's inset.
+            readonly property real paintedInset: (Kirigami.Units.iconSizes.smallMedium - glyphSize) / 2 + glyphSize * 2.04 / 24
+            // Put its painted edge on the readings' edge.
+            Layout.rightMargin: Math.round(Style.contentEdge(Kirigami.Units.largeSpacing) - footer.rightPadding - configure.rightPadding
+                                           - configure.paintedInset)
+            contentItem: Item {
+                implicitWidth: Kirigami.Units.iconSizes.smallMedium
+                implicitHeight: Kirigami.Units.iconSizes.smallMedium
+                KSvg.SvgItem {
+                    anchors.centerIn: parent
+                    width: configure.glyphSize
+                    height: width
+                    imagePath: Qt.resolvedUrl("../../icons/settings.svg")
+                    Kirigami.Theme.inherit: false
+                    Kirigami.Theme.textColor: configure.Kirigami.Theme.textColor
+                    opacity: !configure.enabled ? 0.4 : configure.hovered || configure.visualFocus || configure.down ? 1 : Style.dim(Kirigami.Theme.textColor).a
+                    Accessible.ignored: true
+                }
+            }
             display: T.AbstractButton.IconOnly
             text: i18nc("@action:button", "Configure Ringside…")
+            Accessible.role: Accessible.Button
+            Accessible.name: text
             onClicked: footer.monitor.configureRequested()
 
             PlasmaComponents.ToolTip.text: text
