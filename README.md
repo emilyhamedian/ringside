@@ -56,25 +56,32 @@ Building from source? Clone the repository and run `scripts/install.sh`.
 
 ### Requirements
 
-You'll need KDE Plasma 6.0 or later, with ksystemstats and libksysguard, which
-come with Plasma's System Monitor. A few extras need a little more:
+Ringside supports KDE Plasma 6.8 and later, with ksystemstats and
+libksysguard, normally installed with Plasma's System Monitor. Older
+Plasma 6 releases may work, but aren't officially supported.
 
-- Memory pressure needs Plasma 6.2 or later.
-- Intel GPUs need Plasma 6.4 or later with the i915 driver, or 6.8 or later
-  with xe. i915 doesn't report temperature or VRAM; xe can report package
-  temperature and dedicated VRAM where the hardware and kernel support it.
-- The processes using an NVIDIA GPU need Plasma 6.4 or later and
-  `nvidia-smi`. Only your own processes are listed, and the kernel doesn't
-  count compute work's share of a GPU (ROCm's, say), so that shows as a dash.
-- Claude and Codex need Python 3.11 or later.
-- Keeping graph history across restarts needs Qt's LocalStorage module,
-  packaged as `qml6-module-qtquick-localstorage` on Debian and Ubuntu.
+### Graph history
+
+To keep the last hour and day across restarts, turn on *Keep the last hour
+and day across restarts* under *General*. This needs Qt's LocalStorage
+module, packaged as `qml6-module-qtquick-localstorage` on Debian and Ubuntu.
+
+### Limitations
+
+- Readings depend on what your hardware and drivers report. Missing
+  readings show as a dash or are left out.
+- Intel GPUs using i915 don't report temperature or VRAM. With xe, package
+  temperature and dedicated VRAM depend on hardware and kernel support.
+- Listing the processes using an NVIDIA GPU needs `nvidia-smi`. Only your
+  own GPU processes are listed. Where the kernel doesn't count compute
+  work's GPU usage (ROCm's, say), that shows as a dash.
 
 ## Claude and Codex
 
 ![The Claude popup: the weekly limit, the Fable limit in amber with a sentence saying when it is on pace to run out, and a graph of this week's usage with a dashed amber line at the time the Fable limit runs out](docs/usage.png)
 
-Turn them on in *Configure Ringside… → Panel Items*.
+These need Python 3.11 or later. Turn them on in *Configure Ringside… →
+Panel Items*.
 
 - **Claude** needs [Claude Code](https://docs.claude.com/en/docs/claude-code)
   signed in with a subscription. Ringside uses its login to ask Anthropic for
@@ -138,8 +145,8 @@ restart Plasma.
 
 ## Contributing
 
-Want to help? [CONTRIBUTING.md](CONTRIBUTING.md) covers the tests, the Plasma
-6.0 checks and the code style.
+Want to help? [CONTRIBUTING.md](CONTRIBUTING.md) covers the tests and the code
+style.
 
 ## License
 
