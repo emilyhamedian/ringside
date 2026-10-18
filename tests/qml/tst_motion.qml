@@ -53,6 +53,22 @@ TestRoot {
     }
 
     Component {
+        id: namedGaugeComponent
+        RingGauge {
+            id: namedGauge
+            width: 34
+            height: 34
+            value: 95
+            pulsing: true
+            RingName {
+                item: "claude"
+                room: namedGauge.centreWidth
+                animated: false
+            }
+        }
+    }
+
+    Component {
         id: headerComponent
         PopupHeader {
             width: 400
@@ -457,8 +473,18 @@ TestRoot {
         // Near its limit the face dims to half and back, and breathes on; a
         // ring made near its limit starts at once.
         function test_pulseBreathes() {
-            const gauge = createTemporaryObject(gaugeComponent, root, { value: 95, pulsing: true });
+            const gauge = createTemporaryObject(namedGaugeComponent, root);
             const seen = opacities(gauge);
+            const mark = root.all(gauge, i => i.art !== undefined && i.unit !== undefined)[0];
+            verify(mark);
+            const labelOpacities = [];
+            createTemporaryObject(samplerComponent, rings, { sample: () => {
+                let opacity = 1;
+                for (let item = mark; item !== gauge; item = item.parent) {
+                    opacity *= item.opacity;
+                }
+                labelOpacities.push(opacity);
+            } });
             const again = () => {
                 const low = seen.findIndex(o => o < 0.6);
                 const whole = low < 0 ? -1 : seen.findIndex((o, i) => i > low && o > 0.99);
@@ -466,6 +492,7 @@ TestRoot {
             };
             tryVerify(again, 5000, "down to half, back, and down again");
             verify(seen.every(o => o >= 0.5 && o <= 1), "between half and whole");
+            verify(labelOpacities.length > 0 && labelOpacities.every(o => o === 1), "the logo stays steady through the pulse");
         }
 
         // At Instant a ring near its limit doesn't breathe.
@@ -1442,9 +1469,9 @@ TestRoot {
 
         // What holds the mark in the ring's middle, which dims it.
         function middle(c) {
-            const face = outerArc(c).parent;
+            const gauge = root.all(c, i => i.objectName === "gauge")[0];
             let item = root.all(c, i => i.art !== undefined && i.unit !== undefined)[0];
-            while (item.parent !== face) {
+            while (item.parent !== gauge) {
                 item = item.parent;
             }
             return item;

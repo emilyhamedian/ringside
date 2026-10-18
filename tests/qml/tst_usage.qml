@@ -1614,9 +1614,9 @@ TestRoot {
 
         // The ring's middle, which holds the mark, and the stroke.
         function middle(cell) {
-            const face = outerArc(cell).parent;
+            const gauge = cell.children[0];
             let item = mark(cell);
-            while (item.parent !== face) {
+            while (item.parent !== gauge) {
                 item = item.parent;
             }
             return item;
