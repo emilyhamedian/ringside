@@ -2682,13 +2682,12 @@ TestRoot {
         }
 
         function configureButton(popup) {
-            return root.find(popup, i => i.icon !== undefined && i.icon.name === "configure");
+            return root.find(popup, i => i.objectName === "configureButton");
         }
 
-        // Breeze's 22 px configure icon keeps 3 px free at each side of its
-        // drawing; the footer puts the icon that far past the readings' edge
-        // so the drawing sits on it.
-        readonly property real iconSlack: Kirigami.Units.iconSizes.smallMedium * 3 / 22
+        // The packaged gear's stroke keeps 2.04 px free at each side of its
+        // 24 px viewBox; the footer aligns its painted edge with the readings.
+        readonly property real iconSlack: Kirigami.Units.iconSizes.smallMedium * 2.04 / 24
 
         function setStarter(item, starter) {
             monitor.usage.starters = Object.assign({}, monitor.usage.starters, { [item]: Object.assign({ at: null, next: null, reason: null }, starter) });
@@ -2719,8 +2718,8 @@ TestRoot {
             fuzzyCompare(row.mapToItem(popup, Qt.point(row.width, 0)).x,
                          button.mapToItem(popup, Qt.point(0, 0)).x - Kirigami.Units.largeSpacing - Kirigami.Units.smallSpacing, 0.5);
             compare(toggle.mapToItem(popup, Qt.point(0, 0)).x, Math.round(Kirigami.Units.largeSpacing * 2), "on the readings' edge");
-            compare(button.mapToItem(popup, Qt.point(button.width - button.rightPadding - iconSlack, 0)).x,
-                    popup.width - Math.round(Kirigami.Units.largeSpacing * 2), "the icon's drawing on the readings' far edge");
+            fuzzyCompare(button.mapToItem(popup, Qt.point(button.width - button.rightPadding - iconSlack, 0)).x,
+                         popup.width - Math.round(Kirigami.Units.largeSpacing * 2), 0.5, "the icon's drawing on the readings' far edge");
             const label = starterLabel(popup);
             verify(status.mapToItem(popup, Qt.point(0, 0)).y >= label.mapToItem(popup, Qt.point(0, label.height)).y, "under the label");
             // The last line's baseline two large spacings above the popup's

@@ -6,6 +6,10 @@ follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- Popup settings buttons use an outline gear.
+
 ### Fixed
 
 - Stale awake reports no longer restart GPU monitoring after an idle pause.
