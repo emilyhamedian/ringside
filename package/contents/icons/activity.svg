@@ -1,0 +1,11 @@
+<!--
+SPDX-FileCopyrightText: 2022 Lucide Contributors
+SPDX-FileCopyrightText: 2013-2022 Cole Bemis
+SPDX-License-Identifier: ISC AND MIT
+Source: https://github.com/lucide-icons/lucide/blob/7163aeaa6b82999fcc2a20258fa6a22787621af5/icons/activity.svg
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
+     fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <style id="current-color-scheme">.ColorScheme-Text { color: #232629; }</style>
+    <path class="ColorScheme-Text" stroke="currentColor" d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+</svg>

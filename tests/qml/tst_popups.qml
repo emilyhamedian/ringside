@@ -287,6 +287,11 @@ TestRoot {
         }
     }
 
+    Component {
+        id: spyComponent
+        SignalSpy {}
+    }
+
     TestCase {
         name: "Popups"
         when: windowShown
@@ -1847,8 +1852,8 @@ TestRoot {
         // The system popups' footers keep the System Monitor link and the
         // configure button on one line, with no switch: the session
         // starter's belongs to the Claude and Codex popups only. The link's
-        // text and the icon's drawing sit on the readings' edges, plain and
-        // mirrored.
+        // activity icon and the configure icon's drawing sit on the readings'
+        // edges, with the label following the activity icon in either direction.
         function test_systemFooters_data() {
             const rows = [];
             for (const [tag, popup] of [["cpu", "CpuPopup"], ["gpu", "GpuPopup"], ["memory", "MemoryPopup"], ["network", "NetworkPopup"],
@@ -1864,23 +1869,84 @@ TestRoot {
             const footer = all(popup, i => i.systemMonitorShown !== undefined && i.position !== undefined)[0];
             verify(footer.systemMonitorShown);
             compare(all(footer, i => i.visualPosition !== undefined).length, 0, "no switch");
-            const link = all(footer, i => i.visible && i.text === "Open System Monitor")[0];
+            const link = all(footer, i => i.visible && i.text === "System Monitor")[0];
             const button = all(footer, i => i.visible && i.icon !== undefined && i.icon.name === "configure")[0];
             verify(link && button);
+            const icon = all(link, i => i.imagePath !== undefined && String(i.imagePath).endsWith("/icons/activity.svg"))[0];
+            verify(icon && icon.visible);
+            verify(icon.Accessible.ignored && !icon.activeFocusOnTab);
+            compare(link.Accessible.name, "Open System Monitor");
+            compare(link.Accessible.role, Accessible.Button);
+            verify(link.activeFocusOnTab);
+            compare(all(link, i => !i.Accessible.ignored && i.Accessible.role === Accessible.Button).length, 1);
+            compare(String(link.normalColor), String(Style.dim(link.Kirigami.Theme.textColor)));
+            compare(String(icon.Kirigami.Theme.textColor), String(Qt.alpha(link.color, 1)));
+            compare(icon.opacity, link.color.a);
             compare(footer.height, footer.topPadding + footer.bottomPadding + Math.max(link.implicitHeight, button.implicitHeight));
             const middle = i => i.mapToItem(footer, Qt.point(0, i.height / 2)).y;
             fuzzyCompare(middle(button), middle(link), 0.5);
-            // On the readings' edges: the link's text, and the icon's drawing
-            // inside the button's padding and the 3 px Breeze's 22 px icon
-            // keeps free around it.
+            fuzzyCompare(middle(icon), middle(link), 0.5);
+            compare(icon.width, Kirigami.Units.iconSizes.small);
+            const gap = Kirigami.Units.smallSpacing * 2;
+            // The activity icon's box and the configure icon's drawing sit
+            // on the readings' edges. Breeze's 22 px configure icon keeps
+            // 3 px free around its drawing.
             const slack = Kirigami.Units.iconSizes.smallMedium * 3 / 22;
             const x = (i, at) => i.mapToItem(footer, Qt.point(at, 0)).x;
             if (data.mirrored) {
-                compare(x(link, link.width), footer.width - contentEdge);
+                compare(x(icon, icon.width), footer.width - contentEdge);
+                compare(link.leftPadding, 0);
+                compare(x(link, link.width - link.rightPadding), x(icon, 0) - gap);
                 compare(x(button, button.leftPadding + slack), contentEdge);
             } else {
-                compare(x(link, 0), contentEdge);
+                compare(x(icon, 0), contentEdge);
+                compare(link.rightPadding, 0);
+                compare(x(link, link.leftPadding), x(icon, icon.width) + gap);
                 compare(x(button, button.width - button.rightPadding - slack), footer.width - contentEdge);
+            }
+            const spy = createTemporaryObject(spyComponent, root, { target: normal, signalName: "systemMonitorRequested" });
+            verify(spy.valid);
+            mouseClick(icon);
+            compare(spy.count, 1, "the icon shares the link's click target");
+            mouseClick(link, link.leftPadding + link.contentWidth / 2, link.height / 2);
+            compare(spy.count, 2, "the label opens System Monitor once");
+            link.forceActiveFocus();
+            verify(link.activeFocus);
+            keyClick(Qt.Key_Return);
+            compare(spy.count, 3);
+            keyClick(Qt.Key_Space);
+            compare(spy.count, 4);
+            // Grab the footer: a separate item grab can include the popup's
+            // background in place of the icon on the software renderer.
+            for (const color of [link.normalColor, "#66d01030"]) {
+                link.normalColor = color;
+                link.forceActiveFocus();
+                mouseMove(root, root.width - 1, root.height - 1);
+                icon.visible = false;
+                waitForRendering(footer);
+                const bare = grabImage(footer);
+                icon.visible = true;
+                waitForRendering(footer);
+                const image = grabImage(footer);
+                const origin = icon.mapToItem(footer, Qt.point(0, 0));
+                let tinted = 0;
+                for (let y = Math.ceil(origin.y); y < origin.y + icon.height - 1; ++y) {
+                    for (let x = Math.ceil(origin.x); x < origin.x + icon.width - 1; ++x) {
+                        const pixel = image.pixel(x, y);
+                        const background = bare.pixel(x, y);
+                        const channels = ["r", "g", "b"];
+                        const channel = channels.reduce((best, c) => Math.abs(link.color[c] - background[c])
+                                                                     > Math.abs(link.color[best] - background[best]) ? c : best);
+                        const coverage = (pixel[channel] - background[channel]) / (link.color[channel] - background[channel]);
+                        if (coverage > 0.05) {
+                            ++tinted;
+                            verify(coverage <= link.color.a + 0.03, "the outline keeps the link's muted opacity");
+                            channels.forEach(c => fuzzyCompare(pixel[c], background[c] + (link.color[c] - background[c]) * coverage, 0.03,
+                                                              "the outline uses the link's colour"));
+                        }
+                    }
+                }
+                verify(tinted > 5, "the activity outline is painted in the link's colour");
             }
         }
 

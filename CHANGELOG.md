@@ -6,6 +6,10 @@ follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- System Monitor link has an activity icon in the popup footer.
+
 ### Fixed
 
 - Stale awake reports no longer restart GPU monitoring after an idle pause.

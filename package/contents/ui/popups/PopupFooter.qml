@@ -5,6 +5,7 @@ import QtQuick
 import QtQuick.Layouts
 import QtQuick.Templates as T
 import org.kde.kirigami as Kirigami
+import org.kde.ksvg as KSvg
 import org.kde.plasma.components as PlasmaComponents
 import org.kde.plasma.extras as PlasmaExtras
 import "../code/style.js" as Style
@@ -26,12 +27,32 @@ PlasmaExtras.PlasmoidHeading {
         spacing: Kirigami.Units.smallSpacing
 
         Kirigami.LinkButton {
+            id: systemMonitor
             visible: footer.systemMonitorShown
             // On the readings' edge, as the lead is.
             Layout.leftMargin: footer.readingsEdge
-            text: i18nc("@action:button", "Open System Monitor")
+            text: i18nc("@action:button", "System Monitor")
+            Accessible.name: i18nc("@action:button", "Open System Monitor")
+            normalColor: Style.dim(Kirigami.Theme.textColor)
             font.underline: false
+            leftPadding: LayoutMirroring.enabled ? 0 : activity.width + Kirigami.Units.smallSpacing * 2
+            rightPadding: LayoutMirroring.enabled ? activity.width + Kirigami.Units.smallSpacing * 2 : 0
+            topPadding: Math.max(0, (activity.height - contentHeight) / 2)
+            bottomPadding: topPadding
             onClicked: footer.monitor.systemMonitorRequested()
+
+            KSvg.SvgItem {
+                id: activity
+                imagePath: Qt.resolvedUrl("../../icons/activity.svg")
+                Kirigami.Theme.inherit: false
+                Kirigami.Theme.textColor: Qt.rgba(systemMonitor.color.r, systemMonitor.color.g, systemMonitor.color.b, 1)
+                opacity: systemMonitor.color.a
+                width: Kirigami.Units.iconSizes.small
+                height: width
+                x: systemMonitor.LayoutMirroring.enabled ? systemMonitor.width - width : 0
+                anchors.verticalCenter: parent.verticalCenter
+                Accessible.ignored: true
+            }
         }
 
         // Takes the room the System Monitor link leaves.

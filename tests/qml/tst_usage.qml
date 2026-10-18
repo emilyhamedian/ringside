@@ -2077,6 +2077,24 @@ TestRoot {
             verify(!notice.visible && checkStatus(popup).visible);
         }
 
+        function test_footerHasNoSystemMonitor_data() {
+            return [{ tag: "claude", item: "claude", mirrored: false }, { tag: "codex", item: "codex", mirrored: false },
+                    { tag: "claude mirrored", item: "claude", mirrored: true }, { tag: "codex mirrored", item: "codex", mirrored: true }];
+        }
+
+        function test_footerHasNoSystemMonitor(data) {
+            const popup = load(data.item, data.mirrored);
+            const footer = root.all(popup, i => i.systemMonitorShown !== undefined && i.position !== undefined)[0];
+            verify(!footer.systemMonitorShown);
+            const link = root.all(footer, i => i.text === "System Monitor")[0];
+            verify(link && !link.visible);
+            compare(root.all(footer, i => i.visible && i.imagePath !== undefined && String(i.imagePath).endsWith("/icons/activity.svg")).length, 0);
+            const toggle = starterSwitch(popup);
+            const outside = toggle.mapToItem(popup, Qt.point(data.mirrored ? toggle.width : 0, 0)).x;
+            fuzzyCompare(data.mirrored ? popup.width - outside : outside, Math.round(Kirigami.Units.largeSpacing * 2), 1,
+                         "no room kept for the hidden link or icon");
+        }
+
         function test_innerLimit() {
             const popup = load("claude");
             const shown = root.texts(popup);
@@ -2086,7 +2104,7 @@ TestRoot {
             }
             verify(shown.some(t => /^THIS WEEK · resets .+ EDT$/.test(t)), JSON.stringify(shown));
             verify(!shown.some(t => t.startsWith("resets in")), "Fable resets with the week");
-            verify(!shown.includes("Open System Monitor"), "the footer has the gear alone");
+            verify(!shown.includes("System Monitor"), "the footer has the gear alone");
             compare(countdown(popup).map(r => [r.value, r.unit]), [[root.localized("2"), "d"], [root.localized("21"), "h"]]);
             compare(graph(popup).pollAt, monitor.usage.createdAt);
         }
