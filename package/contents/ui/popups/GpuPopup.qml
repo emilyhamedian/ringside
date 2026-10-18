@@ -214,7 +214,10 @@ PopupPage {
                 Layout.bottomMargin: Kirigami.Units.largeSpacing
                 text: i18nc("@info a powered-down GPU: its name, then off", "%1 · off", sleeper.modelData.name)
                 color: Style.dim(Kirigami.Theme.textColor)
-                elide: Text.ElideRight
+                elide: Text.ElideNone
+                wrapMode: Text.Wrap
+                leftPadding: popup.LayoutMirroring.enabled ? 1 : 0
+                rightPadding: popup.LayoutMirroring.enabled ? 0 : 1
                 textFormat: Text.PlainText
                 horizontalAlignment: Text.AlignLeft
             }
@@ -276,6 +279,7 @@ PopupPage {
             ringValue: section.slot.usage
             interval: section.monitor.sampleInterval
             title: section.slot.name
+            titleWrapped: true
             subtitle: {
                 const slot = section.slot;
                 if (slot.kind === "integrated") {
