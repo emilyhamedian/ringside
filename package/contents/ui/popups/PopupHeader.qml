@@ -52,7 +52,16 @@ RowLayout {
     // titles and digits of every popup sit at one height, nothing moves when
     // a reading or caption comes and goes, and a detail line hangs below the
     // subtitle instead of lifting the title.
-    readonly property real nameHeight: titleText.implicitHeight + subtitleText.implicitHeight
+    // A wrapped title's height follows its allotted width. Settle it after
+    // horizontal layout so resizing a sibling does not re-enter its ancestors.
+    property real titleHeight: 0
+    Binding {
+        target: header
+        property: "titleHeight"
+        value: titleText.implicitHeight
+        delayed: header.titleWrapped
+    }
+    readonly property real nameHeight: titleHeight + subtitleText.implicitHeight
     readonly property real valueHeight: (partsShown ? partsRow.implicitHeight : headline.implicitHeight)
                                         + valueColumn.spacing + captionText.implicitHeight
     readonly property real bandHeight: Math.max(ringSize, nameHeight, valueHeight)
@@ -94,51 +103,58 @@ RowLayout {
         textScale: text.length > 3 ? 0.25 : 0.29
     }
 
-    ColumnLayout {
+    Item {
+        implicitWidth: Math.max(titleText.implicitWidth, subtitleText.implicitWidth, detailText.implicitWidth)
+        implicitHeight: header.titleHeight + (subtitleText.visible ? subtitleText.implicitHeight : 0)
+            + (detailText.visible ? detailText.implicitHeight : 0)
         Layout.fillWidth: true
         // A wrapped name takes the room left by the ring and reading,
         // rather than making the popup as wide as the unbroken title.
         Layout.preferredWidth: header.titleWrapped ? 0 : -1
         Layout.alignment: Qt.AlignTop
         Layout.topMargin: header.nameTop
-        spacing: 0
 
-        Kirigami.Heading {
-            id: titleText
-            Layout.fillWidth: true
-            text: header.title
-            level: 3
-            font.weight: Font.DemiBold
-            elide: header.titleWrapped ? Text.ElideNone : Text.ElideRight
-            wrapMode: header.titleWrapped ? Text.Wrap : Text.NoWrap
-            leftPadding: header.titleWrapped && header.LayoutMirroring.enabled ? 1 : 0
-            rightPadding: header.titleWrapped && !header.LayoutMirroring.enabled ? 1 : 0
-            textFormat: Text.PlainText
-            horizontalAlignment: Text.AlignLeft
-        }
+        Column {
+            width: parent.width
+            spacing: 0
 
-        Text {
-            id: subtitleText
-            Layout.fillWidth: true
-            visible: text !== ""
-            text: header.subtitle
-            color: Style.dim(Kirigami.Theme.textColor)
-            font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.88
-            elide: Text.ElideRight
-            textFormat: Text.PlainText
-            horizontalAlignment: Text.AlignLeft
-        }
+            Kirigami.Heading {
+                id: titleText
+                width: parent.width
+                text: header.title
+                level: 3
+                font.weight: Font.DemiBold
+                elide: header.titleWrapped ? Text.ElideNone : Text.ElideRight
+                wrapMode: header.titleWrapped ? Text.Wrap : Text.NoWrap
+                leftPadding: header.titleWrapped && header.LayoutMirroring.enabled ? 1 : 0
+                rightPadding: header.titleWrapped && !header.LayoutMirroring.enabled ? 1 : 0
+                textFormat: Text.PlainText
+                horizontalAlignment: Text.AlignLeft
+            }
 
-        Text {
-            id: detailText
-            Layout.fillWidth: true
-            visible: text !== ""
-            text: header.detail
-            color: subtitleText.color
-            font: subtitleText.font
-            elide: Text.ElideRight
-            textFormat: Text.PlainText
-            horizontalAlignment: Text.AlignLeft
+            Text {
+                id: subtitleText
+                width: parent.width
+                visible: text !== ""
+                text: header.subtitle
+                color: Style.dim(Kirigami.Theme.textColor)
+                font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.88
+                elide: Text.ElideRight
+                textFormat: Text.PlainText
+                horizontalAlignment: Text.AlignLeft
+            }
+
+            Text {
+                id: detailText
+                width: parent.width
+                visible: text !== ""
+                text: header.detail
+                color: subtitleText.color
+                font: subtitleText.font
+                elide: Text.ElideRight
+                textFormat: Text.PlainText
+                horizontalAlignment: Text.AlignLeft
+            }
         }
     }
 

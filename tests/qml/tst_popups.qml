@@ -2225,6 +2225,14 @@ TestRoot {
             waitForRendering(popup);
             const lists = all(popup, i => i.heightFor !== undefined);
             compare(lists.length, 2);
+            // Wrapped names settle after width, then the rows fit the new height.
+            tryVerify(() => {
+                const count = popup.processCount;
+                const shown = lists.filter(l => l.visible);
+                const rest = popup.implicitHeight - shown.reduce((sum, l) => sum + l.heightFor(l.count), 0);
+                return (count === 0 || popup.implicitHeight <= popup.room)
+                    && (count >= 2 || rest + lists.reduce((sum, l) => sum + l.heightFor(count + 1), 0) > popup.room);
+            }, 2000, "the rows settle at the most that fit");
             const shown = lists.filter(l => l.visible);
             // The rows' own layout agrees with the height the list reckons.
             shown.forEach(l => fuzzyCompare(l.children.reduce((sum, c) => sum + (c.visible ? c.height : 0), 0)
