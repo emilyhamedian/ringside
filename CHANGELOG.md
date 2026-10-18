@@ -6,6 +6,11 @@ follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Intel GPUs using xe show package temperature and dedicated VRAM when
+  available.
+
 ### Changed
 
 - Ringside supports Plasma 6.8 and later. Older Plasma 6 releases may work,

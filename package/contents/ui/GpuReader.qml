@@ -85,9 +85,13 @@ QtObject {
     // amdgpu's hwmon label for the sensor ksystemstats reads; Words.sensorName()
     // puts it in plain words.
     readonly property string temperatureLabel: vendor === "1002" ? "edge" : ""
-    // ksystemstats' Intel backend publishes no temperature and no VRAM.
-    readonly property bool reportsTemperature: present && vendor !== "8086"
-    readonly property bool reportsVram: present && vendor !== "8086"
+    // Intel's xe backend can report these; i915's cannot. Keep capabilities
+    // once observed, including while the GPU sleeps or a sample is missing.
+    readonly property bool reportsTemperature: present && (vendor !== "8086"
+        || (leading ? Format.temperatureValid(liveTemperature) || Format.temperatureValid(held.temperature)
+                    : leader ? leader.reportsTemperature : false))
+    readonly property bool reportsVram: present && (vendor !== "8086"
+        || (Number.isFinite(knownVramTotal) && knownVramTotal > 0))
 
     // While resting the GPU is awake and idle but unread, so its last
     // readings stand in and usage is known to be near zero. A reader that

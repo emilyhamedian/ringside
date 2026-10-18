@@ -70,7 +70,8 @@ module, packaged as `qml6-module-qtquick-localstorage` on Debian and Ubuntu.
 
 - Readings depend on what your hardware and drivers report. Missing
   readings show as a dash or are left out.
-- Ringside currently leaves out temperature and VRAM for Intel GPUs.
+- Intel GPUs using i915 don't report temperature or VRAM. With xe, package
+  temperature and dedicated VRAM depend on hardware and kernel support.
 - Listing the processes using an NVIDIA GPU needs `nvidia-smi`. Only your
   own GPU processes are listed. Where the kernel doesn't count compute
   work's GPU usage (ROCm's, say), that shows as a dash.

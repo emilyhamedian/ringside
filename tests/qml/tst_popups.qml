@@ -69,7 +69,7 @@ TestRoot {
         gpuInner.knownVramTotal: 8 * innerAsleep.gib
     }
 
-    // Intel publishes no GPU temperature or VRAM.
+    // The i915 backend publishes no GPU temperature or VRAM.
     FakeMonitor {
         id: intel
         cpuModel: "Intel Core i7-12700H"
@@ -85,6 +85,21 @@ TestRoot {
         gpuInner.temperature: NaN
         gpuInner.vramUsed: NaN
         gpuInner.knownVramTotal: NaN
+    }
+
+    // A discrete Intel xe GPU with temperature and dedicated video memory.
+    FakeMonitor {
+        id: xe
+        gpuOuter.name: "Intel Arc B580"
+        gpuOuter.vendor: "8086"
+        gpuOuter.temperatureLabel: ""
+        gpuOuter.usage: 38
+        gpuOuter.temperature: 62
+        gpuOuter.vramUsed: 2.4 * xe.gib
+        gpuOuter.knownVramTotal: 12 * xe.gib
+        gpuOuter.clock: 1800
+        gpuOuter.power: 76
+        gpuInner.present: false
     }
 
     // A CPU that names no temperature sensor, and no memory reading yet.
@@ -1613,6 +1628,8 @@ TestRoot {
                       captions: [""], off: [] },
                     { tag: "intel", monitor: intel, titles: ["Intel Iris Xe Graphics", "NVIDIA GeForce RTX 3060 Laptop GPU"],
                       subtitles: [kinds[1], kinds[0]], rings: [3, 12], values: [NaN, 48], captions: ["", ""], off: [] },
+                    { tag: "xe", monitor: xe, titles: ["Intel Arc B580"], subtitles: ["dGPU · 12 GiB"], rings: [38],
+                      values: [62], captions: [""], off: [] },
                     { tag: "onlyAsleep", monitor: onlyAsleep, titles: [], subtitles: [], rings: [], values: [], captions: [], off: off }];
         }
 
@@ -2106,7 +2123,7 @@ TestRoot {
 
         // A temperature graph wherever the header has a temperature that has
         // given a reading in the graph's span, none for a sensor that never
-        // answers, an Intel GPU, which publishes none, a sleeping GPU, which
+        // answers, an i915 GPU, which publishes none, a sleeping GPU, which
         // keeps to its one line, or an integrated GPU beside a discrete one.
         // The caption gives the span, and its far end the hot threshold,
         // under a faint rule at the top as 100% is, as these run cooler.
@@ -2121,6 +2138,7 @@ TestRoot {
                 { tag: "gpuIntegratedOnly", popup: "GpuPopup", monitor: integrated, count: 1 },
                 { tag: "gpuOnlyAsleep", popup: "GpuPopup", monitor: onlyAsleep, count: 0 },
                 { tag: "gpuIntel", popup: "GpuPopup", monitor: intel, count: 1 },
+                { tag: "gpuXe", popup: "GpuPopup", monitor: xe, count: 1 },
                 { tag: "disk", popup: "DiskPopup", monitor: normal, count: 1 },
                 { tag: "diskWithoutTemperature", popup: "DiskPopup", monitor: diskUnheated, count: 0 }
             ];
@@ -2566,6 +2584,28 @@ TestRoot {
             const intelList = gpuLists(load("GpuPopup", intelMonitor))[0];
             verify(!intelList.memoryShown);
             compare(all(intelList, c => c.label === "VRAM" && c.visible).length, 0);
+        }
+
+        function test_intelVramFollowsCapability_data() {
+            return [{ tag: "i915", capable: false, total: NaN },
+                    { tag: "xeShared", capable: false, total: 0 },
+                    { tag: "xeDedicated", capable: true, total: 12 * normal.gib }];
+        }
+
+        function test_intelVramFollowsCapability(data) {
+            const monitor = monitorWith({
+                "gpuInner.present": false, "gpuOuter.vendor": "8086", "gpuOuter.temperatureLabel": "",
+                "gpuOuter.reportsVram": data.capable, "gpuOuter.knownVramTotal": data.total
+            });
+            const popup = load("GpuPopup", monitor);
+            const tiles = all(popup, i => i.visible && i.caption === "VRAM" && i.foot !== undefined);
+            compare(tiles.length, data.capable ? 1 : 0);
+            compare(gpuLists(popup)[0].memoryShown, data.capable);
+            if (data.capable) {
+                const reading = readings(tiles[0])[0];
+                compare(reading.value, Format.bytesOf(monitor.gpuOuter.vramUsed, data.total).value);
+                compare(reading.unit, "/ 12 GiB");
+            }
         }
 
         // Each temperature graph comes straight under the usage graph it
