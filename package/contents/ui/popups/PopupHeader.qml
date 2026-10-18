@@ -128,6 +128,7 @@ RowLayout {
                 anchors.left: titleText.left
                 anchors.leftMargin: Math.min(titleText.implicitWidth, titleText.width) + Kirigami.Units.smallSpacing
                 anchors.verticalCenter: parent.verticalCenter
+                anchors.verticalCenterOffset: (titleText.height / Math.max(1, titleText.lineCount) - titleText.height) / 2
                 width: 24
                 height: 24
 

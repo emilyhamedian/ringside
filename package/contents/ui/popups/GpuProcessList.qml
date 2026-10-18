@@ -10,8 +10,8 @@ import "../code/style.js" as Style
 import ".."
 
 // A GPU's busiest processes, each with its share of the GPU and its video
-// memory. Only the user's own processes can be read, so the caption says
-// whose they are: a system service using the GPU isn't among them.
+// memory. Only the user's own processes can be read; a system service
+// using the GPU isn't among them.
 ColumnLayout {
     id: list
 
@@ -54,7 +54,7 @@ ColumnLayout {
         spacing: Kirigami.Units.largeSpacing
 
         Caption {
-            label: i18nc("@title:group the user's own processes using a GPU", "Your top processes")
+            label: i18nc("@title:group", "Top processes")
             Layout.fillWidth: true
         }
 

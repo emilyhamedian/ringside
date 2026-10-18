@@ -261,7 +261,30 @@ TestRoot {
             verify(root.all(list, c => c.running !== undefined).length === 0, "no row overlay");
         }
 
-        // The theme draws its busy indicator in the accent colour, which the
+        function test_busyBesideTheFirstTitleLine_data() {
+            return [{ tag: "plain", mirrored: false }, { tag: "mirrored", mirrored: true }];
+        }
+
+        function test_busyBesideTheFirstTitleLine(data) {
+            const header = createTemporaryObject(popupHeader, root, { processesLoading: true });
+            header.LayoutMirroring.enabled = data.mirrored;
+            header.LayoutMirroring.childrenInherit = true;
+            const title = root.find(header, c => c.text === "CPU");
+            title.wrapMode = Text.Wrap;
+            title.elide = Text.ElideNone;
+            header.title = "A long graphics processor name with several words";
+            waitForRendering(header);
+            verify(title.lineCount > 1);
+            const indicator = indicatorOf(header);
+            const top = i => i.mapToItem(header, Qt.point(0, 0)).y;
+            fuzzyCompare(top(indicator) + indicator.height / 2, top(title) + title.height / title.lineCount / 2, 0.5);
+            const before = [header.implicitHeight, title.width, title.height, top(title)];
+            header.processesLoading = false;
+            waitForRendering(header);
+            compare([header.implicitHeight, title.width, title.height, top(title)], before);
+        }
+
+        // The theme draws its busy indicator in its accent colour, which the
         // widget can't change, so the header draws its own in the popup's dim
         // text colour: the stroke is made from that colour, whatever the
         // accent.
