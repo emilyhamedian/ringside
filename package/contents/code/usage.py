@@ -610,10 +610,10 @@ def parse_codex(result):
     for candidate in (limit.get("primary"), limit.get("secondary")):
         if not isinstance(candidate, dict):
             continue
-        minutes = candidate.get("windowDurationMins")
-        if (type(minutes) is int and 0 < minutes * 60 < reading["weekly"]["windowSeconds"]
-                and finite_share(candidate.get("usedPercent"))):
-            with contextlib.suppress(ValueError, TypeError, OverflowError):
+        with contextlib.suppress(ValueError, TypeError, OverflowError):
+            minutes = candidate.get("windowDurationMins")
+            if (type(minutes) is int and 0 < minutes * 60 < reading["weekly"]["windowSeconds"]
+                    and finite_share(candidate.get("usedPercent"))):
                 reading["session"] = codex_window(candidate)
     return reading
 

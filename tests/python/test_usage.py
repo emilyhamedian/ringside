@@ -185,6 +185,7 @@ class CodexParsing(Isolated):
     def test_invalid_extra_window_does_not_hide_weekly_reading(self):
         for short in (None, [], "invalid", {"windowDurationMins": 300},
                       {"usedPercent": float("nan"), "windowDurationMins": 300},
+                      {"usedPercent": 10**400, "windowDurationMins": 300},
                       {"usedPercent": 100, "windowDurationMins": "300"},
                       {"usedPercent": 100, "windowDurationMins": -1},
                       {"usedPercent": 100, "windowDurationMins": 300, "resetsAt": float("inf")}):
