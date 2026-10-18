@@ -21,7 +21,8 @@ usage limits too.
   it resets, and whether you're on pace to run out. These stay off until you
   turn them on.
 - Click any item for a popup with graphs of the last minute, hour or day, top
-  processes and more. Point at a graph to see what it read and when.
+  processes and more. Point at a graph to compare what the graphs in that
+  popup read at the same moment.
 - It matches your Plasma theme and shows sizes in the units you chose in
   *Region & Language*. Rings turn amber, then red, when something runs hot
   or fills up.

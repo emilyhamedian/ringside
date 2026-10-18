@@ -8,6 +8,7 @@ follows [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Hovering a graph marks the same moment on the other graphs in its popup.
 - Intel GPUs using xe show package temperature and dedicated VRAM when
   available.
 
@@ -30,6 +31,10 @@ follows [Semantic Versioning](https://semver.org/).
   load before showing a failure.
 - GPU monitoring no longer briefly subscribes to a sleeping GPU after a
   power-state report.
+
+### Removed
+
+- Keyboard inspection of graph readings.
 
 ## [0.3.2] - 2026-10-13
 
