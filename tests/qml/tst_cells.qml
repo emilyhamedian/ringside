@@ -727,8 +727,8 @@ TestRoot {
 
         // A degree unit hangs from the top of the digits at any size, inside
         // the number's line, where another unit sits on their baseline. A
-        // "7" and a "1" have flat tops, which hinting leaves where they are;
-        // a round digit's overshoot can round to a pixel more at this size.
+        // localized "1" is the stable reference; other digits can overshoot
+        // it in some fonts.
         function test_degreeUnitHangsFromTheDigits_data() {
             return [{ tag: "celsius", unit: "C" }, { tag: "fahrenheit", unit: "F" }];
         }
@@ -736,7 +736,7 @@ TestRoot {
         function test_degreeUnitHangsFromTheDigits(data) {
             const small = Kirigami.Theme.smallFont.pointSize;
             const make = properties => createTemporaryObject(readingComponent, root,
-                Object.assign({ value: Format.temperature(71, false), pointSize: 3 * small }, properties));
+                Object.assign({ value: Format.temperature(11, false), pointSize: 3 * small }, properties));
             const r = make({ degreeUnit: data.unit });
             const p = parts(r);
             // A machine without a font for the locale's digits draws them as

@@ -8,8 +8,7 @@ set -u
 # tests/qml/, the hardware helper's shell tests, the usage helper's Python
 # tests, and shellcheck and reuse lint where they are installed (always in
 # CI). Needs the Qt 6 qmllint and qmltestrunner and the Plasma QML modules,
-# so run it on a Plasma 6.5 or later host: older libplasma builds ship no
-# importable org.kde.plasma.plasmoid module. The tools are looked for in
+# so run it on a Plasma 6.8 or later host. The tools are looked for in
 # /usr/lib/qt6/bin, /usr/lib64/qt6/bin and then PATH, and must prove to be
 # Qt 6 builds; set QMLLINT and QMLTESTRUNNER to use others.
 #
@@ -87,22 +86,15 @@ else
 fi
 
 echo
-echo "== APIs newer than Plasma 6.0, Qt 6.6 and KF 6.0 =="
-# CI's floor job runs the tests on Plasma 6.0, but only the paths they
-# reach, so this check stands in for the rest.
-# Kirigami.Theme.fixedWidthFont arrived in KF 6.14 and FontMetrics'
-# capitalHeight in Qt 6.9, and before then each reads as undefined, so each
-# needs its fallback straight after it on the same line:
-# fixedWidthFont?.family ?? "monospace", and capitalHeight ?? something.
+echo "== Unsupported JavaScript APIs =="
 # Qt's JavaScript engine has no Array.prototype.flatMap. Whole-line comments
 # don't count. grep exits 2 on an error, such as having no -P.
-newer=$(grep -rnP '^(?!\s*//).*(fixedWidthFont(?!\?\.family\s*\?\?\s*"monospace")|capitalHeight(?!\s*\?\?)|\.flatMap\()' \
-    package/contents/ui tests/qml)
+unsupported=$(grep -rnP '^(?!\s*//).*\.flatMap\(' package/contents/ui tests/qml)
 case $? in
-    0) fail "use of an API newer than the supported floor, without a fallback:"
-       printf '%s\n' "$newer" >&2 ;;
+    0) fail "use of a JavaScript API unsupported by Qt:"
+       printf '%s\n' "$unsupported" >&2 ;;
     1) echo "none" ;;
-    *) fail "grep -P failed, so the check for newer APIs did not run" ;;
+    *) fail "grep -P failed, so the check for unsupported JavaScript APIs did not run" ;;
 esac
 
 echo

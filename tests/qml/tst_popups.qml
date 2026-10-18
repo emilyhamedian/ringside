@@ -1225,11 +1225,13 @@ TestRoot {
         function test_tilePadding_data() {
             return [{ tag: "cpu", popup: "CpuPopup" }, { tag: "gpu", popup: "GpuPopup" },
                     { tag: "memory", popup: "MemoryPopup" }, { tag: "network", popup: "NetworkPopup" },
+                    { tag: "networkWithoutTotals", popup: "NetworkPopup", withoutTotals: true },
                     { tag: "disk", popup: "DiskPopup" }];
         }
 
         function test_tilePadding(data) {
-            const tiles = all(load(data.popup, normal), i => i.visible && i.graphTop !== undefined);
+            const monitor = data.withoutTotals ? monitorWith({ networkTotalDown: NaN, networkTotalUp: NaN }) : normal;
+            const tiles = all(load(data.popup, monitor), i => i.visible && i.graphTop !== undefined);
             verify(tiles.length > 0);
             tiles.forEach(tile => {
                 const caption = all(tile, i => i.label !== undefined && i.detail !== undefined)[0];
@@ -2782,6 +2784,9 @@ TestRoot {
             const keys = all(popup, i => i.visible && i.dashed !== undefined && i.area !== undefined);
             compare(keys.map(k => [k.text, k.dashed, k.area]), [["Down", false, true], ["Up", true, false]]);
             keys.forEach(k => verify(all(k, i => i.preferredRendererType !== undefined)[0].width > 0, k.text + " has a sample"));
+            const totals = all(popup, i => i.visible && typeof i.text === "string" && i.text.startsWith("Since boot"))[0];
+            verify(totals);
+            keys.forEach(k => fuzzyCompare(baselineY(k.label, popup), baselineY(totals, popup), 0.5));
         }
 
         // A bucket alone between gaps, a GPU awake for ten minutes say, is a

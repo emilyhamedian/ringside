@@ -31,6 +31,7 @@ PopupPage {
         readonly property alias label: label
 
         Layout.minimumWidth: implicitWidth
+        Layout.alignment: Qt.AlignTop
         spacing: Kirigami.Units.smallSpacing
 
         Shape {
@@ -214,7 +215,7 @@ PopupPage {
         spans: popup.monitor
         graphTop: words.peakText(throughput.tops, popup.monitor.networkBits)
         graphReading: throughputGraph.reading
-        foot: downKey.label
+        foot: totals.visible ? totals : downKey.label
 
         Graph {
             id: throughputGraph
@@ -256,6 +257,7 @@ PopupPage {
             }
 
             Caption {
+                id: totals
                 readonly property var down: Format.bytes(popup.monitor.networkTotalDown)
                 readonly property var up: Format.bytes(popup.monitor.networkTotalUp)
 
