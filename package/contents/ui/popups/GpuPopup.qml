@@ -211,6 +211,8 @@ PopupPage {
                 color: Style.dim(Kirigami.Theme.textColor)
                 elide: Text.ElideNone
                 wrapMode: Text.Wrap
+                leftPadding: popup.LayoutMirroring.enabled ? 1 : 0
+                rightPadding: popup.LayoutMirroring.enabled ? 0 : 1
                 textFormat: Text.PlainText
                 horizontalAlignment: Text.AlignLeft
             }
