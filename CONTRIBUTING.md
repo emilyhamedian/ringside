@@ -14,19 +14,20 @@ plasmawindowed dev.emily.ringside
 
 ```bash
 sh scripts/test.sh        # lint, then the QML, shell and Python tests
-sh scripts/test-floor.sh  # the tests and the gallery on Plasma 6.0
 sh scripts/gallery.sh     # every view in one picture, /tmp/ringside-gallery.png
 ```
 
-`test.sh` and `gallery.sh` need Plasma 6.5 or later with libksysguard, Qt 6's
+`test.sh` and `gallery.sh` need Plasma 6.8 or later with libksysguard, Qt 6's
 `qmllint`, `qmltestrunner` and `qml`, and Python 3.11 or later. If the Qt
 tools aren't in `/usr/lib/qt6/bin` or `/usr/lib64/qt6/bin`, point `QMLLINT`,
 `QMLTESTRUNNER` and `QML` at them. `shellcheck` and `reuse lint` run too if
 you have them.
 
-Older Plasma can't load its own module outside the shell, so `test-floor.sh`
-runs the tests against a stand-in instead. CI uses it to check Plasma 6.0 on
-Fedora 40.
+CI runs the full suite and gallery on Plasma 6.8 from KDE neon's stable
+User repository on Ubuntu 24.04. It checks the installed Plasma versions
+so a repository update can't silently move the supported floor. Qt and
+Frameworks versions are printed too. This is one baseline job; newer
+Plasma versions aren't tested separately.
 
 A few more scripts:
 
@@ -49,7 +50,7 @@ in as one squashed commit. A release is a separate
 pull request that bumps the version and dates the changelog, and is tagged
 once it lands.
 
-[AGENTS.md](AGENTS.md) has the project's ground rules: Plasma 6.0 support,
+[AGENTS.md](AGENTS.md) has the project's ground rules: Plasma 6.8 support,
 no new dependencies, privacy first, and how numbers and text are handled.
 Have a look before anything big. A few smaller things:
 
@@ -59,8 +60,6 @@ Have a look before anything big. A few smaller things:
   fixed `MESSAGES` in `usage.py`, so nothing private can end up in them. Keep
   `tests/python/test_journal.py` covering anything new.
   `QT_LOGGING_RULES="ringside.*.debug=true"` turns on the debug lines.
-- In tests, map points with `mapToItem(item, Qt.point(x, y))`. Qt 6.6 rounds
-  the separate `x, y` form to whole pixels.
 - Commit titles name the part of Ringside changed and what changed:
   `usage: show an early reset in the popup`, `ci: cache the Fedora image`.
   Title a pull request the same way, since it becomes the squashed commit.
@@ -68,7 +67,7 @@ Have a look before anything big. A few smaller things:
   line each, about what users see: "GPU popup lists each GPU's top
   processes, with their usage and VRAM." Lead with the thing, in the present
   tense. Give an example only where it saves words ("80% → 0%"), put a limit
-  last ("NVIDIA needs Plasma 6.4 or later."), and name a fix by the problem
+  last ("NVIDIA needs nvidia-smi."), and name a fix by the problem
   it removes ("Faint band of colour on the rings."). Leave out how and why;
   the pull request has those. A release moves them under its own dated
   heading, `## [0.3.2] - 2026-10-13`, leaves `[Unreleased]` empty, and points

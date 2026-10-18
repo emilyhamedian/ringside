@@ -41,16 +41,55 @@ jobs:
          !github.event.pull_request.draft) &&
         needs.changes.outputs.docs != 'true' }}
     runs-on: ubuntu-latest
-    container: fedora:44
+    # KDE neon's user repository supplies the Plasma 6.8 baseline on Noble.
+    # The base image is pinned; the repository floats, so reject a new Plasma
+    # series rather than silently moving the supported baseline.
+    container: ubuntu:24.04@sha256:534baea6a22c03a63003dbc8dbe78fe34bc0d7e595d9a9dc9834884ff530eb55
+    env:
+      DEBIAN_FRONTEND: noninteractive
+      # Keep the headless controls style stable while loading Plasma font defaults.
+      QT_QPA_PLATFORMTHEME: kde
+      QT_QUICK_CONTROLS_STYLE: Fusion
     steps:
-      - name: Install Qt 6, the Plasma 6 QML modules and the check tools
-        run: >-
-          dnf -y -q install --setopt=install_weak_deps=False
-          git diffutils qt6-qtdeclarative-devel libplasma kf6-kirigami kf6-ksvg
-          kf6-kcmutils kf6-kitemmodels kf6-qqc2-desktop-style libksysguard
-          ksystemstats plasma5support plasma-workspace plasma-breeze
-          plasma-integration breeze-icon-theme google-noto-sans-fonts
-          python3 ShellCheck reuse jq dbus-daemon
+      - name: Install Plasma 6.8 and the check tools
+        run: |
+          set -eu
+          apt-get update
+          apt-get install -y --no-install-recommends ca-certificates curl
+          install -d -m 0755 /etc/apt/keyrings
+          curl --fail --silent --show-error --location \
+            https://invent.kde.org/neon/docker-images/-/raw/Neon/release/neon-archive-keyring.asc \
+            -o /etc/apt/keyrings/neon-archive-keyring.asc
+          chmod 0644 /etc/apt/keyrings/neon-archive-keyring.asc
+          printf '%s\n' 'deb [signed-by=/etc/apt/keyrings/neon-archive-keyring.asc] https://archive.neon.kde.org/user noble main' \
+            > /etc/apt/sources.list.d/neon.list
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            git diffutils qt6-declarative-dev-tools qml-qt6 qml6-module-qttest \
+            qml6-module-qtquick qml6-module-qtquick-controls qml6-module-qtquick-layouts \
+            qml6-module-qtquick-localstorage qml6-module-org-kde-kirigami \
+            qml6-module-org-kde-kcmutils qml6-module-org-kde-kitemmodels \
+            qml6-module-org-kde-qqc2desktopstyle qml6-module-org-kde-ksysguard \
+            libplasma6 ksystemstats plasma5support plasma-workspace breeze \
+            plasma-integration breeze-icon-theme fonts-noto-core python3 python3-venv libmagic1t64 \
+            shellcheck jq dbus-daemon
+          # Noble's REUSE predates REUSE.toml support.
+          python3 -m venv /opt/reuse
+          /opt/reuse/bin/pip install 'reuse==6.2.0'
+          ln -s /opt/reuse/bin/reuse /usr/local/bin/reuse
+
+      - name: Check the installed baseline
+        run: |
+          set -eu
+          dpkg-query -W qt6-base kf6-kcoreaddons libplasma6 plasma-workspace \
+            ksystemstats qml6-module-org-kde-ksysguard python3
+          for package in libplasma6 plasma-workspace ksystemstats qml6-module-org-kde-ksysguard; do
+            version=$(dpkg-query -W -f='${Version}' "$package")
+            case ${version#*:} in
+              6.8.*) ;;
+              *) echo "$package $version is outside the Plasma 6.8 baseline" >&2; exit 1 ;;
+            esac
+          done
 
       - uses: actions/checkout@v7
 
@@ -74,44 +113,3 @@ jobs:
         with:
           name: ringside-gallery
           path: ringside-gallery.png
-
-  floor:
-    needs: changes
-    if: >-
-      ${{ !cancelled() &&
-        (github.event_name != 'pull_request' ||
-         github.base_ref != github.event.repository.default_branch ||
-         !github.event.pull_request.draft) &&
-        needs.changes.outputs.docs != 'true' }}
-    runs-on: ubuntu-latest
-    # The supported floor, Plasma 6.0 with Qt 6.6 and KF 6.0, is Fedora 40
-    # as released. Qt 6.6 reports binding loops that Qt 6.11 doesn't, so
-    # only this job catches a regression of the fixes for them. Its libplasma
-    # ships no importable org.kde.plasma.plasmoid module, so
-    # scripts/test-floor.sh puts a stand-in from tests/floor on the import
-    # path.
-    container: fedora:40
-    steps:
-      # Fedora 40 is end of life and its release repository lives in the
-      # archive on Fedora's download server. That repository alone is enabled,
-      # so everything installed here is at its release version. Keep DNF's
-      # diagnostics visible if downloading the archive fails.
-      - name: Install Qt 6.6, the Plasma 6.0 QML modules and the test tools
-        run: >-
-          dnf -y install --setopt=install_weak_deps=False --repo=fedora
-          --setopt=fedora.metalink=
-          --setopt=fedora.baseurl=https://dl.fedoraproject.org/pub/archive/fedora/linux/releases/40/Everything/x86_64/os/
-          diffutils qt6-qtdeclarative-devel libplasma kf6-kirigami kf6-ksvg
-          kf6-kcmutils kf6-kitemmodels kf6-qqc2-desktop-style libksysguard
-          ksystemstats plasma5support plasma-workspace plasma-breeze
-          plasma-integration breeze-icon-theme google-noto-sans-fonts
-          python3 jq dbus-daemon
-
-      - name: Show the versions under test
-        run: rpm -q qt6-qtdeclarative kf6-kirigami libplasma libksysguard python3
-
-      - uses: actions/checkout@v7
-
-      # D-Bus starts ksystemstats when the tests ask for it.
-      - name: Run the tests and the gallery on Plasma 6.0
-        run: dbus-run-session -- sh scripts/test-floor.sh

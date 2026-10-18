@@ -237,7 +237,7 @@ TestRoot {
             compare(data.vertical ? applet.width : applet.height, 44, "as thick as the panel");
             const size = data.vertical ? s.implicitHeight : s.implicitWidth;
             const at = s.mapToItem(applet, Qt.point(0, 0));
-            fuzzyCompare(data.vertical ? at.y : at.x, Math.round((length - size) * data.lead), 0.5, "the items' place");
+            fuzzyCompare(data.vertical ? at.y : at.x, (length - size) * data.lead, 0.5, "the items' place");
             checkCells(applet, data.vertical, 44);
 
             s.monitor.enabledItems = [];

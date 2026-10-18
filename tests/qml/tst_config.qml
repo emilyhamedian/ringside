@@ -213,8 +213,8 @@ TestRoot {
             const amber = accessible(page, "Amber threshold");
             const red = accessible(page, "Red threshold");
             compare([amber.value, red.value, amber.to, red.from], [167, 194, 193, 168]);
-            red.decrease();
-            red.valueModified();
+            red.forceActiveFocus();
+            keyClick(Qt.Key_Down);
             fuzzyCompare(page.cfg_hotCelsius, (193 - 32) * 5 / 9, 1e-9);
             compare(amber.to, 192, "a degree below red");
             mouseClick(find(page, i => i.text === "Highlight temperatures above"));
@@ -227,8 +227,8 @@ TestRoot {
         function test_intervalAndRateUnit() {
             const page = make(general);
             const interval = accessible(page, "Update interval");
-            interval.increase();
-            interval.valueModified();
+            interval.forceActiveFocus();
+            keyClick(Qt.Key_Up);
             compare(page.cfg_updateInterval, 1500);
             mouseClick(find(page, i => typeof i.text === "string" && i.text.startsWith("Bytes per second")));
             compare(page.cfg_networkBits, false);
@@ -283,8 +283,8 @@ TestRoot {
             const every = accessible(page, "Check every");
             verify(every.visible);
             compare(every.value, 5);
-            every.increase();
-            every.valueModified();
+            every.forceActiveFocus();
+            keyClick(Qt.Key_Up);
             compare(page.cfg_usageRefreshMinutes, 10);
             compare(every.displayText, "10 minutes");
         }

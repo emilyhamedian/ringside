@@ -27,8 +27,7 @@ GPL-3.0-or-later.
     run once per setting by the scripts.
   - `helper/`: the sh helper's fixtures.
   - `python/`: the Python helper's tests.
-  - `floor/`: a stand-in Plasma module for the Plasma 6.0 floor run.
-- `scripts/`: install, test, test-floor, gallery, pictures, logo, package,
+- `scripts/`: install, test, gallery, pictures, logo, package,
   and `qt.sh`, which the others source for the Qt tools and the QtTest runs.
 
 ## Direction
@@ -36,11 +35,11 @@ GPL-3.0-or-later.
 In this file, must and must not are requirements, should is the expected way
 unless there's a good reason to differ, and may is allowed but optional.
 
-- Ringside must support Plasma 6.0 and later on any distribution, and not
+- Ringside must support Plasma 6.8 and later on any distribution, and not
   Plasma 5. `X-Plasma-API-Minimum-Version` must stay at "6.0" (Add Widgets
-  rejects 6.7 and up). Nothing newer than Qt 6.6 and KF 6.0 may be used
+  rejects 6.7 and up). Nothing newer than Qt 6.11 and KF 6.30 may be used
   without a guarded fallback. Qt's JavaScript engine lacks some built-ins
-  (`Array.prototype.flatMap`), and casts to inline components fail on Qt 6.6.
+  (`Array.prototype.flatMap`).
 - There must be no compiled code and no new runtime dependencies. System
   readings must come from ksystemstats through libksysguard's QML modules;
   anything else from the POSIX sh helper, reading /proc, /sys and udev as the
@@ -73,7 +72,7 @@ unless there's a good reason to differ, and may is allowed but optional.
 
 ## Checks
 
-- `sh scripts/test.sh` must pass on a Plasma 6.5 or later desktop: qmllint (only
+- `sh scripts/test.sh` must pass on a Plasma 6.8 or later desktop: qmllint (only
   unqualified i18n warnings accepted), the QtTest suites including the de_DE
   and ar_EG runs and the three data-unit runs, the helper fixtures and the
   Python tests.

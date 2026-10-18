@@ -8,12 +8,15 @@ follows [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- Ringside supports Plasma 6.8 and later. Older Plasma 6 releases may work,
+  but aren't officially supported.
 - System Monitor link has an activity icon in the popup footer and underlines on hover or keyboard focus.
 - Popup settings buttons use a smaller outline gear.
 
 ### Fixed
 
 - Memory usage bar has the same header spacing as the other system popups.
+- Network graph legend keeps even padding and aligned text across fonts.
 - GPU names wrap in the popup so the full name is visible.
 - Empty process sections no longer take up space in the CPU, memory and GPU
   popups. All three use the same "Top processes" heading.
