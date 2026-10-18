@@ -13,6 +13,7 @@ follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Memory usage bar has the same header spacing as the other system popups.
 - GPU names wrap in the popup so the full name is visible.
 - Empty process sections no longer take up space in the CPU, memory and GPU
   popups. All three use the same "Top processes" heading.
