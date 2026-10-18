@@ -557,6 +557,10 @@ TestRoot {
 
             pair.cursor.reset();
             pair.source.points = points.slice();
+            const pointer = pair.source.resources.find(r => r.hovered !== undefined && r.point !== undefined);
+            verify(pointer);
+            pointer.pointChanged();
+            compare(pair.follower.index, -1, "an unchanged pointer event does not undo a deliberate reset");
             waitForRendering(pair);
             compare(pair.follower.index, -1, "new samples do not undo a deliberate reset");
             mouseMove(pair.source, 81, 50);
@@ -648,9 +652,11 @@ TestRoot {
             verify(tiles.every(t => t.graphReading !== ""));
             monitor.chooseSpan("hour");
             waitForRendering(popup);
+            compare(popup.graphCursor.owner, null, "changing span clears ownership");
             tiles.forEach(t => checkUninspected(t, false));
             monitor.cpuHistory = monitor.cpuHistory.slice();
             waitForRendering(popup);
+            compare(popup.graphCursor.owner, null, "sample updates do not reclaim a cleared cursor");
             tiles.forEach(t => checkUninspected(t, false));
             inspect(tiles[0], 100);
             tryVerify(() => tiles.every(t => t.graphReading !== ""));
@@ -658,6 +664,7 @@ TestRoot {
             tiles.forEach(t => compare(t.graphReading, ""));
             popup.visible = true;
             waitForRendering(popup);
+            compare(popup.graphCursor.owner, null, "reopening does not reclaim a cleared cursor");
             tiles.forEach(t => checkUninspected(t, false));
             inspect(tiles[1], 105);
             tryVerify(() => tiles.every(t => t.graphReading !== ""));

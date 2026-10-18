@@ -22,6 +22,7 @@ Item {
     property GraphCursor cursor: null
     property bool inspectionEnabled: true
     property GraphCursor attachedCursor: null
+    property point lastPointerPosition: Qt.point(NaN, NaN)
 
     readonly property bool inspectable: inspectionEnabled && visible && enabled && width > 0
     readonly property int localIndex: inspectable && pointer.hovered ? nearest(pointer.point.position.x) : -1
@@ -47,6 +48,14 @@ Item {
         if (inspectable && pointer.hovered && cursor) {
             const i = nearest(pointer.point.position.x);
             cursor.publish(hover, i >= 0 ? Math.max(0, Math.min(1, points[i].x / width)) : NaN);
+        }
+    }
+
+    function inspectPointer() {
+        const at = pointer.point.scenePosition;
+        if (at.x !== lastPointerPosition.x || at.y !== lastPointerPosition.y) {
+            lastPointerPosition = Qt.point(at.x, at.y);
+            publish();
         }
     }
 
@@ -100,12 +109,18 @@ Item {
         enabled: hover.inspectable
         onHoveredChanged: {
             if (hovered) {
-                hover.publish();
+                hover.inspectPointer();
             } else {
                 hover.release();
+                // A pointer leave permits re-entry at the same position;
+                // hiding keeps it so reopening needs movement.
+                if (hover.inspectable) {
+                    hover.lastPointerPosition = Qt.point(NaN, NaN);
+                }
             }
         }
-        onPointChanged: if (hovered) hover.publish()
+        // Qt can send the same point again after data or visibility changes.
+        onPointChanged: if (hovered) hover.inspectPointer()
     }
 
     Rectangle {
