@@ -250,6 +250,7 @@ PlasmoidItem {
 
         mainItem: Loader {
             id: popupContent
+            visible: popup.visible
 
             Layout.preferredWidth: item ? (item as Item).implicitWidth : 0
             Layout.preferredHeight: item ? (item as Item).implicitHeight : 0

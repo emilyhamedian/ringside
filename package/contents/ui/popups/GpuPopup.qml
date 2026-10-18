@@ -161,6 +161,7 @@ PopupPage {
             onReadingsChanged: keep()
 
             monitor: popup.monitor
+            cursor: popup.graphCursor
             awake: live.phase !== "asleep"
             visible: opened
             slot: !awake && opened && last ? last : live
@@ -229,6 +230,7 @@ PopupPage {
         id: section
 
         required property var monitor
+        property GraphCursor cursor: null
         // A GpuReader, or an object with the same properties.
         required property var slot
         // The slot's temperature label in plain words.
@@ -321,6 +323,8 @@ PopupPage {
 
                 Graph {
                     id: usageGraph
+                    cursor: section.cursor
+                    inspectionEnabled: section.awake
                     Layout.fillWidth: true
                     describe: i => sectionWords.pointText(values, highs, i, v => sectionWords.percent(v))
                     values: section.slot.history
@@ -331,6 +335,8 @@ PopupPage {
 
             // As in the CPU popup: under the usage it follows.
             TemperatureTile {
+                cursor: section.cursor
+                inspectionEnabled: section.awake
                 graphed: section.temperatureGraphed
                 Layout.columnSpan: parent.columns
                 monitor: section.monitor

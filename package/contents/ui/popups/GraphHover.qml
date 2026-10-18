@@ -19,10 +19,62 @@ Item {
     property color color: Kirigami.Theme.textColor
     // The selected reading, also exposed to assistive technology.
     property string reading: ""
+    property GraphCursor cursor: null
+    property bool inspectionEnabled: true
+    property GraphCursor attachedCursor: null
+
+    readonly property bool inspectable: inspectionEnabled && visible && enabled && width > 0
+    readonly property int localIndex: inspectable && pointer.hovered ? nearest(pointer.point.position.x) : -1
+    readonly property real markerX: !inspectable ? NaN
+        : cursor ? cursor.owner !== null && Number.isFinite(cursor.position) ? cursor.position * width : NaN
+        : localIndex >= 0 ? points[localIndex].x : NaN
 
     // The point shown, or -1.
-    readonly property int index: pointer.hovered ? nearest(pointer.point.position.x) : -1
+    readonly property int index: !inspectable ? -1 : cursor ? matchingIndex() : localIndex
     readonly property var point: index >= 0 ? points[index] : null
+
+    function matchingIndex() {
+        if (!Number.isFinite(markerX)) {
+            return -1;
+        }
+        const i = nearest(markerX);
+        // A shorter history must not substitute its first reading for an
+        // older slot, nor a neighbouring reading for a gap.
+        return i >= 0 && Math.abs(points[i].x - markerX) < 0.000001 && Number.isFinite(points[i].y) ? i : -1;
+    }
+
+    function publish() {
+        if (inspectable && pointer.hovered && cursor) {
+            const i = nearest(pointer.point.position.x);
+            cursor.publish(hover, i >= 0 ? Math.max(0, Math.min(1, points[i].x / width)) : NaN);
+        }
+    }
+
+    function release() {
+        if (cursor) {
+            cursor.release(hover);
+        }
+    }
+
+    function updateOwner() {
+        if (!inspectable) {
+            release();
+        } else if (cursor && cursor.owner === hover) {
+            publish();
+        }
+    }
+
+    onCursorChanged: {
+        if (attachedCursor) {
+            attachedCursor.release(hover);
+        }
+        attachedCursor = cursor;
+    }
+    onInspectableChanged: updateOwner()
+    onLocalIndexChanged: updateOwner()
+    onPointsChanged: updateOwner()
+    onWidthChanged: updateOwner()
+    Component.onDestruction: release()
 
     function nearest(x) {
         let best = -1;
@@ -45,11 +97,20 @@ Item {
 
     HoverHandler {
         id: pointer
+        enabled: hover.inspectable
+        onHoveredChanged: {
+            if (hovered) {
+                hover.publish();
+            } else {
+                hover.release();
+            }
+        }
+        onPointChanged: if (hovered) hover.publish()
     }
 
     Rectangle {
-        visible: hover.point !== null
-        x: hover.point ? Math.round(hover.point.x) : 0
+        visible: Number.isFinite(hover.markerX)
+        x: visible ? Math.max(0, Math.min(hover.width - width, Math.round(hover.markerX))) : 0
         width: 1
         height: parent.height
         color: Qt.alpha(hover.color, 0.45 * hover.color.a)

@@ -17,7 +17,18 @@ ColumnLayout {
     property real room: Infinity
     property alias systemMonitorShown: footer.systemMonitorShown
     property alias footerLeading: footer.leading
+    readonly property GraphCursor graphCursor: GraphCursor {}
     default property alias sections: body.data
+
+    onVisibleChanged: if (!visible) graphCursor.reset()
+
+    Connections {
+        target: page.monitor
+
+        function onGraphSpanChanged() {
+            page.graphCursor.reset();
+        }
+    }
 
     spacing: 0
 

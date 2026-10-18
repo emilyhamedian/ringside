@@ -9,6 +9,7 @@ import org.kde.kirigami as Kirigami
 import "../../package/contents/ui/code/format.js" as Format
 import "../../package/contents/ui/code/style.js" as Style
 import "../../package/contents/ui"
+import "../../package/contents/ui/popups" as Popup
 
 // Every popup against FakeMonitor in the states the gallery shows, loaded the
 // way main.qml loads them. qmllint can't type the duck-typed monitor, so a
@@ -307,6 +308,39 @@ TestRoot {
         SignalSpy {}
     }
 
+    Component {
+        id: hoverPair
+        Item {
+            width: 500
+            height: 120
+            property alias cursor: linkedCursor
+            property alias source: source.item
+            property alias sourceLoader: source
+            property alias follower: follower
+
+            Popup.GraphCursor { id: linkedCursor }
+
+            Loader {
+                id: source
+                width: 160
+                height: 100
+                onLoaded: (item as Popup.GraphHover).cursor = linkedCursor
+                sourceComponent: Popup.GraphHover {
+                    points: [Qt.point(0, 30), Qt.point(80, 50), Qt.point(160, 70)]
+                }
+            }
+
+            Popup.GraphHover {
+                id: follower
+                x: 220
+                width: 240
+                height: 100
+                cursor: linkedCursor
+                points: [Qt.point(0, 70), Qt.point(120, 50), Qt.point(240, 30)]
+            }
+        }
+    }
+
     TestCase {
         name: "Popups"
         when: windowShown
@@ -421,6 +455,278 @@ TestRoot {
                                    && i.font.features.tnum === 1 && i.text !== undefined && i.elide !== undefined);
         }
 
+        function inspectionTiles(popup) {
+            return all(popup, i => i.visible && i.graphReading !== undefined && hoverOf(i) !== null);
+        }
+
+        function dots(hover) {
+            return all(hover, i => i.visible && i.radius !== undefined && i.radius > 0);
+        }
+
+        function cursorLine(hover) {
+            return find(hover, i => i.visible && i.width === 1 && i.height === hover.height && i.radius === 0);
+        }
+
+        function inspect(tile, index) {
+            const hover = hoverOf(tile);
+            mouseMove(hover, Math.min(hover.width - 1, Math.max(1, hover.points[index].x)), hover.height / 2);
+        }
+
+        function checkInspected(tile, index, words) {
+            const hover = hoverOf(tile);
+            tryCompare(hover, "index", index, 1000, tile.caption);
+            const graph = graphs(tile)[0];
+            const values = graph ? graph.values : tile.history;
+            const highs = graph ? graph.highs : tile.highs;
+            const format = tile.caption === "Temperature" ? v => words.degreesText(v)
+                         : tile.caption === "Usage" ? v => words.percent(v)
+                         : v => words.rateText(Format.rate(v, false));
+            compare(tile.graphReading, words.pointText(values, highs, index, format), tile.caption + " reading and time");
+            compare(topOf(tile).text, tile.graphReading, tile.caption + " caption as drawn");
+            compare(dots(hover).length, 1, tile.caption + " marks its own reading");
+            const line = cursorLine(hover);
+            verify(line, tile.caption + " has a vertical cursor");
+            verify(Math.abs(line.x - hover.markerX) <= 1, "cursor stays within a pixel of the selected time");
+            verify(line.x >= 0 && line.x + line.width <= hover.width, "cursor is inside the clipped plot");
+        }
+
+        function checkUninspected(tile, line) {
+            const hover = hoverOf(tile);
+            compare(hover.index, -1, tile.caption);
+            compare(tile.graphReading, "", tile.caption + " keeps its scale without a reading");
+            compare(topOf(tile).text, tile.graphTop, tile.caption + " scale as drawn");
+            compare(dots(hover).length, 0, tile.caption + " has no invented dot");
+            compare(cursorLine(hover) !== null, line, tile.caption + " vertical cursor");
+        }
+
+        // Each caption gives its own value at the shared time. GPU sections
+        // participate together, including the graphs below the source's GPU.
+        function test_linkedInspectionAtEachSpan_data() {
+            const rows = [];
+            for (const popup of ["CpuPopup", "DiskPopup", "GpuPopup"]) {
+                for (const span of ["minute", "hour", "day"]) {
+                    rows.push({ tag: popup + " " + span, popup: popup, span: span });
+                }
+            }
+            return rows;
+        }
+
+        function test_linkedInspectionAtEachSpan(data) {
+            const monitor = monitorWith({ graphSpan: data.span, "gpuInner.kind": "discrete" });
+            const words = createTemporaryObject(wordsComponent, root, { monitor: monitor });
+            const popup = load(data.popup, monitor, false, widePage);
+            const tiles = inspectionTiles(popup);
+            compare(tiles.length, { CpuPopup: 2, DiskPopup: 3, GpuPopup: 4 }[data.popup]);
+            for (const source of [tiles[0], tiles[data.popup === "GpuPopup" ? 2 : tiles.length - 1]]) {
+                const index = Math.floor(monitor.historyLength * 0.85);
+                inspect(source, index);
+                tiles.forEach(t => checkInspected(t, index, words));
+                const when = words.pointTime(index, monitor.historyLength);
+                tiles.forEach(t => verify(t.graphReading.endsWith(" · " + when), t.caption + " represents the same time"));
+                mouseMove(popup, 1, 1);
+                tryVerify(() => tiles.every(t => t.graphReading === ""));
+                tiles.forEach(t => checkUninspected(t, false));
+            }
+        }
+
+        function test_linkedInspectionAtNewestSample() {
+            const monitor = monitorWith({});
+            const words = createTemporaryObject(wordsComponent, root, { monitor: monitor });
+            const popup = load("CpuPopup", monitor, false, widePage);
+            const tiles = inspectionTiles(popup);
+            inspect(tiles[0], monitor.historyLength - 1);
+            tiles.forEach(t => checkInspected(t, monitor.historyLength - 1, words));
+        }
+
+        // An empty graph under the pointer begins inspecting as soon as
+        // its first samples arrive, without waiting for another mouse move.
+        function test_linkedInspectionWaitsForFirstSamples() {
+            const pair = createTemporaryObject(hoverPair, root);
+            pair.source.points = [];
+            waitForRendering(pair);
+            mouseMove(pair.source, 80, 50);
+            compare(pair.follower.index, -1);
+            const points = [Qt.point(0, 30), Qt.point(80, 50), Qt.point(160, 70)];
+            pair.source.points = points;
+            tryCompare(pair.follower, "index", 1);
+            pair.source.points = [];
+            tryCompare(pair.follower, "index", -1);
+            verify(!cursorLine(pair.follower));
+            pair.source.points = points;
+            tryCompare(pair.follower, "index", 1);
+
+            pair.cursor.reset();
+            pair.source.points = points.slice();
+            waitForRendering(pair);
+            compare(pair.follower.index, -1, "new samples do not undo a deliberate reset");
+            mouseMove(pair.source, 81, 50);
+            tryCompare(pair.follower, "index", 1);
+        }
+
+        // A short history occupies the right end of the span. Neither its
+        // missing beginning nor a gap borrows a neighbouring reading.
+        function test_linkedInspectionKeepsMissingSlots_data() {
+            return ["minute", "hour", "day"].map(span => ({ tag: span, span: span }));
+        }
+
+        function test_linkedInspectionKeepsMissingSlots(data) {
+            const monitor = monitorWith({ graphSpan: data.span });
+            const count = monitor.historyLength;
+            const shortCount = Math.floor(count / 2);
+            monitor.diskReadHistory = Array.from({ length: count }, (_, i) => (i + 1) * 1048576);
+            monitor.diskWriteHistory = Array.from({ length: shortCount }, (_, i) => (i + 2) * 524288);
+            monitor.diskTemperatureHistory = Array(count).fill(45);
+            monitor.diskReadHighs = [];
+            monitor.diskWriteHighs = [];
+            monitor.diskTemperatureHighs = [];
+            const words = createTemporaryObject(wordsComponent, root, { monitor: monitor });
+            const popup = load("DiskPopup", monitor, false, widePage);
+            const [read, write, temperature] = inspectionTiles(popup);
+            inspect(read, 10);
+            checkInspected(read, 10, words);
+            checkUninspected(write, true);
+            checkInspected(temperature, 10, words);
+            fuzzyCompare(hoverOf(write).markerX / hoverOf(write).width, 10 / (count - 1), 1e-6);
+
+            const slot = count - shortCount + 5;
+            inspect(read, slot);
+            checkInspected(write, 5, words);
+            compare(words.pointTime(slot, count), words.pointTime(5, shortCount), "short history uses the same represented time");
+            monitor.diskWriteHistory = monitor.diskWriteHistory.map((v, i) => i === 5 ? NaN : v);
+            checkUninspected(write, true);
+            checkInspected(temperature, slot, words);
+
+            // The missing point can itself own the cursor and drive peers.
+            inspect(write, 6);
+            inspect(write, 5);
+            checkUninspected(write, true);
+            checkInspected(read, slot, words);
+            checkInspected(temperature, slot, words);
+            monitor.diskReadHistory = [];
+            checkUninspected(read, true);
+            checkInspected(temperature, slot, words);
+            mouseMove(popup, 1, 1);
+            [read, write, temperature].forEach(t => checkUninspected(t, false));
+        }
+
+        // Only the graph under the pointer may move the shared cursor when
+        // samples arrive or its geometry changes.
+        function test_linkedInspectionUpdatesAndResizes() {
+            const monitor = monitorWith({ cpuHistory: Array(60).fill(20), cpuTemperatureHistory: Array(60).fill(50) });
+            const words = createTemporaryObject(wordsComponent, root, { monitor: monitor });
+            const popup = load("CpuPopup", monitor, false, widePage);
+            const [usage, temperature] = inspectionTiles(popup);
+            inspect(usage, 30);
+            monitor.cpuTemperatureHistory = Array(30).fill(55);
+            checkInspected(temperature, 0, words);
+            monitor.cpuHistory = Array(60).fill(35);
+            monitor.sampledAt += 1000;
+            checkInspected(usage, 30, words);
+            checkInspected(temperature, 0, words);
+
+            const owner = hoverOf(usage);
+            const follower = hoverOf(temperature);
+            const position = owner.markerX / owner.width;
+            const pointerX = owner.points[30].x;
+            follower.parent.width *= 0.75;
+            tryVerify(() => Math.abs(follower.markerX / follower.width - position) < 1e-6);
+            checkInspected(usage, 30, words);
+            checkInspected(temperature, 0, words);
+            owner.parent.width *= 0.8;
+            tryVerify(() => Math.abs(owner.markerX / owner.width - follower.markerX / follower.width) < 1e-6);
+            const selected = Math.round(pointerX / owner.width * 59);
+            checkInspected(usage, selected, words);
+            checkInspected(temperature, selected - 30, words);
+            compare(words.pointTime(selected, 60), words.pointTime(selected - 30, 30));
+        }
+
+        function test_linkedInspectionClearsOnSpanAndReopen() {
+            const monitor = monitorWith({});
+            const popup = load("CpuPopup", monitor, false, widePage);
+            const tiles = inspectionTiles(popup);
+            inspect(tiles[0], 50);
+            verify(tiles.every(t => t.graphReading !== ""));
+            monitor.chooseSpan("hour");
+            waitForRendering(popup);
+            tiles.forEach(t => checkUninspected(t, false));
+            monitor.cpuHistory = monitor.cpuHistory.slice();
+            waitForRendering(popup);
+            tiles.forEach(t => checkUninspected(t, false));
+            inspect(tiles[0], 100);
+            tryVerify(() => tiles.every(t => t.graphReading !== ""));
+            popup.visible = false;
+            tiles.forEach(t => compare(t.graphReading, ""));
+            popup.visible = true;
+            waitForRendering(popup);
+            tiles.forEach(t => checkUninspected(t, false));
+            inspect(tiles[1], 105);
+            tryVerify(() => tiles.every(t => t.graphReading !== ""));
+        }
+
+        function test_linkedInspectionReleasesOnlyItsOwner_data() {
+            return ["disable", "hide", "detach", "destroy"].map(action => ({ tag: action, action: action }));
+        }
+
+        function test_linkedInspectionReleasesOnlyItsOwner(data) {
+            const pair = createTemporaryObject(hoverPair, root);
+            waitForRendering(pair);
+            mouseMove(pair.source, 80, 50);
+            tryCompare(pair.follower, "index", 1);
+            fuzzyCompare(pair.follower.markerX, 120, 1e-6, "different widths share the same span position");
+            mouseMove(pair.follower, 239, 50);
+            tryCompare(pair.source, "index", 2);
+            mouseMove(pair.source, 80, 50);
+            tryCompare(pair.follower, "index", 1);
+            // A late leave from a former owner cannot clear its successor.
+            pair.cursor.release(pair.follower);
+            compare(pair.follower.index, 1);
+            if (data.action === "disable") {
+                pair.source.inspectionEnabled = false;
+            } else if (data.action === "hide") {
+                pair.sourceLoader.visible = false;
+            } else if (data.action === "detach") {
+                pair.source.cursor = null;
+            } else {
+                pair.sourceLoader.active = false;
+            }
+            tryCompare(pair.follower, "index", -1);
+            verify(!cursorLine(pair.follower), "released cursor leaves no line");
+            pair.follower.points = [Qt.point(0, 30), Qt.point(120, 40), Qt.point(240, 50)];
+            compare(pair.follower.index, -1, "a follower update does not reclaim the cursor");
+        }
+
+        // Sleeping sections stop inspecting at the beginning of their fade,
+        // while the other GPU's graphs remain usable.
+        function test_linkedInspectionStopsWhenGpuSleeps_data() {
+            return [{ tag: "source", source: true }, { tag: "follower", source: false }];
+        }
+
+        function test_linkedInspectionStopsWhenGpuSleeps(data) {
+            const monitor = monitorWith({ "gpuInner.kind": "discrete" });
+            const words = createTemporaryObject(wordsComponent, root, { monitor: monitor });
+            const popup = load("GpuPopup", monitor, false, widePage);
+            popup.animated = true;
+            const tiles = inspectionTiles(popup);
+            compare(tiles.length, 4);
+            inspect(tiles[0], 50);
+            tryVerify(() => tiles.every(t => t.graphReading !== ""));
+            if (!data.source) {
+                monitor.gpuInner.phase = "asleep";
+                tiles.slice(0, 2).forEach(t => checkInspected(t, 50, words));
+                tiles.slice(2).forEach(t => checkUninspected(t, false));
+                return;
+            }
+            monitor.gpuOuter.phase = "asleep";
+            tiles.forEach(t => compare(t.graphReading, "", "the sleeping owner releases immediately"));
+            const awake = tiles.slice(2);
+            // The remaining GPU moves up when the sleeping section closes.
+            tryVerify(() => !tiles[0].visible, 2000);
+            inspect(awake[0], 45);
+            tryVerify(() => awake.every(t => t.graphReading !== ""));
+            compare(tiles[0].graphReading, "");
+            compare(tiles[1].graphReading, "");
+        }
+
         // Over a graph the point under the pointer is marked and its reading
         // and time take the caption's end in the text colour, giving it back
         // as the pointer leaves. At an hour or a day the point is a stretch,
@@ -462,11 +768,19 @@ TestRoot {
 
         // Graph inspection is pointer-only; accessible text still follows
         // the reading without adding a stop to the popup's Tab order.
-        function test_graphInspectionIsPointerOnly() {
-            const popup = load("CpuPopup", normal);
-            const tile = graphTile(popup, "Usage");
+        function test_graphInspectionIsPointerOnly_data() {
+            return [{ tag: "cpu", popup: "CpuPopup", caption: "Usage" },
+                    { tag: "gpu", popup: "GpuPopup", caption: "Usage" },
+                    { tag: "disk", popup: "DiskPopup", caption: "Read" },
+                    { tag: "memory", popup: "MemoryPopup", caption: "Used" },
+                    { tag: "network", popup: "NetworkPopup", caption: "Throughput" }];
+        }
+
+        function test_graphInspectionIsPointerOnly(data) {
+            const popup = load(data.popup, normal);
+            const tile = graphTile(popup, data.caption);
             const hover = hoverOf(tile);
-            verify(!hover.activeFocusOnTab);
+            inspectionTiles(popup).forEach(t => verify(!hoverOf(t).activeFocusOnTab, t.caption + " is not a Tab stop"));
             compare(hover.index, -1);
             mouseMove(hover, hover.width - 1, hover.height / 2);
             tryCompare(hover, "index", hover.points.length - 1);
