@@ -22,6 +22,9 @@ RowLayout {
     property bool ringStale: false
     // Waiting for its first reading: see RingGauge.
     property bool ringLoading: false
+    property bool processesLoading: false
+    // Keep room for the indicator in popups that can list processes.
+    property bool processesExpected: false
     // How often a system reading updates, for the ring: see RingGauge.
     property int interval: 0
     property string title: ""
@@ -104,7 +107,7 @@ RowLayout {
     }
 
     Item {
-        implicitWidth: Math.max(titleText.implicitWidth, subtitleText.implicitWidth, detailText.implicitWidth)
+        implicitWidth: Math.max(titleRow.implicitWidth, subtitleText.implicitWidth, detailText.implicitWidth)
         implicitHeight: header.titleHeight + (subtitleText.visible ? subtitleText.implicitHeight : 0)
             + (detailText.visible ? detailText.implicitHeight : 0)
         Layout.fillWidth: true
@@ -118,18 +121,44 @@ RowLayout {
             width: parent.width
             spacing: 0
 
-            Kirigami.Heading {
-                id: titleText
+            Item {
+                id: titleRow
                 width: parent.width
-                text: header.title
-                level: 3
-                font.weight: Font.DemiBold
-                elide: header.titleWrapped ? Text.ElideNone : Text.ElideRight
-                wrapMode: header.titleWrapped ? Text.Wrap : Text.NoWrap
-                leftPadding: header.titleWrapped && header.LayoutMirroring.enabled ? 1 : 0
-                rightPadding: header.titleWrapped && !header.LayoutMirroring.enabled ? 1 : 0
-                textFormat: Text.PlainText
-                horizontalAlignment: Text.AlignLeft
+                readonly property real processSpace: header.processesExpected ? Kirigami.Units.smallSpacing + processSlot.width : 0
+                implicitWidth: titleText.implicitWidth + processSpace
+                implicitHeight: titleText.implicitHeight
+
+                Kirigami.Heading {
+                    id: titleText
+                    anchors.left: parent.left
+                    width: Math.max(0, titleRow.width - titleRow.processSpace)
+                    text: header.title
+                    level: 3
+                    font.weight: Font.DemiBold
+                    elide: header.titleWrapped ? Text.ElideNone : Text.ElideRight
+                    wrapMode: header.titleWrapped ? Text.Wrap : Text.NoWrap
+                    leftPadding: header.titleWrapped && header.LayoutMirroring.enabled ? 1 : 0
+                    rightPadding: header.titleWrapped && !header.LayoutMirroring.enabled ? 1 : 0
+                    textFormat: Text.PlainText
+                    horizontalAlignment: Text.AlignLeft
+                }
+
+                // Reserve the slot even after loading, so the title and headline
+                // reading never move when the scan finishes.
+                Item {
+                    id: processSlot
+                    anchors.left: titleText.left
+                    anchors.leftMargin: Math.min(titleText.implicitWidth, titleText.width) + Kirigami.Units.smallSpacing
+                    anchors.verticalCenter: parent.verticalCenter
+                    anchors.verticalCenterOffset: (titleText.height / Math.max(1, titleText.lineCount) - titleText.height) / 2
+                    width: 24
+                    height: 24
+
+                    ProcessesLoading {
+                        anchors.centerIn: parent
+                        visible: header.processesLoading
+                    }
+                }
             }
 
             Text {

@@ -10,8 +10,8 @@ import "../code/style.js" as Style
 import ".."
 
 // A GPU's busiest processes, each with its share of the GPU and its video
-// memory. Only the user's own processes can be read, so the caption says
-// whose they are: a system service using the GPU isn't among them.
+// memory. Only the user's own processes can be read; a system service
+// using the GPU isn't among them.
 ColumnLayout {
     id: list
 
@@ -20,7 +20,6 @@ ColumnLayout {
     // The rows laid out, filled or not, so the popup keeps its height as
     // processes come and go.
     property int count: 3
-    property bool loading: false
     // Off for a GPU that reports no video memory of its own, as Intel's
     // integrated ones don't.
     property bool memoryShown: true
@@ -55,7 +54,7 @@ ColumnLayout {
         spacing: Kirigami.Units.largeSpacing
 
         Caption {
-            label: i18nc("@title:group the user's own processes using a GPU", "Your top processes")
+            label: i18nc("@title:group", "Top processes")
             Layout.fillWidth: true
         }
 
@@ -178,21 +177,6 @@ ColumnLayout {
                     }
                 }
             }
-        }
-
-        Text {
-            anchors.left: parent.left
-            anchors.right: parent.right
-            visible: !list.loading && list.rows.length === 0
-            text: i18nc("@info none of the user's processes is using this GPU", "Nothing of yours is using this GPU")
-            color: Style.dim(Kirigami.Theme.textColor)
-            elide: Text.ElideRight
-            textFormat: Text.PlainText
-            horizontalAlignment: Text.AlignLeft
-        }
-
-        ProcessesLoading {
-            visible: list.loading
         }
     }
 }

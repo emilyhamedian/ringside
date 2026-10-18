@@ -32,6 +32,8 @@ PopupPage {
     Sensors.Sensor { id: load15; sensorId: "cpu/loadaverages/loadaverage15" }
 
     PopupHeader {
+        processesLoading: processList.loading
+        processesExpected: true
         ringValue: popup.monitor.cpuUsage
         interval: popup.monitor.sampleInterval
         title: i18nc("@title", "CPU")
@@ -229,13 +231,13 @@ PopupPage {
         }
     }
 
-    // Left out until the monitor says process models may be made.
     Divider {
-        visible: popup.monitor.processesReadable
+        visible: processList.visible
     }
 
     ProcessList {
-        visible: popup.monitor.processesReadable
+        id: processList
+        active: popup.visible && popup.monitor.processesReadable
         key: "usage"
         threads: popup.threads
         sample: popup.monitor.processSample || null

@@ -287,6 +287,11 @@ TestRoot {
         }
     }
 
+    Component {
+        id: spyComponent
+        SignalSpy {}
+    }
+
     TestCase {
         name: "Popups"
         when: windowShown
@@ -1930,8 +1935,8 @@ TestRoot {
         // The system popups' footers keep the System Monitor link and the
         // configure button on one line, with no switch: the session
         // starter's belongs to the Claude and Codex popups only. The link's
-        // text and the icon's drawing sit on the readings' edges, plain and
-        // mirrored.
+        // activity icon and the configure icon's drawing sit on the readings'
+        // edges, with the label following the activity icon in either direction.
         function test_systemFooters_data() {
             const rows = [];
             for (const [tag, popup] of [["cpu", "CpuPopup"], ["gpu", "GpuPopup"], ["memory", "MemoryPopup"], ["network", "NetworkPopup"],
@@ -1947,24 +1952,141 @@ TestRoot {
             const footer = all(popup, i => i.systemMonitorShown !== undefined && i.position !== undefined)[0];
             verify(footer.systemMonitorShown);
             compare(all(footer, i => i.visualPosition !== undefined).length, 0, "no switch");
-            const link = all(footer, i => i.visible && i.text === "Open System Monitor")[0];
-            const button = all(footer, i => i.visible && i.icon !== undefined && i.icon.name === "configure")[0];
+            const link = all(footer, i => i.visible && i.text === "System Monitor")[0];
+            const button = all(footer, i => i.visible && i.objectName === "configureButton")[0];
             verify(link && button);
+            const glyph = find(button, i => i.imagePath?.endsWith("/icons/settings.svg"));
+            verify(glyph.imagePath.endsWith("/icons/settings.svg"));
+            compare(glyph.width, Kirigami.Units.iconSizes.smallMedium * 18 / 22);
+            compare(glyph.height, glyph.width);
+            compare(button.contentItem.implicitWidth, Kirigami.Units.iconSizes.smallMedium);
+            compare(button.contentItem.implicitHeight, Kirigami.Units.iconSizes.smallMedium);
+            verify(glyph.Accessible.ignored, "the gear adds no accessible control");
+            compare(button.Accessible.role, Accessible.Button);
+            compare(button.Accessible.name, "Configure Ringside…");
+            compare(glyph.opacity, Style.dim(glyph.Kirigami.Theme.textColor).a);
+            const configureSpy = createTemporaryObject(spyComponent, root, { target: normal, signalName: "configureRequested" });
+            mouseClick(button);
+            compare(configureSpy.count, 1, "a click configures");
+            button.forceActiveFocus();
+            keyClick(Qt.Key_Space);
+            compare(configureSpy.count, 2, "Space configures");
+            compare(all(button, i => i !== button && i.activeFocusOnTab).length, 0, "one focus stop");
+            const icon = all(link, i => i.imagePath !== undefined && String(i.imagePath).endsWith("/icons/activity.svg"))[0];
+            verify(icon && icon.visible);
+            verify(icon.Accessible.ignored && !icon.activeFocusOnTab);
+            compare(link.Accessible.name, "Open System Monitor");
+            compare(link.Accessible.role, Accessible.Button);
+            verify(link.activeFocusOnTab);
+            compare(all(link, i => !i.Accessible.ignored && i.Accessible.role === Accessible.Button).length, 1);
+            compare(String(link.color), String(Style.dim(link.Kirigami.Theme.textColor)));
+            compare(String(icon.Kirigami.Theme.textColor), String(Qt.alpha(link.color, 1)));
+            compare(icon.opacity, link.color.a);
             compare(footer.height, footer.topPadding + footer.bottomPadding + Math.max(link.implicitHeight, button.implicitHeight));
             const middle = i => i.mapToItem(footer, Qt.point(0, i.height / 2)).y;
             fuzzyCompare(middle(button), middle(link), 0.5);
-            // On the readings' edges: the link's text, and the icon's drawing
-            // inside the button's padding and the 3 px Breeze's 22 px icon
-            // keeps free around it.
-            const slack = Kirigami.Units.iconSizes.smallMedium * 3 / 22;
+            fuzzyCompare(middle(icon), middle(link), 0.5);
+            compare(icon.width, Kirigami.Units.iconSizes.small);
+            const gap = Kirigami.Units.smallSpacing * 2;
+            // The activity icon's box and the gear's stroke sit on the readings' edges.
+            const slack = (Kirigami.Units.iconSizes.smallMedium - glyph.width) / 2 + glyph.width * 2.04 / 24;
             const x = (i, at) => i.mapToItem(footer, Qt.point(at, 0)).x;
             if (data.mirrored) {
-                compare(x(link, link.width), footer.width - contentEdge);
-                compare(x(button, button.leftPadding + slack), contentEdge);
+                compare(x(icon, icon.width), footer.width - contentEdge);
+                compare(link.leftPadding, 0);
+                compare(x(link, link.width - link.rightPadding), x(icon, 0) - gap);
+                fuzzyCompare(x(button, button.leftPadding + slack), contentEdge, 0.5);
             } else {
-                compare(x(link, 0), contentEdge);
-                compare(x(button, button.width - button.rightPadding - slack), footer.width - contentEdge);
+                compare(x(icon, 0), contentEdge);
+                compare(link.rightPadding, 0);
+                compare(x(link, link.leftPadding), x(icon, icon.width) + gap);
+                fuzzyCompare(x(button, button.width - button.rightPadding - slack), footer.width - contentEdge, 0.5);
             }
+            button.forceActiveFocus();
+            mouseMove(root, root.width - 1, root.height - 1);
+            tryCompare(link.mouseArea, "containsMouse", false);
+            verify(!link.font.underline);
+            mouseMove(link, link.leftPadding + link.contentWidth / 2, link.height / 2);
+            tryCompare(link.mouseArea, "containsMouse", true);
+            verify(link.font.underline, "hover underlines the link");
+            mouseMove(root, root.width - 1, root.height - 1);
+            tryCompare(link.mouseArea, "containsMouse", false);
+            verify(!link.font.underline, "leaving removes the underline");
+            const spy = createTemporaryObject(spyComponent, root, { target: normal, signalName: "systemMonitorRequested" });
+            verify(spy.valid);
+            mouseClick(icon);
+            compare(spy.count, 1, "the icon shares the link's click target");
+            mouseClick(link, link.leftPadding + link.contentWidth / 2, link.height / 2);
+            compare(spy.count, 2, "the label opens System Monitor once");
+            mouseMove(root, root.width - 1, root.height - 1);
+            link.forceActiveFocus();
+            verify(link.activeFocus);
+            verify(link.font.underline && link.font.bold, "keyboard focus remains visible without hover");
+            keyClick(Qt.Key_Return);
+            compare(spy.count, 3);
+            keyClick(Qt.Key_Space);
+            compare(spy.count, 4);
+            // Grab the footer: a separate item grab can include the popup's
+            // background in place of the icon on the software renderer.
+            for (const color of [link.color, "#66d01030"]) {
+                link.color = color;
+                link.forceActiveFocus();
+                mouseMove(root, root.width - 1, root.height - 1);
+                icon.visible = false;
+                waitForRendering(footer);
+                const bare = grabImage(footer);
+                icon.visible = true;
+                waitForRendering(footer);
+                const image = grabImage(footer);
+                const origin = icon.mapToItem(footer, Qt.point(0, 0));
+                let tinted = 0;
+                for (let y = Math.ceil(origin.y); y < origin.y + icon.height - 1; ++y) {
+                    for (let x = Math.ceil(origin.x); x < origin.x + icon.width - 1; ++x) {
+                        const pixel = image.pixel(x, y);
+                        const background = bare.pixel(x, y);
+                        const channels = ["r", "g", "b"];
+                        const channel = channels.reduce((best, c) => Math.abs(link.color[c] - background[c])
+                                                                     > Math.abs(link.color[best] - background[best]) ? c : best);
+                        const coverage = (pixel[channel] - background[channel]) / (link.color[channel] - background[channel]);
+                        if (coverage > 0.05) {
+                            ++tinted;
+                            verify(coverage <= link.color.a + 0.03, "the outline keeps the link's muted opacity");
+                            channels.forEach(c => fuzzyCompare(pixel[c], background[c] + (link.color[c] - background[c]) * coverage, 0.03,
+                                                              "the outline uses the link's colour"));
+                        }
+                    }
+                }
+                verify(tinted > 5, "the activity outline is painted in the link's colour");
+            }
+        }
+
+        function test_configureGearFollowsTheme_data() {
+            return [{ tag: "light", color: "#232629" }, { tag: "dark", color: "#eff0f1" }];
+        }
+
+        // Local SVGs need KSvg's theme colours even when Qt uses its software renderer.
+        function test_configureGearFollowsTheme(data) {
+            const popup = load("CpuPopup", normal);
+            const button = find(popup, i => i.objectName === "configureButton");
+            button.Kirigami.Theme.inherit = false;
+            button.Kirigami.Theme.textColor = data.color;
+            button.forceActiveFocus(Qt.TabFocusReason);
+            const glyph = find(button, i => i.imagePath?.endsWith("/icons/settings.svg"));
+            tryCompare(glyph, "opacity", 1);
+            waitForRendering(popup);
+            const image = grabImage(popup);
+            const origin = glyph.mapToItem(popup, Qt.point(0, 0));
+            let painted = 0;
+            for (let y = Math.ceil(origin.y); y < origin.y + glyph.height; ++y) {
+                for (let x = Math.ceil(origin.x); x < origin.x + glyph.width; ++x) {
+                    if (Qt.colorEqual(image.pixel(x, y), data.color)) {
+                        ++painted;
+                    }
+                }
+            }
+            verify(painted > 5, "the gear's stroke uses the theme's text colour");
+            button.enabled = false;
+            compare(glyph.opacity, 0.4);
         }
 
         function temperatureTiles(popup) {
@@ -2175,9 +2297,47 @@ TestRoot {
             const height = popup.implicitHeight;
             m.processesReadable = true;
             waitForRendering(popup);
-            verify(list.visible);
+            verify(list.active);
             verify(scan.model !== null);
-            verify(popup.implicitHeight > height, popup.implicitHeight + " after " + height);
+            list.key = "none";
+            scan.processes = [];
+            scan.scanned = true;
+            waitForRendering(popup);
+            verify(!list.visible);
+            compare(popup.implicitHeight, height);
+            popup.visible = false;
+            compare(scan.model, null);
+        }
+
+        // Completed empty scans leave no section or rule, while the scan
+        // stays active and later readings can restore the section.
+        function test_emptyProcessSections_data() {
+            return [{ tag: "cpu", popup: "CpuPopup" }, { tag: "memory", popup: "MemoryPopup" }];
+        }
+
+        function test_emptyProcessSections(data) {
+            const m = monitorWith({ processSample: [] });
+            const popup = load(data.popup, m);
+            const list = find(popup, i => i.key !== undefined && i.rows !== undefined);
+            const scan = Array.from(list.resources).find(o => o.scanned !== undefined);
+            const header = find(popup, i => i.processesLoading !== undefined);
+            const dividers = all(popup, i => i.parent === list.parent && i.ratio !== undefined);
+            verify(header.processesLoading && !list.visible);
+            verify(dividers.every(i => !i.visible));
+            scan.scanned = true;
+            waitForRendering(popup);
+            const height = popup.implicitHeight;
+            verify(!header.processesLoading && !list.visible);
+            verify(list.active);
+            m.processSample = [{ name: "firefox", usage: 1, memory: 1024, count: 1 }];
+            waitForRendering(popup);
+            verify(list.visible && dividers.some(i => i.visible));
+            verify(popup.implicitHeight > height);
+            m.processSample = [];
+            waitForRendering(popup);
+            verify(!list.visible && dividers.every(i => !i.visible));
+            compare(popup.implicitHeight, height);
+            verify(!header.processesLoading);
         }
 
         // The room a popup has on a 1920 × 1080 screen at `scale`, under a
@@ -2254,12 +2414,95 @@ TestRoot {
                       lists: [[["kwin_wayland", 1], ["plasmashell", 1]], [["blender", 1], ["steamwebhelper", 3]]] },
                     { tag: "discrete asleep", monitor: asleep, lists: [[["kwin_wayland", 1], ["plasmashell", 1], ["firefox", 2]]] },
                     { tag: "the only GPU asleep", monitor: onlyAsleep, lists: [] },
-                    { tag: "no process on either", monitor: intel, lists: [[], []] }];
+                    { tag: "no process on either", monitor: intel, lists: [] }];
         }
 
         function test_gpuProcessesBySection(data) {
             const popup = load("GpuPopup", data.monitor);
             compare(gpuLists(popup).map(l => l.rows.map(r => [r.name, r.count])), data.lists);
+        }
+
+        // Aggregate usage does not imply reportable processes. A later scan
+        // can restore a list even after the screen cap has reached zero.
+        function test_gpuEmptySectionsRecover() {
+            const m = monitorWith({ gpuProcessSample: [], "gpuInner.present": false });
+            const popup = load("GpuPopup", m);
+            const height = popup.implicitHeight;
+            compare(gpuLists(popup).length, 0);
+            verify(m.gpuOuter.usage > 0);
+            popup.room = height;
+            m.gpuProcessSample = normal.gpuProcessSample;
+            waitForRendering(popup);
+            tryCompare(popup, "processCount", 0);
+            compare(gpuLists(popup).length, 0);
+            m.gpuProcessSample = [];
+            waitForRendering(popup);
+            compare(gpuLists(popup).length, 0);
+            popup.room = height + 200;
+            m.gpuProcessSample = normal.gpuProcessSample;
+            waitForRendering(popup);
+            tryVerify(() => popup.processCount > 0);
+            compare(gpuLists(popup).length, 1);
+            m.gpuProcessSample = [];
+            waitForRendering(popup);
+            compare(gpuLists(popup).length, 0);
+            compare(popup.implicitHeight, height);
+            verify(!texts(popup).includes("Nothing of yours is using this GPU"));
+        }
+
+        function test_gpuHeaderLoading() {
+            const m = monitorWith({ gpuProcessSample: null, gpuProcessesScanned: false, "gpuInner.present": false });
+            const popup = load("GpuPopup", m);
+            const header = find(popup, i => i.ringValue !== undefined && i.processesLoading !== undefined);
+            verify(header.processesLoading);
+            compare(gpuLists(popup).length, 0);
+            const height = popup.implicitHeight;
+            const value = header.ringValue;
+            m.gpuProcessesScanned = true;
+            waitForRendering(popup);
+            verify(!header.processesLoading);
+            compare(header.ringValue, value);
+            compare(popup.implicitHeight, height);
+            m.gpuProcesses = normal.gpuProcessSample;
+            waitForRendering(popup);
+            compare(gpuLists(popup).length, 1);
+        }
+
+        function test_gpuEligibilityRefitsWithoutMoreRoom() {
+            const m = monitorWith({ gpuProcessSample: [] });
+            const popup = load("GpuPopup", m);
+            const lists = all(popup, i => i.heightFor !== undefined);
+            // Enough room for one GPU's row, but not a row on each GPU.
+            popup.room = popup.implicitHeight + lists[0].heightFor(1) + 1;
+            m.gpuProcessSample = normal.gpuProcessSample;
+            waitForRendering(popup);
+            tryCompare(popup, "processCount", 0);
+            compare(gpuLists(popup).length, 0);
+            m.gpuProcessSample = normal.gpuProcessSample.filter(p => p.gpu === normal.gpuInner.bdf);
+            waitForRendering(popup);
+            tryVerify(() => popup.processCount > 0);
+            compare(gpuLists(popup).length, 1);
+            verify(popup.implicitHeight <= popup.room);
+        }
+
+        function test_nvidiaUnavailableHasNoLoading() {
+            const nvidia = { id: "gpu1", vendor: "10de" };
+            const m = monitorWith({ "gpuInner.present": false, "gpuOuter.vendor": "10de", "gpuOuter.info": nvidia,
+                                    hardware: { gpus: [nvidia] }, gpuProcessSample: null });
+            const popup = load("GpuPopup", m);
+            const scans = all(popup, () => true).reduce((found, i) => found.concat(Array.from(i.resources)), [])
+                .filter(o => o.instantiator !== undefined);
+            compare(scans.length, 1);
+            // Stand in for libksysguard before 6.4, without GPU attributes.
+            scans[0].model.enabledAttributes = [];
+            waitForRendering(popup);
+            verify(!popup.nvidiaListed);
+            compare(gpuLists(popup).length, 0);
+            verify(all(popup, i => i.ringValue !== undefined && i.processesLoading !== undefined)
+                   .every(i => !i.processesLoading));
+            m.gpuOuter.phase = "resting";
+            waitForRendering(popup);
+            compare(scans[0].model, null);
         }
 
         // nvidia-smi, which libksysguard reads NVIDIA GPUs' processes with,
@@ -2285,6 +2528,10 @@ TestRoot {
                              hardware: { gpus: data.gpus } };
             if (data.live) {
                 values.gpuProcessSample = null;
+            } else if (data.vendor === "10de") {
+                values.gpuProcessSample = normal.gpuProcessSample.map(p => Object.assign({}, p, {
+                    gpu: p.gpu === normal.gpuOuter.bdf ? normal.gpuOuter.systemName : p.gpu
+                }));
             }
             const popup = load("GpuPopup", monitorWith(values));
             compare(popup.nvidiaReadable, data.read);
@@ -2310,7 +2557,11 @@ TestRoot {
             const row = all(blender, c => c.entry !== undefined && c.index !== undefined)[0];
             compare(row.usage, Format.fixed(NaN, 1));
             verify(row.Accessible.name.startsWith("blender, usage not counted, "), row.Accessible.name);
-            const intelList = gpuLists(load("GpuPopup", intel))[0];
+            const intelMonitor = monitorWith({
+                "gpuOuter.present": false, "gpuInner.vendor": "8086", "gpuInner.reportsVram": false,
+                gpuProcessSample: [{ name: "firefox", usage: 1, memory: 0, gpu: normal.gpuInner.bdf }]
+            });
+            const intelList = gpuLists(load("GpuPopup", intelMonitor))[0];
             verify(!intelList.memoryShown);
             compare(all(intelList, c => c.label === "VRAM" && c.visible).length, 0);
         }

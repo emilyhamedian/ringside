@@ -6,9 +6,16 @@ follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- System Monitor link has an activity icon in the popup footer and underlines on hover or keyboard focus.
+- Popup settings buttons use a smaller outline gear.
+
 ### Fixed
 
 - GPU names wrap in the popup so the full name is visible.
+- Empty process sections no longer take up space in the CPU, memory and GPU
+  popups. All three use the same "Top processes" heading.
 - Stale awake reports no longer restart GPU monitoring after an idle pause.
 - Claude and Codex rings allow time for the connection to come up on first
   load before showing a failure.
