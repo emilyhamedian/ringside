@@ -78,7 +78,8 @@ PopupPage {
         }
     }
 
-    onImplicitHeightChanged: fitProcesses()
+    // Change the row count after layout, rather than during its polish pass.
+    onImplicitHeightChanged: Qt.callLater(popup.fitProcesses)
     onRoomChanged: fitProcesses()
     onProcessCountWantedChanged: fitProcesses()
     onNvidiaListedChanged: fitProcesses()

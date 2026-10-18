@@ -2269,7 +2269,7 @@ TestRoot {
             popup.room = height;
             m.gpuProcessSample = normal.gpuProcessSample;
             waitForRendering(popup);
-            compare(popup.processCount, 0);
+            tryCompare(popup, "processCount", 0);
             compare(gpuLists(popup).length, 0);
             m.gpuProcessSample = [];
             waitForRendering(popup);
@@ -2277,7 +2277,7 @@ TestRoot {
             popup.room = height + 200;
             m.gpuProcessSample = normal.gpuProcessSample;
             waitForRendering(popup);
-            verify(popup.processCount > 0);
+            tryVerify(() => popup.processCount > 0);
             compare(gpuLists(popup).length, 1);
             m.gpuProcessSample = [];
             waitForRendering(popup);
@@ -2312,11 +2312,11 @@ TestRoot {
             popup.room = popup.implicitHeight + lists[0].heightFor(1) + 1;
             m.gpuProcessSample = normal.gpuProcessSample;
             waitForRendering(popup);
-            compare(popup.processCount, 0);
+            tryCompare(popup, "processCount", 0);
             compare(gpuLists(popup).length, 0);
             m.gpuProcessSample = normal.gpuProcessSample.filter(p => p.gpu === normal.gpuInner.bdf);
             waitForRendering(popup);
-            verify(popup.processCount > 0);
+            tryVerify(() => popup.processCount > 0);
             compare(gpuLists(popup).length, 1);
             verify(popup.implicitHeight <= popup.room);
         }
