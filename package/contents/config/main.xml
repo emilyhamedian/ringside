@@ -109,6 +109,10 @@
     <entry name="showCredits" type="Bool">
       <default>true</default>
     </entry>
+    <entry name="sessionStarter" type="Bool">
+      <label>Allow the Claude and Codex session starters; turning this off stops every automatic start</label>
+      <default>true</default>
+    </entry>
     <entry name="claudeInnerLimit" type="String">
       <label>Per-model limit on Claude's inner ring: empty for automatic, "none", or its id</label>
       <default></default>

@@ -641,6 +641,7 @@ TestRoot {
                 { tag: "Items", source: "config/ConfigItems.qml", key: "ringsOnly", value: ["cpu"] },
                 { tag: "Sensors", source: "config/ConfigSensors.qml", key: "diskDevice", value: "sda" },
                 { tag: "Providers", source: "config/ConfigProviders.qml", key: "usageRefreshMinutes", value: 10 },
+                { tag: "ProvidersSessionStarter", source: "config/ConfigProviders.qml", key: "sessionStarter", value: false },
                 { tag: "ProvidersCodexMark", source: "config/ConfigProviders.qml", key: "codexMark", value: "openai" },
                 { tag: "ProvidersClaudeProgram", source: "config/ConfigProviders.qml", key: "claudeProgram",
                   value: "~/.bun/bin/claude" },
@@ -760,6 +761,8 @@ TestRoot {
                   saved: { usageRefreshMinutes: 10 } },
                 { tag: "showCredits", source: providers,
                   drive: page => press(page, "Show remaining credits"), saved: { showCredits: false } },
+                { tag: "sessionStarter", source: providers,
+                  drive: page => press(page, "Automatic starts"), saved: { sessionStarter: false } },
                 { tag: "claudeInnerLimit", source: providers, start: limits, drive: page => pickIn(page, "Claude inner ring", 2),
                   saved: { claudeInnerLimit: "opus" } },
                 { tag: "codexInnerLimit", source: providers, start: limits, drive: page => pickIn(page, "OpenAI inner ring", 2),
@@ -1476,6 +1479,21 @@ TestRoot {
             verify(!page.cfg_showCredits, "turning items on again keeps the opt-out");
             compare(page.cfg_claudeInnerLimit, "");
             compare(page.cfg_codexInnerLimit, "");
+        }
+
+        function test_sessionStarterSettingAppliesToAllProviders() {
+            const page = make(providers, { cfg_itemOrder: ["claude", "codex"], cfg_hiddenItems: [],
+                                           cfg_sessionStarter: true, knownLimits: {} });
+            const box = accessible(page, "Automatic starts");
+            verify(box.visible && box.checked);
+            compare(all(page, i => i.text === "Automatic starts" && i.toggled !== undefined).length, 1);
+            box.toggle();
+            box.toggled();
+            verify(!page.cfg_sessionStarter);
+            page.cfg_hiddenItems = ["claude", "codex"];
+            verify(box.visible && !box.checked, "the shared switch stays available with both items off");
+            page.cfg_hiddenItems = [];
+            verify(!page.cfg_sessionStarter, "turning items on again keeps the feature disabled");
         }
 
         // Codex is chosen until the setting says openai, and each choice

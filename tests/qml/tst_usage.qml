@@ -1099,7 +1099,7 @@ TestRoot {
         }
 
         function starterTick() {
-            return timers().find(t => t.interval === 30000);
+            return timers().find(t => t.objectName === "starterTimer");
         }
 
         function test_startersFromEveryReport() {
@@ -1123,6 +1123,101 @@ TestRoot {
             verify(!starterTick().running, "every starter is off");
             poll("starter");
             verify(starterTick().running);
+        }
+
+        function test_masterStarterSwitchDisablesEverything() {
+            start("starter", ["claude"]);
+            const run = commands();
+            config.sessionStarter = false;
+            verify(!usage.starterEnabled);
+            compare(usage.starterWanted, {}, "the shared off doesn't queue per-provider writes");
+            const off = " --starter-set claude=off --starter-set codex=off";
+            compare(ran(run, off), [usage.helperCommand(["claude", "codex"], off)],
+                    "one run turns both providers off, including the hidden one");
+            verify(!starterTick().running, "the starter timer stops");
+            starterTick().triggered();
+            compare(ran(run, " --start"), [], "even a due start is blocked");
+            tryVerify(() => usage.starter("claude").state === "off", 10000);
+            compare(run.count, 1, "no second provider write follows");
+            usage.setStarter("codex", true);
+            compare(run.count, 1, "the popup can't switch a provider on while the feature is disabled");
+        }
+
+        function test_masterStarterSwitchWaitsForEarlierWrite() {
+            start("starter-slow-set");
+            const run = commands();
+            const off = " --starter-set claude=off --starter-set codex=off";
+            usage.setStarter("codex", true);
+            config.sessionStarter = false;
+            compare(ran(run, off), [], "the earlier on keeps its place before the shared off");
+            tryVerify(() => ran(run, off).length === 1, 10000);
+            tryVerify(() => usage.starter("codex").state === "off", 10000);
+            compare(ran(run, off).length, 1, "no later on overwrites the shared off");
+        }
+
+        function test_masterStarterSwitchReenabledOffCompletesBeforeNewOn() {
+            start("starter-slow-set");
+            const run = commands();
+            const off = " --starter-set claude=off --starter-set codex=off";
+            const on = " --starter-set codex=on";
+            config.sessionStarter = false;
+            config.sessionStarter = true;
+            usage.setStarter("codex", true);
+            compare(ran(run, on), [], "the new opt-in waits for the shared off");
+            tryVerify(() => ran(run, on).length === 1, 10000);
+            compare(ran(run, off).length, 1);
+            const commandsInOrder = run.signalArguments.map(a => a[0]);
+            verify(commandsInOrder.findIndex(c => c.endsWith(off)) < commandsInOrder.findIndex(c => c.endsWith(on)));
+            tryVerify(() => usage.starter("codex").enabled, 10000);
+        }
+
+        function test_masterStarterSwitchReenableDoesNotCancelPendingOff() {
+            start("starter-slow-set");
+            const run = commands();
+            const off = " --starter-set claude=off --starter-set codex=off";
+            const on = " --starter-set codex=on";
+            usage.setStarter("codex", true);
+            config.sessionStarter = false;
+            config.sessionStarter = true;
+            tryVerify(() => ran(run, off).length === 1, 10000);
+            tryVerify(() => usage.starter("codex").state === "off", 10000);
+            compare(ran(run, on).length, 1, "only the earlier on ran; re-enabling didn't cancel the shared off");
+        }
+
+        function test_masterStarterSwitchNewOnSurvivesEarlierSameProviderOn() {
+            start("starter-slow-set");
+            const run = commands();
+            const off = " --starter-set claude=off --starter-set codex=off";
+            const on = " --starter-set codex=on";
+            usage.setStarter("codex", true);
+            config.sessionStarter = false;
+            config.sessionStarter = true;
+            usage.setStarter("codex", true);
+            tryVerify(() => ran(run, off).length === 1, 10000);
+            tryVerify(() => ran(run, on).length === 2, 10000);
+            const commandsInOrder = run.signalArguments.map(a => a[0]);
+            const firstOn = commandsInOrder.findIndex(c => c.endsWith(on));
+            const sharedOff = commandsInOrder.findIndex(c => c.endsWith(off));
+            const secondOn = commandsInOrder.findIndex((c, index) => c.endsWith(on) && index > firstOn);
+            verify(firstOn < sharedOff && sharedOff < secondOn, "the newer opt-in runs after the shared off");
+            tryVerify(() => usage.starter("codex").enabled, 10000);
+            compare(usage.starterWanted, {});
+        }
+
+        function test_masterStarterSwitchFailureIsShownAndRetried() {
+            start("starter-stuck");
+            const run = commands();
+            const off = " --starter-set claude=off --starter-set codex=off";
+            config.sessionStarter = false;
+            tryVerify(() => usage.starter("claude").reason === "switch", 10000);
+            verify(usage.starter("claude").error !== "");
+            verify(usage.starterDisablePending);
+            verify(usage.starterDisableRetryAt > usage.nowSeconds());
+            compare(ran(run, off).length, 1, "a failed write doesn't retry immediately");
+            usage.starterDisableRetryAt = usage.nowSeconds();
+            usage.disableStarters();
+            compare(ran(run, off).length, 2, "the failed shared off is retried");
+            tryVerify(() => !usage.starterDisableRunning, 10000);
         }
 
         // --start runs once the starter's time has come, not before, and
@@ -3063,6 +3158,32 @@ TestRoot {
             });
         }
 
+        function test_codexSessionStarterSwitch() {
+            const popup = load("codex");
+            setStarter("codex", { enabled: false, state: "off", window: "session" });
+            const toggle = starterSwitch(popup);
+            compare(toggle.text, "Start a new session when one ends");
+            compare(starterStatus(popup).text, "When a session ends, Ringside sends Codex a one-word message to start the next one.");
+            setStarter("codex", { enabled: false, state: "off", window: "week" });
+            compare(toggle.text, "Start a new week when one ends");
+        }
+
+        function test_masterStarterSwitchHidesThePopupControl() {
+            const popup = load("codex");
+            const toggle = starterSwitch(popup);
+            const button = configureButton(popup);
+            verify(toggle.visible && button.leadItem !== null);
+            monitor.usage.starterEnabled = false;
+            verify(!toggle.visible);
+            verify(!toggle.parent.parent.visible, "the footer keeps no room for the hidden starter");
+            verify(button.leadItem === null);
+            compare(root.all(toggle.parent, i => i.visible && i.Accessible && !i.Accessible.ignored).length, 0,
+                    "no starter control remains exposed to assistive technology");
+            monitor.usage.starterEnabled = true;
+            verify(toggle.visible && toggle.parent.parent.visible);
+            verify(button.leadItem !== null);
+        }
+
         function test_starterToggle_data() {
             return [{ tag: "sticks", sticks: true }, { tag: "refused", sticks: false }];
         }
@@ -3780,7 +3901,10 @@ TestRoot {
             const T = (h, m) => ({ day: 6, h: h, m: m });
             const W = (h, m) => ({ day: 7, h: h, m: m });
             const F = (h, m) => ({ day: 9, h: h, m: m });
-            const rows = (item, list) => list.map(r => ({ tag: item + ":" + r[0], item: item, starter: r[1], expected: r[2] }));
+            const rows = (item, list) => list.map(r => ({
+                tag: item + ":" + r[0], item: item,
+                starter: item === "codex" ? Object.assign({ window: "session" }, r[1]) : r[1], expected: r[2]
+            }));
             const off = { enabled: false, state: "off" };
             return rows("claude", [
                 ["off", off, ["When a session ends, Ringside sends Claude a one-word message to start the next one."]],
@@ -3824,40 +3948,40 @@ TestRoot {
                 ["switchFailed", { state: "failed", reason: "switch", error: "The usage helper exited with code 1: boom" },
                  ["Couldn't change the switch: The usage helper exited with code 1: boom"]]
             ]).concat(rows("codex", [
-                ["off", off, ["When a week ends, Ringside sends Codex a one-word message to start the next one."]],
-                ["waiting", { state: "waiting", next: { day: 12, h: 3, m: 33 } }, ["The next week starts %1.", { day: 12, h: 3, m: 33 }]],
+                ["off", off, ["When a session ends, Ringside sends Codex a one-word message to start the next one."]],
+                ["waiting", { state: "waiting", next: { day: 12, h: 3, m: 33 } }, ["The next session starts %1.", { day: 12, h: 3, m: 33 }]],
                 // Six days or more away, the weekday comes with the date, as
                 // it could be today's.
-                ["waitingNextWeek", { state: "waiting", next: { day: 13, h: 3, m: 33 } }, ["The next week starts %1.", { day: 13, h: 3, m: 33 }]],
-                ["startedLastWeek", { state: "started", at: { day: -1, h: 23, m: 30 } }, ["Started this week %1.", { day: -1, h: 23, m: 30 }]],
-                ["waitingToday", { state: "waiting", next: T(23, 40) }, ["The next week starts at %1.", T(23, 40)]],
+                ["waitingNextWeek", { state: "waiting", next: { day: 13, h: 3, m: 33 } }, ["The next session starts %1.", { day: 13, h: 3, m: 33 }]],
+                ["waitingToday", { state: "waiting", next: T(23, 40) }, ["The next session starts at %1.", T(23, 40)]],
                 ["confirming", { state: "confirming", at: T(23, 30), next: T(23, 35) },
-                 ["Started a week at %1. Confirming at %2.", T(23, 30), T(23, 35)]],
-                // The next start is the week's end, which the reset line gives.
-                ["started", { state: "started", at: T(23, 30), next: { day: 13, h: 23, m: 30 } }, ["Started this week at %1.", T(23, 30)]],
-                ["startedYesterday", { state: "started", at: { day: 5, h: 23, m: 30 } }, ["Started this week %1.", { day: 5, h: 23, m: 30 }]],
-                ["weekly", { state: "weekly", next: F(2, 33) }, ["Weekly limit reached. The next week starts %1, when the limit resets.", F(2, 33)]],
-                ["notInstalled", { state: "failed", reason: "not-installed" }, ["Can't start a week: Codex isn't installed."]],
+                 ["Started a session at %1. Confirming at %2.", T(23, 30), T(23, 35)]],
+                ["started", { state: "started", at: T(23, 30), next: W(4, 30) },
+                 ["Started a session at %1. The next one starts %2.", T(23, 30), W(4, 30)]],
+                ["startedYesterday", { state: "started", at: { day: 5, h: 23, m: 30 }, next: W(4, 30) },
+                 ["Started a session %1. The next one starts %2.", { day: 5, h: 23, m: 30 }, W(4, 30)]],
+                ["weekly", { state: "weekly", next: F(2, 33) }, ["Weekly limit reached. The next session starts %1, when the limit resets.", F(2, 33)]],
+                ["notInstalled", { state: "failed", reason: "not-installed" }, ["Can't start a session: Codex isn't installed."]],
                 ["program", { state: "failed", reason: "program" },
-                 ["Can't start a week: the codex program set in Settings can't be run."]],
+                 ["Can't start a session: the codex program set in Settings can't be run."]],
                 ["signedOut", { state: "failed", reason: "signed-out" },
-                 ["Can't start a week: Codex is signed out. Run codex in a terminal to sign in."]],
+                 ["Can't start a session: Codex is signed out. Run codex in a terminal to sign in."]],
                 ["notResponding", { state: "failed", reason: "not-responding", next: T(22, 5) },
-                 ["Can't start a week: Codex isn't responding. Trying again at %1.", T(22, 5)]],
+                 ["Can't start a session: Codex isn't responding. Trying again at %1.", T(22, 5)]],
                 ["notRespondingTomorrow", { state: "failed", reason: "not-responding", next: W(0, 0) },
-                 ["Can't start a week: Codex isn't responding. Trying again %1.", W(0, 0)]],
+                 ["Can't start a session: Codex isn't responding. Trying again %1.", W(0, 0)]],
                 ["unchecked", { state: "failed", reason: "unchecked", next: T(22, 5) },
                  ["Couldn't check the limits. Trying again at %1.", T(22, 5)]],
                 ["uncheckedTomorrow", { state: "failed", reason: "unchecked", next: W(1, 0) },
                  ["Couldn't check the limits. Trying again %1.", W(1, 0)]],
                 ["notSentTomorrow", { state: "failed", reason: "not-sent", next: W(0, 15) },
-                 ["Couldn't start a week. Trying again %1.", W(0, 15)]],
+                 ["Couldn't start a session. Trying again %1.", W(0, 15)]],
                 ["retrying", { state: "retrying", at: T(23, 30), next: W(0, 5) },
-                 ["Couldn't confirm the week started at %1. Trying once more %2.", T(23, 30), W(0, 5)]],
-                ["paused", { state: "paused", next: W(4, 35) }, ["Couldn't confirm two weeks in a row. Paused until %1.", W(4, 35)]],
+                 ["Couldn't confirm the session started at %1. Trying once more %2.", T(23, 30), W(0, 5)]],
+                ["paused", { state: "paused", next: W(4, 35) }, ["Couldn't confirm two sessions in a row. Paused until %1.", W(4, 35)]],
                 ["startFailed", { state: "failed", reason: "helper", at: T(23, 30), next: T(23, 35), error: "The usage helper exited with code 1: boom" },
-                 ["Couldn't start a week. Trying again at %1. The usage helper exited with code 1: boom", T(23, 35)]],
-                ["pausedToday", { state: "paused", next: T(23, 55) }, ["Couldn't confirm two weeks in a row. Paused until %1.", T(23, 55)]],
+                 ["Couldn't start a session. Trying again at %1. The usage helper exited with code 1: boom", T(23, 35)]],
+                ["pausedToday", { state: "paused", next: T(23, 55) }, ["Couldn't confirm two sessions in a row. Paused until %1.", T(23, 55)]],
                 ["switchFailed", { state: "failed", reason: "switch", error: "The usage helper exited with code 1: boom" },
                  ["Couldn't change the switch: The usage helper exited with code 1: boom"]]
             ]));
@@ -3868,7 +3992,8 @@ TestRoot {
             const epoch = t => Date.UTC(2026, 9, t.day, t.h + 4, t.m) / 1000;
             const now = epoch({ day: 6, h: 22, m: 0 });
             const starter = { enabled: data.starter.state !== "off", state: data.starter.state, reason: data.starter.reason ?? null,
-                              error: data.starter.error ?? null, clockZone: { offset: -4 * 3600, abbreviation: "EDT" },
+                              error: data.starter.error ?? null, window: data.starter.window,
+                              clockZone: { offset: -4 * 3600, abbreviation: "EDT" },
                               at: data.starter.at ? epoch(data.starter.at) : null,
                               next: data.starter.next ? epoch(data.starter.next) - (data.starter.early ?? 0) : null };
             // The expected time as the locale writes it: its time, after its
@@ -3932,6 +4057,15 @@ TestRoot {
             } finally {
                 root.translations = {};
             }
+        }
+
+        function test_codexWeeklyStarterStatus() {
+            compare(words.starterStatus("codex", { state: "off", window: "week" }, 0),
+                    "When a week ends, Ringside sends Codex a one-word message to start the next one.");
+            compare(words.starterStatus("codex", { state: "failed", reason: "not-installed", window: "week" }, 0),
+                    "Can't start a week: Codex isn't installed.");
+            compare(words.starterStatus("codex", { state: "paused", next: 3600, window: "week" }, 0),
+                    "Couldn't confirm two weeks in a row. Paused until " + words.shortTime(new Date(3600000)) + ".");
         }
 
         function test_starterStatusOfAnUnknownState() {

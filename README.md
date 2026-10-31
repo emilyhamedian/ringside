@@ -114,12 +114,16 @@ The percentage and countdown still show the week. Blue means credits were
 used since the previous check; it uses the same readings, with no extra
 requests. Hiding the balance rows keeps this indication.
 
-**Starting the next session.** A Claude five-hour session or Codex week only
-begins when you next send a message. With the switch at the bottom of the
-popup turned on, Ringside starts the next one for you as soon as the last one
-ends, so the clock is already running by the time you're back. It does this by
-sending a short message, which counts toward your limits like any other, so if
-you pay for usage beyond your plan, you'll probably want to leave it off.
+**Starting the next session or week.** A Claude five-hour session, or a
+Codex five-hour session or week, only begins when you next send a message.
+With the switch at the bottom of the popup turned on, Ringside starts the next
+one for you as soon as the last one ends, so the clock is already running by
+the time you're back. Codex follows its five-hour window when your plan
+reports one, and its weekly window otherwise. Ringside does this by sending a
+short message, which counts toward your limits like any other, so if you pay
+for usage beyond your plan, you'll probably want to leave it off. *Automatic
+starts* under *AI Providers* turns the feature off for both providers and
+hides their popup switches.
 
 ## Privacy
 

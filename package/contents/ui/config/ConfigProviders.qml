@@ -232,6 +232,17 @@ ConfigPage {
             text: i18nc("@info", "Applies to all enabled providers. Balances are checked even when hidden: Claude makes an extra read from Anthropic alongside its usage check, at most once every 5 minutes. Codex uses existing usage checks.")
         }
 
+        QQC2.CheckBox {
+            text: i18nc("@option:check", "Automatic starts")
+            Accessible.name: text
+            Accessible.description: i18nc("@info", "Allows the switches in the Claude and Codex popups. Turn off to stop every automatic start and hide those switches.")
+            checked: page.cfg_sessionStarter
+            onToggled: page.cfg_sessionStarter = checked
+            QQC2.ToolTip.text: Accessible.description
+            QQC2.ToolTip.visible: hovered
+            QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
+        }
+
         // Each provider's section shows only while it has something to set.
         Item {
             Kirigami.FormData.isSection: true

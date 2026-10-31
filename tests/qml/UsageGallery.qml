@@ -366,14 +366,14 @@ ColumnLayout {
     }
 
     // The session starter on, waiting for Claude's session to end, and
-    // unable to start Codex's week while the CLI is signed out.
+    // unable to start Codex's session while the CLI is signed out.
     FakeMonitor {
         id: starting
         usage: FakeUsage {
             id: startingUsage
             starters: ({
                 claude: { enabled: true, state: "waiting", at: null, next: startingUsage.createdAt + 2 * 3600 + 13 * 60, reason: null },
-                codex: { enabled: true, state: "failed", at: null, next: null, reason: "signed-out" }
+                codex: { enabled: true, state: "failed", at: null, next: null, reason: "signed-out", window: "session" }
             })
         }
     }
@@ -580,7 +580,7 @@ ColumnLayout {
         }
 
         GalleryFrame {
-            label: "Codex · week starter can't run: signed out (full text)"
+            label: "Codex · session starter can't run: signed out (full text)"
             UsagePopup { monitor: starting; item: "codex" }
         }
     }
@@ -684,7 +684,7 @@ ColumnLayout {
             }
 
             GalleryFrame {
-                label: "Breeze Light · Codex · week starter signed out (full)"
+                label: "Breeze Light · Codex · session starter signed out (full)"
                 flat: true
                 UsagePopup { monitor: starting; item: "codex" }
             }

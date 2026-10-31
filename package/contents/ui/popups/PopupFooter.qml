@@ -18,6 +18,7 @@ PlasmaExtras.PlasmoidHeading {
     property bool systemMonitorShown: true
     // A popup's own control, such as the usage popups' starter switch.
     property alias leading: lead.data
+    property bool leadingShown: true
     // The readings' edge, from inside the footer's padding.
     readonly property real readingsEdge: Style.contentEdge(Kirigami.Units.largeSpacing) - leftPadding
 
@@ -58,7 +59,7 @@ PlasmaExtras.PlasmoidHeading {
         // Takes the room the System Monitor link leaves.
         ColumnLayout {
             id: lead
-            visible: children.length > 0
+            visible: footer.leadingShown && children.length > 0
             Layout.fillWidth: true
             // On the readings' edge.
             Layout.leftMargin: footer.readingsEdge

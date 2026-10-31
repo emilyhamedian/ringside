@@ -413,6 +413,9 @@ QtObject {
     function starterStatus(item, starter, nowMs) {
         const s = starter ?? { state: "off" };
         const claude = item === "claude";
+        // Older reports and test stand-ins default to Claude's session and
+        // Codex's week; current reports name the detected window explicitly.
+        const session = s.window ? s.window === "session" : claude;
         const zone = epoch => {
             const clockZone = epoch === s.at && s.atClockZone ? s.atClockZone : s.clockZone;
             return clockZone ? { clockZone: clockZone, resetsAt: epoch } : null;
@@ -436,23 +439,25 @@ QtObject {
         case "off":
             return claude
                 ? i18nc("@info under the session starter's switch while it is off", "When a session ends, Ringside sends Claude a one-word message to start the next one.")
+                : session
+                ? i18nc("@info under the session starter's switch while it is off", "When a session ends, Ringside sends Codex a one-word message to start the next one.")
                 : i18nc("@info under the session starter's switch while it is off", "When a week ends, Ringside sends Codex a one-word message to start the next one.");
         case "waiting":
-            return claude
+            return session
                 ? onDay(s.next, i18nc("@info %1 is a time today", "The next session starts at %1.", time(s.next)),
                         i18nc("@info %1 is a weekday, or a weekday and date, %2 a time", "The next session starts %1 %2.", day(s.next), time(s.next)))
                 : onDay(s.next, i18nc("@info %1 is a time today", "The next week starts at %1.", time(s.next)),
                         i18nc("@info %1 is a weekday, or a weekday and date, %2 a time", "The next week starts %1 %2.", day(s.next), time(s.next)));
         case "confirming":
-            return both(claude
+            return both(session
                 ? onDay(s.at, i18nc("@info %1 is a time today", "Started a session at %1.", time(s.at)),
                         i18nc("@info %1 is a weekday, or a weekday and date, %2 a time", "Started a session %1 %2.", day(s.at), time(s.at)))
                 : onDay(s.at, i18nc("@info %1 is a time today", "Started a week at %1.", time(s.at)),
                         i18nc("@info %1 is a weekday, or a weekday and date, %2 a time", "Started a week %1 %2.", day(s.at), time(s.at))),
                 confirming);
         case "started":
-            // Codex's next is the week's end, which the reset line gives.
-            return claude
+            // A Codex week's next is its end, which the reset line gives.
+            return session
                 ? both(onDay(s.at, i18nc("@info %1 is a time today", "Started a session at %1.", time(s.at)),
                              i18nc("@info %1 is a weekday, or a weekday and date, %2 a time", "Started a session %1 %2.", day(s.at), time(s.at))),
                        onDay(s.next, i18nc("@info the next session; %1 is a time today", "The next one starts at %1.", time(s.next)),
@@ -460,7 +465,7 @@ QtObject {
                 : onDay(s.at, i18nc("@info %1 is a time today", "Started this week at %1.", time(s.at)),
                         i18nc("@info %1 is a weekday, or a weekday and date, %2 a time", "Started this week %1 %2.", day(s.at), time(s.at)));
         case "weekly":
-            return claude
+            return session
                 ? onDay(s.next, i18nc("@info %1 is a time today", "Weekly limit reached. The next session starts at %1, when the limit resets.", time(s.next)),
                         i18nc("@info %1 is a weekday, or a weekday and date, %2 a time", "Weekly limit reached. The next session starts %1 %2, when the limit resets.", day(s.next), time(s.next)))
                 : onDay(s.next, i18nc("@info %1 is a time today", "Weekly limit reached. The next week starts at %1, when the limit resets.", time(s.next)),
@@ -468,15 +473,19 @@ QtObject {
         case "failed":
             if (s.reason === "not-installed") {
                 return claude ? i18nc("@info", "Can't start a session: Claude Code isn't installed.")
-                              : i18nc("@info", "Can't start a week: Codex isn't installed.");
+                              : session ? i18nc("@info", "Can't start a session: Codex isn't installed.")
+                                        : i18nc("@info", "Can't start a week: Codex isn't installed.");
             }
             if (s.reason === "program") {
                 return claude ? i18nc("@info", "Can't start a session: the claude program set in Settings can't be run.")
-                              : i18nc("@info", "Can't start a week: the codex program set in Settings can't be run.");
+                              : session ? i18nc("@info", "Can't start a session: the codex program set in Settings can't be run.")
+                                        : i18nc("@info", "Can't start a week: the codex program set in Settings can't be run.");
             }
             if (s.reason === "signed-out") {
                 return claude
                     ? i18nc("@info", "Can't start a session: Claude Code is signed out. Run claude in a terminal to sign in.")
+                    : session
+                    ? i18nc("@info", "Can't start a session: Codex is signed out. Run codex in a terminal to sign in.")
                     : i18nc("@info", "Can't start a week: Codex is signed out. Run codex in a terminal to sign in.");
             }
             if (s.reason === "not-subscription" && claude) {
@@ -486,6 +495,9 @@ QtObject {
                 return claude
                     ? onDay(s.next, i18nc("@info %1 is a time today", "Can't start a session: Claude Code isn't responding. Trying again at %1.", time(s.next)),
                             i18nc("@info %1 is a weekday, or a weekday and date, %2 a time", "Can't start a session: Claude Code isn't responding. Trying again %1 %2.", day(s.next), time(s.next)))
+                    : session
+                    ? onDay(s.next, i18nc("@info %1 is a time today", "Can't start a session: Codex isn't responding. Trying again at %1.", time(s.next)),
+                            i18nc("@info %1 is a weekday, or a weekday and date, %2 a time", "Can't start a session: Codex isn't responding. Trying again %1 %2.", day(s.next), time(s.next)))
                     : onDay(s.next, i18nc("@info %1 is a time today", "Can't start a week: Codex isn't responding. Trying again at %1.", time(s.next)),
                             i18nc("@info %1 is a weekday, or a weekday and date, %2 a time", "Can't start a week: Codex isn't responding. Trying again %1 %2.", day(s.next), time(s.next)));
             }
@@ -495,7 +507,7 @@ QtObject {
             }
             // A send that never left, or a --start that didn't run.
             if (s.reason === "not-sent" || s.reason === "helper") {
-                const retry = claude
+                const retry = session
                     ? onDay(s.next, i18nc("@info %1 is a time today", "Couldn't start a session. Trying again at %1.", time(s.next)),
                             i18nc("@info %1 is a weekday, or a weekday and date, %2 a time", "Couldn't start a session. Trying again %1 %2.", day(s.next), time(s.next)))
                     : onDay(s.next, i18nc("@info %1 is a time today", "Couldn't start a week. Trying again at %1.", time(s.next)),
@@ -508,14 +520,14 @@ QtObject {
             }
             break;
         case "retrying":
-            return both(claude
+            return both(session
                 ? onDay(s.at, i18nc("@info %1 is a time today", "Couldn't confirm the session started at %1.", time(s.at)),
                         i18nc("@info %1 is a weekday, or a weekday and date, %2 a time", "Couldn't confirm the session started %1 %2.", day(s.at), time(s.at)))
                 : onDay(s.at, i18nc("@info %1 is a time today", "Couldn't confirm the week started at %1.", time(s.at)),
                         i18nc("@info %1 is a weekday, or a weekday and date, %2 a time", "Couldn't confirm the week started %1 %2.", day(s.at), time(s.at))),
                 tryingAgain);
         case "paused":
-            return claude
+            return session
                 ? onDay(s.next, i18nc("@info %1 is a time today", "Couldn't confirm two sessions in a row. Paused until %1.", time(s.next)),
                         i18nc("@info %1 is a weekday, or a weekday and date, %2 a time", "Couldn't confirm two sessions in a row. Paused until %1 %2.", day(s.next), time(s.next)))
                 : onDay(s.next, i18nc("@info %1 is a time today", "Couldn't confirm two weeks in a row. Paused until %1.", time(s.next)),

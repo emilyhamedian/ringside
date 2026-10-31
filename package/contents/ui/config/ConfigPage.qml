@@ -78,6 +78,8 @@ KCM.SimpleKCM {
     property string cfg_codexInnerLimitDefault
     property bool cfg_showCredits
     property bool cfg_showCreditsDefault
+    property bool cfg_sessionStarter
+    property bool cfg_sessionStarterDefault
     property string cfg_codexMark
     property string cfg_codexMarkDefault
     property string cfg_claudeProgram
