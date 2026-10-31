@@ -17,6 +17,7 @@ ColumnLayout {
     property real room: Infinity
     property alias systemMonitorShown: footer.systemMonitorShown
     property alias footerLeading: footer.leading
+    property alias footerLeadingShown: footer.leadingShown
     readonly property GraphCursor graphCursor: GraphCursor {}
     default property alias sections: body.data
 

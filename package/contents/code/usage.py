@@ -47,7 +47,7 @@ holds.
 
 When Plasma's digital clock shows a zone other than system time, every window
 also carries "clockZone": {"offset": <seconds east of UTC>, "abbreviation":
-"EDT"}, the zone's offset and abbreviation at that window's reset. Claude's
+"EDT"}, the zone's offset and abbreviation at that window's reset. Each
 session does too, and so does each starter with a time, at its next time
 or, without one, at its last; a starter with a last time also carries
 "atClockZone", the zone at that time.
@@ -71,8 +71,9 @@ happened, or was noticed>, "from": <the percent used before it>, "until":
 "startedAt", the same time, since a window cleared in place keeps its
 reset and so no longer started a window's length before it.
 
-Claude's entry also carries "session", its five-hour window, or null when
-no session is running; it is left out when the reply doesn't say.
+Each entry also carries "session", its five-hour window, or null when no
+session is running; it is left out when the reply doesn't say. Codex carries
+"sessionUnknown": true instead when a shorter window is present but unreadable.
 
 --program <provider>=<path> names the program to run for a provider, as the
 user chose it in Ringside's settings; ~ stands for the home folder. Without
@@ -83,10 +84,11 @@ bool, "problem": "" or what keeps a chosen path from running: "missing",
 
 Every entry carries "starter", the session starter's state: {"enabled":
 bool, "state": ..., "at": <epoch seconds> or null, "next": <epoch seconds>
-or null, "reason": ... or null}. The states are "off"; "waiting" (next is
+or null, "reason": ... or null, "window": "session" or "week"}. The states
+are "off"; "waiting" (next is
 when the next window starts); "confirming" (at is the send, next the read
 that confirms it); "started" (at is when the window started, next when the
-next one starts, which the popup shows only for Claude); "weekly" (the
+next one starts); "weekly" (the
 weekly limit is reached; next is its reset); "failed" (reason says why:
 "not-installed", "program" for a chosen program that can't be run,
 "signed-out", "not-subscription" for a CLI logged in other than with a
@@ -207,7 +209,7 @@ SWITCH_LOCK = STATE_DIR / "starter.lock"
 WORK_DIR = STATE_DIR / "work"
 SESSION_SECONDS = 5 * 3600
 # A send is confirmed by a reading taken this long after it. One taken
-# sooner than CONFIRM_SLACK after it can't confirm it: a week Codex started
+# sooner than CONFIRM_SLACK after it can't confirm it: a session Codex started
 # during a send of up to SEND_TIMEOUT must sit clear of ROLLING_SLACK.
 CONFIRM_DELAY = 5 * 60
 CONFIRM_SLACK = 4 * 60
@@ -215,8 +217,8 @@ CONFIRM_SLACK = 4 * 60
 RETRY_DELAYS = (5 * 60, 15 * 60, 3600)
 # Two unconfirmed sends in a row hold the starter this long.
 PAUSE = 5 * 3600
-# Codex reports an idle account's window as a week from the moment it is
-# asked; a reset within this many seconds of that is no window at all.
+# An idle account's rolling window resets one full window from the moment it
+# is asked; a reset within this many seconds of that is no window at all.
 ROLLING_SLACK = 120
 # Renew Claude's login before a send if it expires within this many
 # seconds, so the CLI has no reason to spend the refresh token itself.
@@ -578,8 +580,11 @@ def weekly_window(limit):
 
 def codex_window(window):
     """A Codex window, as long as it says it is; one that doesn't say counts as a week."""
-    return window_from(window.get("usedPercent"), window.get("resetsAt"),
-                       int(window.get("windowDurationMins") or WEEK_MINUTES) * 60)
+    parsed = window_from(window.get("usedPercent"), window.get("resetsAt"),
+                         int(window.get("windowDurationMins") or WEEK_MINUTES) * 60)
+    if window.get("resetsAt") is not None and parsed["resetsAt"] is None:
+        raise ValueError("unreadable reset time")
+    return parsed
 
 
 def parse_codex(result):
@@ -607,14 +612,27 @@ def parse_codex(result):
             scoped.append({"id": limit_id, "label": other.get("limitName") or limit_id,
                            **codex_window(weekly)})
     reading = {"weekly": codex_window(window), "scoped": scoped}
+    session_unknown = False
     for candidate in (limit.get("primary"), limit.get("secondary")):
-        if not isinstance(candidate, dict):
+        if candidate is None:
             continue
-        with contextlib.suppress(ValueError, TypeError, OverflowError):
+        if not isinstance(candidate, dict):
+            session_unknown = True
+            continue
+        try:
             minutes = candidate.get("windowDurationMins")
-            if (type(minutes) is int and 0 < minutes * 60 < reading["weekly"]["windowSeconds"]
-                    and finite_share(candidate.get("usedPercent"))):
+            if type(minutes) is not int or minutes <= 0:
+                raise ValueError("no usable window length")
+            if minutes * 60 < reading["weekly"]["windowSeconds"]:
+                if not finite_share(candidate.get("usedPercent")):
+                    raise ValueError("no usage share")
                 reading["session"] = codex_window(candidate)
+        except (ValueError, TypeError, OverflowError):
+            session_unknown = True
+    # Display can keep a valid week when an extra window is garbled, but the
+    # starter must not mistake that for a plan with no five-hour limit.
+    if session_unknown and "session" not in reading:
+        reading["sessionUnknown"] = True
     return reading
 
 
@@ -1685,7 +1703,7 @@ def track_reset(name, series, record, window, now):
 def unused(window, now):
     """Whether a window is a week no one has used yet: Claude may give one
     no reset time, and Codex a reset a week from whenever it is asked (see
-    codex_running())."""
+    weekly_running())."""
     reset = window["resetsAt"]
     return window["percent"] == 0 and (reset is None or abs(reset - now - window["windowSeconds"]) <= ROLLING_SLACK)
 
@@ -1827,9 +1845,9 @@ def blank_record():
     last send not yet confirmed; pending, a send under way, written before
     it starts so a run that dies mid-send still confirms it; uncertain,
     unconfirmed sends in a row; failures, failed reads or sends in a row;
-    steppedAt, when a step last ran."""
+    steppedAt, when a step last ran; period, the detected window's length."""
     return {"state": "waiting", "at": None, "next": None, "reason": None,
-            "sentAt": None, "pending": None, "uncertain": 0, "failures": 0, "steppedAt": None}
+            "sentAt": None, "pending": None, "uncertain": 0, "failures": 0, "steppedAt": None, "period": None}
 
 
 def record_from(raw):
@@ -1844,6 +1862,8 @@ def record_from(raw):
     for key in ("uncertain", "failures"):
         if type(raw.get(key)) is int and raw[key] >= 0:
             record[key] = raw[key]
+    if type(raw.get("period")) is int and raw["period"] > 0:
+        record["period"] = raw["period"]
     if raw.get("reason") in REASONS:
         record["reason"] = raw["reason"]
     state = raw.get("state")
@@ -1934,13 +1954,20 @@ class Starter:
     check() returns the CLI or raises Failed; send(binary) raises Failed,
     NotSent or SwitchedOff when nothing went out. running(reading, now) is
     the window running now or None, or raises Unreadable when the reading
-    can't tell, and period a window's length. The caller holds usage.lock
-    throughout. name is the provider's, for the journal.
+    can't tell, and period a window's length or a function that detects it
+    from the reading. The caller holds usage.lock throughout. name is the
+    provider's, for the journal.
     """
 
     def __init__(self, name, record, *, read, check, send, running, period, persist, clock):
         self.name, self.record, self.read, self.check, self.send = name, record, read, check, send
         self.running, self.period, self.persist, self.clock = running, period, persist, clock
+
+    def detected_period(self, reading=None):
+        return self.period(reading) if callable(self.period) else self.period
+
+    def window_name(self):
+        return "session" if self.record["period"] == SESSION_SECONDS else WINDOWS[self.name]
 
     def set(self, state, at=None, next_=None, reason=None):
         """Moves to a state. A failure goes to the journal as it starts or
@@ -1973,7 +2000,7 @@ class Starter:
             return False
         rec["sentAt"] = None
         self.set("paused", next_=now + PAUSE)
-        event("warning", self.name, "starter-paused", hours=PAUSE // 3600, window=WINDOWS[self.name])
+        event("warning", self.name, "starter-paused", hours=PAUSE // 3600, window=self.window_name())
         return True
 
     def step(self):
@@ -1992,13 +2019,26 @@ class Starter:
         self.persist()
         if rec["state"] == "paused":
             rec["uncertain"] = 0
-        # A send older than a window can no longer be told apart from one
-        # that never started, as after a long time switched off.
-        if rec["sentAt"] is not None and now - rec["sentAt"] >= self.period:
+        # A send older than the window it was for can no longer be told
+        # apart from one that never started, as after a long time switched
+        # off. Records from before window detection use the provider default.
+        period = rec["period"] or self.detected_period()
+        if rec["sentAt"] is not None and now - rec["sentAt"] >= period:
             rec.update(sentAt=None, state="waiting")
         try:
             binary = self.check()
             reading = self.read(rec["sentAt"] + CONFIRM_SLACK if rec["state"] == "confirming" else None)
+            period = self.detected_period(reading)
+            # A send from before the plan changed its window can't confirm
+            # the other kind. It counts only toward the send throttle: even
+            # alternating window shapes can't bypass the two-send pause.
+            changed = rec["sentAt"] is not None and period != (rec["period"] or self.detected_period())
+            if changed:
+                rec["state"] = "waiting"
+                if self.unconfirmed(now):
+                    return
+                rec["sentAt"] = None
+            rec["period"] = period
             window = self.running(reading, now)
         except Failed as err:
             # A send this read was to confirm goes unconfirmed, so a brief
@@ -2019,7 +2059,9 @@ class Starter:
             self.back_off()
             return
         if weekly["percent"] >= 100 and weekly["resetsAt"] > now:
-            rec.update(sentAt=None, uncertain=0, failures=0)
+            rec.update(sentAt=None, failures=0)
+            if not changed:
+                rec["uncertain"] = 0
             self.set("weekly", next_=weekly["resetsAt"] + 1)
             return
         if window:
@@ -2028,8 +2070,10 @@ class Starter:
             # stepped back, finds it started still.
             ours = rec["sentAt"] is not None or (rec["state"] == "started" and rec["at"] == start)
             if rec["sentAt"] is not None:
-                event("info", self.name, "starter-confirmed", window=WINDOWS[self.name])
-            rec.update(sentAt=None, uncertain=0, failures=0)
+                event("info", self.name, "starter-confirmed", window=self.window_name())
+            rec.update(sentAt=None, failures=0)
+            if not changed:
+                rec["uncertain"] = 0
             if ours:
                 self.set("started", start, window["resetsAt"] + 1)
             else:
@@ -2038,7 +2082,7 @@ class Starter:
         if rec["state"] == "confirming":
             if not self.unconfirmed(now):
                 self.set("retrying", rec["sentAt"], now + CONFIRM_DELAY)
-                event("info", self.name, "starter-unconfirmed", window=WINDOWS[self.name], wait=CONFIRM_DELAY)
+                event("info", self.name, "starter-unconfirmed", window=self.window_name(), wait=CONFIRM_DELAY)
             return
         rec["pending"] = now
         self.persist()
@@ -2069,12 +2113,28 @@ def claude_running(reading, now):
     return None
 
 
-def codex_running(reading, now):
-    """Codex's week while it runs, else None. An idle account reports 0% and
-    a reset a week from whenever it is asked, which moves with the clock;
-    that is no window, and the next message starts one. A week in use that
-    doesn't say when it resets runs all the same, so the reading is as good
-    as unread."""
+def session_running(reading, now):
+    """Codex's five-hour window while it runs, else None. An idle account
+    may report 0% and a reset one window from whenever it is asked, which
+    moves with the clock; that is no session, and the next message starts
+    one. A session in use that doesn't say when it resets runs all the same,
+    so the reading is as good as unread."""
+    session = reading.get("session")
+    if not session:
+        return None
+    reset = session["resetsAt"]
+    if reset is None and session["percent"] > 0:
+        raise Unreadable()
+    if reset is None or reset <= now:
+        return None
+    if session["percent"] == 0 and abs(reset - reading["fetchedAt"] - session["windowSeconds"]) <= ROLLING_SLACK:
+        return None
+    return session
+
+
+def weekly_running(reading, now):
+    """Codex's week while it runs, else None, with the same idle rolling
+    reset rule as session_running()."""
     week = reading["weekly"]
     reset = week["resetsAt"]
     if reset is None and week["percent"] > 0:
@@ -2084,6 +2144,25 @@ def codex_running(reading, now):
     if week["percent"] == 0 and abs(reset - reading["fetchedAt"] - week["windowSeconds"]) <= ROLLING_SLACK:
         return None
     return week
+
+
+def codex_running(reading, now):
+    """Codex's five-hour session when the reply has that window, else its
+    week. This detects the plan's shorter limit without a setting. A garbled
+    short window is unreadable, not evidence of a weekly-only plan."""
+    if reading.get("sessionUnknown"):
+        raise Unreadable()
+    return session_running(reading, now) if "session" in reading else weekly_running(reading, now)
+
+
+def codex_has_session(reading):
+    """Whether the reply has a five-hour window, separate or as the only one."""
+    return "session" in reading or reading.get("weekly", {}).get("windowSeconds") == SESSION_SECONDS
+
+
+def codex_period(reading=None):
+    """The length of the window codex_running() follows in this reading."""
+    return SESSION_SECONDS if reading is not None and codex_has_session(reading) else WEEK_SECONDS
 
 
 def starter_read(name, now, not_before):
@@ -2257,8 +2336,9 @@ def codex_command(binary):
 
 
 def send_codex(binary, wanted):
-    """Send Codex one word so a week starts, if wanted() still says so. As
-    for Claude, the reading five minutes later decides whether it worked."""
+    """Send Codex one word so its five-hour session or week starts, if
+    wanted() still says so. As for Claude, the reading five minutes later
+    decides whether it worked."""
     command = codex_command(binary)
     if not wanted():
         raise SwitchedOff()
@@ -2277,12 +2357,12 @@ def fetchers():
     return {"claude": claude_usage, "codex": codex_usage}
 
 
-# Each provider's session starter: how it sends its message, whether a
-# reading shows the session or week it asked for running, and that
-# window's length.
+# Each provider's starter: how it sends its message, whether a reading shows
+# the window it asked for running, and that window's length. Codex detects a
+# five-hour session or a week from each reading.
 def starters():
     return {"claude": (send_claude, claude_running, SESSION_SECONDS),
-            "codex": (send_codex, codex_running, WEEK_SECONDS)}
+            "codex": (send_codex, codex_running, codex_period)}
 
 
 def run_starter(name):
@@ -2321,7 +2401,7 @@ def replan_starters(providers, now):
     for came early: the window it waits out has ended, or its reset moved by
     more than RESET_MOVED, or the weekly limit it holds for is no longer
     reached, as when a provider resets the limits ahead of time. Its times
-    would otherwise stand until they came, telling of a week that is over
+    would otherwise stand until they came, telling of a session that is over
     and holding off a start that could happen now. The widget then runs
     --start, which plans afresh from the reading. The caller holds
     usage.lock; a state that can't be written is left for --start to report.
@@ -2343,8 +2423,8 @@ def replan_starters(providers, now):
 
 def overtaken(name, record, reading, now):
     """Whether a reading shows that what a starter waits for came early (see
-    replan_starters()). A reading that can't tell, as a Claude one that
-    doesn't say whether a session runs, never does."""
+    replan_starters()). A reading that can't tell whether a session runs
+    never does."""
     if record["state"] not in ("started", "waiting", "weekly") or record["next"] is None or record["next"] <= now:
         return False
     awaited = record["next"] - 1
@@ -2363,11 +2443,18 @@ def overtaken(name, record, reading, now):
 STARTER_OFF = {"enabled": False, "state": "off", "at": None, "next": None, "reason": None}
 
 
-def starter_report(name, switches, states, now):
-    """What the report says of a provider's starter."""
-    if name not in switches:
-        return dict(STARTER_OFF)
+def starter_report(name, switches, states, now, reading=None):
+    """What the report says of a provider's starter, including the detected
+    session or week its switch and status name."""
     record = states.get(name) or blank_record()
+    if name == "claude":
+        window = "session"
+    elif reading is not None and reading.get("status") == "ok" and not reading.get("sessionUnknown"):
+        window = "session" if codex_has_session(reading) else "week"
+    else:
+        window = "session" if record["period"] == SESSION_SECONDS else "week"
+    if name not in switches:
+        return dict(STARTER_OFF, window=window)
     # Should the clock have stepped back, the starter is due, so a --start
     # moves its times back for good.
     stepped = unstep(record, now)
@@ -2377,13 +2464,13 @@ def starter_report(name, switches, states, now):
     if stepped or next_ is None:
         next_ = now
     return {"enabled": True, "state": state, "at": at, "next": next_,
-            "reason": record["reason"] if state == "failed" else None}
+            "reason": record["reason"] if state == "failed" else None, "window": window}
 
 
 def attach_starters(providers, now):
     switches, states = read_switches(), read_starter_states()
     for name, entry in providers.items():
-        entry["starter"] = starter_report(name, switches, states, now)
+        entry["starter"] = starter_report(name, switches, states, now, entry)
 
 
 # --- clock zone ------------------------------------------------------------
@@ -2439,10 +2526,9 @@ def clock_zone():
 
 def show_in_zone(providers, zone):
     """Give each window's reset the zone's offset and abbreviation at that
-    moment, Claude's session included, and each starter the same at its
-    next time, or at its last when it has no next. A starter's last time
-    gets its own, atClockZone: a week Codex started can span a change of
-    daylight saving time before its next.
+    moment, each session included, and each starter the same at its next
+    time, or at its last when it has no next. A starter's last time gets its
+    own, atClockZone, so each wall clock reads in its own zone.
 
     A time the zone cannot place stays in system time on its own.
     """

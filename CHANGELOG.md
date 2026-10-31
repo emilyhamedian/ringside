@@ -6,6 +6,13 @@ follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- Codex's starter follows its five-hour reset when reported and its weekly
+  reset otherwise.
+- *Automatic starts* under AI Providers turns off both providers' starters
+  and hides their popup switches.
+
 ## [0.4.0] - 2026-10-18
 
 ### Added

@@ -251,22 +251,23 @@ class Starter(unittest.TestCase):
 
     def test_unconfirmed_sends_then_the_pause(self):
         h = Harness(NOW, reading=claude(NOW), provider="codex")
-        h.reading = {"status": "ok", "fetchedAt": NOW, "scoped": [], "weekly": week(0, NOW + 7 * 86400)}
+        h.reading = {"status": "ok", "fetchedAt": NOW, "scoped": [], "weekly": week(0, NOW + 7 * 86400),
+                     "session": week(0, NOW + SESSION, SESSION)}
         h.step()
         usage.EVENTS.clear()
-        h.reading = dict(h.reading, fetchedAt=NOW + 300, weekly=week(0, NOW + 300 + 7 * 86400))
+        h.reading = dict(h.reading, fetchedAt=NOW + 300, session=week(0, NOW + 300 + SESSION, SESSION))
         h.step(NOW + 300)
         self.assertEqual(self.kinds(), [("info", "starter-unconfirmed")])
         self.assertEqual(usage.EVENTS[0]["message"],
-                         "Codex session starter: no new week after its message; trying once more in 300 s")
-        h.reading = dict(h.reading, fetchedAt=NOW + 600, weekly=week(0, NOW + 600 + 7 * 86400))
+                         "Codex session starter: no new session after its message; trying once more in 300 s")
+        h.reading = dict(h.reading, fetchedAt=NOW + 600, session=week(0, NOW + 600 + SESSION, SESSION))
         h.step(NOW + 600)
         usage.EVENTS.clear()
-        h.reading = dict(h.reading, fetchedAt=NOW + 900, weekly=week(0, NOW + 900 + 7 * 86400))
+        h.reading = dict(h.reading, fetchedAt=NOW + 900, session=week(0, NOW + 900 + SESSION, SESSION))
         h.step(NOW + 900)
         self.assertEqual(self.kinds(), [("warning", "starter-paused")])
         self.assertEqual(usage.EVENTS[0]["message"],
-                         "Codex session starter paused for 5 h: two messages in a row started no week")
+                         "Codex session starter paused for 5 h: two messages in a row started no session")
 
     def test_a_failure_is_logged_once_then_debug(self):
         h = Harness(NOW)

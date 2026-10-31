@@ -41,8 +41,17 @@ def claude(fetched, session=None, session_percent=0, weekly_percent=0, weekly_re
             "session": None if session is None else week(session_percent, session, SESSION)}
 
 
-def codex(fetched, percent, resets_at):
-    return {"status": "ok", "fetchedAt": fetched, "scoped": [], "weekly": week(percent, resets_at)}
+def codex(fetched, percent, resets_at, session=None, session_percent=0):
+    """A Codex reading; session is the five-hour reset, or None for idle."""
+    return {"status": "ok", "fetchedAt": fetched, "scoped": [], "weekly": week(percent, resets_at),
+            "session": None if session is None else week(session_percent, session, SESSION)}
+
+
+def codex_week(fetched, percent, resets_at):
+    """A Codex reading from a plan with no reported five-hour window."""
+    reading = codex(fetched, percent, resets_at)
+    del reading["session"]
+    return reading
 
 
 class Harness:
@@ -59,7 +68,7 @@ class Harness:
         self.starter = usage.Starter(
             provider, self.record, read=self.read, check=self.check, send=self.send,
             running=usage.claude_running if provider == "claude" else usage.codex_running,
-            period=SESSION if provider == "claude" else WEEK,
+            period=SESSION if provider == "claude" else usage.codex_period,
             persist=self.persist, clock=lambda: self.now)
 
     def read(self, not_before):
@@ -102,6 +111,13 @@ class Steps(unittest.TestCase):
         self.assertEqual(h.shows(), ("waiting", None, reset + 1))
         h.step(reset)
         self.assertEqual(h.count("read"), 1)
+
+    def test_a_claude_zero_session_is_running_even_at_a_rolling_reset(self):
+        reset = NOW + SESSION
+        h = Harness(NOW, claude(NOW, session=reset, session_percent=0))
+        h.step()
+        self.assertEqual(h.count("send"), 0)
+        self.assertEqual(h.shows(), ("waiting", None, reset + 1))
 
     def test_no_window_or_an_ended_one_each_get_one_send(self):
         for session in (None, NOW - 4):
@@ -246,7 +262,7 @@ class Steps(unittest.TestCase):
         h.step()
         sent = next(i for i, (event, _) in enumerate(h.events) if event == "send")
         self.assertEqual(h.events[sent - 1], ("persist", dict(usage.blank_record(), pending=NOW, next=NOW + 300,
-                                                             steppedAt=NOW)))
+                                                             steppedAt=NOW, period=SESSION)))
 
     def test_a_restart_mid_send_confirms_it_then_pauses_after_two(self):
         h = Harness(NOW, record=dict(usage.blank_record(), pending=NOW))
@@ -439,69 +455,160 @@ class Steps(unittest.TestCase):
 
 
 class Codex(unittest.TestCase):
+    def test_an_idle_accounts_rolling_session_reset_is_no_window(self):
+        for percent, reset, running in ((0, NOW + SESSION, False), (0, NOW + SESSION - 90, False),
+                                        (0, NOW + SESSION + 90, False), (0, NOW + SESSION - 300, True),
+                                        (1, NOW + SESSION, True), (40, NOW + 3600, True),
+                                        (40, NOW - 1, False), (0, None, False)):
+            with self.subTest(percent=percent, reset=reset):
+                reading = codex(NOW, 0, NOW + WEEK, session=reset, session_percent=percent)
+                self.assertEqual(usage.session_running(reading, NOW) is not None, running)
+
+    # Idle is judged from when the reading was taken: a cached one minutes
+    # old still shows a session rolling from then, not from now.
+    def test_an_idle_account_read_minutes_ago_is_still_idle(self):
+        fetched = NOW - 240
+        h = Harness(NOW, codex(fetched, 0, fetched + WEEK, session=fetched + SESSION), provider="codex")
+        h.step()
+        self.assertEqual(h.count("send"), 1)
+
+    def test_a_session_started_by_the_send_is_confirmed_at_zero_percent(self):
+        h = Harness(NOW, codex(NOW, 0, NOW + WEEK, session=NOW + SESSION), provider="codex")
+        h.step()
+        self.assertEqual(h.count("send"), 1)
+        h.reading = codex(NOW + 300, 0, NOW + WEEK, session=NOW + SESSION)
+        h.step(NOW + 300)
+        self.assertEqual(h.shows(), ("started", NOW, NOW + SESSION + 1))
+
+    # The earliest reading that may confirm a send, after the longest send,
+    # still tells the session it started from one that moves with the clock.
+    def test_the_earliest_confirming_reading_is_clear_of_a_rolling_session(self):
+        self.assertGreater(usage.CONFIRM_SLACK - usage.SEND_TIMEOUT, usage.ROLLING_SLACK)
+        h = Harness(NOW, codex(NOW, 0, NOW + WEEK, session=NOW + SESSION), provider="codex")
+        h.step()
+        started = NOW + usage.SEND_TIMEOUT
+        h.reading = codex(NOW + usage.CONFIRM_SLACK, 0, NOW + WEEK, session=started + SESSION)
+        h.step(NOW + 300)
+        self.assertEqual(h.events[-2], ("read", NOW + usage.CONFIRM_SLACK))
+        self.assertEqual(h.shows(), ("started", started, started + SESSION + 1))
+
+    def test_a_session_still_rolling_after_the_send_is_unconfirmed(self):
+        h = Harness(NOW, codex(NOW, 0, NOW + WEEK, session=NOW + SESSION), provider="codex")
+        h.step()
+        h.reading = codex(NOW + 300, 0, NOW + WEEK, session=NOW + 300 + SESSION)
+        h.step(NOW + 300)
+        self.assertEqual(h.shows(), ("retrying", NOW, NOW + 600))
+
+    # A session in use that doesn't say when it resets is read again as after
+    # a failed read; nothing is sent into it.
+    def test_a_session_in_use_without_a_reset_holds_like_a_failed_read(self):
+        reading = codex(NOW, 0, NOW + WEEK)
+        reading["session"] = week(40, None, SESSION)
+        with self.assertRaises(usage.Unreadable):
+            usage.session_running(reading, NOW)
+        h = Harness(NOW, reading, provider="codex")
+        for at, retry in ((NOW, NOW + 300), (NOW + 300, NOW + 1200), (NOW + 1200, NOW + 4800)):
+            h.step(at)
+            self.assertEqual(h.record["next"], retry)
+        self.assertEqual(h.count("send"), 0)
+
+    def test_a_running_session_waits_and_a_full_week_holds(self):
+        reset = NOW + 2 * HOUR
+        h = Harness(NOW, codex(NOW, 30, NOW + 2 * 86400, session=reset, session_percent=30), provider="codex")
+        h.step()
+        self.assertEqual(h.shows(), ("waiting", None, reset + 1))
+        h = Harness(NOW, codex(NOW, 100, NOW + 86400, session=NOW + SESSION), provider="codex")
+        h.step()
+        self.assertEqual(h.shows(), ("weekly", None, NOW + 86401))
+        self.assertEqual(h.count("send"), 0)
+
+
+class CodexWeekly(unittest.TestCase):
     def test_an_idle_accounts_rolling_reset_is_no_window(self):
         for percent, reset, running in ((0, NOW + WEEK, False), (0, NOW + WEEK - 90, False),
                                         (0, NOW + WEEK + 90, False), (0, NOW + WEEK - 300, True),
                                         (1, NOW + WEEK, True), (40, NOW + 3600, True),
                                         (40, NOW - 1, False), (0, None, False)):
             with self.subTest(percent=percent, reset=reset):
-                reading = codex(NOW, percent, reset)
+                reading = codex_week(NOW, percent, reset)
                 self.assertEqual(usage.codex_running(reading, NOW) is not None, running)
+                self.assertEqual(usage.codex_period(reading), WEEK)
 
-    # Idle is judged from when the reading was taken: a cached one minutes
-    # old still shows a week rolling from then, not from now.
     def test_an_idle_account_read_minutes_ago_is_still_idle(self):
         fetched = NOW - 240
-        h = Harness(NOW, codex(fetched, 0, fetched + WEEK), provider="codex")
+        h = Harness(NOW, codex_week(fetched, 0, fetched + WEEK), provider="codex")
         h.step()
         self.assertEqual(h.count("send"), 1)
+        self.assertEqual(h.record["period"], WEEK)
 
     def test_a_week_started_by_the_send_is_confirmed_at_zero_percent(self):
-        h = Harness(NOW, codex(NOW, 0, NOW + WEEK), provider="codex")
+        h = Harness(NOW, codex_week(NOW, 0, NOW + WEEK), provider="codex")
         h.step()
-        self.assertEqual(h.count("send"), 1)
-        h.reading = codex(NOW + 300, 0, NOW + WEEK)
+        h.reading = codex_week(NOW + 300, 0, NOW + WEEK)
         h.step(NOW + 300)
         self.assertEqual(h.shows(), ("started", NOW, NOW + WEEK + 1))
 
-    # The earliest reading that may confirm a send, after the longest send,
-    # still tells the week it started from one that moves with the clock.
-    def test_the_earliest_confirming_reading_is_clear_of_a_rolling_week(self):
-        self.assertGreater(usage.CONFIRM_SLACK - usage.SEND_TIMEOUT, usage.ROLLING_SLACK)
-        h = Harness(NOW, codex(NOW, 0, NOW + WEEK), provider="codex")
-        h.step()
-        started = NOW + usage.SEND_TIMEOUT
-        h.reading = codex(NOW + usage.CONFIRM_SLACK, 0, started + WEEK)
-        h.step(NOW + 300)
-        self.assertEqual(h.events[-2], ("read", NOW + usage.CONFIRM_SLACK))
-        self.assertEqual(h.shows(), ("started", started, started + WEEK + 1))
-
     def test_a_week_still_rolling_after_the_send_is_unconfirmed(self):
-        h = Harness(NOW, codex(NOW, 0, NOW + WEEK), provider="codex")
+        h = Harness(NOW, codex_week(NOW, 0, NOW + WEEK), provider="codex")
         h.step()
-        h.reading = codex(NOW + 300, 0, NOW + 300 + WEEK)
+        h.reading = codex_week(NOW + 300, 0, NOW + 300 + WEEK)
         h.step(NOW + 300)
         self.assertEqual(h.shows(), ("retrying", NOW, NOW + 600))
 
-    # A week in use that doesn't say when it resets is read again as after
-    # a failed read; nothing is sent into it.
     def test_a_week_in_use_without_a_reset_holds_like_a_failed_read(self):
         with self.assertRaises(usage.Unreadable):
-            usage.codex_running(codex(NOW, 40, None), NOW)
-        h = Harness(NOW, codex(NOW, 40, None), provider="codex")
+            usage.codex_running(codex_week(NOW, 40, None), NOW)
+        h = Harness(NOW, codex_week(NOW, 40, None), provider="codex")
         for at, retry in ((NOW, NOW + 300), (NOW + 300, NOW + 1200), (NOW + 1200, NOW + 4800)):
             h.step(at)
             self.assertEqual(h.record["next"], retry)
         self.assertEqual(h.count("send"), 0)
 
     def test_a_running_week_waits_and_a_full_one_holds(self):
-        h = Harness(NOW, codex(NOW, 30, NOW + 2 * 86400), provider="codex")
+        h = Harness(NOW, codex_week(NOW, 30, NOW + 2 * 86400), provider="codex")
         h.step()
         self.assertEqual(h.shows(), ("waiting", None, NOW + 2 * 86400 + 1))
-        h = Harness(NOW, codex(NOW, 100, NOW + 86400), provider="codex")
+        h = Harness(NOW, codex_week(NOW, 100, NOW + 86400), provider="codex")
         h.step()
         self.assertEqual(h.shows(), ("weekly", None, NOW + 86401))
         self.assertEqual(h.count("send"), 0)
+
+    def test_a_send_from_one_window_kind_cant_confirm_the_other(self):
+        for saved_period in (WEEK, None):
+            with self.subTest(saved_period=saved_period):
+                h = Harness(NOW, codex_week(NOW, 0, NOW + WEEK), provider="codex")
+                h.step()
+                self.assertEqual(h.record["period"], WEEK)
+                # None is a pending send from before window detection.
+                h.record["period"] = saved_period
+                h.reading = codex(NOW + 300, 0, NOW + WEEK, session=NOW + SESSION, session_percent=1)
+                h.step(NOW + 300)
+                self.assertEqual(h.shows(), ("waiting", None, NOW + SESSION + 1))
+                self.assertEqual((h.record["period"], h.record["uncertain"]), (SESSION, 1))
+
+    def test_alternating_window_shapes_cannot_bypass_the_send_pause(self):
+        h = Harness(NOW, codex_week(NOW, 0, NOW + WEEK), provider="codex")
+        h.step()
+        self.assertEqual(h.count("send"), 1)
+        h.reading = codex(NOW + 300, 0, NOW + WEEK, session=NOW + 300 + SESSION)
+        h.step(NOW + 300)
+        self.assertEqual((h.count("send"), h.record["uncertain"], h.record["state"]), (2, 1, "confirming"))
+        h.reading = codex_week(NOW + 600, 0, NOW + 600 + WEEK)
+        h.step(NOW + 600)
+        self.assertEqual((h.count("send"), h.record["uncertain"]), (2, 2))
+        self.assertEqual(h.shows(), ("paused", None, NOW + 600 + usage.PAUSE))
+
+
+class CodexUnreadableSession(unittest.TestCase):
+    def test_a_malformed_short_window_is_not_a_weekly_only_plan(self):
+        reading = codex_week(NOW, 0, NOW + WEEK)
+        reading["sessionUnknown"] = True
+        with self.assertRaises(usage.Unreadable):
+            usage.codex_running(reading, NOW)
+        h = Harness(NOW, reading, provider="codex")
+        h.step()
+        self.assertEqual(h.count("send"), 0)
+        self.assertEqual((h.record["state"], h.record["reason"]), ("failed", "unchecked"))
 
 
 class Reading(Isolated):
@@ -523,6 +630,12 @@ class Reading(Isolated):
         self.cache(claude=entry)
         with usage.locked(), self.assertRaises(usage.Defer):
             usage.starter_read("claude", NOW, None)
+
+    def test_a_cached_codex_reading_without_a_session_serves_its_week(self):
+        entry = codex_week(NOW - 10, 0, NOW + WEEK)
+        self.cache(codex=entry)
+        with usage.locked():
+            self.assertEqual(usage.starter_read("codex", NOW, None), entry)
 
     def test_a_fresh_reading_serves_and_a_stale_one_is_polled(self):
         self.cache(claude=claude(NOW - 10, session=NOW + HOUR))
@@ -829,9 +942,10 @@ class StarterRuns(Isolated):
         self.claude = self.enterContext(mock.patch.object(
             usage, "claude_usage", side_effect=lambda: {"weekly": week(10, int(time.time()) + 86400),
                                                         "scoped": [], "session": None}))
-        # An idle Codex account: 0% and a reset a week from now.
+        # An idle Codex account: 0% and a five-hour reset from now.
         self.codex = self.enterContext(mock.patch.object(
-            usage, "codex_usage", side_effect=lambda: {"weekly": week(0, int(time.time()) + WEEK), "scoped": []}))
+            usage, "codex_usage", side_effect=lambda: {"weekly": week(0, int(time.time()) + WEEK), "scoped": [],
+                                                        "session": week(0, int(time.time()) + SESSION, SESSION)}))
         self.enterContext(mock.patch.object(usage, "find_cli", side_effect=lambda name, chosen="": (f"/mock/{name}", "")))
         self.enterContext(mock.patch.object(usage, "claude_access_token", return_value="token"))
         self.enterContext(mock.patch.object(usage, "run_cli", side_effect=self.run_cli))
@@ -1033,7 +1147,8 @@ class StarterRuns(Isolated):
         for name, target, patched in (
                 ("claude", "claude_access_token", off("token")),
                 ("claude", "run_cli", off(self.run_cli)),
-                ("codex", "codex_usage", off(lambda: {"weekly": week(0, int(time.time()) + WEEK), "scoped": []}))):
+                ("codex", "codex_usage", off(lambda: {"weekly": week(0, int(time.time()) + WEEK), "scoped": [],
+                                                       "session": week(0, int(time.time()) + SESSION, SESSION)}))):
             with self.subTest(name=name, during=target):
                 self.calls.clear()
                 usage.STARTER_STATE.unlink(missing_ok=True)
@@ -1140,14 +1255,27 @@ class StarterRuns(Isolated):
 
 
 class Report(Isolated):
-    def report(self, name, record, now=NOW, switches=("claude", "codex")):
-        return usage.starter_report(name, set(switches), {name: usage.record_from(record)} if record else {}, now)
+    def report(self, name, record, now=NOW, switches=("claude", "codex"), reading=None):
+        return usage.starter_report(name, set(switches), {name: usage.record_from(record)} if record else {}, now, reading)
 
     def test_every_entry_carries_a_starter_even_when_off(self):
         self.write_cache({name: dict(claude(int(time.time())), status="ok") for name in ("claude", "codex")})
         providers = self.run_main()["providers"]
         self.assertEqual({name: entry["starter"] for name, entry in providers.items()},
                          {"claude": OFF, "codex": OFF})
+
+    def test_the_current_reading_names_the_window_before_stored_state(self):
+        record = dict(usage.blank_record(), period=SESSION)
+        for reading, expected in (
+                (None, "session"),
+                (dict(codex_week(NOW, 0, NOW + WEEK), status="ok"), "week"),
+                (dict(codex(NOW, 0, NOW + WEEK), status="ok"), "session"),
+                (dict(codex_week(NOW, 25, NOW + SESSION), status="ok",
+                      weekly=week(25, NOW + SESSION, SESSION)), "session"),
+                ({"status": "error"}, "session"),
+                (dict(codex_week(NOW, 0, NOW + WEEK), status="ok", sessionUnknown=True), "session")):
+            with self.subTest(reading=reading, expected=expected):
+                self.assertEqual(self.report("codex", record, switches=(), reading=reading)["window"], expected)
 
     def test_each_state_reports_its_times(self):
         blank = usage.blank_record()
@@ -1159,10 +1287,10 @@ class Report(Isolated):
             ("claude", dict(blank, pending=NOW - 5), ("confirming", NOW - 5, NOW + 295, None)),
             ("claude", dict(blank, state="started", at=NOW - 60, next=NOW + SESSION - 59),
              ("started", NOW - 60, NOW + SESSION - 59, None)),
-            # The widget starts the next week on time; the popup doesn't show when.
-            ("codex", dict(blank, state="started", at=NOW - 60, next=NOW + WEEK - 59),
-             ("started", NOW - 60, NOW + WEEK - 59, None)),
-            ("codex", dict(blank, state="started", at=NOW - WEEK, next=NOW - 5), ("started", NOW - WEEK, NOW - 5, None)),
+            ("codex", dict(blank, state="started", at=NOW - 60, next=NOW + SESSION - 59, period=SESSION),
+             ("started", NOW - 60, NOW + SESSION - 59, None)),
+            ("codex", dict(blank, state="started", at=NOW - SESSION, next=NOW - 5, period=SESSION),
+             ("started", NOW - SESSION, NOW - 5, None)),
             ("claude", dict(blank, state="weekly", next=NOW + 86400), ("weekly", None, NOW + 86400, None)),
             ("claude", dict(blank, state="failed", next=NOW + 300, reason="signed-out"),
              ("failed", None, NOW + 300, "signed-out")),
@@ -1182,8 +1310,9 @@ class Report(Isolated):
         ]
         for name, record, (state, at, next_, reason) in cases:
             with self.subTest(name=name, record=record):
+                window = "session" if name == "claude" or record.get("period") == SESSION else "week"
                 self.assertEqual(self.report(name, record),
-                                 {"enabled": True, "state": state, "at": at, "next": next_, "reason": reason})
+                                 {"enabled": True, "state": state, "at": at, "next": next_, "reason": reason, "window": window})
         self.assertEqual(self.report("claude", dict(blank, state="paused"), switches=()), OFF)
 
     # The widget runs --start only once next comes, so a clock stepped back
@@ -1243,11 +1372,16 @@ class EarlyWait(Isolated):
 
     def test_a_wait_that_came_to_an_end_early_is_due(self):
         cases = (
-            # Waiting out a week someone else started, which reset early into
-            # a new one.
+            # Waiting out a session someone else started, which reset early
+            # into a new one.
+            ("codex", {"state": "waiting", "next": NOW + 2 * HOUR + 1},
+             {"weekly": week(11, NOW + 6 * 86400), "scoped": [], "session": week(11, NOW + 4 * HOUR, SESSION)}),
+            # A session it started, reset early into an idle one.
+            ("codex", {"state": "started", "at": NOW - HOUR, "next": NOW + 4 * HOUR + 1},
+             {"weekly": week(0, NOW + WEEK), "scoped": [], "session": None}),
+            # Weekly-only replies keep their original early-reset behavior.
             ("codex", {"state": "waiting", "next": NOW + 2 * 86400 + 1},
              {"weekly": week(11, NOW + 6 * 86400), "scoped": []}),
-            # A week it started, reset early into an idle one.
             ("codex", {"state": "started", "at": NOW - 5 * 86400, "next": NOW + 2 * 86400 + 1},
              {"weekly": week(0, NOW + WEEK), "scoped": []}),
             # A reached weekly limit, reset early.
@@ -1267,14 +1401,17 @@ class EarlyWait(Isolated):
                 self.assertEqual([e["kind"] for e in usage.EVENTS if e["kind"].startswith("starter")], ["starter-overtaken"])
 
     def test_what_leaves_the_wait_alone(self):
-        reset = NOW + 2 * 86400
+        reset = NOW + 2 * HOUR
         cases = (
-            ("same week", "codex", {"state": "waiting", "next": reset + 1}, {"weekly": week(30, reset), "scoped": []}),
-            ("jitter", "codex", {"state": "waiting", "next": reset + 1}, {"weekly": week(30, reset + 60), "scoped": []}),
-            ("already due", "codex", {"state": "waiting", "next": NOW - 5}, {"weekly": week(11, NOW + WEEK), "scoped": []}),
+            ("same session", "codex", {"state": "waiting", "next": reset + 1},
+             {"weekly": week(30, NOW + WEEK), "scoped": [], "session": week(30, reset, SESSION)}),
+            ("jitter", "codex", {"state": "waiting", "next": reset + 1},
+             {"weekly": week(30, NOW + WEEK), "scoped": [], "session": week(30, reset + 60, SESSION)}),
+            ("already due", "codex", {"state": "waiting", "next": NOW - 5},
+             {"weekly": week(11, NOW + WEEK), "scoped": [], "session": None}),
             ("still reached", "claude", {"state": "weekly", "next": reset + 1},
              {"weekly": week(100, reset), "scoped": [], "session": None}),
-            # A Claude reply that doesn't say whether a session runs.
+            # A reply that doesn't say whether a session runs.
             ("no session word", "claude", {"state": "started", "at": NOW - HOUR, "next": NOW + 4 * HOUR + 1},
              {"weekly": week(30, NOW + 86400), "scoped": []}),
             ("failed", "codex", {"state": "failed", "next": NOW + 300, "reason": "not-sent"},
@@ -1288,7 +1425,7 @@ class EarlyWait(Isolated):
         usage.CACHE_FILE.unlink(missing_ok=True)
         usage.STARTER_FILE.write_text(json.dumps({"codex": False}))
         self.seed("codex", {"state": "waiting", "next": reset + 1})
-        self.assertEqual(self.poll("codex", {"weekly": week(11, NOW + WEEK), "scoped": []})[1]["next"], reset + 1)
+        self.assertEqual(self.poll("codex", {"weekly": week(11, NOW + WEEK), "scoped": [], "session": None})[1]["next"], reset + 1)
 
     def test_a_failed_poll_leaves_the_wait_alone(self):
         self.seed("codex", {"state": "waiting", "next": NOW + 86400})
@@ -1296,19 +1433,19 @@ class EarlyWait(Isolated):
         usage.attach_starters(providers, NOW)
         self.assertEqual(usage.read_starter_states()["codex"]["next"], NOW + 86400)
 
-    # The case from the field: Codex reset early into a week already in use,
-    # so the step that follows finds it running, waits for its end and sends
-    # nothing.
-    def test_the_next_step_waits_for_the_new_week_and_sends_nothing(self):
-        self.seed("codex", {"state": "waiting", "next": NOW + 2 * 86400 + 1})
-        reading = {"weekly": week(11, NOW + 6 * 86400), "scoped": []}
+    # Codex reset early into a session already in use, so the step that
+    # follows finds it running, waits for its end and sends nothing.
+    def test_the_next_step_waits_for_the_new_session_and_sends_nothing(self):
+        reset = NOW + 4 * HOUR
+        self.seed("codex", {"state": "waiting", "next": NOW + 2 * HOUR + 1})
+        reading = {"weekly": week(11, NOW + 6 * 86400), "scoped": [], "session": week(11, reset, SESSION)}
         self.poll("codex", reading)
         record = usage.read_starter_states()["codex"]
         sent = mock.Mock()
         usage.Starter("codex", record, read=lambda not_before: dict(reading, status="ok", fetchedAt=NOW),
-                      check=lambda: "/mock/codex", send=sent, running=usage.codex_running, period=WEEK,
+                      check=lambda: "/mock/codex", send=sent, running=usage.codex_running, period=usage.codex_period,
                       persist=lambda: None, clock=lambda: NOW).step()
-        self.assertEqual((record["state"], record["next"]), ("waiting", NOW + 6 * 86400 + 1))
+        self.assertEqual((record["state"], record["next"]), ("waiting", reset + 1))
         sent.assert_not_called()
 
 

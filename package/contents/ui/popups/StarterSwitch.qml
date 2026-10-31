@@ -9,8 +9,9 @@ import "../code/style.js" as Style
 import ".."
 
 // The footer's switch that starts Claude's next session, or Codex's next
-// week, as soon as the last one ends, with what the starter is doing under
-// its label. The switch is per user: every widget shows the same one. While
+// session or week as detected from its limits, as soon as the last one ends,
+// with what the starter is doing under its label. The switch is per user:
+// every widget shows the same one. While
 // the item is struck (see UsageData.struck()) the switch keeps its position
 // but can't be turned, and the line under it says so; the starter itself
 // runs as it would.
@@ -56,8 +57,9 @@ RowLayout {
         id: toggle
         Layout.alignment: Qt.AlignVCenter
         enabled: !row.struck
-        text: row.item === "claude" ? i18nc("@option:check", "Start a new session when one ends")
-                                    : i18nc("@option:check", "Start a new week when one ends")
+        text: row.starter?.window === "week" || row.item === "codex" && row.starter?.window === undefined
+            ? i18nc("@option:check", "Start a new week when one ends")
+            : i18nc("@option:check", "Start a new session when one ends")
         contentItem: Item {}
         // The change asked for until the helper reports, then what the
         // helper reports. Turning the switch writes checked from C++, which

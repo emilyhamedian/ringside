@@ -27,7 +27,7 @@ FIXTURES = Path(__file__).resolve().parent / "fixtures"
 HELPER = ROOT / "package" / "contents" / "code" / "usage.py"
 WEEK = 7 * 24 * 3600
 # What every entry says of its session starter while it is switched off.
-OFF = {"enabled": False, "state": "off", "at": None, "next": None, "reason": None}
+OFF = {"enabled": False, "state": "off", "at": None, "next": None, "reason": None, "window": "session"}
 # What every entry says of its program when none is chosen or found.
 NOT_FOUND = {"path": "", "chosen": False, "problem": ""}
 
@@ -183,24 +183,33 @@ class CodexParsing(Isolated):
             self.assertEqual(report["session"], window(100, 1788920000, 300 * 60))
 
     def test_invalid_extra_window_does_not_hide_weekly_reading(self):
-        for short in (None, [], "invalid", {"windowDurationMins": 300},
+        for short in (None, [], {}, False, 0, "invalid", {"windowDurationMins": 300},
                       {"usedPercent": float("nan"), "windowDurationMins": 300},
                       {"usedPercent": 10**400, "windowDurationMins": 300},
                       {"usedPercent": 100, "windowDurationMins": "300"},
                       {"usedPercent": 100, "windowDurationMins": -1},
-                      {"usedPercent": 100, "windowDurationMins": 300, "resetsAt": float("inf")}):
+                      {"usedPercent": 100, "windowDurationMins": 300, "resetsAt": float("inf")},
+                      {"usedPercent": 0, "windowDurationMins": 300, "resetsAt": "soon"}):
             with self.subTest(short=short):
                 result = fixture("codex_rate_limits.json")
                 result["rateLimitsByLimitId"]["codex"]["secondary"] = short
                 report = usage.parse_codex(result)
                 self.assertEqual(report["weekly"], window(34, 1788926677))
                 self.assertNotIn("session", report)
+                self.assertEqual(report.get("sessionUnknown", False), short is not None)
 
     def test_single_short_window_used_as_weekly_is_not_duplicated_as_session(self):
         result = {"rateLimits": {"primary": {"usedPercent": 100, "windowDurationMins": 300}}}
         report = usage.parse_codex(result)
         self.assertEqual(report["weekly"]["windowSeconds"], 300 * 60)
         self.assertNotIn("session", report)
+        self.assertTrue(usage.codex_has_session(report))
+        self.assertEqual(usage.codex_period(report), usage.SESSION_SECONDS)
+
+    def test_a_short_only_window_with_an_unreadable_reset_is_an_error(self):
+        result = {"rateLimits": {"primary": {"usedPercent": 0, "windowDurationMins": 300, "resetsAt": "soon"}}}
+        with self.assertRaises(ValueError):
+            usage.parse_codex(result)
 
     def test_raw_caps_are_kept_for_weekly_scoped_and_session_windows(self):
         for percent, exhausted in ((99.5, False), (100, True)):
@@ -974,7 +983,7 @@ class ReadingCache(Isolated):
         fetch = mock.Mock(return_value=reading(1, 5))
         with mock.patch.object(usage, "LOCK_WAIT", 0.3), mock.patch.object(usage, "codex_usage", fetch):
             report = self.run_main("--providers", "codex")
-        self.assertEqual(report["providers"], {"codex": {"status": "error", "starter": OFF, "program": NOT_FOUND,
+        self.assertEqual(report["providers"], {"codex": {"status": "error", "starter": dict(OFF, window="week"), "program": NOT_FOUND,
                                                          "message": "another usage check is still running",
                                                          "reason": "busy", "host": "",
                                                          "retryAt": report["fetchedAt"]}})
@@ -994,9 +1003,9 @@ class ReadingCache(Isolated):
         self.addCleanup(os.close, fd)
         fcntl.flock(fd, fcntl.LOCK_EX)
         for name, entry, expected in (
-                ("reading", fresh, dict(fresh, weekly=dict(fresh["weekly"], history=[]), starter=OFF, program=NOT_FOUND)),
+                ("reading", fresh, dict(fresh, weekly=dict(fresh["weekly"], history=[]), starter=dict(OFF, window="week"), program=NOT_FOUND)),
                 ("sign-out", {"status": "signed_out", "heldUntil": now + 300, "holdSeconds": 300},
-                 {"status": "signed_out", "starter": OFF, "program": NOT_FOUND}),
+                 {"status": "signed_out", "starter": dict(OFF, window="week"), "program": NOT_FOUND}),
                 ("rate limit", {"status": "rate_limited", "heldUntil": now + 900, "holdSeconds": 900,
                                 "reason": "rate-limited", "host": "api.anthropic.com"},
                  {"status": "rate_limited", "reason": "rate-limited", "host": "api.anthropic.com", "retryAt": now + 900})):
