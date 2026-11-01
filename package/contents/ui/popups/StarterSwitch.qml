@@ -57,9 +57,7 @@ RowLayout {
         id: toggle
         Layout.alignment: Qt.AlignVCenter
         enabled: !row.struck
-        text: row.starter?.window === "week" || row.item === "codex" && row.starter?.window === undefined
-            ? i18nc("@option:check", "Start a new week when one ends")
-            : i18nc("@option:check", "Start a new session when one ends")
+        text: i18nc("@option:check", "Auto start session or week")
         contentItem: Item {}
         // The change asked for until the helper reports, then what the
         // helper reports. Turning the switch writes checked from C++, which

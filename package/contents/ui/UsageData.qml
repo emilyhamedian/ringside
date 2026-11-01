@@ -77,13 +77,11 @@ Item {
     // The polled ids with a report, or a failure of a helper run that
     // polled them, since the widget started or they were turned on.
     property var answered: []
-    // Whether the session starter feature is allowed at all. Turning it off
-    // also turns off every provider's per-user switch.
-    readonly property bool starterEnabled: config.sessionStarter === true
-    // The shared off is pending, running, or waiting to retry a failed write.
-    property bool starterDisablePending: false
-    property bool starterDisableRunning: false
-    property real starterDisableRetryAt: 0
+    // Each provider's off is pending, running, or waiting to retry a failed write.
+    property var starterDisablePending: ({})
+    property var starterDisableRunning: ({})
+    property var starterDisableRetryAt: ({})
+    property var starterDisableRuns: ({})
     // The session starter per id, as the last report gave it.
     property var starters: ({})
     // The switch positions asked for and not yet reported back, per id.
@@ -118,6 +116,10 @@ Item {
     // Windows that just started over (see code/reset.js), sent before
     // `entries` changes so a ring can play the reset from its old reading.
     signal resetsDetected(var events)
+
+    function starterEnabled(id) {
+        return config[id + "SessionStarter"] === true;
+    }
 
     function entry(id) {
         return entries[id] ?? null;
@@ -185,7 +187,7 @@ Item {
     }
 
     function setStarter(id, on) {
-        if (!ids.includes(id) || on && !starterEnabled) {
+        if (!ids.includes(id) || on && !starterEnabled(id)) {
             return;
         }
         starterGeneration += 1;
@@ -199,51 +201,64 @@ Item {
         writeStarter();
     }
 
-    // The shared setting is a kill switch, not just a hidden control. Wait
-    // for any earlier switch write, then turn every provider off in one run,
-    // including providers hidden in this widget. No queued on may follow it.
-    // Re-enabling leaves both off until the user opts in again.
-    function disableStarters() {
-        if (!starterEnabled) {
-            starterDisablePending = true;
-            starterWanted = {};
+    // Each provider's setting is a kill switch, not just a hidden control.
+    // Wait for any earlier switch write, then turn that provider off, even
+    // when this widget hides it. A new opt-in runs only once the off succeeds.
+    function requestDisable(id) {
+        if (!starterEnabled(id)) {
+            starterDisablePending = Object.assign({}, starterDisablePending, { [id]: true });
+            const wanted = Object.assign({}, starterWanted);
+            delete wanted[id];
+            starterWanted = wanted;
         }
-        if (!starterDisablePending || starterDisableRunning || nowSeconds() < starterDisableRetryAt
+        disableStarters(id);
+    }
+
+    function disableStarters(id) {
+        if (starterDisablePending[id] !== true || starterDisableRunning[id] === true
+                || nowSeconds() < (starterDisableRetryAt[id] ?? 0)
                 || runner.connectedSources.some(s => starterSet(s) !== null)) {
             return;
         }
-        starterDisablePending = false;
-        starterDisableRunning = true;
-        runner.connectSource(helperCommand(Items.USAGE,
-                                           Items.USAGE.map(id => " --starter-set " + id + "=off").join("")));
+        starterDisablePending = Object.assign({}, starterDisablePending, { [id]: false });
+        starterDisableRunning = Object.assign({}, starterDisableRunning, { [id]: true });
+        const source = helperCommand([id], " --starter-set " + id + "=off");
+        starterDisableRuns = Object.assign({}, starterDisableRuns, { [source]: id });
+        runner.connectSource(source);
     }
 
     function starterDisableRun(source) {
-        return / --starter-set claude=off --starter-set codex=off$/.test(source);
+        return starterDisableRuns[source] ?? null;
     }
 
-    function starterDisableFailed(error) {
-        starterDisablePending = true;
-        starterDisableRetryAt = nowSeconds() + 300;
-        Items.USAGE.forEach(id => switchRefused(id, false, error));
+    function starterDisableFailed(id, error) {
+        starterDisablePending = Object.assign({}, starterDisablePending, { [id]: true });
+        starterDisableRetryAt = Object.assign({}, starterDisableRetryAt, { [id]: nowSeconds() + 300 });
+        switchRefused(id, false, error);
     }
 
-    function starterDisableSucceeded() {
-        starterDisablePending = false;
-        starterDisableRetryAt = 0;
+    function starterDisableSucceeded(id) {
+        starterDisablePending = Object.assign({}, starterDisablePending, { [id]: false });
+        starterDisableRetryAt = Object.assign({}, starterDisableRetryAt, { [id]: 0 });
         const failures = Object.assign({}, switchFailures);
-        Items.USAGE.forEach(id => { delete failures[id]; });
+        delete failures[id];
         switchFailures = failures;
     }
 
-    // One --starter-set at a time, so a quick on and off land in order.
+    // One --starter-set at a time, so a quick on and off land in order. An
+    // off or retry for one provider never blocks an opt-in for the other.
     function writeStarter() {
-        if (!starterEnabled || starterDisablePending || starterDisableRunning) {
-            disableStarters();
+        const id = Object.keys(starterWanted).find(id => starterEnabled(id)
+            && starterDisablePending[id] !== true && starterDisableRunning[id] !== true);
+        if (id === undefined) {
+            Items.USAGE.forEach(id => {
+                if (starterDisablePending[id] === true) {
+                    disableStarters(id);
+                }
+            });
             return;
         }
-        const id = Object.keys(starterWanted)[0];
-        if (id !== undefined && !runner.connectedSources.some(s => starterSet(s) !== null)) {
+        if (!runner.connectedSources.some(s => starterSet(s) !== null)) {
             const source = helperCommand(ids, " --starter-set " + id + "=" + (starterWanted[id] ? "on" : "off"));
             starterWrites = Object.assign({}, starterWrites, { [source]: starterWantedGeneration[id] });
             runner.connectSource(source);
@@ -258,16 +273,13 @@ Item {
     // A switch turned off while a --start runs is the helper's to catch: it
     // reads the switch again just before it sends.
     function startDue() {
-        if (!starterEnabled) {
-            return;
-        }
         const busy = runner.connectedSources.some(s => startedIds(s).length > 0 || starterSet(s) !== null);
         const now = nowSeconds();
         // A switch the user turned off and the helper couldn't write starts
         // nothing either, until it is turned again.
         const due = ids.filter(id => {
             const s = starter(id);
-            return starterOn(id) && s?.reason !== "switch" && Number.isFinite(s?.next) && s.next <= now;
+            return starterEnabled(id) && starterOn(id) && s?.reason !== "switch" && Number.isFinite(s?.next) && s.next <= now;
         });
         if (due.length > 0 && !busy) {
             runner.connectSource(helperCommand(due, " --start"));
@@ -507,10 +519,14 @@ Item {
         starters = starting;
         startFailures = failures;
         // Another widget may have opted a provider in after this one disabled
-        // the feature. The retry timer turns it off again.
-        if (!starterEnabled && Items.USAGE.some(id => starting[id]?.enabled === true)) {
-            starterDisablePending = true;
-        }
+        // it. The retry timer turns only that provider off again.
+        const pending = Object.assign({}, starterDisablePending);
+        Items.USAGE.forEach(id => {
+            if (!starterEnabled(id) && starting[id]?.enabled === true) {
+                pending[id] = true;
+            }
+        });
+        starterDisablePending = pending;
         rememberLimits();
         writeStatus();
     }
@@ -584,8 +600,16 @@ Item {
         }
     }
 
-    onStarterEnabledChanged: disableStarters()
-    Component.onCompleted: disableStarters()
+    Connections {
+        target: usage.config
+        function onClaudeSessionStarterChanged() { usage.requestDisable("claude"); }
+        function onCodexSessionStarterChanged() { usage.requestDisable("codex"); }
+    }
+
+    Component.onCompleted: {
+        requestDisable("claude");
+        requestDisable("codex");
+    }
 
     // Also sent while the widget starts; a choice made before any reading
     // has nothing to add to what is stored.
@@ -618,7 +642,10 @@ Item {
             disconnectSource(source);
             const disabling = usage.starterDisableRun(source);
             if (disabling) {
-                usage.starterDisableRunning = false;
+                usage.starterDisableRunning = Object.assign({}, usage.starterDisableRunning, { [disabling]: false });
+                const runs = Object.assign({}, usage.starterDisableRuns);
+                delete runs[source];
+                usage.starterDisableRuns = runs;
             }
             // The source may still be listed until this handler returns.
             usage.checking = connectedSources.some(s => s !== source && usage.polledIds(s).length > 0);
@@ -687,14 +714,14 @@ Item {
             }
             if (disabling) {
                 const failed = !report?.providers || failure.detail !== ""
-                    || Items.USAGE.some(id => report.providers[id]?.starter?.enabled === true);
+                    || report.providers[disabling]?.starter?.enabled === true;
                 if (failed) {
                     const error = report?.providers && failure.detail === ""
-                        ? i18nc("@info", "The automatic-start switches could not be turned off.")
+                        ? i18nc("@info", "The automatic-start switch could not be turned off.")
                         : usage.failureText(failure);
-                    usage.starterDisableFailed(error);
+                    usage.starterDisableFailed(disabling, error);
                 } else {
-                    usage.starterDisableSucceeded();
+                    usage.starterDisableSucceeded(disabling);
                 }
             }
             if (settled) {
@@ -711,15 +738,7 @@ Item {
                 usage.starterWrites = writes;
             }
             if (set) {
-                if (disabling) {
-                    if (usage.starterEnabled && !usage.starterDisablePending) {
-                        usage.writeStarter();
-                    }
-                } else if (usage.starterDisablePending) {
-                    usage.disableStarters();
-                } else {
-                    usage.writeStarter();
-                }
+                usage.writeStarter();
                 usage.startDue();
             }
         }
@@ -759,9 +778,9 @@ Item {
     Timer {
         objectName: "starterDisableTimer"
         interval: 30000
-        running: usage.starterDisablePending
+        running: Items.USAGE.some(id => usage.starterDisablePending[id] === true)
         repeat: true
-        onTriggered: usage.disableStarters()
+        onTriggered: Items.USAGE.forEach(id => usage.disableStarters(id))
     }
 
     // Due times are compared with the wall clock, so after a suspend the
@@ -769,7 +788,7 @@ Item {
     Timer {
         objectName: "starterTimer"
         interval: 30000
-        running: usage.starterEnabled && usage.ids.some(id => usage.starters[id]?.enabled === true && Number.isFinite(usage.starters[id].next))
+        running: usage.ids.some(id => usage.starterEnabled(id) && usage.starters[id]?.enabled === true && Number.isFinite(usage.starters[id].next))
         repeat: true
         onTriggered: usage.startDue()
     }

@@ -59,6 +59,7 @@ ConfigPage {
     }
     readonly property bool codexOn: enabledItems.includes("codex")
     readonly property bool codexRuns: runs("codex")
+
     // A Program line shows only where it has something to say: a path the
     // user chose, or a program that is needed and missing. Codex is needed
     // to read OpenAI's limits at all; Claude only by its session starter.
@@ -232,22 +233,24 @@ ConfigPage {
             text: i18nc("@info", "Applies to all enabled providers. Balances are checked even when hidden: Claude makes an extra read from Anthropic alongside its usage check, at most once every 5 minutes. Codex uses existing usage checks.")
         }
 
+        // Each provider's section shows only while it has something to set.
+        Item {
+            id: claudeHeading
+            Kirigami.FormData.isSection: true
+            Kirigami.FormData.label: i18nc("@title:group settings for the Claude item", "Claude")
+            visible: page.claudeOn || page.claudeHasLimits || page.claudeProgramShown
+        }
+
         QQC2.CheckBox {
-            text: i18nc("@option:check", "Automatic starts")
-            Accessible.name: text
-            Accessible.description: i18nc("@info", "Allows the switches in the Claude and Codex popups. Turn off to stop every automatic start and hide those switches.")
-            checked: page.cfg_sessionStarter
-            onToggled: page.cfg_sessionStarter = checked
+            visible: claudeHeading.visible
+            text: i18nc("@option:check", "Auto start session or week")
+            Accessible.name: i18nc("@option:check", "Claude: Auto start session or week")
+            Accessible.description: i18nc("@info", "When a session ends, Ringside sends Claude a one-word message to start the next one. Turn this off to hide the popup switch.")
+            checked: page.cfg_claudeSessionStarter
+            onToggled: page.cfg_claudeSessionStarter = checked
             QQC2.ToolTip.text: Accessible.description
             QQC2.ToolTip.visible: hovered
             QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
-        }
-
-        // Each provider's section shows only while it has something to set.
-        Item {
-            Kirigami.FormData.isSection: true
-            Kirigami.FormData.label: i18nc("@title:group settings for the Claude item", "Claude")
-            visible: page.claudeHasLimits || page.claudeProgramShown
         }
 
         Picker {
@@ -281,9 +284,22 @@ ConfigPage {
         }
 
         Item {
+            id: openaiHeading
             Kirigami.FormData.isSection: true
             Kirigami.FormData.label: i18nc("@title:group settings for the OpenAI item, whose limits are read through Codex", "OpenAI")
             visible: page.codexShown && page.codexRuns || page.codexProgramShown
+        }
+
+        QQC2.CheckBox {
+            visible: openaiHeading.visible
+            text: i18nc("@option:check", "Auto start session or week")
+            Accessible.name: i18nc("@option:check", "OpenAI: Auto start session or week")
+            Accessible.description: i18nc("@info", "When a session or week ends, Ringside sends Codex a one-word message to start the next one. Turn this off to hide the popup switch.")
+            checked: page.cfg_codexSessionStarter
+            onToggled: page.cfg_codexSessionStarter = checked
+            QQC2.ToolTip.text: Accessible.description
+            QQC2.ToolTip.visible: hovered
+            QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
         }
 
         // Codex's settings wait until its program runs.

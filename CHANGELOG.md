@@ -10,8 +10,8 @@ follows [Semantic Versioning](https://semver.org/).
 
 - Codex's starter follows its five-hour reset when reported and its weekly
   reset otherwise.
-- *Automatic starts* under AI Providers turns off both providers' starters
-  and hides their popup switches.
+- Each provider's *Auto start session or week* switch under AI Providers
+  turns its starter off and hides that provider's popup switch.
 
 ## [0.4.0] - 2026-10-18
 

@@ -1125,45 +1125,100 @@ TestRoot {
             verify(starterTick().running);
         }
 
-        function test_masterStarterSwitchDisablesEverything() {
+        function test_providerStarterSwitchDisablesOnlyThatProvider() {
             start("starter", ["claude"]);
             const run = commands();
-            config.sessionStarter = false;
-            verify(!usage.starterEnabled);
-            compare(usage.starterWanted, {}, "the shared off doesn't queue per-provider writes");
-            const off = " --starter-set claude=off --starter-set codex=off";
-            compare(ran(run, off), [usage.helperCommand(["claude", "codex"], off)],
-                    "one run turns both providers off, including the hidden one");
-            verify(!starterTick().running, "the starter timer stops");
+            config.codexSessionStarter = false;
+            verify(!usage.starterEnabled("codex"));
+            verify(usage.starterEnabled("claude"), "Claude's setting is independent");
+            compare(usage.starterWanted, {}, "the provider off doesn't queue another write");
+            const off = " --starter-set codex=off";
+            compare(ran(run, off), [usage.helperCommand(["codex"], off)],
+                    "one run turns off Codex, hidden in this widget, without touching Claude");
+            verify(starterTick().running, "Claude's starter timer is untouched");
             starterTick().triggered();
-            compare(ran(run, " --start"), [], "even a due start is blocked");
-            tryVerify(() => usage.starter("claude").state === "off", 10000);
+            compare(ran(run, " --start"), [], "no start is due");
+            tryVerify(() => usage.starterDisableRunning.codex === false, 10000);
             compare(run.count, 1, "no second provider write follows");
+            compare(usage.starter("claude").state, "waiting", "Claude's starter stays on");
             usage.setStarter("codex", true);
-            compare(run.count, 1, "the popup can't switch a provider on while the feature is disabled");
+            compare(run.count, 1, "Codex can't be switched on while its setting is disabled");
         }
 
-        function test_masterStarterSwitchWaitsForEarlierWrite() {
+        function test_providerStarterSwitchLeavesTheOtherProviderAvailable() {
+            start("starter");
+            const run = commands();
+            config.claudeSessionStarter = false;
+            tryVerify(() => usage.starter("claude").state === "off", 10000);
+            verify(usage.starterEnabled("codex"));
+            usage.setStarter("codex", true);
+            compare(ran(run, " --starter-set codex=on"), [usage.helperCommand(["claude", "codex"], " --starter-set codex=on")],
+                    "OpenAI can still opt in after Claude is disabled");
+            tryVerify(() => usage.starter("codex").enabled, 10000);
+        }
+
+        function test_providerStarterSwitchesBothCompleteOnce() {
             start("starter-slow-set");
             const run = commands();
-            const off = " --starter-set claude=off --starter-set codex=off";
+            usage.starters = Object.assign({}, usage.starters, {
+                codex: { enabled: true, state: "waiting", at: null, next: usage.nowSeconds() + 3600, reason: null }
+            });
+            config.claudeSessionStarter = false;
+            config.codexSessionStarter = false;
+            const claude = " --starter-set claude=off";
+            const codex = " --starter-set codex=off";
+            tryVerify(() => ran(run, claude).length === 1 && ran(run, codex).length === 1, 20000);
+            tryVerify(() => usage.starterDisableRunning.claude === false && usage.starterDisableRunning.codex === false, 10000);
+            const retry = timers().find(t => t.objectName === "starterDisableTimer");
+            retry.triggered();
+            retry.triggered();
+            compare(ran(run, claude).length, 1, "Claude's completed off isn't repeated");
+            compare(ran(run, codex).length, 1, "Codex's off isn't starved");
+        }
+
+        function test_providerStarterSwitchOtherProviderOptInFollowsOff() {
+            start("starter-slow-set");
+            const run = commands();
+            config.claudeSessionStarter = false;
             usage.setStarter("codex", true);
-            config.sessionStarter = false;
-            compare(ran(run, off), [], "the earlier on keeps its place before the shared off");
+            tryVerify(() => ran(run, " --starter-set codex=on").length === 1, 10000);
+            tryVerify(() => usage.starter("codex").enabled, 10000);
+        }
+
+        function test_providerStarterSwitchFailureDoesNotBlockOtherProvider() {
+            start("starter-stuck");
+            const run = commands();
+            config.claudeSessionStarter = false;
+            tryVerify(() => usage.starterDisablePending.claude === true, 10000);
+            usage.setStarter("codex", true);
+            compare(ran(run, " --starter-set codex=on").length, 1,
+                    "OpenAI can opt in while Claude's off is waiting to retry");
+            tryVerify(() => Object.keys(usage.starterWanted).length === 0, 10000);
+            compare(usage.starter("codex").reason, "switch");
+            verify(usage.starterDisablePending.claude === true);
+        }
+
+        function test_providerStarterSwitchWaitsForEarlierWrite() {
+            start("starter-slow-set");
+            const run = commands();
+            const off = " --starter-set codex=off";
+            usage.setStarter("codex", true);
+            config.codexSessionStarter = false;
+            compare(ran(run, off), [], "the earlier on keeps its place before the provider off");
             tryVerify(() => ran(run, off).length === 1, 10000);
             tryVerify(() => usage.starter("codex").state === "off", 10000);
-            compare(ran(run, off).length, 1, "no later on overwrites the shared off");
+            compare(ran(run, off).length, 1, "no later on overwrites the provider off");
         }
 
-        function test_masterStarterSwitchReenabledOffCompletesBeforeNewOn() {
+        function test_providerStarterSwitchReenabledOffCompletesBeforeNewOn() {
             start("starter-slow-set");
             const run = commands();
-            const off = " --starter-set claude=off --starter-set codex=off";
+            const off = " --starter-set codex=off";
             const on = " --starter-set codex=on";
-            config.sessionStarter = false;
-            config.sessionStarter = true;
+            config.codexSessionStarter = false;
+            config.codexSessionStarter = true;
             usage.setStarter("codex", true);
-            compare(ran(run, on), [], "the new opt-in waits for the shared off");
+            compare(ran(run, on), [], "the new opt-in waits for the provider off");
             tryVerify(() => ran(run, on).length === 1, 10000);
             compare(ran(run, off).length, 1);
             const commandsInOrder = run.signalArguments.map(a => a[0]);
@@ -1171,27 +1226,27 @@ TestRoot {
             tryVerify(() => usage.starter("codex").enabled, 10000);
         }
 
-        function test_masterStarterSwitchReenableDoesNotCancelPendingOff() {
+        function test_providerStarterSwitchReenableDoesNotCancelPendingOff() {
             start("starter-slow-set");
             const run = commands();
-            const off = " --starter-set claude=off --starter-set codex=off";
+            const off = " --starter-set codex=off";
             const on = " --starter-set codex=on";
             usage.setStarter("codex", true);
-            config.sessionStarter = false;
-            config.sessionStarter = true;
+            config.codexSessionStarter = false;
+            config.codexSessionStarter = true;
             tryVerify(() => ran(run, off).length === 1, 10000);
             tryVerify(() => usage.starter("codex").state === "off", 10000);
-            compare(ran(run, on).length, 1, "only the earlier on ran; re-enabling didn't cancel the shared off");
+            compare(ran(run, on).length, 1, "only the earlier on ran; re-enabling didn't cancel the provider off");
         }
 
-        function test_masterStarterSwitchNewOnSurvivesEarlierSameProviderOn() {
+        function test_providerStarterSwitchNewOnSurvivesEarlierSameProviderOn() {
             start("starter-slow-set");
             const run = commands();
-            const off = " --starter-set claude=off --starter-set codex=off";
+            const off = " --starter-set codex=off";
             const on = " --starter-set codex=on";
             usage.setStarter("codex", true);
-            config.sessionStarter = false;
-            config.sessionStarter = true;
+            config.codexSessionStarter = false;
+            config.codexSessionStarter = true;
             usage.setStarter("codex", true);
             tryVerify(() => ran(run, off).length === 1, 10000);
             tryVerify(() => ran(run, on).length === 2, 10000);
@@ -1199,25 +1254,25 @@ TestRoot {
             const firstOn = commandsInOrder.findIndex(c => c.endsWith(on));
             const sharedOff = commandsInOrder.findIndex(c => c.endsWith(off));
             const secondOn = commandsInOrder.findIndex((c, index) => c.endsWith(on) && index > firstOn);
-            verify(firstOn < sharedOff && sharedOff < secondOn, "the newer opt-in runs after the shared off");
+            verify(firstOn < sharedOff && sharedOff < secondOn, "the newer opt-in runs after the provider off");
             tryVerify(() => usage.starter("codex").enabled, 10000);
             compare(usage.starterWanted, {});
         }
 
-        function test_masterStarterSwitchFailureIsShownAndRetried() {
+        function test_providerStarterSwitchFailureIsShownAndRetried() {
             start("starter-stuck");
             const run = commands();
-            const off = " --starter-set claude=off --starter-set codex=off";
-            config.sessionStarter = false;
+            const off = " --starter-set claude=off";
+            config.claudeSessionStarter = false;
             tryVerify(() => usage.starter("claude").reason === "switch", 10000);
             verify(usage.starter("claude").error !== "");
-            verify(usage.starterDisablePending);
-            verify(usage.starterDisableRetryAt > usage.nowSeconds());
+            verify(usage.starterDisablePending.claude === true);
+            verify(usage.starterDisableRetryAt.claude > usage.nowSeconds());
             compare(ran(run, off).length, 1, "a failed write doesn't retry immediately");
-            usage.starterDisableRetryAt = usage.nowSeconds();
-            usage.disableStarters();
-            compare(ran(run, off).length, 2, "the failed shared off is retried");
-            tryVerify(() => !usage.starterDisableRunning, 10000);
+            usage.starterDisableRetryAt = Object.assign({}, usage.starterDisableRetryAt, { claude: usage.nowSeconds() });
+            usage.disableStarters("claude");
+            compare(ran(run, off).length, 2, "the failed provider off is retried");
+            tryVerify(() => usage.starterDisableRunning.claude === false, 10000);
         }
 
         // --start runs once the starter's time has come, not before, and
@@ -3115,8 +3170,8 @@ TestRoot {
         }
 
         function test_starterSwitch_data() {
-            return [{ tag: "claude", item: "claude", label: "Start a new session when one ends" },
-                    { tag: "codex", item: "codex", label: "Start a new week when one ends" }];
+            return [{ tag: "claude", item: "claude", label: "Auto start session or week" },
+                    { tag: "codex", item: "codex", label: "Auto start session or week" }];
         }
 
         // The switch sits in the footer, left of the configure button, its
@@ -3162,24 +3217,24 @@ TestRoot {
             const popup = load("codex");
             setStarter("codex", { enabled: false, state: "off", window: "session" });
             const toggle = starterSwitch(popup);
-            compare(toggle.text, "Start a new session when one ends");
+            compare(toggle.text, "Auto start session or week");
             compare(starterStatus(popup).text, "When a session ends, Ringside sends Codex a one-word message to start the next one.");
             setStarter("codex", { enabled: false, state: "off", window: "week" });
-            compare(toggle.text, "Start a new week when one ends");
+            compare(toggle.text, "Auto start session or week");
         }
 
-        function test_masterStarterSwitchHidesThePopupControl() {
+        function test_providerStarterSwitchHidesThePopupControl() {
             const popup = load("codex");
             const toggle = starterSwitch(popup);
             const button = configureButton(popup);
             verify(toggle.visible && button.leadItem !== null);
-            monitor.usage.starterEnabled = false;
+            monitor.usage.starterOptions = Object.assign({}, monitor.usage.starterOptions, { codex: false });
             verify(!toggle.visible);
             verify(!toggle.parent.parent.visible, "the footer keeps no room for the hidden starter");
             verify(button.leadItem === null);
             compare(root.all(toggle.parent, i => i.visible && i.Accessible && !i.Accessible.ignored).length, 0,
                     "no starter control remains exposed to assistive technology");
-            monitor.usage.starterEnabled = true;
+            monitor.usage.starterOptions = Object.assign({}, monitor.usage.starterOptions, { codex: true });
             verify(toggle.visible && toggle.parent.parent.visible);
             verify(button.leadItem !== null);
         }

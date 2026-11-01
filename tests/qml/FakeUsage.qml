@@ -54,8 +54,8 @@ QtObject {
     }
     // Stands in for claudeInnerLimit and codexInnerLimit.
     property var innerChoices: ({ claude: "", codex: "" })
-    // The shared setting that hides the starter controls and stops their runs.
-    property bool starterEnabled: true
+    // Each provider's setting, which hides its starter control and stops its runs.
+    property var starterOptions: ({ claude: true, codex: true })
     // The session starter per provider, as the helper reports it.
     property var starters: ({
         claude: { enabled: false, state: "off", at: null, next: null, reason: null },
@@ -160,8 +160,12 @@ QtObject {
         return starterWanted[id] ?? starter(id)?.enabled === true;
     }
 
+    function starterEnabled(id) {
+        return starterOptions[id] === true;
+    }
+
     function setStarter(id, on) {
-        if (on && !starterEnabled) {
+        if (on && !starterEnabled(id)) {
             return;
         }
         starterRequests = starterRequests.concat([[id, on]]);

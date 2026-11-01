@@ -109,8 +109,12 @@
     <entry name="showCredits" type="Bool">
       <default>true</default>
     </entry>
-    <entry name="sessionStarter" type="Bool">
-      <label>Allow the Claude and Codex session starters; turning this off stops every automatic start</label>
+    <entry name="claudeSessionStarter" type="Bool">
+      <label>Allow Claude's session starter; turning this off stops its automatic starts</label>
+      <default>true</default>
+    </entry>
+    <entry name="codexSessionStarter" type="Bool">
+      <label>Allow Codex's session starter; turning this off stops its automatic starts</label>
       <default>true</default>
     </entry>
     <entry name="claudeInnerLimit" type="String">

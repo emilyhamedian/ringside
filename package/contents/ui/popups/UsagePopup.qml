@@ -20,7 +20,7 @@ import ".."
 // signed-out CLI is said in a line there. While the first check runs the
 // header's ring waits and says so. A limit that started over early is told
 // under the header for a day, or until the popup has shown it once. While
-// the shared setting allows it, the footer holds the session starter's switch.
+// the provider's setting allows it, the footer holds the session starter's switch.
 PopupPage {
     id: popup
 
@@ -122,9 +122,9 @@ PopupPage {
     }
 
     systemMonitorShown: false
-    footerLeadingShown: usage.starterEnabled
+    footerLeadingShown: usage.starterEnabled(item)
     footerLeading: StarterSwitch {
-        visible: popup.usage.starterEnabled
+        visible: popup.usage.starterEnabled(popup.item)
         item: popup.item
         usage: popup.usage
         nowMs: popup.nowMs
