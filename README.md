@@ -121,9 +121,9 @@ one for you as soon as the last one ends, so the clock is already running by
 the time you're back. Codex follows its five-hour window when your plan
 reports one, and its weekly window otherwise. Ringside does this by sending a
 short message, which counts toward your limits like any other, so if you pay
-for usage beyond your plan, you'll probably want to leave it off. *Automatic
-starts* under *AI Providers* turns the feature off for both providers and
-hides their popup switches.
+for usage beyond your plan, you'll probably want to leave it off. Each
+provider's *Auto start session or week* switch under *AI Providers* turns its
+feature off and hides that provider's popup switch.
 
 ## Privacy
 

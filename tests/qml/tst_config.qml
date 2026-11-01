@@ -641,7 +641,8 @@ TestRoot {
                 { tag: "Items", source: "config/ConfigItems.qml", key: "ringsOnly", value: ["cpu"] },
                 { tag: "Sensors", source: "config/ConfigSensors.qml", key: "diskDevice", value: "sda" },
                 { tag: "Providers", source: "config/ConfigProviders.qml", key: "usageRefreshMinutes", value: 10 },
-                { tag: "ProvidersSessionStarter", source: "config/ConfigProviders.qml", key: "sessionStarter", value: false },
+                { tag: "ProvidersClaudeSessionStarter", source: "config/ConfigProviders.qml", key: "claudeSessionStarter", value: false },
+                { tag: "ProvidersCodexSessionStarter", source: "config/ConfigProviders.qml", key: "codexSessionStarter", value: false },
                 { tag: "ProvidersCodexMark", source: "config/ConfigProviders.qml", key: "codexMark", value: "openai" },
                 { tag: "ProvidersClaudeProgram", source: "config/ConfigProviders.qml", key: "claudeProgram",
                   value: "~/.bun/bin/claude" },
@@ -678,7 +679,7 @@ TestRoot {
         // A checkable control or a button, found by its text, pressed from
         // the keyboard.
         function press(page, text) {
-            const control = find(page, i => i.visible && i.text === text && i.toggled !== undefined);
+            const control = find(page, i => i.visible && i.text === text && i.toggled !== undefined) ?? accessible(page, text);
             verify(control, text);
             control.forceActiveFocus();
             keyClick(Qt.Key_Space);
@@ -761,8 +762,10 @@ TestRoot {
                   saved: { usageRefreshMinutes: 10 } },
                 { tag: "showCredits", source: providers,
                   drive: page => press(page, "Show remaining credits"), saved: { showCredits: false } },
-                { tag: "sessionStarter", source: providers,
-                  drive: page => press(page, "Automatic starts"), saved: { sessionStarter: false } },
+                { tag: "claudeSessionStarter", source: providers, start: programs,
+                  drive: page => press(page, "Claude: Auto start session or week"), saved: { claudeSessionStarter: false } },
+                { tag: "codexSessionStarter", source: providers, start: programs,
+                  drive: page => press(page, "OpenAI: Auto start session or week"), saved: { codexSessionStarter: false } },
                 { tag: "claudeInnerLimit", source: providers, start: limits, drive: page => pickIn(page, "Claude inner ring", 2),
                   saved: { claudeInnerLimit: "opus" } },
                 { tag: "codexInnerLimit", source: providers, start: limits, drive: page => pickIn(page, "OpenAI inner ring", 2),
@@ -1458,6 +1461,8 @@ TestRoot {
             verify(heading(bare, "All Providers").visible);
             verify(!heading(bare, "Claude").visible);
             verify(!heading(bare, "OpenAI").visible);
+            compare(all(bare, i => i.visible && typeof i.text === "string" && i.text.startsWith("Auto start") && i.toggled !== undefined).length, 0,
+                    "no provider switch appears without its provider heading");
         }
 
         function test_creditSettingAppliesToAllProviders() {
@@ -1466,7 +1471,7 @@ TestRoot {
             const box = accessible(page, "Show remaining credits");
             verify(box.visible && box.checked);
             compare(all(page, i => i.text === "Show remaining credits" && i.toggled !== undefined).length, 1);
-            verify(!heading(page, "Claude").visible, "a lone Claude window needs no provider settings");
+            verify(heading(page, "Claude").visible, "Claude's session-start setting is available");
             const shared = heading(page, "All Providers");
             verify(box.mapToItem(page, 0, 0).y > shared.mapToItem(page, 0, 0).y);
             verify(box.mapToItem(page, 0, 0).y < heading(page, "OpenAI").mapToItem(page, 0, 0).y);
@@ -1481,19 +1486,24 @@ TestRoot {
             compare(page.cfg_codexInnerLimit, "");
         }
 
-        function test_sessionStarterSettingAppliesToAllProviders() {
+        function test_sessionStarterSettingsArePerProvider() {
             const page = make(providers, { cfg_itemOrder: ["claude", "codex"], cfg_hiddenItems: [],
-                                           cfg_sessionStarter: true, knownLimits: {} });
-            const box = accessible(page, "Automatic starts");
-            verify(box.visible && box.checked);
-            compare(all(page, i => i.text === "Automatic starts" && i.toggled !== undefined).length, 1);
-            box.toggle();
-            box.toggled();
-            verify(!page.cfg_sessionStarter);
+                                           cfg_claudeSessionStarter: true, cfg_codexSessionStarter: true, knownLimits: {} });
+            const claude = accessible(page, "Claude: Auto start session or week");
+            const codex = accessible(page, "OpenAI: Auto start session or week");
+            verify(claude.visible && claude.checked && codex.visible && codex.checked);
+            compare(all(page, i => typeof i.text === "string" && i.text.startsWith("Auto start") && i.toggled !== undefined).length, 2);
+            claude.toggle();
+            claude.toggled();
+            verify(!page.cfg_claudeSessionStarter && page.cfg_codexSessionStarter,
+                   "Claude's switch doesn't change OpenAI's");
+            codex.toggle();
+            codex.toggled();
+            verify(!page.cfg_codexSessionStarter);
             page.cfg_hiddenItems = ["claude", "codex"];
-            verify(box.visible && !box.checked, "the shared switch stays available with both items off");
             page.cfg_hiddenItems = [];
-            verify(!page.cfg_sessionStarter, "turning items on again keeps the feature disabled");
+            verify(!page.cfg_claudeSessionStarter && !page.cfg_codexSessionStarter,
+                   "turning items on again keeps each opt-out");
         }
 
         // Codex is chosen until the setting says openai, and each choice
