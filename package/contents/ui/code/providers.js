@@ -12,5 +12,7 @@
 var FACTS = {
     claude: { company: "Anthropic", command: "claude", product: "Claude Code" },
     codex: { company: "OpenAI", command: "codex", product: "Codex" },
-    kimi: { company: "Moonshot AI", command: "kimi", product: "Kimi Code", monthly: true }
+    kimi: { company: "Moonshot AI", command: "kimi", product: "Kimi Code", monthly: true },
+    // Go's limits are read with OpenCode's sign-in to the OpenCode Console.
+    opencode: { company: "OpenCode", command: "opencode auth login opencode", product: "OpenCode", monthly: true }
 };

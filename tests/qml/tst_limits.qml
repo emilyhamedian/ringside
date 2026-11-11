@@ -53,6 +53,7 @@ TestCase {
         // Every provider is always present, even without a reading.
         compare(result.codex, []);
         compare(result.kimi, []);
+        compare(result.opencode, []);
     }
 
     function test_knownKeepsAPickedUnreportedLimitsStoredLabel() {
@@ -63,7 +64,8 @@ TestCase {
             claude: [{ id: "opus", label: "Opus", reported: true },
                      { id: "old", label: "Old Model", reported: false }],
             codex: [],
-            kimi: []
+            kimi: [],
+            opencode: []
         });
     }
 
@@ -75,7 +77,7 @@ TestCase {
 
     function test_knownProviderWithoutAReadingKeepsWhatWasStored() {
         const stored = { claude: [{ id: "x", label: "X" }] };
-        compare(Limits.known({}, stored, {}), { claude: [{ id: "x", label: "X" }], codex: [], kimi: [] });
+        compare(Limits.known({}, stored, {}), { claude: [{ id: "x", label: "X" }], codex: [], kimi: [], opencode: [] });
     }
 
     // Automatic ("") and none never add an extra unreported entry: only a

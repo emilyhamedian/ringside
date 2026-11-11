@@ -9,16 +9,16 @@
 </p>
 
 Ringside puts your system in your KDE Plasma 6 panel as a row of rings: CPU,
-GPU, memory, network and disk. If you use Claude, Codex or Kimi Code, it can
-show your usage limits too.
+GPU, memory, network and disk. If you use Claude, Codex, Kimi Code or
+OpenCode Go, it can show your usage limits too.
 
 ![Ringside in a panel: CPU, GPU and memory rings with their names inside, each with its usage over its temperature or the memory in use, a Claude ring with its weekly usage over the days to its reset and its Fable limit in amber on the inner ring, then network rates](docs/panel.png)
 
 - See your CPU, GPU and memory at a glance, with their temperatures right
   beside them.
 - Keep an eye on network and disk activity.
-- Track your Claude and Codex weekly limits and your Kimi Code monthly limit:
-  how much you've used, when it resets, and whether you're on pace to run
+- Track your Claude and Codex weekly limits and your Kimi Code and OpenCode
+  Go monthly limits: how much you've used, when it resets, and whether you're on pace to run
   out. These stay off until you turn them on.
 - Click any item for a popup with graphs of the last minute, hour or day, top
   processes and more. Point at a graph to compare what a device's graphs
@@ -75,7 +75,7 @@ module, packaged as `qml6-module-qtquick-localstorage` on Debian and Ubuntu.
   own GPU processes are listed. Where the kernel doesn't count compute
   work's GPU usage (ROCm's, say), that shows as a dash.
 
-## Claude, Codex and Kimi
+## Claude, Codex, Kimi and OpenCode Go
 
 ![The Claude popup: the weekly limit, the Fable limit in amber with a sentence saying when it is on pace to run out, and a graph of this week's usage with a dashed amber line at the time the Fable limit runs out](docs/usage.png)
 
@@ -93,15 +93,22 @@ Panel Items*.
   in [OpenCode](https://opencode.ai). Ringside uses whichever it finds first
   to ask Kimi for your limits, and never renews Kimi Code's sign-in itself:
   if that's the only one and it has expired, open Kimi Code to renew it.
+- **OpenCode Go** needs an
+  [OpenCode Go](https://opencode.ai/docs/console/go/) subscription and
+  [OpenCode](https://opencode.ai) signed in to the OpenCode Console
+  (`opencode auth login opencode`). Ringside uses that sign-in to ask
+  OpenCode for your limits and never renews it itself: if it has expired,
+  open OpenCode to renew it.
 
-The ring shows how much of your weekly limit you've used, or for Kimi your
-monthly limit, and how long until it resets. If your plan also has a per-model limit, that shows on an inner
-ring. On first load, connection failures retry for up to 30 seconds while
-the rings keep loading. When a check fails, the ring greys out, and if it
-keeps failing, it's struck through; the popup tells you why. If a limit
-resets before it was due, the popup says so and how much you got back, for a
-day or until you've seen it. If Plasma can't find `claude` or `codex`, you
-can tell it where they are under *AI Providers*.
+The ring shows how much of your weekly limit you've used, or for Kimi and
+OpenCode Go your monthly limit, and how long until it resets. If your plan
+also has a per-model limit, that shows on an inner ring. On first load,
+connection failures retry for up to 30 seconds while the rings keep loading.
+When a check fails, the ring greys out, and if it keeps failing, it's struck
+through; the popup tells you why. If a limit resets before it was due, the
+popup says so and how much you got back, for a day or until you've seen it.
+If Plasma can't find `claude` or `codex`, you can tell it where they are
+under *AI Providers*.
 
 **Remaining credits.** Enabled providers collect balances automatically and
 show them below their popup's graph. *Show remaining credits* under *AI
@@ -133,12 +140,13 @@ feature that needs to.
   System Monitor, and from a small script,
   [`ringside-info.sh`](package/contents/code/ringside-info.sh), that reads
   `/proc`, `/sys` and udev as you.
-- When you turn on Claude, Codex or Kimi, Ringside runs
+- When you turn on Claude, Codex, Kimi or OpenCode Go, Ringside runs
   [`usage.py`](package/contents/code/usage.py). It sends your Claude Code
   login only to Anthropic (`api.anthropic.com`, and `platform.claude.com` to
   renew it), asks the Codex CLI on your computer about Codex, sends your
   Kimi Code sign-in or key only to Kimi (`api.kimi.ai`, or `api.kimi.com`
-  for China), and keeps the readings in `~/.cache/ringside/`.
+  for China), sends OpenCode's sign-in only to OpenCode (`opencode.ai`), and
+  keeps the readings in `~/.cache/ringside/`.
 - The public address, off until you turn it on under *General*, shows the
   address websites see in the network popup. To find it, Ringside asks
   [ipify.org](https://www.ipify.org), Mullvad's connection check (which can

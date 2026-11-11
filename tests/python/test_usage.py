@@ -1344,7 +1344,7 @@ class ProviderChoice(Isolated):
         report = self.run_main("--providers", "codex")
         self.assertEqual(list(report["providers"]), ["codex"])
         self.claude.assert_not_called()
-        self.assertEqual(set(self.run_main()["providers"]), {"claude", "codex", "kimi"})
+        self.assertEqual(set(self.run_main()["providers"]), {"claude", "codex", "kimi", "opencode"})
         self.assertEqual(set(self.run_main("--providers", "codex,claude")["providers"]), {"claude", "codex"})
         self.assertEqual(self.claude.call_count, 1)
         self.assertEqual(self.codex.call_count, 1)
@@ -1388,7 +1388,7 @@ class ProviderChoice(Isolated):
         self.assertEqual(run.returncode, 0, run.stderr)
         report = json.loads(run.stdout)
         self.assertEqual({name: entry["status"] for name, entry in report["providers"].items()},
-                         {"claude": "signed_out", "codex": "signed_out", "kimi": "signed_out"})
+                         {"claude": "signed_out", "codex": "signed_out", "kimi": "signed_out", "opencode": "signed_out"})
         self.assertEqual(report["providers"]["claude"]["starter"], OFF)
         self.assertEqual((report["providers"]["codex"]["starter"]["enabled"],
                           report["providers"]["codex"]["starter"]["state"]), (True, "failed"))
@@ -1577,6 +1577,119 @@ class Kimi(Isolated):
         kept = usage.extend_series(series, month, now)
         self.assertEqual(kept[0], series[0])
         self.assertEqual(len(kept), len(series) + 1)
+
+
+class OpenCodeGo(Isolated):
+    """OpenCode Go's month, read with OpenCode's Console sign-in, which is
+    only read."""
+
+    NOV_24 = 1795558719  # 2026-11-24 22:18:39 UTC
+    REPLY = {"usage": {"rolling": {"status": "ok", "percent": 0, "resetsAt": "2026-11-12T03:15:25.301Z"},
+                       "weekly": {"status": "ok", "percent": 0, "resetsAt": "2026-11-16T00:00:00.000Z"},
+                       "monthly": {"status": "ok", "percent": 55, "resetsAt": "2026-11-24T22:18:39.000Z"}}}
+
+    def setUp(self):
+        super().setUp()
+        self.asked = []
+
+        def answer(url, headers, body=None, **kwargs):
+            self.asked.append((url, headers["Authorization"], headers["x-opencode-org-id"]))
+            return self.REPLY
+        self.http_json = usage.http_json
+        self.enterContext(mock.patch.object(usage, "http_json", answer))
+
+    def sign_in(self, *credentials, active=1):
+        """OpenCode's credential table with these values, for the opencode
+        integration unless a value names another."""
+        import sqlite3
+        usage.OPENCODE_DATA.mkdir(parents=True, exist_ok=True)
+        with contextlib.closing(sqlite3.connect(usage.OPENCODE_DATA / "opencode.db")) as db:
+            db.execute("DROP TABLE IF EXISTS credential")
+            db.execute("CREATE TABLE credential (id TEXT, integration_id TEXT, label TEXT, value TEXT, active INTEGER)")
+            db.executemany("INSERT INTO credential VALUES ('c', ?, '', ?, ?)",
+                           [(value.pop("integration", "opencode"), json.dumps(value), active) for value in credentials])
+            db.commit()
+
+    @staticmethod
+    def oauth(expires_in=30 * 86400, **metadata):
+        expires = 0 if expires_in is None else int((time.time() + expires_in) * 1000)
+        return {"type": "oauth", "methodID": "device", "access": "access", "refresh": "single-use", "expires": expires,
+                "metadata": {"server": "https://opencode.ai/console", "orgID": "org_1", **metadata}}
+
+    def test_the_month_is_the_limit_the_others_are_shares_of(self):
+        self.assertEqual(usage.parse_opencode_go(self.REPLY), {"weekly": window(55, self.NOV_24, 31 * 86400), "scoped": []})
+        limited = {"usage": dict(self.REPLY["usage"], monthly={"status": "rate-limited", "percent": 98,
+                                                                "resetsAt": "2026-11-24T22:18:39.000Z"})}
+        self.assertEqual(usage.parse_opencode_go(limited)["weekly"], window(100, self.NOV_24, 31 * 86400))
+        for monthly in (None, {"status": "ok", "resetsAt": "2026-11-24T22:18:39.000Z"},
+                        {"status": "ok", "percent": "55", "resetsAt": "2026-11-24T22:18:39.000Z"},
+                        {"status": "ok", "percent": 55, "resetsAt": "soon"}):
+            with self.subTest(monthly), self.assertRaises(RuntimeError):
+                usage.parse_opencode_go({"usage": {"monthly": monthly}})
+
+    def test_the_sign_in_is_asked_for_its_organisation(self):
+        self.sign_in(self.oauth())
+        report = self.run_main("--providers", "opencode")
+        self.assertEqual(report["providers"]["opencode"]["weekly"]["percent"], 55)
+        self.assertEqual(self.asked, [("https://opencode.ai/zen/go/v1/usage", "Bearer access", "org_1")])
+
+    def test_a_token_that_never_expires_and_the_consoles_old_address_are_used(self):
+        self.sign_in(self.oauth(expires_in=None, server="https://console.opencode.ai/"))
+        usage.opencode_usage()
+        self.assertEqual(self.asked, [("https://opencode.ai/zen/go/v1/usage", "Bearer access", "org_1")])
+
+    def test_a_service_accounts_key_is_used(self):
+        self.sign_in({"type": "key", "key": "key", "metadata": {"orgID": "org_2"}})
+        usage.opencode_usage()
+        self.assertEqual(self.asked, [("https://opencode.ai/zen/go/v1/usage", "Bearer key", "org_2")])
+
+    def test_an_expired_sign_in_is_never_renewed_and_says_so(self):
+        self.sign_in(self.oauth(expires_in=30))
+        before = (usage.OPENCODE_DATA / "opencode.db").read_bytes()
+        with self.assertRaises(usage.CheckFailed) as caught:
+            usage.opencode_usage()
+        self.assertEqual(caught.exception.reason, "expired")
+        self.assertEqual(self.asked, [])
+        self.assertEqual((usage.OPENCODE_DATA / "opencode.db").read_bytes(), before)
+        entry = self.run_main("--providers", "opencode")["providers"]["opencode"]
+        self.assertEqual((entry["status"], entry["reason"]), ("error", "expired"))
+        self.assertEqual(usage.failure_why("opencode", entry), "the OpenCode sign-in has expired")
+
+    def test_no_sign_in_ringside_can_send_is_signed_out(self):
+        for credentials, active in (((), 1), ((self.oauth(),), 0),
+                                    ((self.oauth(server="https://console.example.com"),), 1),
+                                    ((self.oauth(orgID=None),), 1),
+                                    ((dict(self.oauth(), access=""),), 1),
+                                    (({"type": "external"},), 1),
+                                    ((dict(self.oauth(), integration="opencode-go"),), 1)):
+            with self.subTest(credentials=credentials, active=active):
+                self.sign_in(*credentials, active=active)
+                with self.assertRaises(usage.SignedOut):
+                    usage.opencode_usage()
+                self.assertEqual(self.asked, [])
+
+    def test_a_refusal_is_an_account_without_go_and_a_rejected_token_signed_out(self):
+        self.sign_in(self.oauth())
+        for code, status, reason in ((403, "error", "not-subscribed"), (401, "signed_out", None)):
+            with self.subTest(code), mock.patch.object(usage, "http_json", self.http_json), \
+                    mock.patch.object(usage.urllib.request, "urlopen", side_effect=http_error(code)):
+                usage.CACHE_FILE.unlink(missing_ok=True)
+                entry = self.run_main("--providers", "opencode")["providers"]["opencode"]
+                self.assertEqual((entry["status"], entry.get("reason")), (status, reason))
+        self.assertEqual(usage.failure_why("opencode", {"status": "error", "reason": "not-subscribed"}),
+                         "the OpenCode account has no Go subscription")
+
+    def test_opencode_go_has_no_starter_program_or_credits(self):
+        self.sign_in(self.oauth())
+        entry = self.run_main("--providers", "opencode", "--credits-providers", "opencode", "--start")["providers"]["opencode"]
+        self.assertEqual(entry["status"], "ok")
+        self.assertFalse({"starter", "program", "credits"} & entry.keys())
+        for argv in (["--program", "opencode=/bin/opencode"], ["--starter-set", "opencode=on"]):
+            with self.subTest(argv), mock.patch("sys.stderr", new=io.StringIO()), self.assertRaises(SystemExit):
+                usage.arguments(argv)
+
+    def test_its_host_can_be_named_in_the_journal(self):
+        self.assertEqual(usage.own_host("opencode.ai"), "opencode.ai")
 
 
 class History(Isolated):

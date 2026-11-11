@@ -1323,7 +1323,7 @@ class Report(Isolated):
         providers = self.run_main()["providers"]
         self.assertEqual({name: entry.get("starter") for name, entry in providers.items()},
                          {"claude": dict(OFF, windows=["session"]), "codex": dict(OFF, windows=["session", "week"]),
-                          "kimi": None})
+                          "kimi": None, "opencode": None})
 
     def test_the_current_reading_names_the_window_before_stored_state(self):
         record = dict(usage.blank_record(), period=SESSION)

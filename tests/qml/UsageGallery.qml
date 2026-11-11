@@ -567,6 +567,65 @@ ColumnLayout {
         }
     }
 
+    // OpenCode Go's month: 55 % used with 13 days left, beside Kimi; then an
+    // OpenCode account without Go, whose first check failed.
+    FakeMonitor {
+        id: goMonitor
+        usage: FakeUsage {
+            id: goUsage
+            ids: ["kimi", "opencode"]
+            entries: ({
+                kimi: { status: "ok", fetchedAt: goUsage.createdAt,
+                        weekly: Object.assign(goUsage.window(38, 12 * goUsage.day, section.history(18, 38)),
+                                              { windowSeconds: 30 * goUsage.day }), scoped: [] },
+                opencode: { status: "ok", fetchedAt: goUsage.createdAt,
+                            weekly: Object.assign(goUsage.window(55, 13 * goUsage.day, section.history(18, 55)),
+                                                  { windowSeconds: 31 * goUsage.day }), scoped: [] }
+            })
+        }
+    }
+
+    FakeMonitor {
+        id: goWithout
+        usage: FakeUsage {
+            id: goWithoutUsage
+            ids: ["opencode"]
+            entries: ({
+                opencode: { status: "error", lastError: "the OpenCode account has no Go subscription",
+                            lastErrorAt: goWithoutUsage.createdAt - 60, reason: "not-subscribed", host: "opencode.ai",
+                            retryAt: goWithoutUsage.createdAt + 240 }
+            })
+        }
+    }
+
+    Panel {
+        label: "Kimi & OpenCode Go · panel · 46 px · OpenCode Go 55 % of its month"
+        thickness: 46
+        monitor: goMonitor
+        items: ["kimi", "opencode"]
+    }
+
+    Panel {
+        label: "OpenCode Go · panel · 30 px · 55 % of its month"
+        thickness: 30
+        monitor: goMonitor
+        items: ["cpu", "memory", "opencode"]
+    }
+
+    RowLayout {
+        spacing: 2 * Kirigami.Units.gridUnit
+
+        GalleryFrame {
+            label: "OpenCode Go · 55 % of its month"
+            UsagePopup { monitor: goMonitor; item: "opencode" }
+        }
+
+        GalleryFrame {
+            label: "OpenCode Go · an account without Go (struck)"
+            UsagePopup { monitor: goWithout; item: "opencode" }
+        }
+    }
+
     RowLayout {
         spacing: 2 * Kirigami.Units.gridUnit
 

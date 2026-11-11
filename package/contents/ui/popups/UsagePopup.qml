@@ -11,7 +11,7 @@ import "../code/providers.js" as Providers
 import "../code/style.js" as Style
 import ".."
 
-// Claude's or Codex's weekly limits, or Kimi's monthly one: the all-models
+// Claude's or Codex's weekly limits, or a monthly one: the all-models
 // window in the header with the time left until it resets, a bar for it and
 // for each model's own limit with a sentence under one of them on where the
 // current pace leads, and the window so far as a graph. With one limit the
@@ -32,8 +32,8 @@ PopupPage {
     readonly property var usage: monitor.usage
     readonly property var entry: usage.entry(item)
     readonly property var weekly: entry && entry.weekly ? entry.weekly : null
-    // Kimi's limit spans a month; the words for it say so, before a first
-    // reading too.
+    // Kimi's and OpenCode Go's limits span a month; the words for them say
+    // so, before a first reading too.
     readonly property bool monthly: words.monthly(weekly) || Providers.FACTS[item].monthly === true
     readonly property var innerLimit: usage.inner(item)
     // The last check failed. Its reading stays, greyed, until it is struck
@@ -166,9 +166,9 @@ PopupPage {
         // As many as the reading had, whether or not they are shown; how
         // many there are isn't known until the first check is done.
         subtitle: popup.loading
-            ? i18nc("@info under Claude, Codex or Kimi: the first check of the limits since Ringside started is running", "Checking your usage…")
+            ? i18nc("@info under Claude, Codex, Kimi or OpenCode Go: the first check of the limits since Ringside started is running", "Checking your usage…")
             : popup.monthly
-            ? i18ncp("@info under Kimi: what the popup shows", "Monthly limit", "Monthly limits",
+            ? i18ncp("@info under Kimi or OpenCode Go: what the popup shows", "Monthly limit", "Monthly limits",
                      Math.max(1, popup.limits.length, popup.entry && popup.entry.scoped ? popup.entry.scoped.length + 1 : 0))
             : i18ncp("@info under Claude or Codex: what the popup shows", "Weekly limit", "Weekly limits",
                      Math.max(1, popup.limits.length, popup.entry && popup.entry.scoped ? popup.entry.scoped.length + 1 : 0))

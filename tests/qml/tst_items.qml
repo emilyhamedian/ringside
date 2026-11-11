@@ -13,6 +13,7 @@ TestCase {
             { tag: "claude", item: "claude", expected: true },
             { tag: "codex", item: "codex", expected: true },
             { tag: "kimi", item: "kimi", expected: true },
+            { tag: "opencode", item: "opencode", expected: true },
             { tag: "cpu", item: "cpu", expected: false },
             { tag: "unknown", item: "bogus", expected: false }
         ];
@@ -40,30 +41,30 @@ TestCase {
         ];
     }
     function test_orderWithNothingStoredIsTheDefaultOrder(data) {
-        compare(Items.order(data.stored), ["cpu", "gpu", "memory", "network", "disk", "claude", "codex", "kimi"]);
+        compare(Items.order(data.stored), ["cpu", "gpu", "memory", "network", "disk", "claude", "codex", "kimi", "opencode"]);
     }
 
     function test_orderKeepsStoredOrderFirstThenAppendsTheRest() {
-        compare(Items.order(["network", "cpu"]), ["network", "cpu", "gpu", "memory", "disk", "claude", "codex", "kimi"]);
+        compare(Items.order(["network", "cpu"]), ["network", "cpu", "gpu", "memory", "disk", "claude", "codex", "kimi", "opencode"]);
     }
 
     function test_orderDropsUnknownIds() {
-        compare(Items.order(["bogus", "cpu"]), ["cpu", "gpu", "memory", "network", "disk", "claude", "codex", "kimi"]);
+        compare(Items.order(["bogus", "cpu"]), ["cpu", "gpu", "memory", "network", "disk", "claude", "codex", "kimi", "opencode"]);
     }
 
     function test_orderDedupesRepeatedIds() {
-        compare(Items.order(["cpu", "cpu", "gpu"]), ["cpu", "gpu", "memory", "network", "disk", "claude", "codex", "kimi"]);
+        compare(Items.order(["cpu", "cpu", "gpu"]), ["cpu", "gpu", "memory", "network", "disk", "claude", "codex", "kimi", "opencode"]);
     }
 
-    // A stored order without Claude, Codex or Kimi leaves them trailing, like
+    // A stored order without the usage items leaves them trailing, like
     // any other item the order doesn't mention; an order that already lists
     // one keeps it in place.
     function test_orderWithoutAiItemsAppendsThemLast() {
-        compare(Items.order(["disk", "network"]), ["disk", "network", "cpu", "gpu", "memory", "claude", "codex", "kimi"]);
+        compare(Items.order(["disk", "network"]), ["disk", "network", "cpu", "gpu", "memory", "claude", "codex", "kimi", "opencode"]);
     }
 
     function test_orderAlreadyListingAnAiItemKeepsItsPosition() {
-        compare(Items.order(["claude", "cpu"]), ["claude", "cpu", "gpu", "memory", "network", "disk", "codex", "kimi"]);
+        compare(Items.order(["claude", "cpu"]), ["claude", "cpu", "gpu", "memory", "network", "disk", "codex", "kimi", "opencode"]);
     }
 
     function test_hiddenWithNothingStoredOptsOutEveryAiItem_data() {
@@ -73,21 +74,21 @@ TestCase {
         ];
     }
     function test_hiddenWithNothingStoredOptsOutEveryAiItem(data) {
-        compare(Items.hidden(data.stored, data.stored), ["claude", "codex", "kimi"]);
+        compare(Items.hidden(data.stored, data.stored), ["claude", "codex", "kimi", "opencode"]);
     }
 
     function test_hiddenAiItemListedInOrderStaysOn() {
-        compare(Items.hidden(["cpu", "claude"], []), ["codex", "kimi"]);
+        compare(Items.hidden(["cpu", "claude"], []), ["codex", "kimi", "opencode"]);
     }
 
     function test_hiddenKeepsStoredHiddenAndDedupesUnknownIds() {
-        compare(Items.hidden(["cpu"], ["disk", "disk", "bogus"]), ["disk", "claude", "codex", "kimi"]);
+        compare(Items.hidden(["cpu"], ["disk", "disk", "bogus"]), ["disk", "claude", "codex", "kimi", "opencode"]);
     }
 
     // Explicitly hiding an AI item that the order also lists keeps it off:
     // the hidden list always wins.
     function test_hiddenExplicitlyHiddenAiItemStaysHiddenEvenWhenOrdered() {
-        compare(Items.hidden(["claude", "cpu"], ["claude"]), ["claude", "codex", "kimi"]);
+        compare(Items.hidden(["claude", "cpu"], ["claude"]), ["claude", "codex", "kimi", "opencode"]);
     }
 
     function test_enabledOnEmptyStoredIsEverySystemItem() {

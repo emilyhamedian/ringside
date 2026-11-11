@@ -12,6 +12,9 @@ follows [Semantic Versioning](https://semver.org/).
   month so far, when it resets and whether you're on pace to run out. It
   reads with Kimi Code's own sign-in or the key OpenCode keeps for Kimi For
   Coding, whichever it finds first, and is off until you turn it on.
+- OpenCode Go item: your OpenCode Go monthly limit as a ring, with the same
+  popup. It reads with OpenCode's sign-in to the OpenCode Console, never
+  renewing it, and is off until you turn it on.
 - CPU popup shows a section for each CPU on machines with more than one, each
   with its model, cores and threads, usage, threads and graphs. Each CPU's
   temperature shows on Intel; AMD's shows once for the whole machine.

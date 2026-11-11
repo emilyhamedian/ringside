@@ -23,7 +23,8 @@ ConfigPage {
         disk: i18nc("@item panel item", "Disk"),
         claude: i18nc("@item panel item", "Claude"),
         codex: i18nc("@item panel item: the OpenAI weekly limits, read through Codex", "OpenAI"),
-        kimi: i18nc("@item panel item: the Kimi Code monthly limit", "Kimi")
+        kimi: i18nc("@item panel item: the Kimi Code monthly limit", "Kimi"),
+        opencode: i18nc("@item panel item: the OpenCode Go monthly limit", "OpenCode Go")
     })
     // A vertical panel shows rings without their readings, whatever the setting.
     readonly property bool vertical: Plasmoid.formFactor === PlasmaCore.Types.Vertical
@@ -41,7 +42,8 @@ ConfigPage {
         disk: hardware.root ? String(hardware.root.disk || "") : "",
         claude: usageHint("claude"),
         codex: usageHint("codex"),
-        kimi: usageHint("kimi")
+        kimi: usageHint("kimi"),
+        opencode: usageHint("opencode")
     })
 
     function usageHint(id) {
@@ -103,7 +105,7 @@ ConfigPage {
         save();
     }
 
-    // The checked state starts from Items.hidden(), so Claude, Codex and Kimi
+    // The checked state starts from Items.hidden(), so the usage items
     // show unchecked unless the stored order already lists them, without
     // writing anything back until the user acts (save() only runs from a
     // toggle or a move).
