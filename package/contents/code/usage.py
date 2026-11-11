@@ -2,28 +2,31 @@
 # SPDX-FileCopyrightText: 2026 Emily Hamedian <me@emily.dev>
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""Report the weekly usage windows of Claude Code and Codex as one JSON object.
+"""Report the usage windows of Claude Code, Codex and Kimi Code as one JSON
+object: Claude's and Codex's weeks, and Kimi's month.
 
-Ringside runs this on a timer while a Claude or Codex item is switched on.
-Each provider is queried on its own, so a failure on one side never hides the
-other. Output shape:
+Ringside runs this on a timer while a Claude, Codex or Kimi item is switched
+on. Each provider is queried on its own, so a failure on one side never hides
+the others. Output shape:
 
     {"fetchedAt": <epoch seconds>,
      "providers": {
          "claude": {"status": "ok", "fetchedAt": ..., "weekly": {...}, "scoped": [...]},
-         "codex":  {"status": "ok", "fetchedAt": ..., "weekly": {...}, "scoped": [...]}}}
+         "codex":  {"status": "ok", "fetchedAt": ..., "weekly": {...}, "scoped": [...]},
+         "kimi":   {"status": "ok", "fetchedAt": ..., "weekly": {...}, "scoped": []}}}
 
 --credits-providers names providers whose prepaid credits may be collected
 and reported alongside weekly usage, at most once per five minutes including
 failures. The widget supplies every enabled provider regardless of whether
-credits are shown. Codex credits reuse its weekly response. Credits have
+credits are shown; Kimi, which has none, is left out. Codex credits reuse
+its weekly response. Credits have
 their own status and cached balance, independent of weekly readings. No
 credit-only check renews a login. A credit record's "spent" says a successful
 observation found a lower positive balance in the same currency and scale;
 it does not say when the balance was spent.
 
---providers claude,codex names the providers to poll and report; both by
-default. --initial-providers names those awaiting their first report: safe
+--providers claude,codex,kimi names the providers to poll and report; all
+by default. --initial-providers names those awaiting their first report: safe
 connection failures retry at five-second intervals within one 30-second
 window, before a final result is cached. Existing readings and holds still
 apply. --retry-providers names those whose failed connection the user asked
@@ -32,18 +35,20 @@ after an "offline" or "timeout" failure is skipped for this run. A reading
 still stands for five minutes, and a wait a provider asked for still holds.
 A window is {"percent": 0-100, "resetsAt": <epoch seconds>,
 "windowSeconds": <its length>, "history": [[<epoch seconds>, <percent>], ...]}.
-"weekly" is the all-models window; "scoped" lists the model-specific weekly
-windows, each a window with an "id" that stays stable across polls and a
-display "label". An ok entry's "fetchedAt" is when it was polled, which a
-cached reading keeps. Status is one of "ok", "signed_out", "rate_limited"
-(with "retryAfter", the seconds until the provider is polled again) or
-"error", and the last two carry a "message" to show, a "reason" the widget
-can put in its own words ("offline", "timeout", "server", "rate-limited",
-"not-installed" when the Codex CLI isn't, "program" when the codex program
-chosen with --program can't be run, "busy" when another run held the lock
-too long, or "other"), the "host" that failed, or "" when none did, and
-"retryAt", when the provider may be polled again (epoch seconds). Tokens
-never reach stdout or stderr.
+"weekly" is the all-models window, a week for Claude and Codex (five hours
+for a Codex plan with only that) and a month for Kimi; "scoped" lists the
+model-specific weekly windows, each a window with an "id" that stays stable
+across polls and a display "label". An ok entry's "fetchedAt" is when it was
+polled, which a cached reading keeps. Status is one of "ok", "signed_out",
+"rate_limited" (with "retryAfter", the seconds until the provider is polled
+again) or "error", and the last two carry a "message" to show, a "reason"
+the widget can put in its own words ("offline", "timeout", "server",
+"rate-limited", "not-installed" when the Codex CLI isn't, "program" when the
+codex program chosen with --program can't be run, "expired" when Kimi's
+only credential is a Kimi Code sign-in Kimi Code hasn't renewed, "busy" when
+another run held the lock too long, or "other"), the "host" that failed, or
+"" when none did, and "retryAt", when the provider may be polled again
+(epoch seconds). Tokens never reach stdout or stderr.
 
 The report also carries "events", the lines this run has for Plasma's
 journal (see event()), which the widget writes there and the cache never
@@ -59,10 +64,10 @@ or, without one, at its last; a starter with a last time also carries
 Every completed check's result, a failure or a sign-out as much as a reading, is kept
 in $XDG_CACHE_HOME/ringside for five minutes and served from there, so no
 widget, reload or restart spends another call on Anthropic's tightly
-rate-limited usage endpoint before then. A rate-limit reply is kept for as
-long as it asked, if that is longer. A lock held for the whole run makes a
-second widget that starts at the same time wait and then read this run's
-result instead of polling again.
+rate-limited usage endpoint, or any provider's, before then. A rate-limit
+reply is kept for as long as it asked, if that is longer. A lock held for
+the whole run makes a second widget that starts at the same time wait and
+then read this run's result instead of polling again.
 
 The APIs only report the current percentage, so each real poll also adds it to
 the window's history in the same folder. A window's "history" holds the
@@ -80,19 +85,20 @@ window, or null when no session is running; a plan without one, as Claude
 Ultra, leaves it out. "sessionUnknown": true stands in for it when the plan
 has the limit but the reply can't be read.
 
---program <provider>=<path> names the program to run for a provider, as the
-user chose it in Ringside's settings; ~ stands for the home folder. Without
-one, the program is found by itself (see find_cli()). Every entry carries
-"program": {"path": <where it is, or "" when it isn't found>, "chosen":
-bool, "problem": "" or what keeps a chosen path from running: "missing",
-"not-executable" or "folder"}, looked up afresh on every run.
+--program <provider>=<path> names the program to run for Claude or Codex, as
+the user chose it in Ringside's settings; ~ stands for the home folder.
+Without one, the program is found by itself (see find_cli()). Their entries
+carry "program": {"path": <where it is, or "" when it isn't found>,
+"chosen": bool, "problem": "" or what keeps a chosen path from running:
+"missing", "not-executable" or "folder"}, looked up afresh on every run.
 
-Every entry carries "starter", the session starter's state: {"enabled":
-bool, "on": [...], "windows": [...] or null, "state": ..., "at": <epoch
-seconds> or null, "next": <epoch seconds> or null, "reason": ... or null,
-"window": "session" or "week"}. "on" lists the windows the user switched the
-starter on for, and "windows" those the plan lets it start (see startable()),
-or null when the reading can't say; both in the order "session", "week".
+Claude's and Codex's entries carry "starter", the session starter's state:
+{"enabled": bool, "on": [...], "windows": [...] or null, "state": ...,
+"at": <epoch seconds> or null, "next": <epoch seconds> or null, "reason":
+... or null, "window": "session" or "week"}. "on" lists the windows the
+user switched the starter on for, and "windows" those the plan lets it start
+(see startable()), or null when the reading can't say; both in the order
+"session", "week".
 "enabled" says some window is in both, "window" names the one the starter
 works toward, and while it isn't enabled the state is "off". The other states
 are "waiting" (next is
@@ -117,6 +123,7 @@ time, makes it due at once (see replan_starters()).
 """
 
 import argparse
+import calendar
 import contextlib
 import contextvars
 import errno
@@ -131,10 +138,16 @@ import shutil
 import signal
 import socket
 import stat
+
+try:
+    import sqlite3
+except ImportError:  # A Python built without it reads OpenCode 1's keys alone.
+    sqlite3 = None
 import subprocess
 import sys
 import tempfile
 import time
+import tomllib
 import urllib.error
 import urllib.request
 import uuid
@@ -145,7 +158,11 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 VERSION = "0.4.0"
 
-PROVIDERS = ("claude", "codex")
+PROVIDERS = ("claude", "codex", "kimi")
+# The providers with prepaid credits, and those whose CLI Ringside can be
+# told where to find (--program) and runs for the session starter.
+CREDITED = ("claude", "codex")
+CLIS = ("claude", "codex")
 
 WEEK_MINUTES = 7 * 24 * 60
 WEEK_SECONDS = WEEK_MINUTES * 60
@@ -189,7 +206,8 @@ LOCK_WAIT = 150
 # The longest a refusal holds a provider back, whatever Retry-After says.
 HOLD_MAX = 24 * 3600
 # A week of polls five minutes apart is 2016 points; flat stretches collapse,
-# so this is only reached by a series that changes on nearly every poll.
+# so this is only reached by a series that changes on nearly every poll. A
+# longer window, as Kimi's month, keeps as many for each week of it.
 HISTORY_POINTS = 2100
 # A fall of this many points means the provider cleared the window early.
 HISTORY_CLEARED = 20
@@ -269,8 +287,9 @@ class RateLimited(Exception):
 
 class CheckFailed(RuntimeError):
     """A failed check whose cause is known: reason is "offline", "timeout",
-    "server", "not-installed" or "program", host the server that failed, or
-    "" for the Codex CLI, and status the HTTP status a server answered with."""
+    "server", "not-installed", "program" or "expired" (Kimi Code's sign-in),
+    host the server that failed, or "" for none, and status the HTTP status a
+    server answered with."""
 
     def __init__(self, message, reason, host="", status=None, *, retryable=False):
         super().__init__(message)
@@ -311,14 +330,16 @@ CODEX_TRANSPORT = re.compile(
 # token, so none of those can reach the journal.
 EVENTS = []
 
-NAMES = {"claude": "Claude", "codex": "Codex"}
+NAMES = {"claude": "Claude", "codex": "Codex", "kimi": "Kimi"}
 # What signs a provider in, as the journal names it.
-PRODUCTS = {"claude": "Claude Code", "codex": "the Codex CLI"}
+PRODUCTS = {"claude": "Claude Code", "codex": "the Codex CLI", "kimi": "Kimi Code"}
 # Who asks Ringside to wait, when the refusal names no host.
-COMPANIES = {"claude": "Anthropic", "codex": "OpenAI"}
+COMPANIES = {"claude": "Anthropic", "codex": "OpenAI", "kimi": "Moonshot AI"}
 # The windows a provider's starter can ever start, in order: Claude's week
 # resets on a set schedule, while Codex's, like a session, waits for a message.
-OFFERED = {"claude": ("session",), "codex": ("session", "week")}
+# Kimi has no starter.
+OFFERED = {"claude": ("session",), "codex": ("session", "week"), "kimi": ()}
+STARTERS = tuple(name for name in PROVIDERS if OFFERED[name])
 # The window each names before a reading has told it the plan.
 WINDOWS = {"claude": "session", "codex": "week"}
 
@@ -335,6 +356,7 @@ MESSAGES = {
     "busy": "{name}: no check: another usage check held the lock for over {wait} s",
     "cli": "{name}: asking {cli} app-server",
     "cli-error": "{name}: app-server answered with an error, code {code}",
+    "credential": "{name}: asking with {source}",
     "renewed": "{name}: renewed the Claude Code login",
     "early-reset": "{name}: {which} reset early",
     "starter-on": "{name} session starter switched on for: {windows}",
@@ -375,7 +397,7 @@ def event(level, provider, kind, ms=None, **fields):
 def own_host(host):
     """host if it is one Ringside asks, else "": a cache that was tampered
     with can't put anything else in the journal."""
-    return host if host in (CLAUDE_USAGE_URL.split("/")[2], CLAUDE_TOKEN_URL.split("/")[2]) else ""
+    return host if host in (CLAUDE_USAGE_URL.split("/")[2], CLAUDE_TOKEN_URL.split("/")[2], *KIMI_HOSTS.values()) else ""
 
 
 def failure_why(name, failure, asked=None, hold=None):
@@ -399,6 +421,8 @@ def failure_why(name, failure, asked=None, hold=None):
         return f"{host or 'the server'} answered with " + (f"HTTP {status}" if type(status) is int else "an error")
     if reason == "not-installed":
         return "the codex CLI isn't installed"
+    if reason == "expired":
+        return "the Kimi Code sign-in has expired"
     if reason == "program":
         # A hold keeps the program it was for, which a recovery may have
         # moved on from.
@@ -1071,6 +1095,173 @@ def claude_usage():
     return parse_claude(usage)
 
 
+# --- Kimi Code -------------------------------------------------------------
+
+# Kimi Code's usage endpoint, on the host of the region a credential was
+# issued for. Every app signed in to the same Kimi account reads the same
+# limits, so Ringside asks with whichever credential it finds first.
+KIMI_HOSTS = {"global": "api.kimi.ai", "china": "api.kimi.com"}
+KIMI_USAGE_PATH = "/coding/v1/usages"
+# Where Kimi Code's CLI and VS Code extension keep their settings and
+# sign-in, and the base URLs that mean a Kimi Code subscription. A Moonshot
+# Platform key, for any other base URL, is pay-as-you-go and never sent.
+KIMI_HOME = Path(os.environ.get("KIMI_CODE_HOME") or Path.home() / ".kimi-code")
+KIMI_BASES = {"https://api.kimi.ai/coding/v1": "global", "https://api.kimi.com/coding/v1": "china"}
+KIMI_GLOBAL_SIGN_IN = "https://auth.kimi.ai"
+# Seconds before its expiry a stored Kimi Code token counts as expired.
+KIMI_EXPIRY_MARGIN = 60
+OPENCODE_DATA = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share") / "opencode"
+# OpenCode's providers for a Kimi Code subscription, by region.
+OPENCODE_KIMI = {"kimi-code-plan-global": "global", "kimi-code-plan-cn": "china"}
+
+
+def opencode_kimi_keys():
+    """The Kimi Code API keys OpenCode keeps, as (region, key): OpenCode 2's
+    active ones in its database, then OpenCode 1's in auth.json. Both are
+    only read; anything missing or unreadable gives none."""
+    found = []
+    database = OPENCODE_DATA / "opencode.db"
+    rows = []
+    if sqlite3 and database.exists():
+        try:
+            connection = sqlite3.connect(database.as_uri() + "?mode=ro", uri=True, timeout=2)
+            try:
+                rows = connection.execute(
+                    "SELECT integration_id, value FROM credential WHERE active = 1 AND integration_id IN (?, ?)",
+                    tuple(OPENCODE_KIMI)).fetchall()
+            finally:
+                connection.close()
+        except sqlite3.Error:
+            rows = []
+        for provider, value in rows:
+            with contextlib.suppress(ValueError, TypeError):
+                found.append((OPENCODE_KIMI[provider], json.loads(value).get("key")))
+    try:
+        auth = read_json(OPENCODE_DATA / "auth.json")
+    except (OSError, ValueError):
+        auth = {}
+    for provider, region in OPENCODE_KIMI.items():
+        entry = auth.get(provider) if isinstance(auth, dict) else None
+        if isinstance(entry, dict) and entry.get("type") == "api":
+            found.append((region, entry.get("key")))
+    return found
+
+
+def kimi_region(provider):
+    """The region of a Kimi Code provider in Kimi Code's config.toml, from
+    its base URL, or for a sign-in without one from where it signed in;
+    None for a provider that isn't Kimi Code's."""
+    base, oauth = provider.get("base_url"), provider.get("oauth")
+    if isinstance(base, str):
+        return KIMI_BASES.get(base.rstrip("/"))
+    if isinstance(oauth, dict):
+        return "global" if str(oauth.get("oauth_host", "")).rstrip("/") == KIMI_GLOBAL_SIGN_IN else "china"
+    return None
+
+
+def kimi_code_credentials(now):
+    """Kimi Code's own credentials, as (source, region, token), and whether a
+    sign-in was found expired. Each Kimi Code provider in config.toml gives
+    its sign-in while that is unexpired, or its API key. The files are only
+    read: Kimi Code renews its sign-in itself, with refresh tokens that work
+    once, so a renewal here would sign Kimi Code out."""
+    try:
+        with open(KIMI_HOME / "config.toml", "rb") as fh:
+            providers = tomllib.load(fh).get("providers")
+    except (OSError, tomllib.TOMLDecodeError):
+        return [], False
+    found, expired = [], False
+    for provider in providers.values() if isinstance(providers, dict) else ():
+        if not isinstance(provider, dict) or provider.get("type") != "kimi" or not (region := kimi_region(provider)):
+            continue
+        oauth = provider.get("oauth")
+        if isinstance(oauth, dict):
+            name = oauth.get("key").removeprefix("oauth/") if isinstance(oauth.get("key"), str) else ""
+            if not re.fullmatch(r"[\w.-]+", name) or name.startswith("."):
+                continue
+            try:
+                token = read_json(KIMI_HOME / "credentials" / f"{name}.json")
+            except (OSError, ValueError):
+                continue
+            # Signed out leaves the token empty.
+            if not isinstance(token, dict) or not usable(token.get("access_token")):
+                continue
+            expires = token.get("expires_at")
+            if finite_share(expires) and expires - now > KIMI_EXPIRY_MARGIN:
+                found.append(("Kimi Code's sign-in", region, token["access_token"]))
+            else:
+                expired = True
+            continue
+        key = provider.get("api_key")
+        if not key and isinstance(provider.get("api_key_env"), str):
+            key = os.environ.get(provider["api_key_env"])
+        if not key and "api_key_env" not in provider and isinstance(provider.get("env"), dict):
+            key = provider["env"].get("KIMI_API_KEY")
+        found.append(("Kimi Code's key", region, key))
+    return found, expired
+
+
+def kimi_credentials(now):
+    """The credentials to ask Kimi with, as (source, region, token), the
+    source in the journal's words, each once: Kimi Code's own, then
+    OpenCode's; and whether a Kimi Code sign-in was found expired."""
+    own, expired = kimi_code_credentials(now)
+    unique = []
+    for source, region, token in own + [("OpenCode's key", region, key) for region, key in opencode_kimi_keys()]:
+        if usable(token) and all(token != t for _, _, t in unique):
+            unique.append((source, region, token))
+    return unique, expired
+
+
+def month_before(at):
+    """The same moment a calendar month before `at`, in UTC, on that month's
+    last day where it is shorter."""
+    stamp = datetime.fromtimestamp(at, timezone.utc)
+    year, month = (stamp.year, stamp.month - 1) if stamp.month > 1 else (stamp.year - 1, 12)
+    return int(stamp.replace(year=year, month=month, day=min(stamp.day, calendar.monthrange(year, month)[1])).timestamp())
+
+
+def parse_kimi(body):
+    """Reduce a /coding/v1/usages body to its monthly window, the total
+    every Kimi feature draws on, which Kimi Code stops at once it is used
+    up. The reply says when the month resets, not how long it is, so it
+    started a calendar month before."""
+    usages = body.get("usages") if isinstance(body, dict) else None
+    month = usages.get("limit_month_total") if isinstance(usages, dict) else None
+    # The share used, 0 to 1, may come as a number or as a numeric string.
+    ratio = month.get("used_ratio") if isinstance(month, dict) else None
+    if isinstance(ratio, str):
+        with contextlib.suppress(ValueError):
+            ratio = float(ratio)
+    # As for Claude: a missing share read as 0% could pass for an idle month.
+    if not finite_share(ratio):
+        raise RuntimeError("no monthly usage in usages reply")
+    reset = epoch_seconds(month.get("reset_time"))
+    if reset is None:
+        raise RuntimeError("no monthly reset in usages reply")
+    return {"weekly": window_from(ratio * 100, reset, reset - month_before(reset)), "scoped": []}
+
+
+def kimi_usage():
+    """Ask Kimi with each credential found in turn, until one isn't turned
+    away as signed out. With none but an expired Kimi Code sign-in, the
+    check fails until Kimi Code runs and renews it."""
+    found, expired = kimi_credentials(time.time())
+    if not found and expired:
+        raise CheckFailed("Kimi Code's sign-in has expired; open Kimi Code to renew it", "expired")
+    for index, (source, region, token) in enumerate(found):
+        event("debug", "kimi", "credential", source=source)
+        try:
+            body = http_json(f"https://{KIMI_HOSTS[region]}{KIMI_USAGE_PATH}",
+                             {"Authorization": f"Bearer {token}", "Accept": "application/json"})
+        except SignedOut:
+            if index + 1 < len(found):
+                continue
+            raise
+        return parse_kimi(body)
+    raise SignedOut()
+
+
 # --- prepaid credits -------------------------------------------------------
 
 
@@ -1671,9 +1862,9 @@ def within(series, window, now):
 
     The span starts windowSeconds before the reset, so when a reset moves
     resetsAt a week out the old week's points fall away. Nothing older than a
-    week is kept either way.
+    week, or than the window where it is longer, is kept either way.
     """
-    start = now - WEEK_SECONDS
+    start = now - max(WEEK_SECONDS, window["windowSeconds"])
     if window.get("resetsAt") is not None:
         start = max(start, window["resetsAt"] - window["windowSeconds"])
     return [point for point in series if start <= point[0] <= now]
@@ -1695,7 +1886,7 @@ def extend_series(series, window, now):
         kept[-1] = [now, percent]
     else:
         kept.append([now, percent])
-    return kept[-HISTORY_POINTS:]
+    return kept[-HISTORY_POINTS * math.ceil(max(WEEK_SECONDS, window["windowSeconds"]) / WEEK_SECONDS):]
 
 
 def track_reset(name, series, record, window, now):
@@ -1732,7 +1923,8 @@ def track_reset(name, series, record, window, now):
             and (idle or moved or used - percent >= HISTORY_CLEARED and percent * 4 <= used)):
         start = reset - window["windowSeconds"] if moved else now
         kept["early"] = {"at": start if series[-1][0] < start <= now else now, "from": used}
-        event("info", name, "early-reset", which="a model's weekly limit" if "id" in window else "the weekly limit")
+        span = "monthly" if window["windowSeconds"] > WEEK_SECONDS else "weekly"
+        event("info", name, "early-reset", which=f"a model's {span} limit" if "id" in window else f"the {span} limit")
     elif "early" in record and (was is None or idle and was > now or reset is not None and abs(reset - was) <= RESET_MOVED):
         kept["early"] = record["early"]
     return kept
@@ -1936,7 +2128,7 @@ def read_starter_states():
         return {}
     if not isinstance(data, dict):
         return {}
-    return {name: record_from(data[name]) for name in PROVIDERS if name in data}
+    return {name: record_from(data[name]) for name in STARTERS if name in data}
 
 
 def switched_windows(name, value):
@@ -1956,7 +2148,7 @@ def read_switches():
         data = {}
     if not isinstance(data, dict):
         data = {}
-    return {name: switched_windows(name, data.get(name)) for name in PROVIDERS}
+    return {name: switched_windows(name, data.get(name)) for name in STARTERS}
 
 
 def private_state_dir():
@@ -2422,7 +2614,7 @@ def send_codex(binary, wanted):
 # when a run needs them: the tests patch the fetchers and senders on the
 # module, which a dict built at import would not see.
 def fetchers():
-    return {"claude": claude_usage, "codex": codex_usage}
+    return {"claude": claude_usage, "codex": codex_usage, "kimi": kimi_usage}
 
 
 # How each provider's starter sends its message.
@@ -2544,7 +2736,8 @@ def starter_report(name, switches, states, now, reading=None):
 def attach_starters(providers, now):
     switches, states = read_switches(), read_starter_states()
     for name, entry in providers.items():
-        entry["starter"] = starter_report(name, switches, states, now, entry)
+        if name in STARTERS:
+            entry["starter"] = starter_report(name, switches, states, now, entry)
 
 
 # --- clock zone ------------------------------------------------------------
@@ -2639,10 +2832,10 @@ def provider_list(text):
 def switch(text):
     """A --starter-set value: the provider and the windows it is on for."""
     name, _, value = text.partition("=")
-    if name in PROVIDERS and value in ("on", "off"):
+    if name in STARTERS and value in ("on", "off"):
         return name, list(OFFERED[name]) if value == "on" else []
     windows = value.split(",")
-    if name not in PROVIDERS or not set(windows) <= set(OFFERED[name]):
+    if name not in STARTERS or not set(windows) <= set(OFFERED[name]):
         raise argparse.ArgumentTypeError(f"expected <provider>=on, off or a list of its windows, not {text!r}")
     return name, [window for window in OFFERED[name] if window in windows]
 
@@ -2650,15 +2843,15 @@ def switch(text):
 def chosen_program(text):
     """A --program value: the provider, then the path, which may hold "=" too."""
     name, sep, path = text.partition("=")
-    if name not in PROVIDERS or not sep:
+    if name not in CLIS or not sep:
         raise argparse.ArgumentTypeError(f"expected <provider>=<path>, not {text!r}")
     return name, path
 
 
 def arguments(argv):
-    parser = argparse.ArgumentParser(description="Report the weekly usage of Claude Code and Codex as JSON.")
+    parser = argparse.ArgumentParser(description="Report the usage limits of Claude Code, Codex and Kimi Code as JSON.")
     parser.add_argument("--providers", type=provider_list, default=list(PROVIDERS),
-                        help="comma-separated providers to poll and report (default: claude,codex)")
+                        help="comma-separated providers to poll and report (default: claude,codex,kimi)")
     parser.add_argument("--credits-providers", type=provider_list, default=[],
                         help="providers whose prepaid credits may be reported")
     parser.add_argument("--initial-providers", type=provider_list, default=[],
@@ -2699,7 +2892,7 @@ def main(argv=None):
             for name in dict(args.starter_set):
                 event("warning", name, "starter-switch-failed", why=os_why(err))
     if args.start:
-        for name in ids:
+        for name in (name for name in ids if name in STARTERS):
             # A state that can't be written stops the starter, never the
             # report; the widget shows the reason under the switch.
             try:
@@ -2708,15 +2901,17 @@ def main(argv=None):
                 print(err, file=sys.stderr)
                 event("warning", name, "starter-stopped", why=os_why(err))
     sources = fetchers()
+    credited = [name for name in args.credits_providers if name in CREDITED]
     try:
         providers = collect({name: sources[name] for name in ids}, initial=args.initial_providers,
-                            credits=args.credits_providers, retrying=args.retry_providers)
+                            credits=credited, retrying=args.retry_providers)
     except Busy as err:
-        providers = waiting(ids, str(err), credits=args.credits_providers)
+        providers = waiting(ids, str(err), credits=credited)
     report = {"fetchedAt": int(time.time()), "providers": providers, "events": EVENTS}
     attach_starters(providers, report["fetchedAt"])
     for name, entry in providers.items():
-        entry["program"] = program(name)
+        if name in CLIS:
+            entry["program"] = program(name)
     # Read on every run, cached or not, so a change of clock zone shows by the
     # next poll; the cache itself never holds it.
     zone = clock_zone()

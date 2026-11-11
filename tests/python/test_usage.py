@@ -63,7 +63,7 @@ def reading(percent, resets_at, **scoped):
 class Isolated(unittest.TestCase):
     """Points every path the helper uses into a temporary folder and fails any
     network call or CLI run, so no test reaches the real ~/.claude, ~/.codex,
-    cache, config, state, API or CLIs."""
+    ~/.kimi-code, OpenCode's data, cache, config, state, API or CLIs."""
 
     def setUp(self):
         folder = tempfile.TemporaryDirectory()
@@ -75,14 +75,16 @@ class Isolated(unittest.TestCase):
             "XDG_CACHE_HOME": str(self.tmp / "cache"),
             "XDG_CONFIG_HOME": str(self.tmp / "config"),
             "XDG_STATE_HOME": str(self.tmp / "state"),
+            "XDG_DATA_HOME": str(self.tmp / "data"),
             "CLAUDE_CONFIG_DIR": str(self.tmp / "claude"),
             "CODEX_HOME": str(self.tmp / "codex"),
+            "KIMI_CODE_HOME": str(self.tmp / "kimi"),
         }))
         paths = load_helper()
         self.enterContext(mock.patch.multiple(usage, **{name: getattr(paths, name) for name in (
             "CLAUDE_CREDENTIALS", "CODEX_AUTH", "CACHE_DIR", "CACHE_FILE", "HISTORY_FILE",
             "LOCK_FILE", "APPLETSRC", "STARTER_FILE", "STATE_DIR", "STARTER_STATE", "SWITCH_LOCK",
-            "WORK_DIR", "CODEX_MODEL_CACHE")}))
+            "WORK_DIR", "CODEX_MODEL_CACHE", "KIMI_HOME", "OPENCODE_DATA")}))
         self.enterContext(mock.patch.object(usage.urllib.request, "urlopen",
                                             side_effect=AssertionError("a test reached the network")))
         self.enterContext(mock.patch.object(usage, "run_cli", side_effect=AssertionError("a test ran a CLI")))
@@ -1342,7 +1344,7 @@ class ProviderChoice(Isolated):
         report = self.run_main("--providers", "codex")
         self.assertEqual(list(report["providers"]), ["codex"])
         self.claude.assert_not_called()
-        self.assertEqual(set(self.run_main()["providers"]), {"claude", "codex"})
+        self.assertEqual(set(self.run_main()["providers"]), {"claude", "codex", "kimi"})
         self.assertEqual(set(self.run_main("--providers", "codex,claude")["providers"]), {"claude", "codex"})
         self.assertEqual(self.claude.call_count, 1)
         self.assertEqual(self.codex.call_count, 1)
@@ -1373,7 +1375,7 @@ class ProviderChoice(Isolated):
         self.assertFalse(usage.CACHE_DIR.exists())
 
     # The script as the widget runs it, in a home with no logins, no cache
-    # and nothing on PATH: both providers are signed out, nothing is polled
+    # and nothing on PATH: every provider is signed out, nothing is polled
     # and the starter flags are taken.
     def test_the_script_itself(self):
         home = self.tmp / "fresh"
@@ -1386,7 +1388,7 @@ class ProviderChoice(Isolated):
         self.assertEqual(run.returncode, 0, run.stderr)
         report = json.loads(run.stdout)
         self.assertEqual({name: entry["status"] for name, entry in report["providers"].items()},
-                         {"claude": "signed_out", "codex": "signed_out"})
+                         {"claude": "signed_out", "codex": "signed_out", "kimi": "signed_out"})
         self.assertEqual(report["providers"]["claude"]["starter"], OFF)
         self.assertEqual((report["providers"]["codex"]["starter"]["enabled"],
                           report["providers"]["codex"]["starter"]["state"]), (True, "failed"))
@@ -1395,6 +1397,186 @@ class ProviderChoice(Isolated):
                              capture_output=True, text=True, timeout=30)
         self.assertEqual(run.returncode, 2)
         self.assertEqual(run.stdout, "")
+
+
+class Kimi(Isolated):
+    """Kimi's month, read with the first Kimi credential found: Kimi Code's
+    own, then OpenCode's, each only read."""
+
+    NOV_26 = 1795651200  # 2026-11-26 00:00 UTC
+    REPLY = {"limits": [{"window": {"duration": 300, "timeUnit": "TIME_UNIT_MINUTE"},
+                         "detail": {"limit": "100", "used": "10", "remaining": "90", "resetTime": "2026-11-11T22:01:24Z"}}],
+             "usages": {"limit_5h": {"used_ratio": 0.104, "reset_time": "2026-11-11T22:01:24Z"},
+                        "limit_month_total": {"used_ratio": 0.9207, "reset_time": "2026-11-26T00:00:00Z"},
+                        "limit_month_code": {"used_ratio": 0.9207, "reset_time": "2026-11-26T00:00:00Z"}}}
+
+    def setUp(self):
+        super().setUp()
+        self.asked = []
+
+        def answer(url, headers, body=None, **kwargs):
+            self.asked.append((url, headers["Authorization"]))
+            refused = self.refused.pop(0) if self.refused else None
+            if refused:
+                raise refused
+            return self.REPLY
+        self.refused = []
+        self.enterContext(mock.patch.object(usage, "http_json", answer))
+
+    def kimi_code(self, config, tokens=None):
+        usage.KIMI_HOME.mkdir(parents=True, exist_ok=True)
+        (usage.KIMI_HOME / "config.toml").write_text(config)
+        (usage.KIMI_HOME / "credentials").mkdir(exist_ok=True)
+        for name, token in (tokens or {}).items():
+            (usage.KIMI_HOME / "credentials" / f"{name}.json").write_text(json.dumps(token))
+
+    def opencode(self, rows=(), auth=None):
+        usage.OPENCODE_DATA.mkdir(parents=True, exist_ok=True)
+        if rows:
+            import sqlite3
+            with contextlib.closing(sqlite3.connect(usage.OPENCODE_DATA / "opencode.db")) as db:
+                db.execute("CREATE TABLE credential (id TEXT, integration_id TEXT, label TEXT, value TEXT, active INTEGER)")
+                db.executemany("INSERT INTO credential VALUES ('c', ?, '', ?, ?)",
+                               [(provider, json.dumps({"type": "key", "key": key}), active) for provider, key, active in rows])
+                db.commit()
+        if auth is not None:
+            (usage.OPENCODE_DATA / "auth.json").write_text(json.dumps(auth))
+
+    def test_the_month_is_the_total_every_kimi_feature_draws_on(self):
+        reading = usage.parse_kimi(self.REPLY)
+        self.assertEqual(reading, {"weekly": window(92, self.NOV_26, 31 * 86400), "scoped": []})
+        text = dict(self.REPLY, usages={"limit_month_total": {"used_ratio": "0.5", "reset_time": "2026-11-26T00:00:00Z"}})
+        self.assertEqual(usage.parse_kimi(text)["weekly"]["percent"], 50)
+        for usages in ({}, {"limit_month_total": {"reset_time": "2026-11-26T00:00:00Z"}},
+                       {"limit_month_total": {"used_ratio": "lots", "reset_time": "2026-11-26T00:00:00Z"}},
+                       {"limit_month_total": {"used_ratio": float("nan"), "reset_time": "2026-11-26T00:00:00Z"}},
+                       {"limit_month_total": {"used_ratio": 0.5, "reset_time": "soon"}}):
+            with self.subTest(usages), self.assertRaises(RuntimeError):
+                usage.parse_kimi({"usages": usages})
+
+    def test_a_month_starts_on_the_same_day_a_month_before_its_reset(self):
+        at = lambda text: int(usage.datetime.fromisoformat(text).timestamp())
+        for reset, start in (("2026-11-26T00:00:00+00:00", "2026-10-26T00:00:00+00:00"),
+                             ("2027-01-15T08:30:00+00:00", "2026-12-15T08:30:00+00:00"),
+                             ("2027-03-31T00:00:00+00:00", "2027-02-28T00:00:00+00:00"),
+                             ("2028-03-31T00:00:00+00:00", "2028-02-29T00:00:00+00:00")):
+            with self.subTest(reset):
+                self.assertEqual(usage.month_before(at(reset)), at(start))
+
+    def test_nothing_found_is_signed_out(self):
+        self.kimi_code('[providers.platform]\ntype = "kimi"\nbase_url = "https://api.moonshot.ai/v1"\napi_key = "sk-pay"\n')
+        self.assertEqual(self.run_main("--providers", "kimi")["providers"]["kimi"]["status"], "signed_out")
+        self.assertEqual(self.asked, [], "a pay-as-you-go key is never sent")
+
+    def test_kimi_codes_sign_in_is_asked_on_its_regions_host(self):
+        later = int(time.time()) + 3600
+        self.kimi_code('[providers."managed:kimi-code"]\ntype = "kimi"\nbase_url = "https://api.kimi.ai/coding/v1/"\n'
+                       'api_key = ""\n[providers."managed:kimi-code".oauth]\nstorage = "file"\n'
+                       'key = "oauth/kimi-code-env-0123456789abcdef"\n',
+                       {"kimi-code-env-0123456789abcdef": {"access_token": "signed-in", "expires_at": later}})
+        report = self.run_main("--providers", "kimi")
+        self.assertEqual(report["providers"]["kimi"]["weekly"]["percent"], 92)
+        self.assertEqual(self.asked, [("https://api.kimi.ai/coding/v1/usages", "Bearer signed-in")])
+        self.assertIn("Kimi: asking with Kimi Code's sign-in", [e["message"] for e in report["events"]])
+
+    def test_a_sign_in_without_a_base_url_goes_by_where_it_signed_in(self):
+        for host, expected in (("https://auth.kimi.ai", "api.kimi.ai"), (None, "api.kimi.com")):
+            with self.subTest(host):
+                self.asked.clear()
+                oauth = f'oauth_host = "{host}"\n' if host else ""
+                self.kimi_code(f'[providers."managed:kimi-code"]\ntype = "kimi"\n[providers."managed:kimi-code".oauth]\n'
+                               f'key = "oauth/kimi-code"\n{oauth}',
+                               {"kimi-code": {"access_token": "t", "expires_at": time.time() + 3600}})
+                usage.kimi_usage()
+                self.assertEqual(self.asked, [(f"https://{expected}/coding/v1/usages", "Bearer t")])
+
+    def test_an_expired_sign_in_is_never_renewed_and_says_so(self):
+        config = ('[providers."managed:kimi-code"]\ntype = "kimi"\nbase_url = "https://api.kimi.com/coding/v1"\n'
+                  '[providers."managed:kimi-code".oauth]\nkey = "oauth/kimi-code"\n')
+        stored = {"access_token": "old", "refresh_token": "single-use", "expires_at": int(time.time()) + 30}
+        self.kimi_code(config, {"kimi-code": stored})
+        before = (usage.KIMI_HOME / "credentials" / "kimi-code.json").read_bytes()
+        with self.assertRaises(usage.CheckFailed) as caught:
+            usage.kimi_usage()
+        self.assertEqual(caught.exception.reason, "expired")
+        self.assertEqual(self.asked, [])
+        self.assertEqual((usage.KIMI_HOME / "credentials" / "kimi-code.json").read_bytes(), before)
+        entry = self.run_main("--providers", "kimi")["providers"]["kimi"]
+        self.assertEqual((entry["status"], entry["reason"]), ("error", "expired"))
+        # Signed out, Kimi Code leaves the token empty.
+        self.kimi_code(config, {"kimi-code": {"access_token": "", "expires_at": 0}})
+        with self.assertRaises(usage.SignedOut):
+            usage.kimi_usage()
+
+    def test_kimi_codes_keys_on_a_coding_endpoint(self):
+        self.enterContext(mock.patch.dict(os.environ, {"MY_KIMI": "from-env"}))
+        self.kimi_code('[providers.a]\ntype = "kimi"\nbase_url = "https://api.kimi.com/coding/v1"\napi_key = "plain"\n'
+                       '[providers.b]\ntype = "kimi"\nbase_url = "https://api.kimi.com/coding/v1"\napi_key_env = "MY_KIMI"\n'
+                       '[providers.c]\ntype = "kimi"\nbase_url = "https://api.kimi.ai/coding/v1"\n'
+                       '[providers.c.env]\nKIMI_API_KEY = "fallback"\n'
+                       '[providers.d]\ntype = "anthropic"\nbase_url = "https://api.kimi.com/coding/v1"\napi_key = "other"\n')
+        found, expired = usage.kimi_credentials(time.time())
+        self.assertEqual([(region, token) for _, region, token in found],
+                         [("china", "plain"), ("china", "from-env"), ("global", "fallback")])
+        self.assertFalse(expired)
+
+    def test_a_credential_name_cant_leave_the_credentials_folder(self):
+        usage.KIMI_HOME.mkdir(parents=True)
+        (usage.KIMI_HOME / "secret.json").write_text(json.dumps({"access_token": "t", "expires_at": time.time() + 3600}))
+        self.kimi_code('[providers.x]\ntype = "kimi"\nbase_url = "https://api.kimi.com/coding/v1"\n'
+                       '[providers.x.oauth]\nkey = "oauth/../secret"\n')
+        self.assertEqual(usage.kimi_credentials(time.time()), ([], False))
+
+    def test_opencodes_keys_after_kimi_codes_each_once(self):
+        self.kimi_code('[providers.a]\ntype = "kimi"\nbase_url = "https://api.kimi.com/coding/v1"\napi_key = "same"\n')
+        self.opencode(rows=[("kimi-code-plan-global", "v2", 1), ("kimi-code-plan-cn", "off", 0), ("moonshotai", "pay", 1)],
+                      auth={"kimi-code-plan-cn": {"type": "api", "key": "same"},
+                            "kimi-code-plan-global": {"type": "api", "key": "v1"},
+                            "opencode": {"type": "oauth", "access": "x"}})
+        found, _ = usage.kimi_credentials(time.time())
+        self.assertEqual([(source, region, token) for source, region, token in found],
+                         [("Kimi Code's key", "china", "same"), ("OpenCode's key", "global", "v2"),
+                          ("OpenCode's key", "global", "v1")])
+
+    def test_a_key_turned_away_tries_the_next(self):
+        self.opencode(auth={"kimi-code-plan-global": {"type": "api", "key": "revoked"},
+                            "kimi-code-plan-cn": {"type": "api", "key": "good"}})
+        self.refused = [usage.SignedOut()]
+        self.assertEqual(usage.kimi_usage()["weekly"]["percent"], 92)
+        self.assertEqual(self.asked, [("https://api.kimi.ai/coding/v1/usages", "Bearer revoked"),
+                                      ("https://api.kimi.com/coding/v1/usages", "Bearer good")])
+        self.asked.clear()
+        self.refused = [usage.SignedOut(), usage.SignedOut()]
+        with self.assertRaises(usage.SignedOut):
+            usage.kimi_usage()
+        self.assertEqual(len(self.asked), 2)
+
+    def test_an_unreadable_opencode_database_gives_no_keys(self):
+        usage.OPENCODE_DATA.mkdir(parents=True)
+        (usage.OPENCODE_DATA / "opencode.db").write_bytes(b"not a database")
+        self.assertEqual(usage.opencode_kimi_keys(), [])
+
+    def test_kimi_has_no_starter_program_or_credits(self):
+        self.opencode(auth={"kimi-code-plan-global": {"type": "api", "key": "k"}})
+        entry = self.run_main("--providers", "kimi", "--credits-providers", "kimi", "--start")["providers"]["kimi"]
+        self.assertEqual(entry["status"], "ok")
+        self.assertFalse({"starter", "program", "credits"} & entry.keys())
+        for argv in (["--program", "kimi=/bin/kimi"], ["--starter-set", "kimi=on"]):
+            with self.subTest(argv), mock.patch("sys.stderr", new=io.StringIO()), self.assertRaises(SystemExit):
+                usage.arguments(argv)
+
+    def test_its_hosts_can_be_named_in_the_journal(self):
+        self.assertEqual(usage.own_host("api.kimi.ai"), "api.kimi.ai")
+        self.assertEqual(usage.failure_why("kimi", {"status": "error", "reason": "offline", "host": "api.kimi.com"}),
+                         "can't reach api.kimi.com")
+
+    def test_a_month_keeps_a_months_history(self):
+        now = self.NOV_26 - 86400
+        month = window(80, self.NOV_26, 31 * 86400)
+        series = [[now - days * 86400, 60 + days % 2] for days in range(29, 0, -1)]
+        kept = usage.extend_series(series, month, now)
+        self.assertEqual(kept[0], series[0])
+        self.assertEqual(len(kept), len(series) + 1)
 
 
 class History(Isolated):
