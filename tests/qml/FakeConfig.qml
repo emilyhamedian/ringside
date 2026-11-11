@@ -34,7 +34,8 @@ QtObject {
     property string claudeInnerLimit: ""
     property string codexInnerLimit: ""
     property bool showCredits: true
-    property bool sessionStarter: true
+    property bool claudeSessionStarter: true
+    property bool codexSessionStarter: true
     property string codexMark: "codex"
     property string claudeProgram: ""
     property string codexProgram: ""

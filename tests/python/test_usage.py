@@ -27,7 +27,8 @@ FIXTURES = Path(__file__).resolve().parent / "fixtures"
 HELPER = ROOT / "package" / "contents" / "code" / "usage.py"
 WEEK = 7 * 24 * 3600
 # What every entry says of its session starter while it is switched off.
-OFF = {"enabled": False, "state": "off", "at": None, "next": None, "reason": None, "window": "session"}
+OFF = {"enabled": False, "on": [], "windows": None, "state": "off", "at": None, "next": None, "reason": None,
+       "window": "session"}
 # What every entry says of its program when none is chosen or found.
 NOT_FOUND = {"path": "", "chosen": False, "problem": ""}
 
@@ -203,8 +204,7 @@ class CodexParsing(Isolated):
         report = usage.parse_codex(result)
         self.assertEqual(report["weekly"]["windowSeconds"], 300 * 60)
         self.assertNotIn("session", report)
-        self.assertTrue(usage.codex_has_session(report))
-        self.assertEqual(usage.codex_period(report), usage.SESSION_SECONDS)
+        self.assertEqual(usage.startable("codex", report), ["session"])
 
     def test_a_short_only_window_with_an_unreadable_reset_is_an_error(self):
         result = {"rateLimits": {"primary": {"usedPercent": 0, "windowDurationMins": 300, "resetsAt": "soon"}}}
@@ -1003,7 +1003,8 @@ class ReadingCache(Isolated):
         self.addCleanup(os.close, fd)
         fcntl.flock(fd, fcntl.LOCK_EX)
         for name, entry, expected in (
-                ("reading", fresh, dict(fresh, weekly=dict(fresh["weekly"], history=[]), starter=dict(OFF, window="week"), program=NOT_FOUND)),
+                ("reading", fresh, dict(fresh, weekly=dict(fresh["weekly"], history=[]),
+                                        starter=dict(OFF, window="week", windows=["week"]), program=NOT_FOUND)),
                 ("sign-out", {"status": "signed_out", "heldUntil": now + 300, "holdSeconds": 300},
                  {"status": "signed_out", "starter": dict(OFF, window="week"), "program": NOT_FOUND}),
                 ("rate limit", {"status": "rate_limited", "heldUntil": now + 900, "holdSeconds": 900,
@@ -1726,7 +1727,7 @@ selectedTimeZones=Local,America/New_York
         self.assertEqual(providers["codex"]["weekly"]["clockZone"]["abbreviation"], "JST")
 
     def test_report_carries_the_zone_but_the_cache_does_not(self):
-        with mock.patch.object(usage, "claude_usage", return_value=reading(1, self.SEP_4_NOON_EDT, Opus=2)), \
+        with mock.patch.object(usage, "claude_usage", return_value=dict(reading(1, self.SEP_4_NOON_EDT, Opus=2), session=None)), \
                 mock.patch.object(usage, "codex_usage", side_effect=usage.SignedOut()):
             report = self.run_main()
         claude = report["providers"]["claude"]

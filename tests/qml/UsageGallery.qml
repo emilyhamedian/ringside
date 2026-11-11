@@ -366,27 +366,39 @@ ColumnLayout {
     }
 
     // The session starter on, waiting for Claude's session to end, and
-    // unable to start Codex's session while the CLI is signed out.
+    // unable to start Codex's session or week while the CLI is signed out.
     FakeMonitor {
         id: starting
         usage: FakeUsage {
             id: startingUsage
             starters: ({
-                claude: { enabled: true, state: "waiting", at: null, next: startingUsage.createdAt + 2 * 3600 + 13 * 60, reason: null },
-                codex: { enabled: true, state: "failed", at: null, next: null, reason: "signed-out", window: "session" }
+                claude: { enabled: true, on: ["session"], windows: ["session"], state: "waiting", at: null,
+                          next: startingUsage.createdAt + 2 * 3600 + 13 * 60, reason: null },
+                codex: { enabled: true, on: ["session"], windows: ["session", "week"], state: "failed", at: null, next: null,
+                         reason: "signed-out", window: "session" }
             })
         }
     }
 
+    // A Claude plan with no five-hour limit: nothing to start, so no footer.
+    FakeMonitor {
+        id: nothingToStart
+        usage: FakeUsage {
+            starters: ({ claude: { enabled: false, on: [], windows: [], state: "off", at: null, next: null, reason: null } })
+        }
+    }
+
     // Each of the starter's states for Claude and for Codex, but those for
-    // one of them only.
+    // one of them only, Codex's plan with a session and a week to start;
+    // then Codex's off with only a week.
     readonly property var starterFooters: {
         const footers = [];
         StarterStates.ROWS.forEach(row => ["claude", "codex"].forEach(item => {
             if ((row.only ?? item) === item) {
-                footers.push({ item: item, row: row });
+                footers.push({ item: item, row: row, windows: item === "claude" ? ["session"] : ["session", "week"] });
             }
         }));
+        footers.push({ item: "codex", row: StarterStates.ROWS[0], windows: ["week"] });
         return footers;
     }
 
@@ -583,6 +595,11 @@ ColumnLayout {
             label: "Codex · session starter can't run: signed out (full text)"
             UsagePopup { monitor: starting; item: "codex" }
         }
+
+        GalleryFrame {
+            label: "Claude · plan with no five-hour limit: no starter"
+            UsagePopup { monitor: nothingToStart; item: "claude" }
+        }
     }
 
     // The footer alone, Claude's beside Codex's, in each starter state.
@@ -601,10 +618,12 @@ ColumnLayout {
                 readonly property string item: modelData.item
                 readonly property FakeUsage fake: FakeUsage {
                     id: fake
-                    starters: ({ [starterFrame.item]: StarterStates.starter(starterFrame.modelData.row, fake.createdAt) })
+                    starters: ({ [starterFrame.item]: StarterStates.starter(starterFrame.modelData.row, fake.createdAt,
+                                                                            starterFrame.modelData.windows) })
                 }
 
                 label: (item === "claude" ? "Claude" : "Codex") + " · starter " + modelData.row.label
+                       + (modelData.windows.length === 1 && item === "codex" ? " · week only" : "")
 
                 PopupFooter {
                     width: Kirigami.Units.gridUnit * 20
