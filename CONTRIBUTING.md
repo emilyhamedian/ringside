@@ -23,6 +23,10 @@ tools aren't in `/usr/lib/qt6/bin` or `/usr/lib64/qt6/bin`, point `QMLLINT`,
 `QMLTESTRUNNER` and `QML` at them. `shellcheck` and `reuse lint` run too if
 you have them.
 
+`test.sh` runs its checks side by side, one per CPU core, and prints each
+check's output whole, in a fixed order, marked PASS or FAIL. Set `TEST_JOBS`
+to run fewer at once, such as `TEST_JOBS=1` to run them one at a time.
+
 CI runs the full suite and gallery on Plasma 6.8 from KDE neon's stable
 User repository on Ubuntu 24.04. It checks the installed Plasma versions
 so a repository update can't silently move the supported floor. Qt and
