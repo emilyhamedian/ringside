@@ -29,6 +29,10 @@ follows [Semantic Versioning](https://semver.org/).
   soon as the other provider or the public address shows the internet is back.
 - Hovering one GPU's graph no longer marks the other GPU's graphs.
 
+### Removed
+
+- Panel space setting under Panel Items.
+
 ## [0.4.0] - 2026-10-18
 
 ### Added
