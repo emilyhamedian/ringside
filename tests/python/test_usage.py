@@ -1617,15 +1617,38 @@ class OpenCodeGo(Isolated):
                 "metadata": {"server": "https://opencode.ai/console", "orgID": "org_1", **metadata}}
 
     def test_the_month_is_the_limit_the_others_are_shares_of(self):
-        self.assertEqual(usage.parse_opencode_go(self.REPLY), {"weekly": window(55, self.NOV_24, 31 * 86400), "scoped": []})
-        limited = {"usage": dict(self.REPLY["usage"], monthly={"status": "rate-limited", "percent": 98,
-                                                                "resetsAt": "2026-11-24T22:18:39.000Z"})}
-        self.assertEqual(usage.parse_opencode_go(limited)["weekly"], window(100, self.NOV_24, 31 * 86400))
-        for monthly in (None, {"status": "ok", "resetsAt": "2026-11-24T22:18:39.000Z"},
-                        {"status": "ok", "percent": "55", "resetsAt": "2026-11-24T22:18:39.000Z"},
-                        {"status": "ok", "percent": 55, "resetsAt": "soon"}):
-            with self.subTest(monthly), self.assertRaises(RuntimeError):
-                usage.parse_opencode_go({"usage": {"monthly": monthly}})
+        self.assertEqual(usage.parse_opencode_go(self.REPLY), {
+            "weekly": window(55, self.NOV_24, 31 * 86400), "scoped": [],
+            "session": window(0, 1794453325, 5 * 3600), "week": window(0, 1794787200, 7 * 86400)})
+
+    def test_a_limit_opencode_reports_as_limited_is_used_up(self):
+        for key, slot in (("monthly", "weekly"), ("rolling", "session"), ("weekly", "week")):
+            with self.subTest(key):
+                limited = {"usage": dict(self.REPLY["usage"],
+                                         **{key: dict(self.REPLY["usage"][key], status="rate-limited", percent=98)})}
+                self.assertEqual(usage.parse_opencode_go(limited)[slot]["percent"], 100)
+
+    def test_a_reply_without_all_three_limits_is_unread(self):
+        for key in ("monthly", "rolling", "weekly"):
+            for meter in (None, {"status": "ok", "resetsAt": "2026-11-24T22:18:39.000Z"},
+                          {"status": "ok", "percent": "55", "resetsAt": "2026-11-24T22:18:39.000Z"},
+                          {"status": "ok", "percent": 55, "resetsAt": "soon"}):
+                with self.subTest(key=key, meter=meter), self.assertRaises(RuntimeError):
+                    usage.parse_opencode_go({"usage": dict(self.REPLY["usage"], **{key: meter})})
+
+    # A reading cached by a Ringside that kept only Go's month is taken
+    # again, rather than read as a plan with nothing to start.
+    def test_a_cached_month_alone_is_read_again(self):
+        self.sign_in(self.oauth())
+        now = int(time.time())
+        reading = dict(usage.parse_opencode_go(self.REPLY), status="ok", fetchedAt=now - 60)
+        self.write_cache({"opencode": reading})
+        self.run_main("--providers", "opencode")
+        self.assertEqual(self.asked, [])
+        self.write_cache({"opencode": {key: value for key, value in reading.items() if key not in ("session", "week")}})
+        report = self.run_main("--providers", "opencode")
+        self.assertEqual(len(self.asked), 1)
+        self.assertEqual(report["providers"]["opencode"]["starter"]["windows"], ["session"])
 
     def test_the_sign_in_is_asked_for_its_organisation(self):
         self.sign_in(self.oauth())
@@ -1679,14 +1702,17 @@ class OpenCodeGo(Isolated):
         self.assertEqual(usage.failure_why("opencode", {"status": "error", "reason": "not-subscribed"}),
                          "the OpenCode account has no Go subscription")
 
-    def test_opencode_go_has_no_starter_program_or_credits(self):
+    def test_opencode_go_has_a_starter_and_a_program_but_no_credits(self):
         self.sign_in(self.oauth())
         entry = self.run_main("--providers", "opencode", "--credits-providers", "opencode", "--start")["providers"]["opencode"]
         self.assertEqual(entry["status"], "ok")
-        self.assertFalse({"starter", "program", "credits"} & entry.keys())
-        for argv in (["--program", "opencode=/bin/opencode"], ["--starter-set", "opencode=on"]):
-            with self.subTest(argv), mock.patch("sys.stderr", new=io.StringIO()), self.assertRaises(SystemExit):
-                usage.arguments(argv)
+        self.assertNotIn("credits", entry)
+        self.assertEqual(entry["starter"], dict(OFF, windows=["session"]))
+        self.assertEqual(set(entry["program"]), {"path", "chosen", "problem"})
+        self.assertEqual(usage.arguments(["--program", "opencode=/bin/opencode", "--starter-set", "opencode=on"]).starter_set,
+                         [("opencode", ["session"])])
+        with mock.patch("sys.stderr", new=io.StringIO()), self.assertRaises(SystemExit):
+            usage.arguments(["--starter-set", "opencode=week"])
 
     def test_its_host_can_be_named_in_the_journal(self):
         self.assertEqual(usage.own_host("opencode.ai"), "opencode.ai")

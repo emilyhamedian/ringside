@@ -63,7 +63,7 @@ QtObject {
     // Stands in for claudeInnerLimit and codexInnerLimit.
     property var innerChoices: ({ claude: "", codex: "" })
     // Each provider's setting, which hides its starter control and stops its runs.
-    property var starterOptions: ({ claude: true, codex: true })
+    property var starterOptions: ({ claude: true, codex: true, opencode: true })
     // The session starter per provider, as the helper reports it: Claude's
     // plan has a five-hour limit and Codex's, as its reading shows, only a week.
     property var starters: ({
@@ -184,7 +184,7 @@ QtObject {
 
     // As UsageData's.
     function startable(id) {
-        return Array.from(starter(id)?.windows ?? ({ claude: ["session"], codex: ["session", "week"] })[id] ?? []);
+        return Array.from(starter(id)?.windows ?? ({ claude: ["session"], codex: ["session", "week"], opencode: ["session"] })[id] ?? []);
     }
 
     function starterWindows(id) {

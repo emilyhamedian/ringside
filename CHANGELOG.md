@@ -15,6 +15,9 @@ follows [Semantic Versioning](https://semver.org/).
 - OpenCode Go item: your OpenCode Go monthly limit as a ring, with the same
   popup. It reads with OpenCode's sign-in to the OpenCode Console, never
   renewing it, and is off until you turn it on.
+- OpenCode Go popup offers an auto start switch for its five-hour session,
+  which sends a one-word message through OpenCode when a session ends. It
+  waits while Go's weekly or monthly limit is used up.
 - CPU popup shows a section for each CPU on machines with more than one, each
   with its model, cores and threads, usage, threads and graphs. Each CPU's
   temperature shows on Intel; AMD's shows once for the whole machine.

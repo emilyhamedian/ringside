@@ -7,7 +7,7 @@
 // and the gallery's footers. Times are in seconds from now. `failed` says the
 // status shows in full rather than dim; `only` names the one item a row is
 // for. The Claude-only row comes last, so the gallery's Claude and Codex
-// footers stay side by side.
+// footers stay side by side; OpenCode Go's comes before it.
 var ROWS = [
     { label: "off", state: "off", enabled: false, failed: false },
     { label: "on, waiting", state: "waiting", enabled: true, failed: false, next: 133 * 60 },
@@ -28,6 +28,7 @@ var ROWS = [
       error: "The usage helper exited with code 1: PermissionError: [Errno 13] Permission denied: 'starter.json'" },
     { label: "one send unconfirmed, retrying", state: "retrying", enabled: true, failed: true, at: -180, next: 120 },
     { label: "two unconfirmed, paused", state: "paused", enabled: true, failed: true, next: 302 * 60 },
+    { label: "failed: lists no Go model it knows", state: "failed", enabled: true, failed: true, reason: "no-model", only: "opencode" },
     { label: "failed: not a subscription", state: "failed", enabled: true, failed: true, reason: "not-subscription", only: "claude" }
 ];
 

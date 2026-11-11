@@ -87,16 +87,19 @@ reset and so no longer started a window's length before it.
 Each entry whose plan has a five-hour limit also carries "session", that
 window, or null when no session is running; a plan without one, as Claude
 Ultra, leaves it out. "sessionUnknown": true stands in for it when the plan
-has the limit but the reply can't be read.
+has the limit but the reply can't be read. OpenCode Go's entry also carries
+"week", its weekly limit, beside the month in "weekly".
 
---program <provider>=<path> names the program to run for Claude or Codex, as
-the user chose it in Ringside's settings; ~ stands for the home folder.
+--program <provider>=<path> names the program to run for Claude, Codex or
+OpenCode, as the user chose it in Ringside's settings; ~ stands for the home
+folder.
 Without one, the program is found by itself (see find_cli()). Their entries
 carry "program": {"path": <where it is, or "" when it isn't found>,
 "chosen": bool, "problem": "" or what keeps a chosen path from running:
 "missing", "not-executable" or "folder"}, looked up afresh on every run.
 
-Claude's and Codex's entries carry "starter", the session starter's state:
+Claude's, Codex's and OpenCode Go's entries carry "starter", the session
+starter's state:
 {"enabled": bool, "on": [...], "windows": [...] or null, "state": ...,
 "at": <epoch seconds> or null, "next": <epoch seconds> or null, "reason":
 ... or null, "window": "session" or "week"}. "on" lists the windows the
@@ -108,13 +111,14 @@ works toward, and while it isn't enabled the state is "off". The other states
 are "waiting" (next is
 when the next window starts); "confirming" (at is the send, next the read
 that confirms it); "started" (at is when the window started, next when the
-next one starts); "weekly" (the
-weekly limit is reached; next is its reset); "failed" (reason says why:
+next one starts); "weekly" (the weekly limit, or OpenCode Go's week or
+month, is reached; next is its reset); "failed" (reason says why:
 "not-installed", "program" for a chosen program that can't be run,
 "signed-out", "not-subscription" for a CLI logged in other than with a
-claude.ai subscription, "not-responding" for one whose
+claude.ai subscription, "no-model" when OpenCode lists none of the Go
+models the starter sends with, "not-responding" for a CLI whose
 check before sending failed, "unchecked" for a failed read or a reading
-that doesn't say when a reached weekly limit or a running week ends, or
+that doesn't say when a reached limit or a running week ends, or
 "not-sent" for a send that never left; the last three back off, with next
 the retry);
 "retrying" (one send went unconfirmed; at is the send, next the retry) and
@@ -166,7 +170,7 @@ PROVIDERS = ("claude", "codex", "kimi", "opencode")
 # The providers with prepaid credits, and those whose CLI Ringside can be
 # told where to find (--program) and runs for the session starter.
 CREDITED = ("claude", "codex")
-CLIS = ("claude", "codex")
+CLIS = ("claude", "codex", "opencode")
 
 WEEK_MINUTES = 7 * 24 * 60
 WEEK_SECONDS = WEEK_MINUTES * 60
@@ -342,11 +346,13 @@ PRODUCTS = {"claude": "Claude Code", "codex": "the Codex CLI", "kimi": "Kimi Cod
 COMPANIES = {"claude": "Anthropic", "codex": "OpenAI", "kimi": "Moonshot AI", "opencode": "OpenCode"}
 # The windows a provider's starter can ever start, in order: Claude's week
 # resets on a set schedule, while Codex's, like a session, waits for a message.
-# Kimi and OpenCode Go have no starter.
-OFFERED = {"claude": ("session",), "codex": ("session", "week"), "kimi": (), "opencode": ()}
+# OpenCode Go's week and month run on set schedules too. Kimi has no starter:
+# its five-hour windows follow one another on a fixed clock, so no message
+# starts one sooner.
+OFFERED = {"claude": ("session",), "codex": ("session", "week"), "kimi": (), "opencode": ("session",)}
 STARTERS = tuple(name for name in PROVIDERS if OFFERED[name])
 # The window each names before a reading has told it the plan.
-WINDOWS = {"claude": "session", "codex": "week"}
+WINDOWS = {"claude": "session", "codex": "week", "opencode": "session"}
 
 MESSAGES = {
     "check": "{name}: checked in {ms} ms",
@@ -388,6 +394,7 @@ STARTER_WHY = {
     "not-responding": "the CLI didn't answer its check before sending",
     "unchecked": "the limits couldn't be read",
     "not-sent": "the message couldn't be sent",
+    "no-model": "OpenCode lists none of the Go models it sends with",
 }
 
 
@@ -1316,22 +1323,36 @@ def opencode_sign_in(now):
     raise SignedOut()
 
 
-def parse_opencode_go(body):
-    """Reduce a Go usage body to its monthly window, the limit the five-hour
-    and weekly ones are shares of. Like Kimi's, the reply says when the month
-    resets, not how long it is, so it started a calendar month before. A
-    month OpenCode reports as limited is used up whatever its share says."""
-    usage = body.get("usage") if isinstance(body, dict) else None
-    month = usage.get("monthly") if isinstance(usage, dict) else None
-    percent = month.get("percent") if isinstance(month, dict) else None
+def go_meter(usage, key):
+    """One of a Go usage body's limits, as (percent, reset). A limit OpenCode
+    reports as limited is used up whatever its share says."""
+    meter = usage.get(key) if isinstance(usage, dict) else None
+    percent = meter.get("percent") if isinstance(meter, dict) else None
     if not finite_share(percent):
-        raise RuntimeError("no monthly usage in Go usage reply")
-    reset = epoch_seconds(month.get("resetsAt"))
+        raise RuntimeError(f"no {key} usage in Go usage reply")
+    reset = epoch_seconds(meter.get("resetsAt"))
     if reset is None:
-        raise RuntimeError("no monthly reset in Go usage reply")
-    if month.get("status") == "rate-limited":
-        percent = max(percent, 100)
-    return {"weekly": window_from(percent, reset, reset - month_before(reset)), "scoped": []}
+        raise RuntimeError(f"no {key} reset in Go usage reply")
+    return (max(percent, 100) if meter.get("status") == "rate-limited" else percent), reset
+
+
+def parse_opencode_go(body):
+    """Reduce a Go usage body to its windows: the month, which the five-hour
+    and weekly limits are shares of, as "weekly", the five hours as
+    "session" and the week as "week". OpenCode's own client needs all three
+    in a reply, and so does this. Like Kimi's, the reply says when the month
+    resets, not how long it is, so it started a calendar month before.
+
+    The five hours start with the first message after the last five ended,
+    and until then the reply gives 0% and a reset five hours from when it
+    was asked, as Codex does (see session_running()). The week is a
+    calendar week and the month runs from the day Go was bought, so no
+    message starts either."""
+    usage = body.get("usage") if isinstance(body, dict) else None
+    month = go_meter(usage, "monthly")
+    return {"weekly": window_from(*month, month[1] - month_before(month[1])), "scoped": [],
+            "session": window_from(*go_meter(usage, "rolling"), SESSION_SECONDS),
+            "week": window_from(*go_meter(usage, "weekly"), WEEK_SECONDS)}
 
 
 def opencode_usage():
@@ -1705,13 +1726,20 @@ def well_formed(window, scoped=False):
             and (not scoped or isinstance(window.get("id"), str)))
 
 
-def fresh(entry, now):
-    """A cached reading young enough to report again. Anything malformed in
-    the cache reads as no reading."""
+# The windows besides "weekly" that a provider's every reading carries. A
+# cached reading without them was taken by an older Ringside, and is taken
+# again rather than read as a plan without them.
+ALWAYS = {"opencode": ("session", "week")}
+
+
+def fresh(entry, now, name):
+    """The provider's cached reading, if young enough to report again.
+    Anything malformed in the cache reads as no reading."""
     return (isinstance(entry, dict) and entry.get("status") == "ok"
             and type(entry.get("fetchedAt")) is int and 0 <= now - entry["fetchedAt"] < CACHE_TTL
             and well_formed(entry.get("weekly")) and isinstance(entry.get("scoped", []), list)
             and (entry.get("session") is None or well_formed(entry["session"]))
+            and all(well_formed(entry.get(key)) for key in ALWAYS.get(name, ()))
             and all(well_formed(w, scoped=True) for w in entry.get("scoped", [])))
 
 
@@ -1817,7 +1845,7 @@ def collect_locked(fetchers, now, *, initial=(), retrying=()):
         if isinstance(entry, dict) and type(entry.get("fetchedAt")) is int and entry["fetchedAt"] > now:
             entry["fetchedAt"] = now
             stepped = True
-        if fresh(entry, now):
+        if fresh(entry, now, name):
             providers[name] = entry
             event("debug", name, "cached", age=now - entry["fetchedAt"])
             continue
@@ -2059,7 +2087,7 @@ def waiting(ids, message, *, credits=()):
     providers = {}
     for name in ids:
         entry = cache.get(name)
-        if fresh(entry, now):
+        if fresh(entry, now, name):
             providers[name] = entry
             event("debug", name, "cached", age=now - entry["fetchedAt"])
             continue
@@ -2122,8 +2150,9 @@ class NotSent(Exception):
 
 
 class Failed(Exception):
-    """The starter can't send until the user acts; reason is "not-installed",
-    "program", "signed-out" or "not-subscription"."""
+    """The starter can't send until the user acts, or Ringside is updated;
+    reason is "not-installed", "program", "signed-out", "not-subscription"
+    or "no-model"."""
 
     def __init__(self, reason):
         super().__init__(reason)
@@ -2154,7 +2183,8 @@ class Defer(Exception):
 
 
 STATES = ("waiting", "confirming", "started", "weekly", "failed", "retrying", "paused")
-REASONS = ("not-installed", "program", "signed-out", "not-subscription", "not-responding", "unchecked", "not-sent")
+REASONS = ("not-installed", "program", "signed-out", "not-subscription", "not-responding", "unchecked", "not-sent",
+           "no-model")
 
 
 def blank_record():
@@ -2271,8 +2301,9 @@ class Starter:
     """One provider's session starter, run when its next time comes.
 
     It reads the limits and holds while a window runs (until its reset and a
-    second) or while the weekly limit is reached (until that resets, or
-    as after a failed read when the reading doesn't say when).
+    second) or while a limit every model shares is reached (see used_up():
+    until that resets, or as after a failed read when the reading doesn't
+    say when).
     Otherwise it sends one word, and five minutes later reads again: a
     running window confirms the send. An unconfirmed send is tried once
     more after another five minutes; two in a row pause the starter for
@@ -2387,16 +2418,16 @@ class Starter:
         except Unreadable as err:
             self.back_off(err.wait)
             return
-        weekly = reading["weekly"]
-        if weekly["percent"] >= 100 and weekly["resetsAt"] is None:
+        limit = used_up(reading)
+        if limit and limit["resetsAt"] is None:
             # Reached, with no word of when it resets: as good as unread.
             self.back_off()
             return
-        if weekly["percent"] >= 100 and weekly["resetsAt"] > now:
+        if limit and limit["resetsAt"] > now:
             rec.update(sentAt=None, failures=0)
             if not changed:
                 rec["uncertain"] = 0
-            self.set("weekly", next_=weekly["resetsAt"] + 1)
+            self.set("weekly", next_=limit["resetsAt"] + 1)
             return
         if window:
             start = window["resetsAt"] - window["windowSeconds"]
@@ -2480,6 +2511,15 @@ def weekly_running(reading, now):
     return week
 
 
+def used_up(reading):
+    """The reading's used-up limit that every model waits on longest, or
+    None: its "weekly" one, and OpenCode Go's week beside its month. One
+    that doesn't say when it resets comes first, since it can't be waited
+    out."""
+    reached = [window for window in (reading["weekly"], reading.get("week")) if window and window["percent"] >= 100]
+    return min(reached, key=lambda window: (window["resetsAt"] is not None, -(window["resetsAt"] or 0)), default=None)
+
+
 def startable(name, reading):
     """The windows the reading's plan lets the starter start, in order: a
     five-hour session where the plan has that limit, and for Codex its week,
@@ -2522,7 +2562,7 @@ def starter_read(name, now, not_before):
     A confirmation needs a reading taken after the send; while the cache
     still holds an older one, the step waits for it to go stale."""
     entry = read_cache().get(name)
-    if fresh(entry, now) and not_before is not None and entry["fetchedAt"] < not_before:
+    if fresh(entry, now, name) and not_before is not None and entry["fetchedAt"] < not_before:
         raise Defer(entry["fetchedAt"] + CACHE_TTL)
     entry = collect_locked({name: fetchers()[name]}, now)[0][name]
     if entry["status"] == "signed_out":
@@ -2697,6 +2737,49 @@ def send_codex(binary, wanted):
         pass
 
 
+# The Go models a start is sent with, least counted toward the limits first;
+# the first one OpenCode lists is used. Each is open to a workspace with Go's
+# default privacy settings, and none is one of the free models, which stay
+# open once the limits are reached, so count toward none and start nothing.
+OPENCODE_MODELS = ("mimo-v2.6-flash", "mimo-v2.5", "hy3", "glm-5.3-flash")
+
+
+def opencode_model(listing):
+    """The model to send with, from what `opencode models` printed, or None."""
+    listed = set(listing.split())
+    return next((f"opencode-go/{model}" for model in OPENCODE_MODELS if f"opencode-go/{model}" in listed), None)
+
+
+def send_opencode(binary, wanted):
+    """Send OpenCode Go one word so its five hours start, if wanted() still
+    says so once OpenCode has listed its models; a list that can't be had
+    shows as "not-responding", and one without any of OPENCODE_MODELS as
+    "no-model". Each command runs a private server of its own, so none is
+    left running after it, and the message's session is archived, out of
+    OpenCode's session list, with a title, so OpenCode asks no model for
+    one. As for Claude, the reading five minutes later decides whether it
+    worked."""
+    env = cli_environment("OPENCODE_CONFIG_DIR")
+    try:
+        code, out = run_cli([binary, "models", "--standalone"], env, PREFLIGHT_TIMEOUT)
+    except (OSError, subprocess.TimeoutExpired):
+        raise NotSent("not-responding") from None
+    if code != 0:
+        raise NotSent("not-responding")
+    model = opencode_model(out)
+    if model is None:
+        raise Failed("no-model")
+    if not wanted():
+        raise SwitchedOff()
+    try:
+        run_cli([binary, "run", "--standalone", "--archived", "--title", "Ringside", "--model", model, PROMPT],
+                env, SEND_TIMEOUT)
+    except OSError:
+        raise NotSent() from None
+    except subprocess.TimeoutExpired:
+        pass
+
+
 # The per-provider tables are functions so that the names are looked up
 # when a run needs them: the tests patch the fetchers and senders on the
 # module, which a dict built at import would not see.
@@ -2706,7 +2789,7 @@ def fetchers():
 
 # How each provider's starter sends its message.
 def senders():
-    return {"claude": send_claude, "codex": send_codex}
+    return {"claude": send_claude, "codex": send_codex, "opencode": send_opencode}
 
 
 def run_starter(name):
@@ -2745,7 +2828,7 @@ def run_starter(name):
 def replan_starters(providers, now):
     """Makes a starter due at once when a reading shows that what it waits
     for came early: the window it waits out has ended, or its reset moved by
-    more than RESET_MOVED, or the weekly limit it holds for is no longer
+    more than RESET_MOVED, or the limit it holds for is no longer
     reached, as when a provider resets the limits ahead of time. Its times
     would otherwise stand until they came, telling of a session that is over
     and holding off a start that could happen now. The widget then runs
@@ -2776,8 +2859,8 @@ def overtaken(name, record, reading, now, on):
         return False
     awaited = record["next"] - 1
     if record["state"] == "weekly":
-        weekly = reading["weekly"]
-        return weekly["percent"] < 100 or weekly["resetsAt"] is not None and abs(weekly["resetsAt"] - awaited) > RESET_MOVED
+        limit = used_up(reading)
+        return limit is None or limit["resetsAt"] is not None and abs(limit["resetsAt"] - awaited) > RESET_MOVED
     windows = [window for window in startable(name, reading) if window in on]
     if not windows:
         return False

@@ -35,9 +35,11 @@ QtObject {
     property bool showCredits: true
     property bool claudeSessionStarter: true
     property bool codexSessionStarter: true
+    property bool opencodeSessionStarter: true
     property string codexMark: "codex"
     property string claudeProgram: ""
     property string codexProgram: ""
+    property string opencodeProgram: ""
     property string knownLimits: ""
     property string usageStatus: ""
     property string seenResets: ""

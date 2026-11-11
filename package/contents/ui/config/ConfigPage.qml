@@ -80,12 +80,16 @@ KCM.SimpleKCM {
     property bool cfg_claudeSessionStarterDefault
     property bool cfg_codexSessionStarter
     property bool cfg_codexSessionStarterDefault
+    property bool cfg_opencodeSessionStarter
+    property bool cfg_opencodeSessionStarterDefault
     property string cfg_codexMark
     property string cfg_codexMarkDefault
     property string cfg_claudeProgram
     property string cfg_claudeProgramDefault
     property string cfg_codexProgram
     property string cfg_codexProgramDefault
+    property string cfg_opencodeProgram
+    property string cfg_opencodeProgramDefault
     property string cfg_knownLimits
     property string cfg_knownLimitsDefault
     property string cfg_usageStatus
