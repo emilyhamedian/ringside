@@ -137,9 +137,12 @@ GridLayout {
         id: weekToggle
         window: "week"
         visible: row.windows.includes("week")
-        Layout.row: sessionToggle.visible ? 1 : 0
+        // Under the session's switch when the plan has one, by the plan
+        // rather than that switch's visibility: hidden with the footer, it
+        // would put both in one cell, which GridLayout refuses.
+        Layout.row: row.windows.includes("session") ? 1 : 0
         // Clear of the session's switch above it.
-        Layout.topMargin: sessionToggle.visible ? Kirigami.Units.smallSpacing : 0
+        Layout.topMargin: row.windows.includes("session") ? Kirigami.Units.smallSpacing : 0
         text: i18nc("@option:check", "Auto start week")
     }
 
