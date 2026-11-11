@@ -74,7 +74,7 @@ GridLayout {
             font.underline: false
             Accessible.description: i18nc("@info accessible; %1 is Claude, Codex or ChatGPT", "Check %1's limits now",
                                           status.texts.providerName(status.item))
-            onClicked: status.usage.checkNow()
+            onClicked: status.usage.checkNow(status.item)
         }
     }
 

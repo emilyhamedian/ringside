@@ -851,6 +851,55 @@ TestRoot {
             compare(timers().filter(t => t.running).map(t => t.interval), [5 * 60000]);
         }
 
+        // "Try again" after a connection failure, once the internet has
+        // answered since, asks the helper to skip its hold for that provider
+        // alone; a second click while it runs adds no check, and the ticks
+        // after it ask for no skip.
+        function test_checkNowAfterTheInternetIsBack() {
+            start("slow");
+            const runs = commands();
+            const now = usage.nowSeconds();
+            usage.lastRun = now - 60;
+            usage.entries = {
+                claude: Object.assign({}, usage.entry("claude"), { lastError: "x", lastErrorAt: now - 60, reason: "offline",
+                                                                  host: "api.anthropic.com", retryAt: now + 240 }),
+                codex: Object.assign({}, usage.entry("codex"), { fetchedAt: now - 90 })
+            };
+            verify(!usage.canRetry("claude", now * 1000), "held, with nothing to show the internet is back");
+            usage.answeredAt = now - 30;
+            verify(usage.canRetry("claude", now * 1000));
+            verify(!usage.backOnline("codex"), "a provider that didn't fail isn't retried");
+            usage.checkNow("claude");
+            usage.checkNow("claude");
+            tryCompare(runs, "count", 1, 2000);
+            const retried = runs.signalArguments[0][0];
+            verify(retried.endsWith(" --retry-providers claude --credits-providers claude,codex --providers claude,codex"), retried);
+            compare(usage.polledIds(retried), ["claude", "codex"]);
+            tryCompare(usage, "checking", false, 10000);
+            compare(runs.count, 1, "one click, one check");
+            usage.refresh();
+            tryCompare(runs, "count", 2, 2000);
+            compare(runs.signalArguments[1][0], usage.command, "a tick asks for no skip");
+            tryCompare(usage, "checking", false, 10000);
+        }
+
+        // A click once the hold is over asks for no skip, whatever the
+        // internet has done since.
+        function test_checkNowAfterTheHoldAsksForNoSkip() {
+            start("ok");
+            const runs = commands();
+            const now = usage.nowSeconds();
+            usage.entries = Object.assign({}, usage.entries, {
+                claude: Object.assign({}, usage.entry("claude"), { lastError: "x", lastErrorAt: now - 400, reason: "offline",
+                                                                  host: "api.anthropic.com", retryAt: now - 100 })
+            });
+            verify(usage.backOnline("claude"), "Codex has read since");
+            usage.checkNow("claude");
+            tryCompare(runs, "count", 1, 2000);
+            compare(runs.signalArguments[0][0], usage.command);
+            tryCompare(usage, "checking", false, 10000);
+        }
+
         // After a suspend the poller's tick is late by the wall clock. While
         // a check has failed, a tick over a minute overdue runs at once, and
         // one that isn't waits.
@@ -931,7 +980,24 @@ TestRoot {
                 { tag: "tick within a minute", ran: 850, retryAt: -100, can: false },
                 { tag: "tick a minute and more away", ran: 830, retryAt: -100, can: true },
                 { tag: "not failed", ran: 400, retryAt: -100, ok: true, can: false },
-                { tag: "five minutes", minutes: 5, ran: 60, retryAt: 240, can: false }
+                { tag: "five minutes", minutes: 5, ran: 60, retryAt: 240, can: false },
+                // A connection failure once the internet has answered since
+                // skips the helper's own hold, and nothing else does.
+                { tag: "offline, Codex read since", minutes: 5, ran: 60, retryAt: 240, codexAt: -30, can: true },
+                { tag: "offline, address found since", minutes: 5, ran: 60, retryAt: 240, answered: -30, can: true },
+                { tag: "timeout, Codex read since", minutes: 5, ran: 60, retryAt: 240, reason: "timeout", codexAt: -30, can: true },
+                { tag: "Codex read in the same second", minutes: 5, ran: 60, retryAt: 240, codexAt: -60, can: false },
+                { tag: "Codex read before the failure", minutes: 5, ran: 60, retryAt: 240, codexAt: -90, can: false },
+                { tag: "Codex failed since", minutes: 5, ran: 60, retryAt: 240, codexAt: -30, codexFailed: true, can: false },
+                { tag: "address found before the failure", minutes: 5, ran: 60, retryAt: 240, answered: -90, can: false },
+                { tag: "rate limited, internet back", ran: 400, retryAt: 3000, reason: "rate-limited", codexAt: -30, can: false },
+                { tag: "server error, internet back", minutes: 5, ran: 60, retryAt: 240, reason: "server", codexAt: -30, can: false },
+                { tag: "helper, internet back", minutes: 5, ran: 60, retryAt: 240, reason: "helper", answered: -30, can: false },
+                { tag: "not installed, internet back", ran: 400, retryAt: 100, reason: "not-installed", codexAt: -30, can: false },
+                { tag: "lock busy, internet back", ran: 400, retryAt: 100, reason: "busy", codexAt: -30, can: false },
+                { tag: "internet back, checking", minutes: 5, ran: 60, retryAt: 240, codexAt: -30, checking: true, can: false },
+                { tag: "internet back, tick within a minute", minutes: 5, ran: 250, retryAt: 50, codexAt: -30, can: false },
+                { tag: "first check failed, internet back", minutes: 5, ran: 60, retryAt: 240, codexAt: -30, noReading: true, can: true }
             ];
         }
 
@@ -942,13 +1008,23 @@ TestRoot {
             config.usageRefreshMinutes = data.minutes ?? 15;
             usage.lastRun = now - data.ran;
             usage.checking = data.checking ?? false;
-            const entry = { status: "ok", retryAt: now + data.retryAt, reason: data.reason ?? "offline" };
-            usage.entries = { claude: data.ok ? entry : Object.assign(entry, { lastError: "x", lastErrorAt: now - data.ran }) };
+            usage.answeredAt = data.answered === undefined ? NaN : now + data.answered;
+            const entry = { status: data.noReading ? "error" : "ok", retryAt: now + data.retryAt, reason: data.reason ?? "offline" };
+            const entries = { claude: data.ok ? entry : Object.assign(entry, { lastError: "x", lastErrorAt: now - data.ran }) };
+            if (data.codexAt !== undefined) {
+                entries.codex = { status: "ok", fetchedAt: now + data.codexAt };
+                if (data.codexFailed) {
+                    Object.assign(entries.codex, { lastError: "y", lastErrorAt: now - 10, reason: "offline", retryAt: now + 290 });
+                }
+            }
+            usage.entries = entries;
             compare(usage.canRetry("claude", now * 1000), data.can);
-            compare(usage.canRetry("codex", now * 1000), false, "no entry, nothing to retry");
+            if (data.codexAt === undefined) {
+                compare(usage.canRetry("codex", now * 1000), false, "no entry, nothing to retry");
+            }
             const fake = createTemporaryObject(fakeUsageComponent, root, { refreshMinutes: config.usageRefreshMinutes,
                                                                           lastRun: usage.lastRun, checking: usage.checking,
-                                                                          entries: usage.entries });
+                                                                          entries: usage.entries, answeredAt: usage.answeredAt });
             compare(fake.canRetry("claude", now * 1000), data.can, "the tests' stand-in agrees");
         }
 
@@ -4051,7 +4127,11 @@ TestRoot {
         function test_tryAgain_data() {
             return [
                 { tag: "hold over", minutes: 15, ran: 400, retryAt: -100, shown: true },
-                { tag: "held", minutes: 15, ran: 400, retryAt: 200, shown: false }
+                { tag: "held", minutes: 15, ran: 400, retryAt: 200, shown: false },
+                { tag: "held, internet back since", minutes: 5, ran: 60, retryAt: 240, answered: 1, shown: true },
+                { tag: "held, internet back before the failure", minutes: 5, ran: 60, retryAt: 240, answered: -1, shown: false },
+                { tag: "rate limited, internet back", minutes: 15, ran: 400, retryAt: 3000, reason: "rate-limited", answered: 1,
+                  shown: false }
             ];
         }
 
@@ -4061,6 +4141,9 @@ TestRoot {
             usage.refreshMinutes = data.minutes;
             usage.lastRun = now - data.ran;
             failClaude(600, { retryAt: now + data.retryAt, reason: data.reason ?? "offline" });
+            if (data.answered !== undefined) {
+                usage.answeredAt = usage.entry("claude").lastErrorAt + data.answered;
+            }
             const popup = load("claude");
             const button = tryAgain(popup);
             compare(button.visible, data.shown);

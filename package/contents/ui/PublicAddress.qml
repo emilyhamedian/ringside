@@ -71,6 +71,10 @@ Item {
     // failure gives way to "checking" while the service is asked again.
     readonly property bool addressKnown: record !== null && record.result !== null
         && (record.result.v4 !== "" || record.result.v6 !== "")
+    // When the last check found an address, in whole epoch seconds as the
+    // usage helper gives its times, or NaN: it shows the internet
+    // answering, which UsageData goes by too.
+    readonly property real answeredAt: addressKnown ? Math.floor(record.result.at / 1000) : NaN
     readonly property string status: !switchedOn ? "off"
         : !service.valid ? "invalid"
         : egress !== null && !connected ? "offline"
