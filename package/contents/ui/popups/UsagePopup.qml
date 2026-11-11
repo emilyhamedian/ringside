@@ -10,10 +10,11 @@ import "../code/pace.js" as Pace
 import "../code/style.js" as Style
 import ".."
 
-// Claude's or Codex's weekly limits: the all-models week in the header with
-// the time left until it resets, a bar for it and for each model's own limit
-// with a sentence under one of them on where the current pace leads, and
-// the week so far as a graph. With one limit the header's ring is its bar.
+// Claude's or Codex's weekly limits, or Kimi's monthly one: the all-models
+// window in the header with the time left until it resets, a bar for it and
+// for each model's own limit with a sentence under one of them on where the
+// current pace leads, and the window so far as a graph. With one limit the
+// header's ring is its bar.
 // A failed check is said under the header, with the last reading kept in
 // grey for as long as the panel keeps it; once the panel's ring is struck,
 // so is the header's, and the status under it is all the popup shows. A
@@ -30,6 +31,8 @@ PopupPage {
     readonly property var usage: monitor.usage
     readonly property var entry: usage.entry(item)
     readonly property var weekly: entry && entry.weekly ? entry.weekly : null
+    // Kimi's limit spans a month; the words for it say so.
+    readonly property bool monthly: words.monthly(weekly)
     readonly property var innerLimit: usage.inner(item)
     // The last check failed. Its reading stays, greyed, until it is struck
     // (see UsageData.struck()), and then nothing of it is shown.
@@ -99,6 +102,8 @@ PopupPage {
                                     "%1 may already have run out %2", limit.label, when)
                      : popup.limits.length > 1 ? i18nc("@info at the rate of a reading hours old, every model's shared weekly limit would already be used up, e.g. All models may already have run out Mon 5:50 PM",
                                                        "All models may already have run out %1", when)
+                     : popup.monthly ? i18nc("@info at the rate of a reading hours old, the monthly limit would already be used up, e.g. The monthly limit may already have run out Mon 11/23/26 5:50 PM",
+                                             "The monthly limit may already have run out %1", when)
                      : i18nc("@info at the rate of a reading hours old, the weekly limit would already be used up, e.g. The weekly limit may already have run out Mon 5:50 PM",
                              "The weekly limit may already have run out %1", when);
             }
@@ -108,11 +113,13 @@ PopupPage {
                                 "%1 is on pace to run out %2", limit.label, when)
                  : popup.limits.length > 1 ? i18nc("@info every model's shared weekly limit runs out before the reset at the rate so far, e.g. All models are on pace to run out Wed 12:20 PM",
                                                    "All models are on pace to run out %1", when)
+                 : popup.monthly ? i18nc("@info the monthly limit runs out before the reset at the rate so far, e.g. The monthly limit is on pace to run out Wed 11/25/26 12:20 PM",
+                                         "The monthly limit is on pace to run out %1", when)
                  : i18nc("@info the weekly limit runs out before the reset at the rate so far, e.g. The weekly limit is on pace to run out Wed 12:20 PM",
                          "The weekly limit is on pace to run out %1", when);
         }
         case "lasts":
-            return i18nc("@info the share of the weekly limit used by the reset at the rate so far, e.g. On pace to use 93% by the reset",
+            return i18nc("@info the share of the weekly or monthly limit used by the reset at the rate so far, e.g. On pace to use 93% by the reset",
                          "On pace to use %1 by the reset", i18nc("@info a percentage", "%1%", Format.percent(p.atReset)));
         }
         return "";
@@ -157,7 +164,10 @@ PopupPage {
         // As many as the reading had, whether or not they are shown; how
         // many there are isn't known until the first check is done.
         subtitle: popup.loading
-            ? i18nc("@info under Claude or Codex: the first check of the limits since Ringside started is running", "Checking your usage…")
+            ? i18nc("@info under Claude, Codex or Kimi: the first check of the limits since Ringside started is running", "Checking your usage…")
+            : popup.monthly
+            ? i18ncp("@info under Kimi: what the popup shows", "Monthly limit", "Monthly limits",
+                     Math.max(1, popup.limits.length, popup.entry && popup.entry.scoped ? popup.entry.scoped.length + 1 : 0))
             : i18ncp("@info under Claude or Codex: what the popup shows", "Weekly limit", "Weekly limits",
                      Math.max(1, popup.limits.length, popup.entry && popup.entry.scoped ? popup.entry.scoped.length + 1 : 0))
         parts: popup.limits.length > 0 ? words.countdownParts(popup.weekly.resetsAt, popup.nowMs) : []
@@ -167,7 +177,7 @@ PopupPage {
         // Plain whatever the reading: the ring and bars carry the level.
         caption: header.partsShown ? i18nc("@info:label under the time left, e.g. 2d 21h until reset", "until reset") : ""
         accessibleValue: header.partsShown
-            ? i18nc("@info:accessible the time left until the weekly reset, e.g. 5 days 18 hours until reset", "%1 until reset",
+            ? i18nc("@info:accessible the time left until the weekly or monthly reset, e.g. 5 days 18 hours until reset", "%1 until reset",
                     words.duration(popup.weekly.resetsAt, popup.nowMs))
             : ""
     }
@@ -354,14 +364,15 @@ PopupPage {
         columns: 1
 
         Tile {
-            caption: i18nc("@title:group the current weekly window", "This week")
+            caption: popup.monthly ? i18nc("@title:group the current monthly window", "This month")
+                                   : i18nc("@title:group the current weekly window", "This week")
             // The rule's, so only while the graph draws one.
             graphTop: week.placed ? words.percent(100) : ""
             graphReading: week.reading
             foot: popup.innerLimit !== null ? allModels : week.foot
             detail: {
                 const date = words.resetDate(popup.weekly);
-                return date ? i18nc("@title:group after THIS WEEK: when the week starts over, e.g. · resets Sun 7:00 AM EDT",
+                return date ? i18nc("@title:group after THIS WEEK or THIS MONTH: when it starts over, e.g. · resets Sun 7:00 AM EDT",
                                     "· resets %1", date) : "";
             }
 

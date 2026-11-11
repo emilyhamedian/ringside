@@ -27,6 +27,7 @@ PlasmoidItem {
     readonly property var items: readings.enabledItems.filter(k => k === "gpu" ? readings.gpuOuter.present
                                                                : k === "claude" ? readings.usage.claudePresent
                                                                : k === "codex" ? readings.usage.codexPresent
+                                                               : k === "kimi" ? readings.usage.kimiPresent
                                                                : true)
 
     // The height an open popup's page has: the screen's, less its panels,

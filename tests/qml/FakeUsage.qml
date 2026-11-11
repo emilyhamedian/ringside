@@ -83,6 +83,7 @@ QtObject {
 
     readonly property bool claudePresent: present("claude")
     readonly property bool codexPresent: present("codex")
+    readonly property bool kimiPresent: present("kimi")
     property int refreshMinutes: 5
     property bool checking: false
     // The timer's last tick, a minute before creation.

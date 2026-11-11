@@ -22,7 +22,8 @@ ConfigPage {
         network: i18nc("@item panel item", "Network"),
         disk: i18nc("@item panel item", "Disk"),
         claude: i18nc("@item panel item", "Claude"),
-        codex: i18nc("@item panel item: the OpenAI weekly limits, read through Codex", "OpenAI")
+        codex: i18nc("@item panel item: the OpenAI weekly limits, read through Codex", "OpenAI"),
+        kimi: i18nc("@item panel item: the Kimi Code monthly limit", "Kimi")
     })
     // A vertical panel shows rings without their readings, whatever the setting.
     readonly property bool vertical: Plasmoid.formFactor === PlasmaCore.Types.Vertical
@@ -39,7 +40,8 @@ ConfigPage {
         network: String(hardware.defaultInterface || ""),
         disk: hardware.root ? String(hardware.root.disk || "") : "",
         claude: usageHint("claude"),
-        codex: usageHint("codex")
+        codex: usageHint("codex"),
+        kimi: usageHint("kimi")
     })
 
     function usageHint(id) {
@@ -55,8 +57,10 @@ ConfigPage {
         case "ok":
             return i18nc("@info:usagetip", "Signed in");
         case "signed_out":
-            return i18nc("@info:usagetip %1 is a command, such as claude", "Not signed in: run %1 in a terminal",
-                         Providers.FACTS[id].command);
+            // Kimi's limits are read with Kimi Code's sign-in or OpenCode's key.
+            return id === "kimi" ? i18nc("@info:usagetip", "Not signed in to Kimi Code or OpenCode")
+                                 : i18nc("@info:usagetip %1 is a command, such as claude", "Not signed in: run %1 in a terminal",
+                                         Providers.FACTS[id].command);
         case "error":
         case "rate_limited":
             return String(entry.message || "");
@@ -99,10 +103,10 @@ ConfigPage {
         save();
     }
 
-    // The checked state starts from Items.hidden(), so Claude and Codex show
-    // unchecked unless the stored order already lists them, without writing
-    // anything back until the user acts (save() only runs from a toggle or a
-    // move).
+    // The checked state starts from Items.hidden(), so Claude, Codex and Kimi
+    // show unchecked unless the stored order already lists them, without
+    // writing anything back until the user acts (save() only runs from a
+    // toggle or a move).
     Component.onCompleted: {
         const off = Items.hidden(cfg_itemOrder, cfg_hiddenItems);
         Items.order(cfg_itemOrder).forEach(k => items.append({ key: k, checked: !off.includes(k) }));

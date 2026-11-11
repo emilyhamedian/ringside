@@ -482,6 +482,91 @@ ColumnLayout {
         monitor: firstFailed
     }
 
+    // Kimi's month: 92 % used with 15 days left (red, on pace to run out),
+    // and 38 % with 12 days left (lasts to the reset); then its only
+    // credential a Kimi Code sign-in that Kimi Code hasn't renewed.
+    FakeMonitor {
+        id: kimiMonitor
+        usage: FakeUsage {
+            id: kimiUsage
+            function month(percent, left, history) {
+                return Object.assign(window(percent, left, history), { windowSeconds: 30 * day });
+            }
+            ids: ["claude", "codex", "kimi"]
+            entries: ({
+                codex: { status: "ok", fetchedAt: kimiUsage.createdAt,
+                         weekly: kimiUsage.window(24, 5 * kimiUsage.day, section.history(2, 24)), scoped: [] },
+                kimi: { status: "ok", fetchedAt: kimiUsage.createdAt,
+                        weekly: kimiUsage.month(92, 15 * kimiUsage.day + 6 * 3600, section.history(15, 92)), scoped: [] }
+            })
+        }
+    }
+
+    FakeMonitor {
+        id: kimiCalm
+        usage: FakeUsage {
+            id: kimiCalmUsage
+            ids: ["kimi"]
+            entries: ({
+                kimi: { status: "ok", fetchedAt: kimiCalmUsage.createdAt,
+                        weekly: Object.assign(kimiCalmUsage.window(38, 12 * kimiCalmUsage.day + 2 * 3600,
+                                                                   section.history(18, 38)),
+                                              { windowSeconds: 30 * kimiCalmUsage.day }),
+                        scoped: [] }
+            })
+        }
+    }
+
+    FakeMonitor {
+        id: kimiExpired
+        usage: FakeUsage {
+            id: kimiExpiredUsage
+            ids: ["kimi"]
+            entries: ({
+                kimi: { status: "ok", fetchedAt: kimiExpiredUsage.createdAt - 3 * 3600,
+                        weekly: Object.assign(kimiExpiredUsage.window(38, 12 * kimiExpiredUsage.day,
+                                                                      section.history(18, 38)),
+                                              { windowSeconds: 30 * kimiExpiredUsage.day }),
+                        scoped: [], lastError: "Kimi Code's sign-in has expired; open Kimi Code to renew it",
+                        lastErrorAt: kimiExpiredUsage.createdAt - 3600, reason: "expired", host: "",
+                        retryAt: kimiExpiredUsage.createdAt + 240 }
+            })
+        }
+    }
+
+    Panel {
+        label: "Codex & Kimi · panel · 46 px · Codex 24 %, Kimi 92 % of its month (red)"
+        thickness: 46
+        monitor: kimiMonitor
+        items: ["cpu", "memory", "codex", "kimi"]
+    }
+
+    Panel {
+        label: "Kimi · panel · 30 px · 38 % of its month"
+        thickness: 30
+        monitor: kimiCalm
+        items: ["cpu", "memory", "kimi"]
+    }
+
+    RowLayout {
+        spacing: 2 * Kirigami.Units.gridUnit
+
+        GalleryFrame {
+            label: "Kimi · 92 % of its month, on pace to run out"
+            UsagePopup { monitor: kimiMonitor; item: "kimi" }
+        }
+
+        GalleryFrame {
+            label: "Kimi · 38 %, lasts to the reset"
+            UsagePopup { monitor: kimiCalm; item: "kimi" }
+        }
+
+        GalleryFrame {
+            label: "Kimi · Kimi Code's sign-in expired (struck)"
+            UsagePopup { monitor: kimiExpired; item: "kimi" }
+        }
+    }
+
     RowLayout {
         spacing: 2 * Kirigami.Units.gridUnit
 

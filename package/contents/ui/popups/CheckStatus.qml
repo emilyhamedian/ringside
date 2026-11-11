@@ -104,8 +104,7 @@ GridLayout {
                 }
                 const parts = [status.texts.failureReason(status.item, e)];
                 if (status.weekly && status.weekly.resetsAt <= status.nowMs / 1000) {
-                    parts.push(i18nc("@info %1 is a weekday and time, with a time zone where the reset has one, as in Sun 7:00 AM EDT",
-                                     "The week reset at %1, with no reading since.", status.texts.resetDate(status.weekly)));
+                    parts.push(status.texts.resetPassedText(status.weekly));
                 } else if (status.weekly) {
                     const at = status.texts.timeOfDay(e.fetchedAt, status.nowMs);
                     parts.push(status.struck ? i18nc("@info %1 is a time", "The last reading is from %1.", at)

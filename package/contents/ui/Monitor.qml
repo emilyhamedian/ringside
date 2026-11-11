@@ -176,7 +176,7 @@ Item {
     readonly property var enabledItems: Items.enabled(config.itemOrder, config.hiddenItems)
     readonly property bool systemShown: enabledItems.some(k => Items.SYSTEM.includes(k))
 
-    // Claude and Codex readings; see UsageData.qml.
+    // Claude, Codex and Kimi readings; see UsageData.qml.
     readonly property alias usage: usageData
     // The mark in the Codex ring: "codex", or "openai" for the OpenAI logo.
     readonly property string codexMark: config.codexMark === "openai" ? "openai" : "codex"

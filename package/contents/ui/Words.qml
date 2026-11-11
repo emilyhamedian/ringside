@@ -8,8 +8,8 @@ import "code/hardware.js" as Hardware
 import "code/history.js" as History
 
 // Each item's readings in words, for screen readers and tooltips, the short
-// readings beside a ring, the times the Claude and Codex views show, and
-// the peak a rate graph's caption line names.
+// readings beside a ring, the times the Claude, Codex and Kimi views show,
+// and the peak a rate graph's caption line names.
 // describe() and readout() speak for the panel, so they give the readings
 // it shows (Monitor.panel), not the live ones.
 QtObject {
@@ -46,6 +46,7 @@ QtObject {
                          rateText(Format.rate(monitor.panel.diskRead, false)), rateText(Format.rate(monitor.panel.diskWrite, false)));
         case "claude":
         case "codex":
+        case "kimi":
             return usageText(item, nowMs);
         }
         return "";
@@ -69,9 +70,12 @@ QtObject {
         }
     }
 
-    // What to run to sign a provider in.
+    // What to run to sign a provider in. Kimi's limits can be read with
+    // Kimi Code's own sign-in or with the key OpenCode keeps for it.
     function signInHint(item) {
-        return i18nc("@info %1 is a command, such as claude", "Run %1 in a terminal to sign in.", Providers.FACTS[item].command);
+        return item === "kimi"
+            ? i18nc("@info", "Sign in to Kimi Code, or connect Kimi For Coding in OpenCode.")
+            : i18nc("@info %1 is a command, such as claude", "Run %1 in a terminal to sign in.", Providers.FACTS[item].command);
     }
 
     // A provider's name as its popup and tooltip give it: the OpenAI item is
@@ -79,6 +83,7 @@ QtObject {
     // mark.
     function providerName(item) {
         return item === "claude" ? i18nc("@title", "Claude")
+             : item === "kimi" ? i18nc("@title", "Kimi")
              : monitor.codexMark === "openai" ? i18nc("@title the OpenAI weekly limits, with the OpenAI logo chosen for their ring", "ChatGPT")
              : i18nc("@title", "Codex");
     }
@@ -221,15 +226,14 @@ QtObject {
     }
 
     // A failed check in words, a sentence a line: when it failed and why;
-    // the last reading and when it was taken, or that the week has reset
-    // since; and when the next check runs.
+    // the last reading and when it was taken, or that the week or month has
+    // reset since; and when the next check runs.
     function failedText(item, entry, reading, nowMs) {
         const weekly = entry.weekly ?? null;
         const lines = [i18nc("@info:tooltip %1 is a time, %2 why, a sentence, e.g. Can't reach api.anthropic.com.",
                              "Last check failed at %1. %2", timeOfDay(entry.lastErrorAt, nowMs), failureReason(item, entry))];
         if (weekly && weekly.resetsAt <= nowMs / 1000) {
-            lines.push(i18nc("@info:tooltip %1 is a weekday and time, with a time zone where the reset has one, as in Sun 7:00 AM EDT",
-                             "The week reset at %1, with no reading since.", resetDate(weekly)));
+            lines.push(resetPassedText(weekly));
         } else if (weekly) {
             lines.push(i18nc("@info:tooltip %1 is a time, %2 the reading, e.g. 52% used, resets in 2 days 21 hours",
                              "Last reading at %1: %2.", timeOfDay(entry.fetchedAt, nowMs), reading));
@@ -253,8 +257,9 @@ QtObject {
     // Why a check failed, as a sentence, from the reason the helper gives
     // (see usage.py and code/report.js): the network, a server, a provider
     // asking to wait, a Codex CLI that isn't installed or a chosen program
-    // that can't be run, or the helper itself, whose own message, naming
-    // the Python error, is left to the settings page and screen readers.
+    // that can't be run, a Kimi Code sign-in that has expired, or the helper
+    // itself, whose own message, naming the Python error, is left to the
+    // settings page and screen readers.
     // Any other reason, another check holding the helper's lock say, gives
     // the helper's message as it is. A rate limit's end is left to the
     // next check's time, at least five minutes away.
@@ -285,6 +290,9 @@ QtObject {
             break;
         case "program":
             return i18nc("@info %1 is a program name such as codex", "The %1 program set in Settings can't be run.", Providers.FACTS[item].command);
+        case "expired":
+            // Ringside never renews Kimi Code's sign-in, which would sign Kimi Code out.
+            return i18nc("@info", "Kimi Code's sign-in has expired. Open Kimi Code to renew it.");
         case "missing":
             return i18nc("@info", "python3 was not found on the Plasma session's PATH.");
         case "files":
@@ -367,9 +375,25 @@ QtObject {
                      : i18nc("@info something happened under a minute ago", "just now");
     }
 
+    // Whether a window spans a month, as Kimi's does, rather than a week or
+    // less. Its times then carry their date, since a weekday alone could be
+    // any of four or five.
+    function monthly(window) {
+        return window ? window.windowSeconds > 7 * 86400 : false;
+    }
+
+    // The day of a Date in a window: its weekday, "Sun", and in a monthly
+    // window the date after it, "Thu 11/26/26".
+    function dayOf(date, window) {
+        const weekday = Qt.locale().dayName(date.getDay(), Locale.ShortFormat);
+        return monthly(window) ? i18nc("@info a weekday and a date, e.g. Tue 10/13/26", "%1 %2", weekday,
+                                       date.toLocaleDateString(Qt.locale(), Locale.ShortFormat))
+                               : weekday;
+    }
+
     // When a window resets, in the user's locale: "Sun 7:00 AM EDT" in the
     // desktop clock's zone when the helper passes one, else "Sun 7:00 AM" in
-    // system time.
+    // system time; in a monthly window with the date, "Thu 11/26/26 7:00 PM".
     function resetDate(window) {
         if (!window || !Format.usable(window.resetsAt)) {
             return "";
@@ -377,23 +401,33 @@ QtObject {
         const zone = window.clockZone;
         // To the nearest minute: a reset reported as 10:59:59 reads as 11:00.
         const date = zonedDate(Math.round(window.resetsAt / 60) * 60, window);
-        const day = Qt.locale().dayName(date.getDay(), Locale.ShortFormat);
+        const day = dayOf(date, window);
         const time = shortTime(date);
         return zone && zone.abbreviation
-            ? i18nc("@info weekday, time and time zone of a reset, e.g. Sun 7:00 AM EDT", "%1 %2 %3", day, time, zone.abbreviation)
-            : i18nc("@info weekday and time of a reset, e.g. Sun 7:00 AM", "%1 %2", day, time);
+            ? i18nc("@info day, time and time zone of a reset, e.g. Sun 7:00 AM EDT or Thu 11/26/26 7:00 PM EST", "%1 %2 %3",
+                    day, time, zone.abbreviation)
+            : i18nc("@info day and time of a reset, e.g. Sun 7:00 AM or Thu 11/26/26 7:00 PM", "%1 %2", day, time);
     }
 
-    // A time within a window, such as when its limit runs out, as a weekday
-    // and time: "Tue 3:30 AM". It carries no zone; the words around it say
-    // which clock the window keeps.
+    // That a window's reset has passed with no reading since, as a sentence.
+    function resetPassedText(window) {
+        return monthly(window)
+            ? i18nc("@info %1 is a weekday, date and time, with a time zone where the reset has one, as in Thu 11/26/26 7:00 PM EST",
+                    "The month reset at %1, with no reading since.", resetDate(window))
+            : i18nc("@info %1 is a weekday and time, with a time zone where the reset has one, as in Sun 7:00 AM EDT",
+                    "The week reset at %1, with no reading since.", resetDate(window));
+    }
+
+    // A time within a window, such as when its limit runs out, as a day and
+    // time: "Tue 3:30 AM", or in a monthly window "Tue 12/1/26 3:30 AM". It
+    // carries no zone; the words around it say which clock the window keeps.
     function weekdayTime(epoch, window) {
         if (!Format.usable(epoch)) {
             return "";
         }
         const date = zonedDate(epoch, window);
-        return i18nc("@info weekday and time within a weekly window, e.g. Tue 3:30 AM", "%1 %2",
-                     Qt.locale().dayName(date.getDay(), Locale.ShortFormat), shortTime(date));
+        return i18nc("@info day and time within a usage window, e.g. Tue 3:30 AM or Tue 12/1/26 3:30 AM", "%1 %2",
+                     dayOf(date, window), shortTime(date));
     }
 
     // What the session starter is doing, under its switches in the Claude or

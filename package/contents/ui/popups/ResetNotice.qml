@@ -52,6 +52,9 @@ GridLayout {
             text: notice.window?.label
                 ? i18nc("@info under Claude's or Codex's header: a model's weekly limit started over before its reset time; %1 is the model, e.g. Fable",
                         "%1 limit reset early", notice.window.label)
+                : notice.texts.monthly(notice.window)
+                ? i18nc("@info under Kimi's header: the monthly limit started over before its reset time",
+                        "Monthly limit reset early")
                 : i18nc("@info under Claude's or Codex's header: the weekly limit started over before its reset time",
                         "Weekly limit reset early")
             color: Kirigami.Theme.textColor

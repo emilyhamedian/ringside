@@ -20,7 +20,7 @@ Item {
     id: name
 
     required property string item
-    // The mark a Claude or Codex ring draws: "claude", "codex", or "openai"
+    // The mark a usage ring draws: "claude", "codex", "kimi", or "openai"
     // for the Codex ring with the OpenAI logo.
     property string mark: item
     // RingGauge.centreWidth: the clear width inside the innermost ring.
@@ -65,7 +65,8 @@ Item {
     // The middle is round, so a name's ink has less room than the middle's
     // width: only the chord at its cap height.
     readonly property real chord: 2 * Math.sqrt(Math.max(0, room * room / 4 - smallest.tightBoundingRect.height ** 2 / 4))
-    readonly property var art: mark === "claude" ? Marks.CLAUDE : mark === "openai" ? Marks.OPENAI : Marks.CODEX
+    readonly property var art: mark === "claude" ? Marks.CLAUDE : mark === "openai" ? Marks.OPENAI
+                             : mark === "kimi" ? Marks.KIMI : Marks.CODEX
     // A little taller than a name's line, so a mark fills its ring about as
     // much as CPU or MEM fill theirs, by the mark's own scale, kept a pixel
     // clear of the innermost ring, and none at all where there is no room.
