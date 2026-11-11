@@ -1,0 +1,9 @@
+package/contents/icons/opencode.svg is the OpenCode mark as a single-colour
+mask, its outline taken from packages/identity/mark.svg in OpenCode's
+repository (github.com/anomalyco/opencode), which is MIT-licensed. The OPENCODE
+entry in package/contents/ui/code/marks.js holds the same outline as path
+data, which Ringside draws in the theme's colours.
+
+OpenCode and the OpenCode mark belong to the OpenCode project. Ringside is not
+affiliated with or endorsed by OpenCode and includes the mark only to label its
+OpenCode Go item. Including it grants no rights to use the mark.

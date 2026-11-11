@@ -8,7 +8,7 @@
             }
         ],
         "Category": "System Information",
-        "Description": "CPU, GPU, memory, network and disk in the panel, with optional Claude, Codex and Kimi usage limits",
+        "Description": "CPU, GPU, memory, network and disk in the panel, with optional Claude, Codex, Kimi and OpenCode Go usage limits",
         "EnabledByDefault": true,
         "Icon": "/icons/ringside.svg",
         "Id": "dev.emily.ringside",

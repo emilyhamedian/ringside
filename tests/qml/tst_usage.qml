@@ -512,7 +512,7 @@ TestRoot {
             compare(usage.inner("codex"), null);
             compare(usage.helperError, "");
             compare(JSON.parse(config.knownLimits),
-                    { claude: [{ id: "Fable", label: "Fable", reported: true }], codex: [], kimi: [] });
+                    { claude: [{ id: "Fable", label: "Fable", reported: true }], codex: [], kimi: [], opencode: [] });
             const found = name => ({ path: "/usr/bin/" + name, chosen: false, problem: "" });
             compare(JSON.parse(config.usageStatus), { claude: { status: "ok", message: "", program: found("claude"), starter: false,
                                                                 windows: ["session"] },
@@ -4419,6 +4419,15 @@ TestRoot {
             compare(words.signInHint("kimi"), "Sign in to Kimi Code, or connect Kimi For Coding in OpenCode.");
             compare(words.failureReason("kimi", { reason: "expired", host: "", lastError: "x" }),
                     "Kimi Code's sign-in has expired. Open Kimi Code to renew it.");
+        }
+
+        function test_openCodeGosOwnWords() {
+            compare(words.providerName("opencode"), "OpenCode Go");
+            compare(words.signInHint("opencode"), "Run opencode auth login opencode in a terminal to sign in.");
+            compare(words.failureReason("opencode", { reason: "expired", host: "", lastError: "x" }),
+                    "OpenCode's sign-in has expired. Open OpenCode to renew it.");
+            compare(words.failureReason("opencode", { reason: "not-subscribed", host: "opencode.ai", lastError: "x" }),
+                    "This OpenCode account doesn't have OpenCode Go.");
         }
 
         function test_timeOfDay() {

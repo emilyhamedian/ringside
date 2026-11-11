@@ -8,7 +8,7 @@ import "code/hardware.js" as Hardware
 import "code/history.js" as History
 
 // Each item's readings in words, for screen readers and tooltips, the short
-// readings beside a ring, the times the Claude, Codex and Kimi views show,
+// readings beside a ring, the times the usage views show,
 // and the peak a rate graph's caption line names.
 // describe() and readout() speak for the panel, so they give the readings
 // it shows (Monitor.panel), not the live ones.
@@ -47,6 +47,7 @@ QtObject {
         case "claude":
         case "codex":
         case "kimi":
+        case "opencode":
             return usageText(item, nowMs);
         }
         return "";
@@ -84,6 +85,7 @@ QtObject {
     function providerName(item) {
         return item === "claude" ? i18nc("@title", "Claude")
              : item === "kimi" ? i18nc("@title", "Kimi")
+             : item === "opencode" ? i18nc("@title", "OpenCode Go")
              : monitor.codexMark === "openai" ? i18nc("@title the OpenAI weekly limits, with the OpenAI logo chosen for their ring", "ChatGPT")
              : i18nc("@title", "Codex");
     }
@@ -257,9 +259,10 @@ QtObject {
     // Why a check failed, as a sentence, from the reason the helper gives
     // (see usage.py and code/report.js): the network, a server, a provider
     // asking to wait, a Codex CLI that isn't installed or a chosen program
-    // that can't be run, a Kimi Code sign-in that has expired, or the helper
-    // itself, whose own message, naming the Python error, is left to the
-    // settings page and screen readers.
+    // that can't be run, a sign-in Ringside doesn't renew that has expired,
+    // an OpenCode account without Go, or the helper itself, whose own
+    // message, naming the Python error, is left to the settings page and
+    // screen readers.
     // Any other reason, another check holding the helper's lock say, gives
     // the helper's message as it is. A rate limit's end is left to the
     // next check's time, at least five minutes away.
@@ -291,8 +294,12 @@ QtObject {
         case "program":
             return i18nc("@info %1 is a program name such as codex", "The %1 program set in Settings can't be run.", Providers.FACTS[item].command);
         case "expired":
-            // Ringside never renews Kimi Code's sign-in, which would sign Kimi Code out.
-            return i18nc("@info", "Kimi Code's sign-in has expired. Open Kimi Code to renew it.");
+            // Ringside never renews Kimi Code's or OpenCode's sign-in, which
+            // would sign the program out.
+            return i18nc("@info %1 is a program, such as Kimi Code", "%1's sign-in has expired. Open %1 to renew it.",
+                         Providers.FACTS[item].product);
+        case "not-subscribed":
+            return i18nc("@info", "This OpenCode account doesn't have OpenCode Go.");
         case "missing":
             return i18nc("@info", "python3 was not found on the Plasma session's PATH.");
         case "files":
@@ -375,9 +382,9 @@ QtObject {
                      : i18nc("@info something happened under a minute ago", "just now");
     }
 
-    // Whether a window spans a month, as Kimi's does, rather than a week or
-    // less. Its times then carry their date, since a weekday alone could be
-    // any of four or five.
+    // Whether a window spans a month, as Kimi's and OpenCode Go's do, rather
+    // than a week or less. Its times then carry their date, since a weekday
+    // alone could be any of four or five.
     function monthly(window) {
         return window ? window.windowSeconds > 7 * 86400 : false;
     }
