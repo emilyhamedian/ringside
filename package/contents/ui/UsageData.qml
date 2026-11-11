@@ -6,6 +6,7 @@ import QtQuick
 import org.kde.plasma.plasma5support as P5Support
 import "code/items.js" as Items
 import "code/credits.js" as Credits
+import "code/drain.js" as Drain
 import "code/limits.js" as Limits
 import "code/log.js" as Log
 import "code/report.js" as Report
@@ -50,6 +51,9 @@ Item {
     property var entries: ({})
     // Credit reports stay independent of the weekly reading kept on failure.
     property var credits: ({})
+    // Per id, what the last check that reported on it found draining since
+    // the check before (see code/drain.js).
+    property var drains: ({})
     // Why the helper itself gave no report; empty once one arrives.
     property string helperError: ""
     // Bound to a bool, so they notify only when they flip, not on every poll.
@@ -173,6 +177,13 @@ Item {
 
     function creditUsed(id, nowMs) {
         return ids.includes(id) && Credits.used(entry(id), credits[id], refreshMinutes, nowMs);
+    }
+
+    // Whether the weekly percentage ("weekly") or the credit balance
+    // ("credit") drained between the last two checks, which is when the ring
+    // pulses. A failed check shows nothing draining.
+    function draining(id, kind, nowMs) {
+        return ids.includes(id) && !degraded(id) && Drain.active(drains[id], kind, refreshMinutes, nowMs / 1000);
     }
 
     // The time in whole epoch seconds, as the helper gives its times.
@@ -507,7 +518,7 @@ Item {
             ids.filter(id => map[id] !== undefined).forEach(id => { kept[id] = map[id]; });
             return kept;
         };
-        for (const name of ["entries", "credits", "starters", "starterWanted", "starterWantedGeneration", "startFailures", "switchFailures"]) {
+        for (const name of ["entries", "credits", "drains", "starters", "starterWanted", "starterWantedGeneration", "startFailures", "switchFailures"]) {
             if (Object.keys(usage[name]).some(id => !ids.includes(id))) {
                 usage[name] = only(usage[name]);
             }
@@ -579,8 +590,14 @@ Item {
         if (Object.keys(events).length > 0) {
             resetsDetected(events);
         }
+        // Each provider this check reported on, against the check before.
+        const falling = Object.assign({}, drains);
+        ids.filter(id => report.providers[id]).forEach(id => {
+            falling[id] = Drain.step(drains[id], entries[id], merged[id], credits[id], balances[id], refreshMinutes, now);
+        });
         entries = merged;
         credits = balances;
+        drains = falling;
         statuses = latest;
         if (reported.length > 0) {
             answered = answered.concat(reported);

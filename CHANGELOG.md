@@ -16,8 +16,11 @@ follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
-- No *Try again* in a Claude or Codex popup after a lost connection, once
-  the other provider or the public address shows the internet is back.
+- Claude and Codex rings no longer pulse while nothing is being used: near a
+  limit they pulse only when usage rose since the previous check, and blue
+  rings only when the credit balance fell.
+- After a lost connection, a Claude or Codex popup now offers *Try again* as
+  soon as the other provider or the public address shows the internet is back.
 
 ## [0.4.0] - 2026-10-18
 
