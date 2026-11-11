@@ -1,9 +1,9 @@
 # Ringside
 
 A KDE Plasma 6 panel widget: CPU, GPU, memory, network and disk, plus optional
-Claude Code and Codex weekly limits, as rings in the panel, each opening a
-popup. Pure QML with two helper scripts; plugin id `dev.emily.ringside`;
-GPL-3.0-or-later.
+Claude Code, Codex and Kimi Code usage limits, as rings in the panel, each
+opening a popup. Pure QML with two helper scripts; plugin id
+`dev.emily.ringside`; GPL-3.0-or-later.
 
 ## Where things are
 
@@ -13,8 +13,8 @@ GPL-3.0-or-later.
     ksystemstats.
   - `ui/GpuReader.qml` with `ui/code/gpugate.js`: when a discrete GPU may
     be read.
-  - `ui/UsageData.qml`: runs `code/usage.py` for the Claude and Codex items
-    and their opt-in session starter.
+  - `ui/UsageData.qml`: runs `code/usage.py` for the Claude, Codex and Kimi
+    items and the opt-in session starter.
   - `ui/PublicAddress.qml`: asks for the address the network popup shows.
   - `ui/HistoryStore.qml`: keeps the graphs' hour and day when that setting
     is on; the only file that imports Qt's optional LocalStorage module.
@@ -43,8 +43,8 @@ unless there's a good reason to differ, and may is allowed but optional.
 - There must be no compiled code and no new runtime dependencies. System
   readings must come from ksystemstats through libksysguard's QML modules;
   anything else from the POSIX sh helper, reading /proc, /sys and udev as the
-  user. Python 3.11 (stdlib only) must be used only by the opt-in Claude and
-  Codex items.
+  user. Python 3.11 (stdlib only) must be used only by the opt-in usage
+  items.
 - A widget must have one Sensor per ksystemstats id, and there must be one
   reader per GPU across widgets (`code/gpushare.js`): duplicate subscriptions
   leak in ksystemstats and keep a discrete GPU awake. A suspended GPU must
@@ -54,10 +54,10 @@ unless there's a good reason to differ, and may is allowed but optional.
   until they turn it on, plain about what it sends and to whom, sending no
   more than it needs and as rarely as it can, and keeping what it learns on
   the machine.
-- A guest in the user's Claude and Codex accounts. Their own tools share the
-  same logins and limits, so Ringside must never cost them a sign-in, a rate
-  limit or usage they didn't ask for, and anything that spends usage must be
-  a switch only the user turns on.
+- A guest in the user's Claude, Codex and Kimi accounts. Their own tools
+  share the same logins and limits, so Ringside must never cost them a
+  sign-in, a rate limit or usage they didn't ask for, and anything that
+  spends usage must be a switch only the user turns on.
 - Numbers must go through `code/format.js` (locale digits, binary units), and
   user-visible strings through `i18nc` in QML, since `.pragma library` files
   can't translate. Colours must come from the Plasma theme.
