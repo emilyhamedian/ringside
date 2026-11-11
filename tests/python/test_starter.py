@@ -58,17 +58,17 @@ class Harness:
     """A Starter on a fake clock. reading is what a read returns, or an
     exception it raises; outcome is what a send raises, if anything."""
 
-    def __init__(self, now, reading=None, record=None, outcome=None, provider="claude"):
+    def __init__(self, now, reading=None, record=None, outcome=None, provider="claude", on=None):
         self.now = now
         self.reading = reading if reading is not None else claude(now)
         self.record = record if record is not None else usage.blank_record()
         self.outcome = outcome
         self.missing = False
         self.events = []
+        self.on = list(usage.OFFERED[provider]) if on is None else on
         self.starter = usage.Starter(
             provider, self.record, read=self.read, check=self.check, send=self.send,
-            running=usage.claude_running if provider == "claude" else usage.codex_running,
-            period=SESSION if provider == "claude" else usage.codex_period,
+            aim=lambda reading: [window for window in usage.startable(provider, reading) if window in self.on],
             persist=self.persist, clock=lambda: self.now)
 
     def read(self, not_before):
@@ -523,6 +523,34 @@ class Codex(unittest.TestCase):
         self.assertEqual(h.count("send"), 0)
 
 
+class CodexWindows(unittest.TestCase):
+    """Codex with both windows on keeps both running; with one, only that one."""
+
+    def test_a_week_that_ended_during_a_session_is_started_only_when_on(self):
+        reading = codex(NOW, 0, NOW + WEEK, session=NOW + 2 * HOUR, session_percent=30)
+        for on, sends, shows in ((["session", "week"], 1, ("confirming", NOW, NOW + usage.CONFIRM_DELAY)),
+                                 (["session"], 0, ("waiting", None, NOW + 2 * HOUR + 1))):
+            with self.subTest(on=on):
+                h = Harness(NOW, reading, provider="codex", on=on)
+                h.step()
+                self.assertEqual((h.count("send"), h.shows()), (sends, shows))
+
+    def test_the_week_alone_waits_out_its_week_and_not_the_session(self):
+        reading = codex(NOW, 30, NOW + 2 * 86400)
+        for on, sends, shows in ((["week"], 0, ("waiting", None, NOW + 2 * 86400 + 1)),
+                                 (["session", "week"], 1, ("confirming", NOW, NOW + usage.CONFIRM_DELAY))):
+            with self.subTest(on=on):
+                h = Harness(NOW, reading, provider="codex", on=on)
+                h.step()
+                self.assertEqual((h.count("send"), h.shows()), (sends, shows))
+                self.assertEqual(h.record["period"], WEEK if on == ["week"] else SESSION)
+
+    def test_both_running_wait_for_the_first_to_end(self):
+        h = Harness(NOW, codex(NOW, 30, NOW + HOUR, session=NOW + 2 * HOUR, session_percent=30), provider="codex")
+        h.step()
+        self.assertEqual(h.shows(), ("waiting", None, NOW + HOUR + 1))
+
+
 class CodexWeekly(unittest.TestCase):
     def test_an_idle_accounts_rolling_reset_is_no_window(self):
         for percent, reset, running in ((0, NOW + WEEK, False), (0, NOW + WEEK - 90, False),
@@ -531,8 +559,8 @@ class CodexWeekly(unittest.TestCase):
                                         (40, NOW - 1, False), (0, None, False)):
             with self.subTest(percent=percent, reset=reset):
                 reading = codex_week(NOW, percent, reset)
-                self.assertEqual(usage.codex_running(reading, NOW) is not None, running)
-                self.assertEqual(usage.codex_period(reading), WEEK)
+                self.assertEqual(usage.window_running("codex", "week", reading, NOW) is not None, running)
+                self.assertEqual(usage.startable("codex", reading), ["week"])
 
     def test_an_idle_account_read_minutes_ago_is_still_idle(self):
         fetched = NOW - 240
@@ -557,7 +585,7 @@ class CodexWeekly(unittest.TestCase):
 
     def test_a_week_in_use_without_a_reset_holds_like_a_failed_read(self):
         with self.assertRaises(usage.Unreadable):
-            usage.codex_running(codex_week(NOW, 40, None), NOW)
+            usage.window_running("codex", "week", codex_week(NOW, 40, None), NOW)
         h = Harness(NOW, codex_week(NOW, 40, None), provider="codex")
         for at, retry in ((NOW, NOW + 300), (NOW + 300, NOW + 1200), (NOW + 1200, NOW + 4800)):
             h.step(at)
@@ -603,8 +631,9 @@ class CodexUnreadableSession(unittest.TestCase):
     def test_a_malformed_short_window_is_not_a_weekly_only_plan(self):
         reading = codex_week(NOW, 0, NOW + WEEK)
         reading["sessionUnknown"] = True
+        self.assertEqual(usage.startable("codex", reading), ["session", "week"])
         with self.assertRaises(usage.Unreadable):
-            usage.codex_running(reading, NOW)
+            usage.aimed_running("codex", reading, NOW, ["session", "week"])
         h = Harness(NOW, reading, provider="codex")
         h.step()
         self.assertEqual(h.count("send"), 0)
@@ -624,12 +653,12 @@ class Reading(Isolated):
         self.assertEqual(defer.exception.until, NOW - 10 + usage.CACHE_TTL)
         fetch.assert_not_called()
 
-    def test_a_cached_reading_from_0_2_without_a_session_waits_too(self):
+    def test_a_cached_claude_reading_without_a_session_serves_a_plan_without_one(self):
         entry = claude(NOW - 10)
         del entry["session"]
         self.cache(claude=entry)
-        with usage.locked(), self.assertRaises(usage.Defer):
-            usage.starter_read("claude", NOW, None)
+        with usage.locked():
+            self.assertEqual(usage.starter_read("claude", NOW, None), entry)
 
     def test_a_cached_codex_reading_without_a_session_serves_its_week(self):
         entry = codex_week(NOW - 10, 0, NOW + WEEK)
@@ -959,13 +988,18 @@ class StarterRuns(Isolated):
 
     def test_starter_set_writes_the_per_user_switch_and_reports(self):
         report = self.run_main("--providers", "claude", "--starter-set", "claude=on")
-        self.assertEqual(self.switches(), {"claude": True})
+        self.assertEqual(self.switches(), {"claude": ["session"]})
         self.assertEqual(stat.S_IMODE(usage.STARTER_FILE.stat().st_mode), 0o600)
         starter = report["providers"]["claude"]["starter"]
         self.assertEqual((starter["enabled"], starter["state"]), (True, "waiting"))
         self.assertLessEqual(starter["next"], int(time.time()))
         self.run_main("--providers", "claude,codex", "--starter-set", "codex=on", "--starter-set", "claude=off")
-        self.assertEqual(self.switches(), {"claude": False, "codex": True})
+        self.assertEqual(self.switches(), {"claude": [], "codex": ["session", "week"]})
+        starter = self.run_main("--providers", "codex", "--starter-set", "codex=week,week")["providers"]["codex"]["starter"]
+        self.assertEqual(self.switches(), {"claude": [], "codex": ["week"]})
+        self.assertEqual((starter["on"], starter["window"]), (["week"], "week"))
+        self.run_main("--providers", "codex", "--starter-set", "codex=week,session")
+        self.assertEqual(self.switches(), {"claude": [], "codex": ["session", "week"]})
         self.assertEqual(self.calls, [])
         self.assertFalse(usage.STARTER_STATE.exists())
 
@@ -976,12 +1010,20 @@ class StarterRuns(Isolated):
 
     def test_a_malformed_switch_file_is_off_and_is_replaced(self):
         usage.STARTER_FILE.parent.mkdir(parents=True)
-        for content in ("{broken", "[]", '{"claude": "yes"}', '{"claude": 1}'):
+        for content in ("{broken", "[]", '{"claude": "yes"}', '{"claude": 1}', '{"claude": ["week", 2]}'):
             with self.subTest(content=content):
                 usage.STARTER_FILE.write_text(content)
-                self.assertEqual(self.run_main("--providers", "claude")["providers"]["claude"]["starter"], OFF)
+                self.assertEqual(self.run_main("--providers", "claude")["providers"]["claude"]["starter"],
+                                 dict(OFF, windows=["session"]))
         self.run_main("--providers", "claude", "--starter-set", "claude=on")
-        self.assertEqual(self.switches(), {"claude": True})
+        self.assertEqual(self.switches(), {"claude": ["session"]})
+
+    # A switch stored before its windows could be chosen was on for every
+    # window there was to start.
+    def test_a_switch_stored_as_true_is_on_for_every_window(self):
+        usage.STARTER_FILE.parent.mkdir(parents=True)
+        usage.STARTER_FILE.write_text('{"claude": true, "codex": true}')
+        self.assertEqual(usage.read_switches(), {"claude": ["session"], "codex": ["session", "week"]})
 
     def test_a_switch_that_cant_be_written_reports_it_unchanged(self):
         self.run_main("--providers", "claude", "--starter-set", "claude=on")
@@ -1000,7 +1042,7 @@ class StarterRuns(Isolated):
         self.assertEqual({name: entry["starter"]["enabled"] for name, entry in report["providers"].items()},
                          {"claude": True, "codex": False})
         self.assertEqual(err.getvalue(), f"[Errno 13] Permission denied: '{usage.STARTER_FILE}'\n")
-        self.assertEqual(self.switches(), {"claude": True})
+        self.assertEqual(self.switches(), {"claude": ["session"]})
 
     def test_a_switch_change_that_cant_get_its_lock_reports_it_unchanged(self):
         usage.private_state_dir()
@@ -1009,7 +1051,7 @@ class StarterRuns(Isolated):
         fcntl.flock(fd, fcntl.LOCK_EX)
         with mock.patch.object(usage, "LOCK_WAIT", 0.3), mock.patch("sys.stderr", new=io.StringIO()) as err:
             report = self.run_main("--providers", "claude", "--starter-set", "claude=on")
-        self.assertEqual(report["providers"]["claude"]["starter"], OFF)
+        self.assertEqual(report["providers"]["claude"]["starter"], dict(OFF, windows=["session"]))
         self.assertEqual(err.getvalue(), "another usage check is still running\n")
 
     # A chosen claude that can't be run stops the starter until the user
@@ -1034,7 +1076,7 @@ class StarterRuns(Isolated):
         self.assertEqual({argv[0] for argv in self.calls}, {str(chosen)})
 
     def test_bad_switches_exit_with_a_usage_error(self):
-        for value in ("claude", "claude=yes", "gemini=on", "=on"):
+        for value in ("claude", "claude=yes", "gemini=on", "=on", "claude=week", "codex=month", "codex=", "codex=week,"):
             with self.subTest(value), mock.patch("sys.stderr", new=io.StringIO()), \
                     self.assertRaises(SystemExit) as exit_:
                 usage.main(["--starter-set", value])
@@ -1050,7 +1092,7 @@ class StarterRuns(Isolated):
         report = self.run_main("--providers", "claude,codex", "--start")
         self.assertEqual([argv[:2] for argv in self.calls], [["/mock/codex", "exec"]])
         self.assertEqual(report["providers"]["codex"]["starter"]["state"], "confirming")
-        self.assertEqual(report["providers"]["claude"]["starter"], OFF)
+        self.assertEqual(report["providers"]["claude"]["starter"], dict(OFF, windows=["session"]))
 
     def test_a_start_that_isnt_due_does_nothing(self):
         self.run_main("--starter-set", "claude=on")
@@ -1135,12 +1177,29 @@ class StarterRuns(Isolated):
         self.run_main("--providers", "claude", "--start")
         self.assertEqual(self.calls, [])
 
+    # A window turned off while the step runs stops the send too; the next
+    # step plans for the windows still on.
+    def test_a_window_turned_off_during_the_step_sends_nothing(self):
+        self.run_main("--starter-set", "codex=on")
+        self.write_cache({})
+
+        def fetch():
+            usage.set_switches({"codex": ["session"]})
+            return {"weekly": week(0, int(time.time()) + WEEK), "scoped": [],
+                    "session": week(0, int(time.time()) + SESSION, SESSION)}
+
+        with mock.patch.object(usage, "codex_usage", side_effect=fetch):
+            report = self.run_main("--providers", "codex", "--start")
+        self.assertEqual(self.calls, [])
+        self.assertEqual((report["providers"]["codex"]["starter"]["on"], report["providers"]["codex"]["starter"]["state"]),
+                         (["session"], "waiting"))
+
     # The switch has its own lock, so it can be turned off while a step
     # reads, renews Claude's login or checks the CLI; nothing goes out then.
     def test_a_switch_turned_off_during_the_step_sends_nothing(self):
         def off(result):
             def turn_off(*args):
-                usage.set_switches({"claude": False, "codex": False})
+                usage.set_switches({"claude": [], "codex": []})
                 return result(*args) if callable(result) else result
             return turn_off
 
@@ -1157,7 +1216,7 @@ class StarterRuns(Isolated):
                 with mock.patch.object(usage, target, side_effect=patched):
                     report = self.run_main("--providers", name, "--start")
                 self.assertEqual([argv[-1] for argv in self.calls], ["status"] if name == "claude" else [])
-                self.assertEqual(report["providers"][name]["starter"], OFF)
+                self.assertEqual(report["providers"][name]["starter"], dict(OFF, windows=list(usage.OFFERED[name])))
                 stored = json.loads(usage.STARTER_STATE.read_text())[name]
                 self.assertEqual((stored["state"], stored["next"], stored["pending"], stored["sentAt"]),
                                  ("waiting", None, None, None))
@@ -1256,13 +1315,14 @@ class StarterRuns(Isolated):
 
 class Report(Isolated):
     def report(self, name, record, now=NOW, switches=("claude", "codex"), reading=None):
-        return usage.starter_report(name, set(switches), {name: usage.record_from(record)} if record else {}, now, reading)
+        on = {switch: list(usage.OFFERED[switch]) for switch in switches}
+        return usage.starter_report(name, on, {name: usage.record_from(record)} if record else {}, now, reading)
 
     def test_every_entry_carries_a_starter_even_when_off(self):
         self.write_cache({name: dict(claude(int(time.time())), status="ok") for name in ("claude", "codex")})
         providers = self.run_main()["providers"]
         self.assertEqual({name: entry["starter"] for name, entry in providers.items()},
-                         {"claude": OFF, "codex": OFF})
+                         {"claude": dict(OFF, windows=["session"]), "codex": dict(OFF, windows=["session", "week"])})
 
     def test_the_current_reading_names_the_window_before_stored_state(self):
         record = dict(usage.blank_record(), period=SESSION)
@@ -1312,8 +1372,29 @@ class Report(Isolated):
             with self.subTest(name=name, record=record):
                 window = "session" if name == "claude" or record.get("period") == SESSION else "week"
                 self.assertEqual(self.report(name, record),
-                                 {"enabled": True, "state": state, "at": at, "next": next_, "reason": reason, "window": window})
+                                 {"enabled": True, "on": list(usage.OFFERED[name]), "windows": None, "state": state,
+                                  "at": at, "next": next_, "reason": reason, "window": window})
         self.assertEqual(self.report("claude", dict(blank, state="paused"), switches=()), OFF)
+
+    # The plan decides which switched-on windows count: Claude Ultra has
+    # nothing to start, and Codex's week is there on every plan.
+    def test_the_plan_decides_what_the_switches_start(self):
+        ultra = dict(claude(NOW), status="ok")
+        del ultra["session"]
+        plus = dict(codex(NOW, 0, NOW + WEEK), status="ok")
+        weekly = dict(codex_week(NOW, 0, NOW + WEEK), status="ok")
+        for name, reading, on, windows, enabled, window in (
+                ("claude", ultra, ["session"], [], False, "session"),
+                ("claude", dict(claude(NOW), status="ok"), ["session"], ["session"], True, "session"),
+                ("codex", plus, ["session", "week"], ["session", "week"], True, "session"),
+                ("codex", plus, ["week"], ["session", "week"], True, "week"),
+                ("codex", weekly, ["session"], ["week"], False, "week"),
+                ("codex", weekly, ["session", "week"], ["week"], True, "week")):
+            with self.subTest(name=name, on=on, windows=windows):
+                reported = usage.starter_report(name, {name: on}, {}, NOW, reading)
+                self.assertEqual((reported["on"], reported["windows"], reported["enabled"], reported["window"]),
+                                 (on, windows, enabled, window))
+                self.assertEqual(reported["state"] == "off", not enabled)
 
     # The widget runs --start only once next comes, so a clock stepped back
     # since the last step makes the starter due, and that run moves its
@@ -1443,7 +1524,7 @@ class EarlyWait(Isolated):
         record = usage.read_starter_states()["codex"]
         sent = mock.Mock()
         usage.Starter("codex", record, read=lambda not_before: dict(reading, status="ok", fetchedAt=NOW),
-                      check=lambda: "/mock/codex", send=sent, running=usage.codex_running, period=usage.codex_period,
+                      check=lambda: "/mock/codex", send=sent, aim=lambda reading: usage.startable("codex", reading),
                       persist=lambda: None, clock=lambda: NOW).step()
         self.assertEqual((record["state"], record["next"]), ("waiting", reset + 1))
         sent.assert_not_called()
@@ -1474,13 +1555,48 @@ class Session(Isolated):
                 body["five_hour"] = five_hour
                 reading = usage.parse_claude(body)
                 self.assertNotIn("session", reading)
+                self.assertIs(reading["sessionUnknown"], True)
                 self.assertEqual(reading["weekly"]["percent"], 62)
 
     def test_a_reading_that_cant_tell_a_session_is_a_failed_read(self):
-        fetch = mock.Mock(return_value={"weekly": week(5, NOW + 86400), "scoped": []})
-        with mock.patch.object(usage, "claude_usage", fetch), usage.locked(), self.assertRaises(usage.Unreadable):
-            usage.starter_read("claude", NOW, None)
-        fetch.assert_called_once()
+        reading = dict(claude(NOW), sessionUnknown=True)
+        del reading["session"]
+        self.assertEqual(usage.startable("claude", reading), ["session"])
+        h = Harness(NOW, reading)
+        h.step()
+        self.assertEqual(h.count("send"), 0)
+        self.assertEqual((h.record["state"], h.record["reason"]), ("failed", "unchecked"))
+
+    # Claude Ultra lists no session among its limits: there is nothing to
+    # start, and a Pro plan's idle session is still listed.
+    def test_the_limits_list_tells_a_plan_without_a_session(self):
+        body = json.loads((FIXTURES / "claude_usage.json").read_text())
+        body["five_hour"] = None
+        ultra = dict(body, limits=[limit for limit in body["limits"] if limit["kind"] != "session"])
+        reading = usage.parse_claude(ultra)
+        self.assertNotIn("session", reading)
+        self.assertNotIn("sessionUnknown", reading)
+        self.assertEqual(usage.startable("claude", reading), [])
+        idle = dict(body, limits=[dict(limit, percent=0, resets_at=None) if limit["kind"] == "session" else limit
+                                  for limit in body["limits"]])
+        self.assertIsNone(usage.parse_claude(idle)["session"])
+        self.assertEqual(usage.startable("claude", usage.parse_claude(idle)), ["session"])
+        for limits in (None, []):
+            with self.subTest(limits=limits):
+                self.assertIsNone(usage.parse_claude(dict(body, limits=limits))["session"])
+        running = dict(ultra, five_hour={"utilization": 3, "resets_at": "2026-09-02T02:00:00Z"})
+        self.assertEqual(usage.parse_claude(running)["session"]["percent"], 3)
+
+    def test_a_plan_without_a_session_sends_nothing_until_one_appears(self):
+        reading = claude(NOW)
+        del reading["session"]
+        h = Harness(NOW, reading)
+        h.step()
+        self.assertEqual(h.count("send"), 0)
+        self.assertEqual(h.shows(), ("waiting", None, None))
+        h.reading = claude(NOW + 600)
+        h.step(NOW + 600)
+        self.assertEqual(h.count("send"), 1)
 
     def test_a_malformed_cached_session_reads_as_no_reading(self):
         entry = dict(claude(NOW - 10), session={"percent": "x"})

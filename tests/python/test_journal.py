@@ -311,7 +311,7 @@ class StarterRuns(Isolated):
 
     def test_the_switch_turning_is_logged_once(self):
         self.assertEqual(self.events("--providers", "claude", "--starter-set", "claude=on")[0],
-                         ("info", "starter-on", "Claude session starter switched on"))
+                         ("info", "starter-on", "Claude session starter switched on for: session"))
         self.assertNotIn("starter-on", [k for _, k, _ in self.events("--providers", "claude",
                                                                      "--starter-set", "claude=on")])
         self.assertEqual(self.events("--providers", "claude", "--starter-set", "claude=off")[0],

@@ -8,10 +8,11 @@ follows [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
-- Codex's starter follows its five-hour reset when reported and its weekly
-  reset otherwise.
-- *Automatic starts* under AI Providers turns off both providers' starters
-  and hides their popup switches.
+- Popups offer an auto start switch for each window your plan has: Claude's
+  five-hour session, and Codex's five-hour session and its week, each turned
+  on separately. Claude Ultra, which has no five-hour limit, shows none.
+- Each provider's *Auto start* setting under AI Providers turns its starter
+  off and hides that provider's popup switches.
 
 ## [0.4.0] - 2026-10-18
 
