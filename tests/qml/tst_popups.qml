@@ -499,11 +499,11 @@ TestRoot {
             compare(cursorLine(hover) !== null, line, tile.caption + " vertical cursor");
         }
 
-        // Each caption gives its own value at the shared time. GPU sections
-        // participate together, including the graphs below the source's GPU.
+        // Each caption gives its own value at the shared time. A GPU popup
+        // shares it per GPU (test_linkedInspectionStaysWithinAGpu).
         function test_linkedInspectionAtEachSpan_data() {
             const rows = [];
-            for (const popup of ["CpuPopup", "DiskPopup", "GpuPopup"]) {
+            for (const popup of ["CpuPopup", "DiskPopup"]) {
                 for (const span of ["minute", "hour", "day"]) {
                     rows.push({ tag: popup + " " + span, popup: popup, span: span });
                 }
@@ -512,12 +512,12 @@ TestRoot {
         }
 
         function test_linkedInspectionAtEachSpan(data) {
-            const monitor = monitorWith({ graphSpan: data.span, "gpuInner.kind": "discrete" });
+            const monitor = monitorWith({ graphSpan: data.span });
             const words = createTemporaryObject(wordsComponent, root, { monitor: monitor });
             const popup = load(data.popup, monitor, false, widePage);
             const tiles = inspectionTiles(popup);
-            compare(tiles.length, { CpuPopup: 2, DiskPopup: 3, GpuPopup: 4 }[data.popup]);
-            for (const source of [tiles[0], tiles[data.popup === "GpuPopup" ? 2 : tiles.length - 1]]) {
+            compare(tiles.length, { CpuPopup: 2, DiskPopup: 3 }[data.popup]);
+            for (const source of [tiles[0], tiles[tiles.length - 1]]) {
                 const index = Math.floor(monitor.historyLength * 0.85);
                 inspect(source, index);
                 tiles.forEach(t => checkInspected(t, index, words));
@@ -716,7 +716,7 @@ TestRoot {
             const tiles = inspectionTiles(popup);
             compare(tiles.length, 4);
             inspect(tiles[0], 50);
-            tryVerify(() => tiles.every(t => t.graphReading !== ""));
+            tryVerify(() => tiles.slice(0, 2).every(t => t.graphReading !== ""));
             if (!data.source) {
                 monitor.gpuInner.phase = "asleep";
                 tiles.slice(0, 2).forEach(t => checkInspected(t, 50, words));
@@ -732,6 +732,50 @@ TestRoot {
             tryVerify(() => awake.every(t => t.graphReading !== ""));
             compare(tiles[0].graphReading, "");
             compare(tiles[1].graphReading, "");
+        }
+
+        // A GPU popup's graphs follow only the other graphs of the same GPU:
+        // usage and temperature mark one moment, the next GPU's marks none.
+        function test_linkedInspectionStaysWithinAGpu_data() {
+            const rows = [];
+            for (const span of ["minute", "hour", "day"]) {
+                for (const source of [0, 1, 2, 3]) {
+                    rows.push({ tag: span + " tile " + source, span: span, source: source });
+                }
+            }
+            return rows;
+        }
+
+        function test_linkedInspectionStaysWithinAGpu(data) {
+            const monitor = monitorWith({ graphSpan: data.span, "gpuInner.kind": "discrete" });
+            const words = createTemporaryObject(wordsComponent, root, { monitor: monitor });
+            const popup = load("GpuPopup", monitor, false, widePage);
+            const tiles = inspectionTiles(popup);
+            compare(tiles.length, 4);
+            const own = tiles.filter((t, i) => (i < 2) === (data.source < 2));
+            const other = tiles.filter(t => !own.includes(t));
+            const index = Math.floor(monitor.historyLength * 0.85);
+            inspect(tiles[data.source], index);
+            own.forEach(t => checkInspected(t, index, words));
+            other.forEach(t => checkUninspected(t, false));
+            // Moving to the other GPU hands the marker over; the first lets go.
+            inspect(other[0], index - 5);
+            other.forEach(t => checkInspected(t, index - 5, words));
+            own.forEach(t => checkUninspected(t, false));
+            mouseMove(popup, 1, 1);
+            tryVerify(() => tiles.every(t => t.graphReading === ""));
+            tiles.forEach(t => checkUninspected(t, false));
+        }
+
+        function test_gpuMarkerClearsOnSpan() {
+            const monitor = monitorWith({ "gpuInner.kind": "discrete" });
+            const popup = load("GpuPopup", monitor, false, widePage);
+            const tiles = inspectionTiles(popup);
+            inspect(tiles[2], 50);
+            tryVerify(() => tiles.slice(2).every(t => t.graphReading !== ""));
+            monitor.chooseSpan("hour");
+            waitForRendering(popup);
+            tiles.forEach(t => checkUninspected(t, false));
         }
 
         // Over a graph the point under the pointer is marked and its reading

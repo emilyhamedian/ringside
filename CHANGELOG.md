@@ -13,6 +13,10 @@ follows [Semantic Versioning](https://semver.org/).
 - *Automatic starts* under AI Providers turns off both providers' starters
   and hides their popup switches.
 
+### Fixed
+
+- Hovering one GPU's graph marks the other GPU's graphs too.
+
 ## [0.4.0] - 2026-10-18
 
 ### Added

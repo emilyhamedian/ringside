@@ -161,7 +161,6 @@ PopupPage {
             onReadingsChanged: keep()
 
             monitor: popup.monitor
-            cursor: popup.graphCursor
             awake: live.phase !== "asleep"
             visible: opened
             slot: !awake && opened && last ? last : live
@@ -230,7 +229,11 @@ PopupPage {
         id: section
 
         required property var monitor
-        property GraphCursor cursor: null
+        // Marks one moment across this GPU's graphs only.
+        readonly property GraphCursor cursor: GraphCursor {
+            scope: section
+            monitor: section.monitor
+        }
         // A GpuReader, or an object with the same properties.
         required property var slot
         // The slot's temperature label in plain words.

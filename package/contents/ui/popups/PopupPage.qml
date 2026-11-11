@@ -18,18 +18,13 @@ ColumnLayout {
     property alias systemMonitorShown: footer.systemMonitorShown
     property alias footerLeading: footer.leading
     property alias footerLeadingShown: footer.leadingShown
-    readonly property GraphCursor graphCursor: GraphCursor {}
-    default property alias sections: body.data
-
-    onVisibleChanged: if (!visible) graphCursor.reset()
-
-    Connections {
-        target: page.monitor
-
-        function onGraphSpanChanged() {
-            page.graphCursor.reset();
-        }
+    // The moment marked across the popup's graphs. A popup with several
+    // devices gives each its own, so a device's graphs follow only each other.
+    readonly property GraphCursor graphCursor: GraphCursor {
+        scope: page
+        monitor: page.monitor
     }
+    default property alias sections: body.data
 
     spacing: 0
 
