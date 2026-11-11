@@ -209,6 +209,8 @@ TestRoot {
             failOnWarning(/QModelIndex/);
             const list = createTemporaryObject(liveList, root);
             verify(list);
+            // The real delay is checked by test_listAsksAgainAndStopsWaiting.
+            scanOf(list).secondScan.interval = 1;
             tryVerify(() => scanOf(list).scanned, 5000);
             const model = modelOf(list);
             spy.target = list;
@@ -501,6 +503,7 @@ TestRoot {
             compare(scan.processes.length, 0);
             scan.active = true;
             verify(scan.model !== null);
+            scan.secondScan.interval = 1;
             tryVerify(() => scan.scanned, 5000);
             scan.active = false;
             compare(scan.model, null);
@@ -553,6 +556,7 @@ TestRoot {
             verify(list);
             const scan = scanOf(list);
             const model = modelOf(list);
+            scan.secondScan.interval = 1;
             tryVerify(() => scan.scanned, 5000);
             verify(!list.visible && !list.loading);
             compare(scan.model, model);

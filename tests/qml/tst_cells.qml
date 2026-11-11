@@ -807,6 +807,12 @@ TestRoot {
             compare(arc.trackSweep, 1);
             compare(line(c, "first").text, "–");
             compare(line(c, "first").color, Kirigami.Theme.textColor);
+            // tst_motion checks the real one-second delay. Here only the
+            // system ring staying still beside a moving Claude ring matters.
+            const timer = claude.resources.find(r => r.interval === 1000);
+            verify(timer && timer.running);
+            wait(0);
+            timer.triggered();
             tryCompare(claude, "moving", true, 3000);
             verify(!g.moving && g.motion === 0);
         }
