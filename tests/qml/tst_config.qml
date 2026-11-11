@@ -587,14 +587,14 @@ TestRoot {
                   // Haiku was picked earlier and is no longer reported.
                   before: { claudeInnerLimit: "Haiku" }, key: "claudeInnerLimit", value: "",
                   report: "knownLimits",
-                  answer: JSON.stringify({ claude: [{ id: "Fable", label: "Fable", reported: true }], codex: [] }) },
+                  answer: JSON.stringify({ claude: [{ id: "Fable", label: "Fable", reported: true }], codex: [], kimi: [] }) },
                 { tag: "bothItemsSwitchedOff", source: "config/ConfigItems.qml",
-                  before: {}, key: "hiddenItems", value: ["disk", "claude", "codex"],
+                  before: {}, key: "hiddenItems", value: ["disk", "claude", "codex", "kimi"],
                   report: "usageStatus", answer: JSON.stringify({ helperError: "" }) }
             ]);
         }
         function test_applyKeepsTheWidgetsAnswer(data) {
-            const values = Object.assign(settings(), { itemOrder: Items.SYSTEM.concat(Items.USAGE), hiddenItems: ["disk"] },
+            const values = Object.assign(settings(), { itemOrder: Items.SYSTEM.concat(Items.USAGE), hiddenItems: ["disk", "kimi"] },
                                          data.before);
             const config = fakeConfiguration(values);
             const usage = usageOn(config);
@@ -710,7 +710,7 @@ TestRoot {
             const items = "config/ConfigItems.qml";
             const sensors = "config/ConfigSensors.qml";
             const providers = "config/ConfigProviders.qml";
-            const everyItem = ["cpu", "gpu", "memory", "network", "disk", "claude", "codex"];
+            const everyItem = ["cpu", "gpu", "memory", "network", "disk", "claude", "codex", "kimi"];
             const limits = { knownLimits: JSON.stringify({ claude: [{ id: "opus", label: "Opus", reported: true }],
                                                            codex: [{ id: "gpt5", label: "GPT-5", reported: true }] }) };
             const programs = { itemOrder: ["cpu", "claude", "codex"], hiddenItems: [],
@@ -738,10 +738,10 @@ TestRoot {
                   drive: page => { pickIn(page, "Service", 2); typeInto(page, "IPv6 URL", "https://ip6.example.org/"); },
                   saved: { publicAddressUrl6: "https://ip6.example.org/" } },
                 { tag: "itemOrder", source: items, drive: page => press(page, "Move Memory up"),
-                  saved: { itemOrder: ["cpu", "memory", "gpu", "network", "disk", "claude", "codex"],
-                           hiddenItems: ["disk", "claude", "codex"] } },
+                  saved: { itemOrder: ["cpu", "memory", "gpu", "network", "disk", "claude", "codex", "kimi"],
+                           hiddenItems: ["disk", "claude", "codex", "kimi"] } },
                 { tag: "hiddenItems", source: items, drive: page => press(page, "Disk"),
-                  saved: { itemOrder: everyItem, hiddenItems: ["claude", "codex"] } },
+                  saved: { itemOrder: everyItem, hiddenItems: ["claude", "codex", "kimi"] } },
                 { tag: "ringsOnly", source: items, drive: page => pickIn(page, "What CPU shows", 1), saved: { ringsOnly: ["cpu"] } },
                 { tag: "cpuTemperatureSensor", source: sensors, drive: page => { listed(page); pickIn(page, "CPU temperature", 3); },
                   saved: { cpuTemperatureSensor: "lmsensors/k10temp-pci-00c3/temp1" } },

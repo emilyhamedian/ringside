@@ -83,6 +83,7 @@ QtObject {
 
     readonly property bool claudePresent: present("claude")
     readonly property bool codexPresent: present("codex")
+    readonly property bool kimiPresent: present("kimi")
     property int refreshMinutes: 5
     property bool checking: false
     // The timer's last tick, a minute before creation.
@@ -182,7 +183,7 @@ QtObject {
 
     // As UsageData's.
     function startable(id) {
-        return Array.from(starter(id)?.windows ?? (id === "claude" ? ["session"] : ["session", "week"]));
+        return Array.from(starter(id)?.windows ?? ({ claude: ["session"], codex: ["session", "week"] })[id] ?? []);
     }
 
     function starterWindows(id) {

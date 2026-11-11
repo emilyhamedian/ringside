@@ -512,7 +512,7 @@ TestRoot {
             compare(usage.inner("codex"), null);
             compare(usage.helperError, "");
             compare(JSON.parse(config.knownLimits),
-                    { claude: [{ id: "Fable", label: "Fable", reported: true }], codex: [] });
+                    { claude: [{ id: "Fable", label: "Fable", reported: true }], codex: [], kimi: [] });
             const found = name => ({ path: "/usr/bin/" + name, chosen: false, problem: "" });
             compare(JSON.parse(config.usageStatus), { claude: { status: "ok", message: "", program: found("claude"), starter: false,
                                                                 windows: ["session"] },
@@ -2832,6 +2832,27 @@ TestRoot {
             monitor.usage.entries = Object.assign({}, entries, { claude: Object.assign({}, entries.claude, changes) });
         }
 
+        // Kimi's limit is a month, and its popup says so throughout.
+        function test_kimisMonth() {
+            const u = monitor.usage;
+            const month = Object.assign(u.window(92, 15 * u.day, [[16, 0], [8, 46], [0, 92]]), { windowSeconds: 31 * u.day });
+            u.entries = Object.assign({}, u.entries, { kimi: { status: "ok", fetchedAt: u.createdAt, weekly: month, scoped: [] } });
+            const popup = load("kimi");
+            const shown = root.texts(popup);
+            verify(shown.includes("Kimi") && shown.includes("Monthly limit"), JSON.stringify(shown));
+            verify(!shown.includes("Weekly limit"), JSON.stringify(shown));
+            verify(root.find(popup, i => i.caption === "This month") !== null, "the graph's tile names the month");
+            const said = sentence(rows(popup)[0]).text;
+            verify(said.startsWith("The monthly limit is on pace to run out "), said);
+            // A first check that failed has no window to say so, and the
+            // popup still names the month.
+            u.entries = Object.assign({}, u.entries, { kimi: { status: "error", lastError: "can't reach api.kimi.ai",
+                                                               lastErrorAt: u.createdAt, reason: "offline", host: "api.kimi.ai",
+                                                               retryAt: u.createdAt + 300 } });
+            const failed = root.texts(load("kimi"));
+            verify(failed.includes("Monthly limit") && !failed.includes("Weekly limit"), JSON.stringify(failed));
+        }
+
         function resetNotice(popup) {
             return root.find(popup, i => i.early !== undefined && i.window !== undefined);
         }
@@ -4375,6 +4396,29 @@ TestRoot {
             compare(words.resetDate({ resetsAt: sunday }),
                     Qt.locale().dayName(date.getDay(), Locale.ShortFormat) + " " + words.shortTime(date));
             compare(words.resetDate({ resetsAt: null }), "");
+        }
+
+        // A month's times carry their date: a weekday alone could be any of
+        // four or five in it.
+        function test_aMonthsTimesCarryTheirDate() {
+            const month = { resetsAt: sunday, windowSeconds: 30 * 86400 };
+            const date = new Date(sunday * 1000);
+            const day = Qt.locale().dayName(date.getDay(), Locale.ShortFormat) + " "
+                + date.toLocaleDateString(Qt.locale(), Locale.ShortFormat);
+            compare(words.resetDate(month), day + " " + words.shortTime(date));
+            compare(words.weekdayTime(sunday, month), day + " " + words.shortTime(date));
+            compare(words.resetPassedText(month), "The month reset at " + words.resetDate(month) + ", with no reading since.");
+            const week = { resetsAt: sunday, windowSeconds: 7 * 86400 };
+            compare(words.resetPassedText(week), "The week reset at " + words.resetDate(week) + ", with no reading since.");
+            verify(words.monthly(month));
+            verify(!words.monthly(week) && !words.monthly({ resetsAt: sunday, windowSeconds: 5 * 3600 }) && !words.monthly(null));
+        }
+
+        function test_kimisOwnWords() {
+            compare(words.providerName("kimi"), "Kimi");
+            compare(words.signInHint("kimi"), "Sign in to Kimi Code, or connect Kimi For Coding in OpenCode.");
+            compare(words.failureReason("kimi", { reason: "expired", host: "", lastError: "x" }),
+                    "Kimi Code's sign-in has expired. Open Kimi Code to renew it.");
         }
 
         function test_timeOfDay() {

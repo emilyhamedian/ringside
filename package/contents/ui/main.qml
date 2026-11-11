@@ -27,6 +27,7 @@ PlasmoidItem {
     readonly property var items: readings.enabledItems.filter(k => k === "gpu" ? readings.gpuOuter.present
                                                                : k === "claude" ? readings.usage.claudePresent
                                                                : k === "codex" ? readings.usage.codexPresent
+                                                               : k === "kimi" ? readings.usage.kimiPresent
                                                                : true)
 
     // The height an open popup's page has: the screen's, less its panels,
@@ -67,9 +68,10 @@ PlasmoidItem {
         }
         openItem = item;
         openCell = cell;
-        popupContent.setSource(Qt.resolvedUrl("popups/" + ({ cpu: "CpuPopup", gpu: "GpuPopup", memory: "MemoryPopup",
-                                                             network: "NetworkPopup", disk: "DiskPopup",
-                                                             claude: "UsagePopup", codex: "UsagePopup" })[item] + ".qml"),
+        // Every usage item shares one popup, so a new provider needs no entry.
+        popupContent.setSource(Qt.resolvedUrl("popups/" + (Items.isUsage(item) ? "UsagePopup"
+                                                           : { cpu: "CpuPopup", gpu: "GpuPopup", memory: "MemoryPopup",
+                                                               network: "NetworkPopup", disk: "DiskPopup" }[item]) + ".qml"),
                                Items.isUsage(item) ? { monitor: readings, room: popupRoom, item: item }
                                                    : { monitor: readings, room: popupRoom });
         popup.visible = true;

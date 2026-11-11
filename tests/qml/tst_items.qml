@@ -12,6 +12,7 @@ TestCase {
         return [
             { tag: "claude", item: "claude", expected: true },
             { tag: "codex", item: "codex", expected: true },
+            { tag: "kimi", item: "kimi", expected: true },
             { tag: "cpu", item: "cpu", expected: false },
             { tag: "unknown", item: "bogus", expected: false }
         ];
@@ -39,54 +40,54 @@ TestCase {
         ];
     }
     function test_orderWithNothingStoredIsTheDefaultOrder(data) {
-        compare(Items.order(data.stored), ["cpu", "gpu", "memory", "network", "disk", "claude", "codex"]);
+        compare(Items.order(data.stored), ["cpu", "gpu", "memory", "network", "disk", "claude", "codex", "kimi"]);
     }
 
     function test_orderKeepsStoredOrderFirstThenAppendsTheRest() {
-        compare(Items.order(["network", "cpu"]), ["network", "cpu", "gpu", "memory", "disk", "claude", "codex"]);
+        compare(Items.order(["network", "cpu"]), ["network", "cpu", "gpu", "memory", "disk", "claude", "codex", "kimi"]);
     }
 
     function test_orderDropsUnknownIds() {
-        compare(Items.order(["bogus", "cpu"]), ["cpu", "gpu", "memory", "network", "disk", "claude", "codex"]);
+        compare(Items.order(["bogus", "cpu"]), ["cpu", "gpu", "memory", "network", "disk", "claude", "codex", "kimi"]);
     }
 
     function test_orderDedupesRepeatedIds() {
-        compare(Items.order(["cpu", "cpu", "gpu"]), ["cpu", "gpu", "memory", "network", "disk", "claude", "codex"]);
+        compare(Items.order(["cpu", "cpu", "gpu"]), ["cpu", "gpu", "memory", "network", "disk", "claude", "codex", "kimi"]);
     }
 
-    // A stored order without Claude or Codex leaves them trailing, like any
-    // other item the order doesn't mention; an order that already lists one
-    // keeps it in place.
+    // A stored order without Claude, Codex or Kimi leaves them trailing, like
+    // any other item the order doesn't mention; an order that already lists
+    // one keeps it in place.
     function test_orderWithoutAiItemsAppendsThemLast() {
-        compare(Items.order(["disk", "network"]), ["disk", "network", "cpu", "gpu", "memory", "claude", "codex"]);
+        compare(Items.order(["disk", "network"]), ["disk", "network", "cpu", "gpu", "memory", "claude", "codex", "kimi"]);
     }
 
     function test_orderAlreadyListingAnAiItemKeepsItsPosition() {
-        compare(Items.order(["claude", "cpu"]), ["claude", "cpu", "gpu", "memory", "network", "disk", "codex"]);
+        compare(Items.order(["claude", "cpu"]), ["claude", "cpu", "gpu", "memory", "network", "disk", "codex", "kimi"]);
     }
 
-    function test_hiddenWithNothingStoredOptsOutBothAiItems_data() {
+    function test_hiddenWithNothingStoredOptsOutEveryAiItem_data() {
         return [
             { tag: "empty", stored: [] },
             { tag: "undefined", stored: undefined }
         ];
     }
-    function test_hiddenWithNothingStoredOptsOutBothAiItems(data) {
-        compare(Items.hidden(data.stored, data.stored), ["claude", "codex"]);
+    function test_hiddenWithNothingStoredOptsOutEveryAiItem(data) {
+        compare(Items.hidden(data.stored, data.stored), ["claude", "codex", "kimi"]);
     }
 
     function test_hiddenAiItemListedInOrderStaysOn() {
-        compare(Items.hidden(["cpu", "claude"], []), ["codex"]);
+        compare(Items.hidden(["cpu", "claude"], []), ["codex", "kimi"]);
     }
 
     function test_hiddenKeepsStoredHiddenAndDedupesUnknownIds() {
-        compare(Items.hidden(["cpu"], ["disk", "disk", "bogus"]), ["disk", "claude", "codex"]);
+        compare(Items.hidden(["cpu"], ["disk", "disk", "bogus"]), ["disk", "claude", "codex", "kimi"]);
     }
 
     // Explicitly hiding an AI item that the order also lists keeps it off:
     // the hidden list always wins.
     function test_hiddenExplicitlyHiddenAiItemStaysHiddenEvenWhenOrdered() {
-        compare(Items.hidden(["claude", "cpu"], ["claude"]), ["claude", "codex"]);
+        compare(Items.hidden(["claude", "cpu"], ["claude"]), ["claude", "codex", "kimi"]);
     }
 
     function test_enabledOnEmptyStoredIsEverySystemItem() {

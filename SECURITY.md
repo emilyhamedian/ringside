@@ -11,11 +11,13 @@ latest release.
 Most of Ringside just draws what Plasma already knows. The parts that do more
 are the two helper scripts it runs as you:
 
-- [`usage.py`](package/contents/code/usage.py) runs the Claude and Codex
-  items. It reads Claude Code's login to ask Anthropic for your limits, and
-  when the login expires it renews it and saves it back the way Claude Code
-  does. For Codex it asks the Codex CLI and reads the CLI's login file to
-  keep cached balances with the right login.
+- [`usage.py`](package/contents/code/usage.py) runs the Claude, Codex and
+  Kimi items. It reads Claude Code's login to ask Anthropic for your limits,
+  and when the login expires it renews it and saves it back the way Claude
+  Code does. For Codex it asks the Codex CLI and reads the CLI's login file
+  to keep cached balances with the right login. For Kimi it reads, and never
+  writes, Kimi Code's settings and sign-in in `~/.kimi-code/` and the Kimi
+  Code keys OpenCode keeps in `~/.local/share/opencode/`.
 - [`ringside-info.sh`](package/contents/code/ringside-info.sh) reads `/proc`,
   `/sys` and udev. While the network popup shows your public address, it
   also runs `ip route get` every 3 seconds to see which interface you're
@@ -40,6 +42,11 @@ Nothing, until you turn on something that needs it.
   Anthropic asks Ringside to back off, it waits at least as long as asked.
 - **Codex** only talks to `codex app-server` on your computer, which reaches
   OpenAI with the Codex CLI's own login.
+- **Kimi** sends one Kimi Code credential, the first it finds, only to Kimi:
+  `api.kimi.ai`, or `api.kimi.com` for a China account. Only keys for Kimi
+  Code's own endpoints are sent; a Moonshot Platform key is never used. Each
+  result, errors included, is reused for five minutes by every Ringside
+  widget.
 - **Remaining credits** are collected automatically for enabled providers.
   Claude asks `api.anthropic.com` for its organization's prepaid balance
   during usage checks, at most once every five minutes across all Ringside
@@ -74,7 +81,7 @@ Nothing, until you turn on something that needs it.
 
 ## What stays on your computer
 
-- **Claude and Codex readings** are kept in `~/.cache/ringside/`. The same
+- **Claude, Codex and Kimi readings** are kept in `~/.cache/ringside/`. The same
   private cache keeps each balance, when it was read, when it may be checked
   again, and the identity needed to keep it with the right login. It does
   not keep credentials. It records whether the balance fell since the
@@ -92,8 +99,8 @@ Nothing, until you turn on something that needs it.
   database and the `.ini` beside it that names it `ringside` while Plasma
   isn't running.
 - **The journal** gets what goes wrong: failed checks and why, the Anthropic
-  host or address service involved, the session starter's steps, a weekly
-  limit that resets early, a discrete GPU sleeping or waking, and sensors
+  or Kimi host or address service involved, the session starter's steps, a
+  weekly or monthly limit that resets early, a discrete GPU sleeping or waking, and sensors
   that don't answer. Never tokens, addresses, places, account names or file
   contents. Program paths show your home folder as `~`. Anyone who can read
   your journal can read these: you, administrators, and groups such as

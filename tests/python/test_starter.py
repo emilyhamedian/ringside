@@ -1318,11 +1318,12 @@ class Report(Isolated):
         on = {switch: list(usage.OFFERED[switch]) for switch in switches}
         return usage.starter_report(name, on, {name: usage.record_from(record)} if record else {}, now, reading)
 
-    def test_every_entry_carries_a_starter_even_when_off(self):
+    def test_every_entry_with_a_starter_carries_it_even_when_off(self):
         self.write_cache({name: dict(claude(int(time.time())), status="ok") for name in ("claude", "codex")})
         providers = self.run_main()["providers"]
-        self.assertEqual({name: entry["starter"] for name, entry in providers.items()},
-                         {"claude": dict(OFF, windows=["session"]), "codex": dict(OFF, windows=["session", "week"])})
+        self.assertEqual({name: entry.get("starter") for name, entry in providers.items()},
+                         {"claude": dict(OFF, windows=["session"]), "codex": dict(OFF, windows=["session", "week"]),
+                          "kimi": None})
 
     def test_the_current_reading_names_the_window_before_stored_state(self):
         record = dict(usage.blank_record(), period=SESSION)

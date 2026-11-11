@@ -5,17 +5,17 @@
 
 // The items a widget can show and which of them are switched on.
 //
-// Claude and Codex are opt-in: they are on only while the stored order lists
-// them and the hidden list doesn't. An order saved before they existed, or
-// never saved at all, leaves them off, whatever the hidden list says. The
-// settings page writes both lists whenever it saves either, so switching one
-// on stores it in the order.
+// Claude, Codex and Kimi are opt-in: they are on only while the stored order
+// lists them and the hidden list doesn't. An order saved before they
+// existed, or never saved at all, leaves them off, whatever the hidden list
+// says. The settings page writes both lists whenever it saves either, so
+// switching one on stores it in the order.
 
-var KNOWN = ["cpu", "gpu", "memory", "network", "disk", "claude", "codex"];
+var KNOWN = ["cpu", "gpu", "memory", "network", "disk", "claude", "codex", "kimi"];
 var SYSTEM = ["cpu", "gpu", "memory", "network", "disk"];
-// The providers with weekly limits, the one list of them: limits.js and
+// The providers with usage limits, the one list of them: limits.js and
 // reset.js read it, and providers.js has the facts of each.
-var USAGE = ["claude", "codex"];
+var USAGE = ["claude", "codex", "kimi"];
 
 function isUsage(item) {
     return USAGE.includes(item);

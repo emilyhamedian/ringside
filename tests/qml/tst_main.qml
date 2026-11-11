@@ -7,6 +7,7 @@ import QtQuick.Layouts
 import QtTest
 import org.kde.plasma.core as PlasmaCore
 import "fakeplasmoid"
+import "../../package/contents/ui/code/items.js" as Items
 
 // main.qml in a panel: the applet's size along and across it in either
 // orientation, the icon that stands in with every item hidden, the popup
@@ -297,6 +298,24 @@ TestRoot {
             applet.toggle("disk", s.cellAt(4));
             settle();
             compare(title(), "Disk");
+        }
+
+        // Each usage item opens the usage popup, for itself.
+        function test_usageItemsOpenTheUsagePopup() {
+            const applet = panel(false, 44);
+            const s = strip(applet);
+            const loader = popup(applet).mainItem;
+            s.monitor.enabledItems = Items.USAGE;
+            s.monitor.usage.pending = Items.USAGE;
+            settle();
+            compare(applet.items, Items.USAGE);
+            applet.items.forEach((item, n) => {
+                applet.toggle(item, s.cellAt(n));
+                settle();
+                verify(String(loader.source).endsWith("/popups/UsagePopup.qml"), item + " loads " + loader.source);
+                compare(loader.status, Loader.Ready, item);
+                compare(loader.item.item, item);
+            });
         }
 
         // The global shortcut opens the first item's popup, and closes it.

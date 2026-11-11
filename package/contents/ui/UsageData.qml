@@ -13,7 +13,8 @@ import "code/report.js" as Report
 import "code/reset.js" as Reset
 import "code/shell.js" as Shell
 
-// The Claude and Codex readings, from contents/code/usage.py run on a timer.
+// The Claude, Codex and Kimi readings, from contents/code/usage.py run on a
+// timer.
 // Only the ids in `providers` are polled; with none, the helper never runs.
 //
 // A provider that answered or is signed out takes the new entry. One that
@@ -25,11 +26,12 @@ import "code/shell.js" as Shell
 // out skips the loading look, and like one that is never answered stays
 // hidden, the settings page saying why from usageStatus.
 //
-// It also drives the opt-in session starter: the helper reports each
-// provider's starter in every report, with the windows its plan lets
-// Ringside start and those the user switched on, and the widget runs the
-// helper with --start when one is due and with --starter-set, the
-// provider's whole set of windows, when one of its switches is turned.
+// It also drives the opt-in session starter: the helper reports the starter
+// of each provider that has one (Kimi doesn't) in every report, with the
+// windows its plan lets Ringside start and those the user switched on, and
+// the widget runs the helper with --start when one is due and with
+// --starter-set, the provider's whole set of windows, when one of its
+// switches is turned.
 //
 // Each run's report carries the helper's lines for the journal, which go
 // there under ringside.usage, as does a helper run that gave no report.
@@ -59,6 +61,7 @@ Item {
     // Bound to a bool, so they notify only when they flip, not on every poll.
     readonly property bool claudePresent: present("claude")
     readonly property bool codexPresent: present("codex")
+    readonly property bool kimiPresent: present("kimi")
     // Minutes between checks.
     readonly property int refreshMinutes: config.usageRefreshMinutes
     // A check is running, and when the timer's current interval started:
