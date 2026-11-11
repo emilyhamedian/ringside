@@ -438,8 +438,10 @@ TestRoot {
             compare(JSON.parse(config.knownLimits),
                     { claude: [{ id: "Fable", label: "Fable", reported: true }], codex: [] });
             const found = name => ({ path: "/usr/bin/" + name, chosen: false, problem: "" });
-            compare(JSON.parse(config.usageStatus), { claude: { status: "ok", message: "", program: found("claude"), starter: false },
-                                                      codex: { status: "ok", message: "", program: found("codex"), starter: false },
+            compare(JSON.parse(config.usageStatus), { claude: { status: "ok", message: "", program: found("claude"), starter: false,
+                                                                windows: ["session"] },
+                                                      codex: { status: "ok", message: "", program: found("codex"), starter: false,
+                                                               windows: ["week"] },
                                                       helperError: "" });
         }
 
@@ -472,10 +474,14 @@ TestRoot {
             // never polls sooner than its interval, and watches for a tick a
             // suspend has made late.
             compare(timers().filter(t => t.running).map(t => t.interval), [5 * 60000, 60000]);
+            // A failed check can't tell what the plan lets Ringside start,
+            // so what the last one said stands.
             compare(JSON.parse(config.usageStatus).claude,
                     { status: "rate_limited", message: "rate limited, retrying in 3600 s",
-                      program: { path: "/usr/bin/claude", chosen: false, problem: "" }, starter: false });
+                      program: { path: "/usr/bin/claude", chosen: false, problem: "" }, starter: false, windows: ["session"] });
             compare(JSON.parse(config.usageStatus).codex.status, "error");
+            compare(usage.starter("codex").windows, ["week"]);
+            compare(usage.startable("codex"), ["week"]);
 
             poll("ok");
             verify(!usage.degraded("claude") && !usage.degraded("codex"));
@@ -493,7 +499,8 @@ TestRoot {
             compare([codex.status, codex.lastError, codex.reason, codex.weekly], ["error", "codex CLI not found", "not-installed", undefined]);
             verify(usage.codexPresent && usage.degraded("codex"));
             compare(JSON.parse(config.usageStatus).codex, { status: "error", message: "codex CLI not found",
-                                                            program: { path: "", chosen: false, problem: "" }, starter: false });
+                                                            program: { path: "", chosen: false, problem: "" }, starter: false,
+                                                            windows: null });
 
             poll("ok");
             verify(usage.claudePresent && usage.codexPresent);
@@ -605,9 +612,9 @@ TestRoot {
             usage.providers = ["claude", "codex"];
             tryCompare(runs, "count", 1, 1000);
             verify(usage.loading("claude"));
-            usage.setStarter("claude", true);
+            usage.setStarter("claude", "session", true);
             compare(runs.count, 2);
-            verify(runs.signalArguments[1][0].endsWith(" --providers claude,codex --starter-set claude=on"));
+            verify(runs.signalArguments[1][0].endsWith(" --providers claude,codex --starter-set claude=session"));
             verify(!runs.signalArguments[1][0].includes("--initial-providers"));
             tryVerify(() => ran(runs, " --start").length === 1, 10000);
             verify(!ran(runs, " --start")[0].includes("--initial-providers"));
@@ -629,7 +636,8 @@ TestRoot {
             }
             compare(JSON.parse(config.usageStatus).codex, { status: "error", message: "no answer from codex app-server in 20 s",
                                                             program: { path: "/usr/bin/codex", chosen: false, problem: "" },
-                                                            starter: false });
+                                                            starter: false, windows: null });
+            compare(usage.startable("codex"), ["session", "week"], "not known yet, so as assumed");
 
             poll("ok");
             compare(usage.entry("claude").weekly.percent, 52);
@@ -1015,7 +1023,7 @@ TestRoot {
             "/tmp/\"quoted\"/$HOME/`id`/$(echo pwned > " + canary + ")/codex",
             "/tmp/a;b&&c|d>e<f*?[x]~/{1,2}/codex\\",
             "/tmp/line\nbreak/codex",
-            "/tmp/' --starter-set claude=on --providers claude,codex --start '/codex"
+            "/tmp/' --starter-set claude=session --providers claude,codex --start '/codex"
         ]
 
         // Every run passes each chosen program as one quoted word before
@@ -1029,9 +1037,9 @@ TestRoot {
             config.claudeProgram = "/opt/it's/claude";
             compare(usage.helperCommand(["claude"], " --start"),
                     "python3 -B '/x/usage.py' --program 'claude=/opt/it'\\''s/claude' --providers claude --start");
-            compare(usage.helperCommand(usage.ids, " --starter-set codex=on"),
+            compare(usage.helperCommand(usage.ids, " --starter-set codex=week"),
                     "python3 -B '/x/usage.py' --program 'claude=/opt/it'\\''s/claude' --program 'codex=~/bin/codex'"
-                    + " --providers claude,codex --starter-set codex=on");
+                    + " --providers claude,codex --starter-set codex=week");
             // Only the providers a run is for.
             compare(usage.helperCommand(["codex"], ""), "python3 -B '/x/usage.py' --program 'codex=~/bin/codex' --credits-providers codex --providers codex");
             config.codexProgram = "";
@@ -1105,12 +1113,12 @@ TestRoot {
         function test_startersFromEveryReport() {
             start("starter");
             compare(usage.starter("claude").state, "waiting");
-            verify(usage.starterOn("claude"));
-            compare(usage.starter("codex"), { enabled: false, state: "off", at: null, next: null, reason: null });
-            verify(!usage.starterOn("codex"));
+            verify(usage.starterOn("claude", "session"));
+            compare(usage.starter("codex"), { enabled: false, on: [], windows: ["week"], state: "off", at: null, next: null, reason: null });
+            verify(!usage.starterOn("codex", "week"));
             // A failed or rate-limited check keeps the last reading but
             // still takes the starter it reports.
-            usage.starters = Object.assign({}, usage.starters, { codex: { enabled: true, state: "started", at: null, next: null, reason: null } });
+            usage.starters = Object.assign({}, usage.starters, { codex: { enabled: true, on: ["week"], state: "started", at: null, next: null, reason: null } });
             poll("failed");
             compare(usage.starter("claude").state, "off");
             verify(usage.degraded("claude"));
@@ -1125,45 +1133,100 @@ TestRoot {
             verify(starterTick().running);
         }
 
-        function test_masterStarterSwitchDisablesEverything() {
+        function test_providerStarterSwitchDisablesOnlyThatProvider() {
             start("starter", ["claude"]);
             const run = commands();
-            config.sessionStarter = false;
-            verify(!usage.starterEnabled);
-            compare(usage.starterWanted, {}, "the shared off doesn't queue per-provider writes");
-            const off = " --starter-set claude=off --starter-set codex=off";
-            compare(ran(run, off), [usage.helperCommand(["claude", "codex"], off)],
-                    "one run turns both providers off, including the hidden one");
-            verify(!starterTick().running, "the starter timer stops");
+            config.codexSessionStarter = false;
+            verify(!usage.starterEnabled("codex"));
+            verify(usage.starterEnabled("claude"), "Claude's setting is independent");
+            compare(usage.starterWanted, {}, "the provider off doesn't queue another write");
+            const off = " --starter-set codex=off";
+            compare(ran(run, off), [usage.helperCommand(["codex"], off)],
+                    "one run turns off Codex, hidden in this widget, without touching Claude");
+            verify(starterTick().running, "Claude's starter timer is untouched");
             starterTick().triggered();
-            compare(ran(run, " --start"), [], "even a due start is blocked");
-            tryVerify(() => usage.starter("claude").state === "off", 10000);
+            compare(ran(run, " --start"), [], "no start is due");
+            tryVerify(() => usage.starterDisableRunning.codex === false, 10000);
             compare(run.count, 1, "no second provider write follows");
-            usage.setStarter("codex", true);
-            compare(run.count, 1, "the popup can't switch a provider on while the feature is disabled");
+            compare(usage.starter("claude").state, "waiting", "Claude's starter stays on");
+            usage.setStarter("codex", "week", true);
+            compare(run.count, 1, "Codex can't be switched on while its setting is disabled");
         }
 
-        function test_masterStarterSwitchWaitsForEarlierWrite() {
+        function test_providerStarterSwitchLeavesTheOtherProviderAvailable() {
+            start("starter");
+            const run = commands();
+            config.claudeSessionStarter = false;
+            tryVerify(() => usage.starter("claude").state === "off", 10000);
+            verify(usage.starterEnabled("codex"));
+            usage.setStarter("codex", "week", true);
+            compare(ran(run, " --starter-set codex=week"), [usage.helperCommand(["claude", "codex"], " --starter-set codex=week")],
+                    "OpenAI can still opt in after Claude is disabled");
+            tryVerify(() => usage.starter("codex").enabled, 10000);
+        }
+
+        function test_providerStarterSwitchesBothCompleteOnce() {
             start("starter-slow-set");
             const run = commands();
-            const off = " --starter-set claude=off --starter-set codex=off";
-            usage.setStarter("codex", true);
-            config.sessionStarter = false;
-            compare(ran(run, off), [], "the earlier on keeps its place before the shared off");
+            usage.starters = Object.assign({}, usage.starters, {
+                codex: { enabled: true, on: ["week"], state: "waiting", at: null, next: usage.nowSeconds() + 3600, reason: null }
+            });
+            config.claudeSessionStarter = false;
+            config.codexSessionStarter = false;
+            const claude = " --starter-set claude=off";
+            const codex = " --starter-set codex=off";
+            tryVerify(() => ran(run, claude).length === 1 && ran(run, codex).length === 1, 20000);
+            tryVerify(() => usage.starterDisableRunning.claude === false && usage.starterDisableRunning.codex === false, 10000);
+            const retry = timers().find(t => t.objectName === "starterDisableTimer");
+            retry.triggered();
+            retry.triggered();
+            compare(ran(run, claude).length, 1, "Claude's completed off isn't repeated");
+            compare(ran(run, codex).length, 1, "Codex's off isn't starved");
+        }
+
+        function test_providerStarterSwitchOtherProviderOptInFollowsOff() {
+            start("starter-slow-set");
+            const run = commands();
+            config.claudeSessionStarter = false;
+            usage.setStarter("codex", "week", true);
+            tryVerify(() => ran(run, " --starter-set codex=week").length === 1, 10000);
+            tryVerify(() => usage.starter("codex").enabled, 10000);
+        }
+
+        function test_providerStarterSwitchFailureDoesNotBlockOtherProvider() {
+            start("starter-stuck");
+            const run = commands();
+            config.claudeSessionStarter = false;
+            tryVerify(() => usage.starterDisablePending.claude === true, 10000);
+            usage.setStarter("codex", "week", true);
+            compare(ran(run, " --starter-set codex=week").length, 1,
+                    "OpenAI can opt in while Claude's off is waiting to retry");
+            tryVerify(() => Object.keys(usage.starterWanted).length === 0, 10000);
+            compare(usage.starter("codex").reason, "switch");
+            verify(usage.starterDisablePending.claude === true);
+        }
+
+        function test_providerStarterSwitchWaitsForEarlierWrite() {
+            start("starter-slow-set");
+            const run = commands();
+            const off = " --starter-set codex=off";
+            usage.setStarter("codex", "week", true);
+            config.codexSessionStarter = false;
+            compare(ran(run, off), [], "the earlier on keeps its place before the provider off");
             tryVerify(() => ran(run, off).length === 1, 10000);
             tryVerify(() => usage.starter("codex").state === "off", 10000);
-            compare(ran(run, off).length, 1, "no later on overwrites the shared off");
+            compare(ran(run, off).length, 1, "no later on overwrites the provider off");
         }
 
-        function test_masterStarterSwitchReenabledOffCompletesBeforeNewOn() {
+        function test_providerStarterSwitchReenabledOffCompletesBeforeNewOn() {
             start("starter-slow-set");
             const run = commands();
-            const off = " --starter-set claude=off --starter-set codex=off";
-            const on = " --starter-set codex=on";
-            config.sessionStarter = false;
-            config.sessionStarter = true;
-            usage.setStarter("codex", true);
-            compare(ran(run, on), [], "the new opt-in waits for the shared off");
+            const off = " --starter-set codex=off";
+            const on = " --starter-set codex=week";
+            config.codexSessionStarter = false;
+            config.codexSessionStarter = true;
+            usage.setStarter("codex", "week", true);
+            compare(ran(run, on), [], "the new opt-in waits for the provider off");
             tryVerify(() => ran(run, on).length === 1, 10000);
             compare(ran(run, off).length, 1);
             const commandsInOrder = run.signalArguments.map(a => a[0]);
@@ -1171,53 +1234,53 @@ TestRoot {
             tryVerify(() => usage.starter("codex").enabled, 10000);
         }
 
-        function test_masterStarterSwitchReenableDoesNotCancelPendingOff() {
+        function test_providerStarterSwitchReenableDoesNotCancelPendingOff() {
             start("starter-slow-set");
             const run = commands();
-            const off = " --starter-set claude=off --starter-set codex=off";
-            const on = " --starter-set codex=on";
-            usage.setStarter("codex", true);
-            config.sessionStarter = false;
-            config.sessionStarter = true;
+            const off = " --starter-set codex=off";
+            const on = " --starter-set codex=week";
+            usage.setStarter("codex", "week", true);
+            config.codexSessionStarter = false;
+            config.codexSessionStarter = true;
             tryVerify(() => ran(run, off).length === 1, 10000);
             tryVerify(() => usage.starter("codex").state === "off", 10000);
-            compare(ran(run, on).length, 1, "only the earlier on ran; re-enabling didn't cancel the shared off");
+            compare(ran(run, on).length, 1, "only the earlier on ran; re-enabling didn't cancel the provider off");
         }
 
-        function test_masterStarterSwitchNewOnSurvivesEarlierSameProviderOn() {
+        function test_providerStarterSwitchNewOnSurvivesEarlierSameProviderOn() {
             start("starter-slow-set");
             const run = commands();
-            const off = " --starter-set claude=off --starter-set codex=off";
-            const on = " --starter-set codex=on";
-            usage.setStarter("codex", true);
-            config.sessionStarter = false;
-            config.sessionStarter = true;
-            usage.setStarter("codex", true);
+            const off = " --starter-set codex=off";
+            const on = " --starter-set codex=week";
+            usage.setStarter("codex", "week", true);
+            config.codexSessionStarter = false;
+            config.codexSessionStarter = true;
+            usage.setStarter("codex", "week", true);
             tryVerify(() => ran(run, off).length === 1, 10000);
             tryVerify(() => ran(run, on).length === 2, 10000);
             const commandsInOrder = run.signalArguments.map(a => a[0]);
             const firstOn = commandsInOrder.findIndex(c => c.endsWith(on));
             const sharedOff = commandsInOrder.findIndex(c => c.endsWith(off));
             const secondOn = commandsInOrder.findIndex((c, index) => c.endsWith(on) && index > firstOn);
-            verify(firstOn < sharedOff && sharedOff < secondOn, "the newer opt-in runs after the shared off");
+            verify(firstOn < sharedOff && sharedOff < secondOn, "the newer opt-in runs after the provider off");
             tryVerify(() => usage.starter("codex").enabled, 10000);
             compare(usage.starterWanted, {});
         }
 
-        function test_masterStarterSwitchFailureIsShownAndRetried() {
+        function test_providerStarterSwitchFailureIsShownAndRetried() {
             start("starter-stuck");
             const run = commands();
-            const off = " --starter-set claude=off --starter-set codex=off";
-            config.sessionStarter = false;
+            const off = " --starter-set claude=off";
+            config.claudeSessionStarter = false;
             tryVerify(() => usage.starter("claude").reason === "switch", 10000);
             verify(usage.starter("claude").error !== "");
-            verify(usage.starterDisablePending);
-            verify(usage.starterDisableRetryAt > usage.nowSeconds());
+            verify(usage.starterDisablePending.claude === true);
+            verify(usage.starterDisableRetryAt.claude > usage.nowSeconds());
             compare(ran(run, off).length, 1, "a failed write doesn't retry immediately");
-            usage.starterDisableRetryAt = usage.nowSeconds();
-            usage.disableStarters();
-            compare(ran(run, off).length, 2, "the failed shared off is retried");
-            tryVerify(() => !usage.starterDisableRunning, 10000);
+            usage.starterDisableRetryAt = Object.assign({}, usage.starterDisableRetryAt, { claude: usage.nowSeconds() });
+            usage.disableStarters("claude");
+            compare(ran(run, off).length, 2, "the failed provider off is retried");
+            tryVerify(() => usage.starterDisableRunning.claude === false, 10000);
         }
 
         // --start runs once the starter's time has come, not before, and
@@ -1232,7 +1295,7 @@ TestRoot {
             starterTick().triggered();
             // Codex comes due too while Claude's start runs: it waits for
             // the next tick rather than starting beside it.
-            usage.starters = Object.assign({}, usage.starters, { codex: { enabled: true, state: "waiting", at: null, next: due, reason: null } });
+            usage.starters = Object.assign({}, usage.starters, { codex: { enabled: true, on: ["week"], state: "waiting", at: null, next: due, reason: null } });
             starterTick().triggered();
             compare(ran(run, " --start"), [usage.helperCommand(["claude"], " --start")]);
             tryVerify(() => usage.starter("claude").state === "confirming", 10000);
@@ -1249,7 +1312,7 @@ TestRoot {
             const run = commands();
             const due = usage.starter("claude").next;
             tryVerify(() => Date.now() / 1000 >= due, 5000);
-            usage.setStarter("claude", false);
+            usage.setStarter("claude", "session", false);
             starterTick().triggered();
             compare(ran(run, " --start"), [], "the switch is off");
             tryVerify(() => Object.keys(usage.starterWanted).length === 0, 10000);
@@ -1265,7 +1328,7 @@ TestRoot {
             const run = commands();
             const due = usage.starter("claude").next;
             tryVerify(() => Date.now() / 1000 >= due, 5000);
-            usage.setStarter("codex", true);
+            usage.setStarter("codex", "week", true);
             starterTick().triggered();
             compare(ran(run, " --start"), [], "a switch change is being written");
             tryVerify(() => ran(run, " --start").length === 1, 10000);
@@ -1329,7 +1392,7 @@ TestRoot {
             const command = usage.helperCommand(["claude"], " --start");
             const answer = providers => runner().newData(command, { "exit code": 0, "exit status": 0, stderr: "",
                                                                     stdout: JSON.stringify({ fetchedAt: due, providers: providers }) });
-            const stuck = { enabled: true, state: "waiting", at: null, next: due, reason: null };
+            const stuck = { enabled: true, on: ["session"], state: "waiting", at: null, next: due, reason: null };
             answer({ claude: Object.assign({}, usage.entry("claude"), { starter: stuck }) });
             const failed = usage.starter("claude");
             compare([failed.state, failed.reason, failed.error], ["failed", "helper", ""]);
@@ -1343,7 +1406,7 @@ TestRoot {
             answer({});
             compare(usage.starter("claude").next - usage.starter("claude").at, 600, "left out, it backs off further");
             answer({ claude: Object.assign({}, usage.entry("claude"), {
-                starter: { enabled: true, state: "confirming", at: due, next: due + 300, reason: null } }) });
+                starter: { enabled: true, on: ["session"], state: "confirming", at: due, next: due + 300, reason: null } }) });
             compare(usage.starter("claude").state, "confirming", "a report that moves it on ends the back-off");
         }
 
@@ -1358,7 +1421,7 @@ TestRoot {
             const crash = () => runner().newData(usage.helperCommand(["claude"], " --start"), {
                 "exit code": 1, "exit status": 0, stdout: "", stderr: "Traceback (most recent call last):\nOSError: boom\n" });
             const poll = (state, next) => {
-                const starter = { enabled: true, state: state, at: null, next: next, reason: null };
+                const starter = { enabled: true, on: ["session"], state: state, at: null, next: next, reason: null };
                 runner().newData(usage.command, { "exit code": 0, "exit status": 0, stderr: "", stdout: JSON.stringify({
                     fetchedAt: due, providers: { claude: Object.assign({}, usage.entry("claude"), { starter: starter }) } }) });
             };
@@ -1391,7 +1454,7 @@ TestRoot {
             tryVerify(() => Date.now() / 1000 >= due, 5000);
             const answer = (command, stderr) => {
                 const now = Math.floor(Date.now() / 1000);
-                const stuck = { enabled: true, state: "waiting", at: null, next: now, reason: null };
+                const stuck = { enabled: true, on: ["session"], state: "waiting", at: null, next: now, reason: null };
                 runner().newData(command, { "exit code": 0, "exit status": 0, stderr: stderr, stdout: JSON.stringify({
                     fetchedAt: now, providers: { claude: Object.assign({}, usage.entry("claude"), { starter: stuck }) } }) });
             };
@@ -1414,12 +1477,12 @@ TestRoot {
             start("starter");
             const run = commands();
             const landed = spy("startersChanged");
-            usage.setStarter("codex", true);
-            verify(usage.starterOn("codex"), "the switch shows the change at once");
-            compare(ran(run, "=on"), [usage.helperCommand(["claude", "codex"], " --starter-set codex=on")]);
+            usage.setStarter("codex", "week", true);
+            verify(usage.starterOn("codex", "week"), "the switch shows the change at once");
+            compare(ran(run, "=week"), [usage.helperCommand(["claude", "codex"], " --starter-set codex=week")]);
             landed.wait(10000);
             verify(usage.starter("codex").enabled);
-            verify(usage.starterOn("codex"));
+            verify(usage.starterOn("codex", "week"));
             compare(usage.starterWanted, {});
         }
 
@@ -1432,28 +1495,28 @@ TestRoot {
             const status = config.usageStatus;
             const refused = "[Errno 13] Permission denied: '/home/user/.config/ringside/.starter.kvt5gezx.tmp'";
             const landed = spy("startersChanged");
-            usage.setStarter("codex", true);
-            verify(usage.starterOn("codex"));
+            usage.setStarter("codex", "week", true);
+            verify(usage.starterOn("codex", "week"));
             landed.wait(10000);
-            verify(!usage.starterOn("codex"), "the helper kept it off");
+            verify(!usage.starterOn("codex", "week"), "the helper kept it off");
             compare(usage.starterWanted, {});
-            compare(usage.starter("codex"), { enabled: false, state: "failed", reason: "switch", at: null, next: null, error: refused });
+            compare(usage.starter("codex"), { enabled: false, on: [], windows: ["week"], state: "failed", reason: "switch", at: null, next: null, error: refused });
             verify(!usage.degraded("claude") && !usage.degraded("codex"), "the readings carry no failure");
             compare(usage.helperError, "");
             compare(config.usageStatus, status);
             tryVerify(() => runner().connectedSources.length === 0, 10000);
 
             const run = commands();
-            usage.setStarter("claude", false);
+            usage.setStarter("claude", "session", false);
             tryVerify(() => Object.keys(usage.starterWanted).length === 0, 10000);
-            verify(usage.starterOn("claude"), "the helper kept it on");
+            verify(usage.starterOn("claude", "session"), "the helper kept it on");
             compare([usage.starter("claude").reason, usage.starter("claude").error], ["switch", refused]);
             const due = usage.starter("claude").next;
             tryVerify(() => Date.now() / 1000 >= due, 5000);
             starterTick().triggered();
             compare(ran(run, " --start"), [], "the user turned it off");
 
-            usage.setStarter("claude", true);
+            usage.setStarter("claude", "session", true);
             tryVerify(() => Object.keys(usage.starterWanted).length === 0, 10000);
             verify(usage.starter("claude").reason !== "switch", "turned again, the failure is gone");
             const next = usage.starter("claude").next;
@@ -1467,18 +1530,18 @@ TestRoot {
         // another widget's change, with no reason on stderr, is no failure.
         function test_refusedChangeOnlyWhenAskedAndSaid() {
             start("starter");
-            const command = usage.helperCommand(usage.ids, " --starter-set codex=on");
+            const command = usage.helperCommand(usage.ids, " --starter-set codex=week");
             const answer = stderr => runner().newData(command, { "exit code": 0, "exit status": 0, stderr: stderr,
                                                                  stdout: JSON.stringify({ fetchedAt: usage.entry("codex").fetchedAt,
                                                                                           providers: { codex: usage.entry("codex") } }) });
-            usage.starterWanted = { codex: true };
+            usage.starterWanted = { codex: "week" };
             answer("");
             compare(usage.switchFailures, {}, "another widget's change");
-            usage.starterWanted = { codex: false };
+            usage.starterWanted = { codex: "" };
             answer("[Errno 13] Permission denied\n");
             compare(usage.switchFailures, {}, "turned again since");
             verify(usage.starter("codex").reason !== "switch");
-            compare(usage.starterWanted, { codex: false }, "the newer change still runs");
+            compare(usage.starterWanted, { codex: "" }, "the newer change still runs");
             tryVerify(() => runner().connectedSources.length === 0, 10000);
             compare(usage.switchFailures, {});
         }
@@ -1489,26 +1552,26 @@ TestRoot {
         function test_unwrittenChangeSaysSoUnderTheSwitch() {
             start("starter");
             const status = config.usageStatus;
-            usage.starterWanted = { codex: true };
-            runner().newData(usage.helperCommand(usage.ids, " --starter-set codex=on"),
+            usage.starterWanted = { codex: "week" };
+            runner().newData(usage.helperCommand(usage.ids, " --starter-set codex=week"),
                              { "exit code": 1, "exit status": 0, stdout: "",
                                stderr: "Traceback (most recent call last):\nPermissionError: [Errno 13] Permission denied: 'starter.json'\n" });
-            verify(!usage.starterOn("codex"), "snapped back");
+            verify(!usage.starterOn("codex", "week"), "snapped back");
             compare(usage.starterWanted, {});
             verify(!usage.degraded("claude") && !usage.degraded("codex"), "the readings carry no failure");
             compare(usage.helperError, "");
             compare(config.usageStatus, status);
-            compare(usage.starter("codex"), { enabled: false, state: "failed", reason: "switch", at: null, next: null,
+            compare(usage.starter("codex"), { enabled: false, on: [], windows: ["week"], state: "failed", reason: "switch", at: null, next: null,
                                               error: "The usage helper exited with code 1: PermissionError: [Errno 13] Permission denied: 'starter.json'" });
             compare(usage.starter("claude").state, "waiting", "the other switch is untouched");
             // Another widget's change, once reported, ends it.
             const reported = usage.starters;
-            usage.starters = Object.assign({}, reported, { codex: { enabled: true, state: "started", at: null, next: null, reason: null } });
+            usage.starters = Object.assign({}, reported, { codex: { enabled: true, on: ["week"], state: "started", at: null, next: null, reason: null } });
             compare(usage.starter("codex").state, "started");
             usage.starters = reported;
             compare(usage.starter("codex").reason, "switch");
 
-            usage.setStarter("codex", true);
+            usage.setStarter("codex", "week", true);
             compare(usage.starter("codex").state, "off", "turned again, the failure is gone");
             tryVerify(() => usage.starter("codex").enabled, 10000);
             verify(usage.starter("codex").reason !== "switch");
@@ -1516,20 +1579,20 @@ TestRoot {
 
             // A change that fails after the switch was turned again is no
             // longer the one asked for, so it records nothing.
-            usage.starterWanted = { codex: false };
-            runner().newData(usage.helperCommand(usage.ids, " --starter-set codex=on"),
+            usage.starterWanted = { codex: "" };
+            runner().newData(usage.helperCommand(usage.ids, " --starter-set codex=week"),
                              { "exit code": 1, "exit status": 0, stdout: "", stderr: "PermissionError: [Errno 13] Permission denied\n" });
             compare(usage.switchFailures, {});
             tryVerify(() => runner().connectedSources.length === 0, 10000);
             compare(usage.switchFailures, {});
             verify(usage.starter("codex").reason !== "switch");
-            verify(!usage.starterOn("codex"));
+            verify(!usage.starterOn("codex", "week"));
 
             // The same from a helper that fails as it runs.
             poll("traceback");
-            usage.setStarter("codex", true);
-            verify(usage.starterOn("codex"));
-            tryVerify(() => !usage.starterOn("codex"), 10000);
+            usage.setStarter("codex", "week", true);
+            verify(usage.starterOn("codex", "week"));
+            tryVerify(() => !usage.starterOn("codex", "week"), 10000);
             compare([usage.starter("codex").enabled, usage.starter("codex").reason], [false, "switch"]);
         }
 
@@ -1537,28 +1600,98 @@ TestRoot {
         function test_changesRunInOrder() {
             start("starter");
             const run = commands();
-            usage.setStarter("codex", true);
-            usage.setStarter("codex", false);
-            verify(!usage.starterOn("codex"));
+            usage.setStarter("codex", "week", true);
+            usage.setStarter("codex", "week", false);
+            verify(!usage.starterOn("codex", "week"));
             compare(runner().connectedSources.filter(c => c.includes("--starter-set")).length, 1);
             tryVerify(() => Object.keys(usage.starterWanted).length === 0, 10000);
-            compare(ran(run, "=on").length + ran(run, "=off").length, 2);
-            verify(run.signalArguments.findIndex(a => a[0].endsWith("=on")) < run.signalArguments.findIndex(a => a[0].endsWith("=off")));
+            compare(ran(run, "=week").length + ran(run, "=off").length, 2);
+            verify(run.signalArguments.findIndex(a => a[0].endsWith("=week")) < run.signalArguments.findIndex(a => a[0].endsWith("=off")));
             compare(usage.starter("codex").state, "off");
+        }
+
+        // Turning one window's switch writes the provider's whole set, in
+        // order, of the windows its plan can start; a window it can't is
+        // never switched on, and one it no longer has goes with the change.
+        function test_setStarterWritesTheWholeSet() {
+            start("starter");
+            const run = commands();
+            const plan = (windows, on) => {
+                usage.starters = Object.assign({}, usage.starters, {
+                    codex: { enabled: on.length > 0, on: on, windows: windows, state: on.length > 0 ? "waiting" : "off",
+                             at: null, next: null, reason: null } });
+            };
+            plan(["session", "week"], ["week"]);
+            usage.setStarter("codex", "session", true);
+            compare(usage.starterWanted.codex, "session,week");
+            verify(usage.starterOn("codex", "session") && usage.starterOn("codex", "week"));
+            compare(ran(run, " --starter-set codex=session,week"), [usage.helperCommand(["claude", "codex"], " --starter-set codex=session,week")]);
+            tryVerify(() => Object.keys(usage.starterWanted).length === 0, 10000);
+
+            plan(["session", "week"], ["session", "week"]);
+            usage.setStarter("codex", "session", false);
+            compare(usage.starterWanted.codex, "week");
+            tryVerify(() => Object.keys(usage.starterWanted).length === 0, 10000);
+            plan(["week"], ["session", "week"]);
+            usage.setStarter("codex", "week", false);
+            compare(usage.starterWanted.codex, "", "the session the plan lost goes too");
+            tryVerify(() => ran(run, " --starter-set codex=off").length === 1, 10000);
+            tryVerify(() => Object.keys(usage.starterWanted).length === 0, 10000);
+
+            plan(["week"], []);
+            usage.setStarter("codex", "session", true);
+            compare(usage.starterWanted, {}, "the plan has no session to start");
+            usage.setStarter("claude", "week", true);
+            compare(usage.starterWanted, {}, "Claude's week starts on its own");
+            usage.starters = Object.assign({}, usage.starters, {
+                claude: { enabled: false, on: [], windows: [], state: "off", at: null, next: null, reason: null } });
+            usage.setStarter("claude", "session", true);
+            compare(usage.starterWanted, {}, "a plan with no five-hour limit has nothing to start");
+            tryVerify(() => runner().connectedSources.length === 0, 10000);
+        }
+
+        // Before any report, the plan is as the settings page last stored
+        // it, or else as assumed.
+        function test_startableBeforeAReport() {
+            make("slow", []);
+            compare(usage.startable("claude"), ["session"]);
+            compare(usage.startable("codex"), ["session", "week"]);
+            config.usageStatus = JSON.stringify({ claude: { windows: [] }, codex: { windows: ["week"] } });
+            compare(usage.startable("claude"), []);
+            compare(usage.startable("codex"), ["week"]);
+        }
+
+        // A provider's setting turned off covers a switch its plan can't
+        // use, such as Claude's session on a plan with no five-hour limit,
+        // which would start sessions again should the plan change.
+        function test_providerOffCoversASwitchThePlanCantUse() {
+            start("starter");
+            config.claudeSessionStarter = false;
+            tryVerify(() => usage.starterDisableRunning.claude === false, 10000);
+            compare(usage.starterDisablePending.claude, false);
+            const unusable = { enabled: false, on: ["session"], windows: [], state: "off", at: null, next: null, reason: null };
+            usage.merge({ fetchedAt: usage.nowSeconds(),
+                          providers: { claude: Object.assign({}, usage.entry("claude"), { starter: unusable }) } });
+            verify(usage.starterDisablePending.claude === true, "another widget's switch is turned off again");
+            const run = commands();
+            usage.disableStarters("claude");
+            compare(ran(run, " --starter-set claude=off"), [usage.helperCommand(["claude"], " --starter-set claude=off")]);
+            tryVerify(() => usage.starterDisableRunning.claude === false, 10000);
+            compare(usage.starterDisablePending.claude, false);
         }
 
         // Its failures go too, so none shows again should it come back.
         function test_droppedProviderDropsItsStarter() {
             start("starter");
-            usage.setStarter("codex", true);
+            usage.setStarter("codex", "week", true);
             usage.startFailures = { codex: { count: 1, at: 0, retryAt: 300, error: "boom", state: "waiting" } };
-            usage.switchFailures = { codex: { on: true, error: "boom" } };
+            usage.switchFailures = { codex: { on: "week", error: "boom" } };
             usage.providers = ["claude"];
             compare(Object.keys(usage.starters), ["claude"]);
             compare(usage.starterWanted, {});
             compare(usage.startFailures, {});
             compare(usage.switchFailures, {});
-            usage.setStarter("codex", true);
+            usage.setStarter("codex", "week", true);
             compare(usage.starterWanted, {}, "an unpolled provider has no switch");
             tryVerify(() => runner().connectedSources.length === 0, 10000);
         }
@@ -3080,8 +3213,13 @@ TestRoot {
             compare(ringColour(popup), red);
         }
 
+        // The first switch shown: a session's, or the week's alone.
         function starterSwitch(popup) {
-            return root.find(popup, i => i.visualPosition !== undefined);
+            return root.find(popup, i => i.visualPosition !== undefined && i.visible);
+        }
+
+        function starterSwitches(popup) {
+            return root.all(popup, i => i.visualPosition !== undefined && i.visible);
         }
 
         function starterStatus(popup) {
@@ -3106,17 +3244,23 @@ TestRoot {
         // Include the centred 18 px gear's room and its 24 px viewBox's inset.
         readonly property real iconSlack: Kirigami.Units.iconSizes.smallMedium * (2 / 22 + 18 / 22 * 2.04 / 24)
 
+        // A starter for the plan's windows as they stand, unless it gives
+        // its own, with each switched on while it is enabled.
         function setStarter(item, starter) {
-            monitor.usage.starters = Object.assign({}, monitor.usage.starters, { [item]: Object.assign({ at: null, next: null, reason: null }, starter) });
+            const can = starter.windows ?? monitor.usage.startable(item);
+            monitor.usage.starters = Object.assign({}, monitor.usage.starters, {
+                [item]: Object.assign({ at: null, next: null, reason: null, windows: can, on: starter.enabled ? can : [] }, starter)
+            });
         }
 
-        function starterFor(row) {
-            return StarterStates.starter(row, monitor.usage.createdAt);
+        function starterFor(row, item) {
+            return StarterStates.starter(row, monitor.usage.createdAt, monitor.usage.startable(item));
         }
 
+        // FakeUsage's Codex plan has only a week to start.
         function test_starterSwitch_data() {
-            return [{ tag: "claude", item: "claude", label: "Start a new session when one ends" },
-                    { tag: "codex", item: "codex", label: "Start a new week when one ends" }];
+            return [{ tag: "claude", item: "claude", label: "Auto start session" },
+                    { tag: "codex", item: "codex", label: "Auto start week" }];
         }
 
         // The switch sits in the footer, left of the configure button, its
@@ -3145,7 +3289,7 @@ TestRoot {
             fuzzyCompare(popup.height - lastBaseline, Math.round(Kirigami.Units.largeSpacing * 2), 1);
             const texts = toggle.parent.texts;
             StarterStates.ROWS.filter(row => (row.only ?? data.item) === data.item).forEach(row => {
-                const starter = starterFor(row);
+                const starter = starterFor(row, data.item);
                 setStarter(data.item, starter);
                 compare(toggle.text, data.label, row.state);
                 compare(toggle.checked, row.enabled, row.state);
@@ -3158,28 +3302,74 @@ TestRoot {
             });
         }
 
-        function test_codexSessionStarterSwitch() {
-            const popup = load("codex");
-            setStarter("codex", { enabled: false, state: "off", window: "session" });
-            const toggle = starterSwitch(popup);
-            compare(toggle.text, "Start a new session when one ends");
-            compare(starterStatus(popup).text, "When a session ends, Ringside sends Codex a one-word message to start the next one.");
-            setStarter("codex", { enabled: false, state: "off", window: "week" });
-            compare(toggle.text, "Start a new week when one ends");
+        // A switch for each window the plan lets Ringside start, a session's
+        // above a week's, and the status under both; none, and no footer,
+        // for a plan with nothing to start.
+        function test_starterSwitchesFollowThePlan_data() {
+            return [{ tag: "codex session and week", item: "codex", windows: ["session", "week"],
+                      labels: ["Auto start session", "Auto start week"],
+                      off: "When either ends, Ringside sends Codex a one-word message to start the next one." },
+                    { tag: "codex week", item: "codex", windows: ["week"], labels: ["Auto start week"],
+                      off: "When a week ends, Ringside sends Codex a one-word message to start the next one." },
+                    { tag: "codex session", item: "codex", windows: ["session"], labels: ["Auto start session"],
+                      off: "When a session ends, Ringside sends Codex a one-word message to start the next one." },
+                    { tag: "claude session", item: "claude", windows: ["session"], labels: ["Auto start session"],
+                      off: "When a session ends, Ringside sends Claude a one-word message to start the next one." },
+                    { tag: "claude nothing to start", item: "claude", windows: [], labels: [], off: "" }];
         }
 
-        function test_masterStarterSwitchHidesThePopupControl() {
+        function test_starterSwitchesFollowThePlan(data) {
+            failOnFooterLoops();
+            setStarter(data.item, { enabled: false, state: "off", windows: data.windows });
+            const popup = load(data.item);
+            const button = configureButton(popup);
+            compare(starterSwitches(popup).map(t => t.text), data.labels);
+            compare(button.leadItem !== null, data.labels.length > 0, "the footer holds the switches, or nothing");
+            if (data.labels.length === 0) {
+                compare(root.all(popup, i => i.visible && i.visualPosition !== undefined).length, 0);
+                return;
+            }
+            const status = starterStatus(popup);
+            compare(status.text, data.off);
+            const y = i => i.mapToItem(popup, Qt.point(0, 0)).y;
+            const middle = i => y(i) + i.height / 2;
+            const labels = starterSwitches(popup).map(t => root.find(popup, i => i.visible && i.text === t.text && i.contentWidth !== undefined));
+            starterSwitches(popup).forEach((toggle, index) => {
+                compare(toggle.Accessible.name, data.labels[index]);
+                compare(toggle.Accessible.description, status.text);
+                if (data.labels.length > 1) {
+                    fuzzyCompare(middle(toggle.indicator), middle(labels[index]), 1, toggle.text + ": level with its label");
+                }
+            });
+            verify(y(status) >= y(labels[labels.length - 1]) + labels[labels.length - 1].height - 0.5, "under the last label");
+            if (data.labels.length > 1) {
+                const [session, week] = starterSwitches(popup);
+                compare(session.nextItemInFocusChain(true), week);
+                compare(week.nextItemInFocusChain(true), button);
+                fuzzyCompare(middle(button), (y(labels[0]) + y(status) + status.height) / 2, 1, "the icon on the whole block");
+                // Each turns its own window, and a report moves each.
+                mouseClick(week);
+                compare(monitor.usage.starterRequests, [["codex", "week", true]]);
+                verify(week.checked && !session.checked);
+                monitor.usage.answerStarter();
+                setStarter("codex", { enabled: true, on: ["session"], state: "waiting", next: monitor.usage.createdAt + 3600,
+                                      windows: data.windows });
+                verify(session.checked && !week.checked);
+            }
+        }
+
+        function test_providerStarterSwitchHidesThePopupControl() {
             const popup = load("codex");
             const toggle = starterSwitch(popup);
             const button = configureButton(popup);
             verify(toggle.visible && button.leadItem !== null);
-            monitor.usage.starterEnabled = false;
+            monitor.usage.starterOptions = Object.assign({}, monitor.usage.starterOptions, { codex: false });
             verify(!toggle.visible);
             verify(!toggle.parent.parent.visible, "the footer keeps no room for the hidden starter");
             verify(button.leadItem === null);
             compare(root.all(toggle.parent, i => i.visible && i.Accessible && !i.Accessible.ignored).length, 0,
                     "no starter control remains exposed to assistive technology");
-            monitor.usage.starterEnabled = true;
+            monitor.usage.starterOptions = Object.assign({}, monitor.usage.starterOptions, { codex: true });
             verify(toggle.visible && toggle.parent.parent.visible);
             verify(button.leadItem !== null);
         }
@@ -3196,7 +3386,7 @@ TestRoot {
             const popup = load("codex");
             const toggle = starterSwitch(popup);
             mouseClick(toggle);
-            compare(usage.starterRequests, [["codex", true]]);
+            compare(usage.starterRequests, [["codex", "week", true]]);
             verify(toggle.checked, "shown as asked while the helper runs");
             usage.answerStarter();
             compare(toggle.checked, data.sticks);
@@ -3221,7 +3411,7 @@ TestRoot {
             toggle.forceActiveFocus();
             keyClick(Qt.Key_Space);
             keyClick(Qt.Key_Return);
-            compare(monitor.usage.starterRequests, [["claude", true], ["claude", false]]);
+            compare(monitor.usage.starterRequests, [["claude", "session", true], ["claude", "session", false]]);
         }
 
         // The track and the label turn the switch, the status under them
@@ -3236,10 +3426,10 @@ TestRoot {
             compare(usage.starterRequests, [], "the status");
             verify(!toggle.checked);
             mouseClick(starterLabel(popup));
-            compare(usage.starterRequests, [["claude", true]], "the label");
+            compare(usage.starterRequests, [["claude", "session", true]], "the label");
             verify(toggle.checked);
             mouseClick(toggle);
-            compare(usage.starterRequests, [["claude", true], ["claude", false]], "the track");
+            compare(usage.starterRequests, [["claude", "session", true], ["claude", "session", false]], "the track");
             verify(!toggle.checked);
         }
 
@@ -3293,7 +3483,7 @@ TestRoot {
             let lineHeight = NaN;
             // An unknown state says nothing, the shortest status there is.
             StarterStates.ROWS.concat([{ state: "later", enabled: true }]).forEach(row => {
-                setStarter(data.item, starterFor(row));
+                setStarter(data.item, starterFor(row, data.item));
                 const tag = row.state + " " + (row.reason ?? "");
                 lines[checkFooterIsCentred(popup, data.mirrored, tag)] = true;
                 verify(status.contentHeight <= status.height + 0.5, status.text);
@@ -3409,7 +3599,7 @@ TestRoot {
             verify(toggle.enabled, "back with a good check");
             compare(status.text, own());
             mouseClick(toggle);
-            compare(usage.starterRequests, [["claude", !data.on]]);
+            compare(usage.starterRequests, [["claude", "session", !data.on]]);
         }
 
         // The label stands a large spacing clear of the switch, and the

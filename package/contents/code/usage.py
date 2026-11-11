@@ -71,9 +71,10 @@ happened, or was noticed>, "from": <the percent used before it>, "until":
 "startedAt", the same time, since a window cleared in place keeps its
 reset and so no longer started a window's length before it.
 
-Each entry also carries "session", its five-hour window, or null when no
-session is running; it is left out when the reply doesn't say. Codex carries
-"sessionUnknown": true instead when a shorter window is present but unreadable.
+Each entry whose plan has a five-hour limit also carries "session", that
+window, or null when no session is running; a plan without one, as Claude
+Ultra, leaves it out. "sessionUnknown": true stands in for it when the plan
+has the limit but the reply can't be read.
 
 --program <provider>=<path> names the program to run for a provider, as the
 user chose it in Ringside's settings; ~ stands for the home folder. Without
@@ -83,9 +84,14 @@ bool, "problem": "" or what keeps a chosen path from running: "missing",
 "not-executable" or "folder"}, looked up afresh on every run.
 
 Every entry carries "starter", the session starter's state: {"enabled":
-bool, "state": ..., "at": <epoch seconds> or null, "next": <epoch seconds>
-or null, "reason": ... or null, "window": "session" or "week"}. The states
-are "off"; "waiting" (next is
+bool, "on": [...], "windows": [...] or null, "state": ..., "at": <epoch
+seconds> or null, "next": <epoch seconds> or null, "reason": ... or null,
+"window": "session" or "week"}. "on" lists the windows the user switched the
+starter on for, and "windows" those the plan lets it start (see startable()),
+or null when the reading can't say; both in the order "session", "week".
+"enabled" says some window is in both, "window" names the one the starter
+works toward, and while it isn't enabled the state is "off". The other states
+are "waiting" (next is
 when the next window starts); "confirming" (at is the send, next the read
 that confirms it); "started" (at is when the window started, next when the
 next one starts); "weekly" (the
@@ -99,10 +105,11 @@ that doesn't say when a reached weekly limit or a running week ends, or
 the retry);
 "retrying" (one send went unconfirmed; at is the send, next the retry) and
 "paused" (two in a row; next is when the hold ends). The widget runs
---start once Date.now() reaches next, and --starter-set when its switch is
-toggled. A poll that finds what a starter waits for came early, as when a
-provider resets the limits ahead of time, makes it due at once (see
-replan_starters()).
+--start once Date.now() reaches next, and --starter-set <provider>=<windows>
+when a switch is toggled, with every window that is on, comma-separated, or
+off; on stands for every window the provider has. A poll that finds what a
+starter waits for came early, as when a provider resets the limits ahead of
+time, makes it due at once (see replan_starters()).
 """
 
 import argparse
@@ -305,6 +312,10 @@ NAMES = {"claude": "Claude", "codex": "Codex"}
 PRODUCTS = {"claude": "Claude Code", "codex": "the Codex CLI"}
 # Who asks Ringside to wait, when the refusal names no host.
 COMPANIES = {"claude": "Anthropic", "codex": "OpenAI"}
+# The windows a provider's starter can ever start, in order: Claude's week
+# resets on a set schedule, while Codex's, like a session, waits for a message.
+OFFERED = {"claude": ("session",), "codex": ("session", "week")}
+# The window each names before a reading has told it the plan.
 WINDOWS = {"claude": "session", "codex": "week"}
 
 MESSAGES = {
@@ -321,7 +332,7 @@ MESSAGES = {
     "cli-error": "{name}: app-server answered with an error, code {code}",
     "renewed": "{name}: renewed the Claude Code login",
     "early-reset": "{name}: {which} reset early",
-    "starter-on": "{name} session starter switched on",
+    "starter-on": "{name} session starter switched on for: {windows}",
     "starter-off": "{name} session starter switched off",
     "starter-switch-failed": "{name} session starter switch not saved: {why}",
     "starter-sent": "{name} session starter sent its message; a reading in {wait} s confirms it",
@@ -984,7 +995,8 @@ def parse_claude(usage):
     the endpoint leaves the model id empty today, and staying on the name keeps
     a pinned choice valid if ids appear later. Entries scoped to something
     other than a model are skipped. "session" is the five-hour window, null
-    while no session is running, and left out when the reply doesn't say.
+    while no session is running, and left out when the plan has no such
+    limit; "sessionUnknown" stands in for it when the reply garbles it.
     """
     weekly = usage.get("seven_day")
     if not weekly:
@@ -1001,9 +1013,23 @@ def parse_claude(usage):
                            **window_from(limit.get("percent"), limit.get("resets_at"), WEEK_SECONDS)})
     reading = {"weekly": window_from(weekly.get("utilization"), weekly.get("resets_at"), WEEK_SECONDS),
                "scoped": scoped}
-    with contextlib.suppress(ValueError):
-        reading["session"] = parse_session(usage)
+    if session_limited(usage):
+        try:
+            reading["session"] = parse_session(usage)
+        except ValueError:
+            reading["sessionUnknown"] = True
     return reading
+
+
+def session_limited(usage):
+    """Whether the plan has a five-hour limit. The limits list names each
+    limit the plan has, a session among them even while none runs, and Ultra
+    lists none. A reply with no list to go by, or with a session running,
+    has one."""
+    limits = usage.get("limits")
+    if not isinstance(limits, list) or not limits or usage.get("five_hour") is not None:
+        return True
+    return any(isinstance(limit, dict) and limit.get("kind") == "session" for limit in limits)
 
 
 def parse_session(usage):
@@ -1901,14 +1927,24 @@ def read_starter_states():
     return {name: record_from(data[name]) for name in PROVIDERS if name in data}
 
 
+def switched_windows(name, value):
+    """A stored switch as the windows it is on for, in order. true, as a
+    switch was stored before its windows could be chosen, is every window;
+    anything else unreadable is off."""
+    if value is True:
+        return list(OFFERED[name])
+    return [window for window in OFFERED[name] if isinstance(value, list) and window in value]
+
+
 def read_switches():
-    """The providers whose starter the user switched on; anything unreadable
-    is off."""
+    """Each provider's switched-on windows; anything unreadable is off."""
     try:
         data = read_json(STARTER_FILE)
     except (OSError, ValueError):
-        return set()
-    return {name for name in PROVIDERS if isinstance(data, dict) and data.get(name) is True}
+        data = {}
+    if not isinstance(data, dict):
+        data = {}
+    return {name: switched_windows(name, data.get(name)) for name in PROVIDERS}
 
 
 def private_state_dir():
@@ -1917,9 +1953,10 @@ def private_state_dir():
 
 
 def set_switches(changes):
-    """Apply changes, {provider: bool}, to the switch file. A lock of its
-    own keeps two widgets from losing each other's change without waiting
-    for a send. Each switch that turns goes to the journal."""
+    """Apply changes, {provider: [windows]}, to the switch file, each
+    replacing that provider's windows. A lock of its own keeps two widgets
+    from losing each other's change without waiting for a send. Each switch
+    that changes goes to the journal."""
     private_state_dir()
     with flocked(SWITCH_LOCK):
         try:
@@ -1928,12 +1965,15 @@ def set_switches(changes):
             data = {}
         if not isinstance(data, dict):
             data = {}
-        turned = [name for name, on in changes.items() if (data.get(name) is True) != on]
+        turned = [name for name, on in changes.items() if switched_windows(name, data.get(name)) != on]
         data.update(changes)
         STARTER_FILE.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
         write_private(STARTER_FILE, data)
     for name in turned:
-        event("info", name, "starter-on" if changes[name] else "starter-off")
+        if changes[name]:
+            event("info", name, "starter-on", windows=", ".join(changes[name]))
+        else:
+            event("info", name, "starter-off")
 
 
 class Starter:
@@ -1952,19 +1992,16 @@ class Starter:
     read(not_before) returns the provider's reading, or raises Defer when
     the cached one was taken before not_before, Failed or Unreadable.
     check() returns the CLI or raises Failed; send(binary) raises Failed,
-    NotSent or SwitchedOff when nothing went out. running(reading, now) is
-    the window running now or None, or raises Unreadable when the reading
-    can't tell, and period a window's length or a function that detects it
-    from the reading. The caller holds usage.lock throughout. name is the
-    provider's, for the journal.
+    NotSent or SwitchedOff when nothing went out. aim(reading) lists the
+    windows to keep running on the reading's plan: those switched on that
+    the plan lets it start. With none, as for Claude on a plan without a
+    five-hour limit, it rests until a reading offers one. The caller holds
+    usage.lock throughout. name is the provider's, for the journal.
     """
 
-    def __init__(self, name, record, *, read, check, send, running, period, persist, clock):
+    def __init__(self, name, record, *, read, check, send, aim, persist, clock):
         self.name, self.record, self.read, self.check, self.send = name, record, read, check, send
-        self.running, self.period, self.persist, self.clock = running, period, persist, clock
-
-    def detected_period(self, reading=None):
-        return self.period(reading) if callable(self.period) else self.period
+        self.aim, self.persist, self.clock = aim, persist, clock
 
     def window_name(self):
         return "session" if self.record["period"] == SESSION_SECONDS else WINDOWS[self.name]
@@ -2022,24 +2059,30 @@ class Starter:
         # A send older than the window it was for can no longer be told
         # apart from one that never started, as after a long time switched
         # off. Records from before window detection use the provider default.
-        period = rec["period"] or self.detected_period()
+        period = rec["period"] or window_length(WINDOWS[self.name])
         if rec["sentAt"] is not None and now - rec["sentAt"] >= period:
             rec.update(sentAt=None, state="waiting")
         try:
             binary = self.check()
             reading = self.read(rec["sentAt"] + CONFIRM_SLACK if rec["state"] == "confirming" else None)
-            period = self.detected_period(reading)
-            # A send from before the plan changed its window can't confirm
-            # the other kind. It counts only toward the send throttle: even
-            # alternating window shapes can't bypass the two-send pause.
-            changed = rec["sentAt"] is not None and period != (rec["period"] or self.detected_period())
+            windows = self.aim(reading)
+            if not windows:
+                rec.update(sentAt=None, uncertain=0, failures=0, period=None)
+                self.set("waiting")
+                return
+            # A send for another window than the one aimed at now, as after
+            # the plan or the switches changed, can't confirm it. It counts
+            # only toward the send throttle: even alternating windows can't
+            # bypass the two-send pause.
+            period = window_length("session" if "session" in windows else "week")
+            changed = rec["sentAt"] is not None and period != (rec["period"] or window_length(WINDOWS[self.name]))
             if changed:
                 rec["state"] = "waiting"
                 if self.unconfirmed(now):
                     return
                 rec["sentAt"] = None
             rec["period"] = period
-            window = self.running(reading, now)
+            window = aimed_running(self.name, reading, now, windows)
         except Failed as err:
             # A send this read was to confirm goes unconfirmed, so a brief
             # sign-out can't let a third send out before the pause.
@@ -2146,42 +2189,55 @@ def weekly_running(reading, now):
     return week
 
 
-def codex_running(reading, now):
-    """Codex's five-hour session when the reply has that window, else its
-    week. This detects the plan's shorter limit without a setting. A garbled
-    short window is unreadable, not evidence of a weekly-only plan."""
+def startable(name, reading):
+    """The windows the reading's plan lets the starter start, in order: a
+    five-hour session where the plan has that limit, and for Codex its week,
+    unless its only window is five hours long. A garbled session is still a
+    limit the plan has."""
+    session = "session" in reading or reading.get("sessionUnknown") is True
+    if name == "codex" and not session and reading["weekly"]["windowSeconds"] == SESSION_SECONDS:
+        return ["session"]
+    return [window for window in OFFERED[name] if window == "week" or session]
+
+
+def window_length(window):
+    return SESSION_SECONDS if window == "session" else WEEK_SECONDS
+
+
+def window_running(name, window, reading, now):
+    """The named window while it runs, else None. Codex reports a plan whose
+    only window is five hours long as its week."""
+    if window == "week":
+        return weekly_running(reading, now)
     if reading.get("sessionUnknown"):
         raise Unreadable()
+    if name == "claude":
+        return claude_running(reading, now)
     return session_running(reading, now) if "session" in reading else weekly_running(reading, now)
 
 
-def codex_has_session(reading):
-    """Whether the reply has a five-hour window, separate or as the only one."""
-    return "session" in reading or reading.get("weekly", {}).get("windowSeconds") == SESSION_SECONDS
-
-
-def codex_period(reading=None):
-    """The length of the window codex_running() follows in this reading."""
-    return SESSION_SECONDS if reading is not None and codex_has_session(reading) else WEEK_SECONDS
+def aimed_running(name, reading, now, windows):
+    """With each of the windows running, the one that ends first; with any
+    not running, None, since one message starts it. Raises Unreadable when
+    the reading can't tell."""
+    running = [window_running(name, window, reading, now) for window in windows]
+    if any(window is None for window in running):
+        return None
+    return min(running, key=lambda window: window["resetsAt"])
 
 
 def starter_read(name, now, not_before):
     """The provider's reading, through the cache and its floor as any poll.
     A confirmation needs a reading taken after the send; while the cache
-    still holds an older one, the step waits for it to go stale. A cached
-    Claude reading without a session waits the same way. A new reading
-    that can't say whether a session runs is a failed read."""
+    still holds an older one, the step waits for it to go stale."""
     entry = read_cache().get(name)
-    if fresh(entry, now) and ((not_before is not None and entry["fetchedAt"] < not_before)
-                              or (name == "claude" and "session" not in entry)):
+    if fresh(entry, now) and not_before is not None and entry["fetchedAt"] < not_before:
         raise Defer(entry["fetchedAt"] + CACHE_TTL)
     entry = collect_locked({name: fetchers()[name]}, now)[0][name]
     if entry["status"] == "signed_out":
         raise Failed("signed-out")
     if entry["status"] != "ok":
         raise Unreadable(entry.get("retryAfter", 0))
-    if name == "claude" and "session" not in entry:
-        raise Unreadable()
     return entry
 
 
@@ -2357,12 +2413,9 @@ def fetchers():
     return {"claude": claude_usage, "codex": codex_usage}
 
 
-# Each provider's starter: how it sends its message, whether a reading shows
-# the window it asked for running, and that window's length. Codex detects a
-# five-hour session or a week from each reading.
-def starters():
-    return {"claude": (send_claude, claude_running, SESSION_SECONDS),
-            "codex": (send_codex, codex_running, codex_period)}
+# How each provider's starter sends its message.
+def senders():
+    return {"claude": send_claude, "codex": send_codex}
 
 
 def run_starter(name):
@@ -2373,9 +2426,11 @@ def run_starter(name):
 
     The switch has a lock of its own, so the user can turn it off while
     the step reads, renews and checks the CLI, which can take most of a
-    minute; the sender reads it again just before the message goes out."""
+    minute; the sender reads it again just before the message goes out, and
+    sends only while every window the step began with is still on."""
     with locked():
-        if name not in read_switches():
+        on = read_switches()[name]
+        if not on:
             return
         states = read_starter_states()
         record = states.setdefault(name, blank_record())
@@ -2384,12 +2439,12 @@ def run_starter(name):
             private_state_dir()
             write_private(STARTER_STATE, states)
 
-        sender, running, period = starters()[name]
+        sender = senders()[name]
         Starter(name, record,
                 read=lambda not_before: starter_read(name, int(time.time()), not_before),
                 check=lambda: installed(name),
-                send=lambda binary: sender(binary, lambda: name in read_switches()),
-                running=running, period=period,
+                send=lambda binary: sender(binary, lambda: set(on) <= set(read_switches()[name])),
+                aim=lambda reading: [window for window in startable(name, reading) if window in on],
                 persist=persist, clock=lambda: int(time.time())).step()
         if record["next"] is not None:
             event("debug", name, "starter-next", state=record["state"],
@@ -2407,11 +2462,12 @@ def replan_starters(providers, now):
     usage.lock; a state that can't be written is left for --start to report.
     """
     switches = read_switches()
-    if not switches:
+    if not any(switches.values()):
         return
     states = read_starter_states()
     due = [name for name, entry in providers.items()
-           if name in switches and name in states and entry.get("status") == "ok" and overtaken(name, states[name], entry, now)]
+           if switches.get(name) and name in states and entry.get("status") == "ok"
+           and overtaken(name, states[name], entry, now, switches[name])]
     for name in due:
         states[name]["next"] = now
         event("info", name, "starter-overtaken")
@@ -2421,20 +2477,21 @@ def replan_starters(providers, now):
             write_private(STARTER_STATE, states)
 
 
-def overtaken(name, record, reading, now):
+def overtaken(name, record, reading, now, on):
     """Whether a reading shows that what a starter waits for came early (see
-    replan_starters()). A reading that can't tell whether a session runs
-    never does."""
+    replan_starters()), for the windows on that the plan lets it start. A
+    reading that can't tell whether a session runs never does."""
     if record["state"] not in ("started", "waiting", "weekly") or record["next"] is None or record["next"] <= now:
         return False
     awaited = record["next"] - 1
     if record["state"] == "weekly":
         weekly = reading["weekly"]
         return weekly["percent"] < 100 or weekly["resetsAt"] is not None and abs(weekly["resetsAt"] - awaited) > RESET_MOVED
-    if name == "claude" and "session" not in reading:
+    windows = [window for window in startable(name, reading) if window in on]
+    if not windows:
         return False
     try:
-        window = starters()[name][1](reading, now)
+        window = aimed_running(name, reading, now, windows)
     except Unreadable:
         return False
     return window is None or abs(window["resetsAt"] - awaited) > RESET_MOVED
@@ -2444,17 +2501,22 @@ STARTER_OFF = {"enabled": False, "state": "off", "at": None, "next": None, "reas
 
 
 def starter_report(name, switches, states, now, reading=None):
-    """What the report says of a provider's starter, including the detected
-    session or week its switch and status name."""
+    """What the report says of a provider's starter: the windows switched
+    on, those the plan lets it start, and the one it works toward, which its
+    status names. Without a reading to tell the plan by, the windows switched
+    on count, and the last window it worked toward is named."""
     record = states.get(name) or blank_record()
-    if name == "claude":
-        window = "session"
-    elif reading is not None and reading.get("status") == "ok" and not reading.get("sessionUnknown"):
-        window = "session" if codex_has_session(reading) else "week"
-    else:
+    on = switches.get(name, [])
+    windows = startable(name, reading) if reading is not None and reading.get("status") == "ok" else None
+    aimed = [window for window in on if windows is None or window in windows]
+    if windows is not None:
+        window = "session" if "session" in (aimed or windows or OFFERED[name]) else "week"
+    elif record["period"]:
         window = "session" if record["period"] == SESSION_SECONDS else "week"
-    if name not in switches:
-        return dict(STARTER_OFF, window=window)
+    else:
+        window = WINDOWS[name]
+    if not aimed:
+        return dict(STARTER_OFF, on=on, windows=windows, window=window)
     # Should the clock have stepped back, the starter is due, so a --start
     # moves its times back for good.
     stepped = unstep(record, now)
@@ -2463,7 +2525,7 @@ def starter_report(name, switches, states, now, reading=None):
         state, at, next_ = "confirming", record["pending"], record["pending"] + CONFIRM_DELAY
     if stepped or next_ is None:
         next_ = now
-    return {"enabled": True, "state": state, "at": at, "next": next_,
+    return {"enabled": True, "on": on, "windows": windows, "state": state, "at": at, "next": next_,
             "reason": record["reason"] if state == "failed" else None, "window": window}
 
 
@@ -2563,10 +2625,14 @@ def provider_list(text):
 
 
 def switch(text):
+    """A --starter-set value: the provider and the windows it is on for."""
     name, _, value = text.partition("=")
-    if name not in PROVIDERS or value not in ("on", "off"):
-        raise argparse.ArgumentTypeError(f"expected <provider>=on or <provider>=off, not {text!r}")
-    return name, value == "on"
+    if name in PROVIDERS and value in ("on", "off"):
+        return name, list(OFFERED[name]) if value == "on" else []
+    windows = value.split(",")
+    if name not in PROVIDERS or not set(windows) <= set(OFFERED[name]):
+        raise argparse.ArgumentTypeError(f"expected <provider>=on, off or a list of its windows, not {text!r}")
+    return name, [window for window in OFFERED[name] if window in windows]
 
 
 def chosen_program(text):
@@ -2587,8 +2653,9 @@ def arguments(argv):
                         help="providers awaiting their first report; briefly retry connection failures")
     parser.add_argument("--start", action="store_true",
                         help="run the session starter of each listed provider that is switched on and due")
-    parser.add_argument("--starter-set", type=switch, action="append", default=[], metavar="PROVIDER=on|off",
-                        help="switch a provider's session starter on or off for this user")
+    parser.add_argument("--starter-set", type=switch, action="append", default=[], metavar="PROVIDER=on|off|WINDOWS",
+                        help="switch a provider's session starter on for this user for every window, none, or "
+                             "the comma-separated windows named (session, week)")
     parser.add_argument("--program", type=chosen_program, action="append", default=[], metavar="PROVIDER=PATH",
                         help="run the program at PATH for a provider rather than finding it; ~ is the home folder")
     args = parser.parse_args(argv)

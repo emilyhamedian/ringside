@@ -9,10 +9,14 @@ does, filtered to the ids after --providers. Times are relative to now, so
 countdowns read the same on every run. Nothing is read from the machine and
 nothing goes over the network.
 
-Every entry carries a session starter, off unless the scenario gives one.
---starter-set <id>=on|off switches it in the report printed (on reads as
-waiting and due now) unless the scenario passes sticks=False, which says
-why on stderr as usage.py does when it can't write the switch. --start
+Every entry carries a session starter, off unless the scenario gives one,
+with the windows its plan lets Ringside start: Claude's session, and
+Codex's session and week, or its week alone when it reports no session; a
+failed check can't tell. A starter that is on has each of them switched on
+unless the scenario says which. --starter-set <id>=off or <id>=<windows>
+switches it in the report printed (on reads as waiting and due now) unless
+the scenario passes sticks=False, which says why on stderr as usage.py does
+when it can't write the switch. --start
 reports each listed starter as confirming, as a send would: the widget runs
 --start only for starters that are switched on and due, so the fake checks
 neither. Every entry carries the program usage.py would find,
@@ -54,9 +58,11 @@ def session(percent, left):
     return {"percent": percent, "resetsAt": NOW + left, "windowSeconds": SESSION, "clockZone": ZONE}
 
 
-def starter(state="off", at=None, next=None, reason=None):
-    """A session starter as usage.py reports it; at and next are seconds from now."""
-    report = {"enabled": state != "off", "state": state, "at": None if at is None else NOW + at,
+def starter(state="off", at=None, next=None, reason=None, on=None):
+    """A session starter as usage.py reports it; at and next are seconds from
+    now. report() fills in its windows, and those switched on when on is
+    None."""
+    report = {"enabled": state != "off", "on": on, "state": state, "at": None if at is None else NOW + at,
               "next": None if next is None else NOW + next, "reason": reason}
     if at is not None:
         report["atClockZone"] = ZONE
@@ -92,14 +98,21 @@ def report(sticks=True, events=(), zoned=True, **entries):
     for change in values("--starter-set"):
         name, _, value = change.partition("=")
         if sticks and name in providers:
-            providers[name]["starter"] = starter("waiting", next=0) if value == "on" else starter()
+            providers[name]["starter"] = starter() if value == "off" else starter("waiting", next=0, on=value.split(","))
     for chosen in values("--program"):
         name, _, path = chosen.partition("=")
         if name in providers:
             providers[name]["program"] = {"path": path, "chosen": True, "problem": ""}
     if "--start" in sys.argv:
         for entry in providers.values():
-            entry["starter"] = starter("confirming", at=0, next=300)
+            entry["starter"] = starter("confirming", at=0, next=300, on=entry["starter"]["on"])
+    for name, entry in providers.items():
+        plan = entry["starter"]
+        if "windows" not in plan:
+            plan["windows"] = (None if entry.get("status") != "ok" else ["session"] if name == "claude"
+                               else ["session", "week"] if "session" in entry else ["week"])
+        if plan["on"] is None:
+            plan["on"] = [] if plan["state"] == "off" else plan["windows"] or ["session"]
     if not zoned:
         providers = without_zones(providers)
     print(json.dumps({"fetchedAt": NOW, "providers": providers, "events": list(events)}))

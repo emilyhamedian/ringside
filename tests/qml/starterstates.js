@@ -31,8 +31,13 @@ var ROWS = [
     { label: "failed: not a subscription", state: "failed", enabled: true, failed: true, reason: "not-subscription", only: "claude" }
 ];
 
-// A row as UsageData.starter() gives it, with `now` in epoch seconds.
-function starter(row, now) {
-    return { enabled: row.enabled, state: row.state, reason: row.reason ?? null, error: row.error ?? null,
+// A row as UsageData.starter() gives it, with `now` in epoch seconds, for a
+// plan that can start `windows`, Claude's session by default; an enabled row
+// has each of them switched on, and works toward the session when it has one.
+function starter(row, now, windows) {
+    const can = windows ?? ["session"];
+    const on = row.enabled ? can : [];
+    return { enabled: row.enabled, on: on, windows: can, window: on.includes("session") ? "session" : "week", state: row.state,
+             reason: row.reason ?? null, error: row.error ?? null,
              at: row.at !== undefined ? now + row.at : null, next: row.next !== undefined ? now + row.next : null };
 }

@@ -396,11 +396,12 @@ QtObject {
                      Qt.locale().dayName(date.getDay(), Locale.ShortFormat), shortTime(date));
     }
 
-    // What the session starter is doing, under its switch in the Claude or
-    // Codex popup. `starter` is the helper's { enabled, state, at, next,
-    // reason, clockZone, atClockZone } (see usage.py), or UsageData's
-    // "failed" with the helper's error and reason "helper" after a --start
-    // that didn't run, or "switch" after a switch change that didn't take.
+    // What the session starter is doing, under its switches in the Claude or
+    // Codex popup. `starter` is the helper's { enabled, on, windows, state,
+    // at, next, reason, window, clockZone, atClockZone } (see usage.py), or
+    // UsageData's "failed" with the helper's error and reason "helper" after
+    // a --start that didn't run, or "switch" after a switch change that
+    // didn't take.
     // Times are to the minute, in the desktop clock's zone when the helper
     // gives the starter one, as it does the resets, else in system time; the
     // tile's caption names the zone once. `at` takes the zone at that time,
@@ -436,12 +437,18 @@ QtObject {
         const tryingAgain = onDay(s.next, i18nc("@info %1 is a time today", "Trying once more at %1.", time(s.next)),
                                   i18nc("@info %1 is a weekday, or a weekday and date, %2 a time", "Trying once more %1 %2.", day(s.next), time(s.next)));
         switch (s.state) {
-        case "off":
+        case "off": {
+            // What the plan lets Ringside start, when the report says.
+            const can = s.windows ? Array.from(s.windows) : [session ? "session" : "week"];
             return claude
                 ? i18nc("@info under the session starter's switch while it is off", "When a session ends, Ringside sends Claude a one-word message to start the next one.")
-                : session
+                : can.includes("session") && can.includes("week")
+                ? i18nc("@info under the Auto start session and Auto start week switches while they are off; either is a session or a week",
+                        "When either ends, Ringside sends Codex a one-word message to start the next one.")
+                : can.includes("session")
                 ? i18nc("@info under the session starter's switch while it is off", "When a session ends, Ringside sends Codex a one-word message to start the next one.")
                 : i18nc("@info under the session starter's switch while it is off", "When a week ends, Ringside sends Codex a one-word message to start the next one.");
+        }
         case "waiting":
             return session
                 ? onDay(s.next, i18nc("@info %1 is a time today", "The next session starts at %1.", time(s.next)),
