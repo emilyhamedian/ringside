@@ -8,33 +8,29 @@
   <a href="LICENSE"><img src="https://img.shields.io/github/license/emilyhamedian/ringside" alt="License: GPL-3.0-or-later"></a>
 </p>
 
-Ringside puts your system in your KDE Plasma 6 panel as a row of rings: CPU,
-GPU, memory, network and disk. If you use Claude, Codex, Kimi Code or
-OpenCode Go, it can show your usage limits too.
+Ringside shows your CPU, GPU, memory, network and disk as rings in your KDE
+Plasma 6 panel. It can also show how much of your Claude, Codex, Kimi Code or
+OpenCode Go usage limits you've used.
 
 ![Ringside in a panel: CPU, GPU and memory rings with their names inside, each with its usage over its temperature or the memory in use, a Claude ring with its weekly usage over the days to its reset and its Fable limit in amber on the inner ring, then network rates](docs/panel.png)
 
-- See your CPU, GPU and memory at a glance, with their temperatures right
-  beside them.
-- Keep an eye on network and disk activity.
-- Track your Claude and Codex weekly limits and your Kimi Code and OpenCode
-  Go monthly limits: how much you've used, when it resets, and whether you're on pace to run
-  out. These stay off until you turn them on.
-- Click any item for a popup with graphs of the last minute, hour or day, top
-  processes and more. Point at a graph to compare what a device's graphs
-  read at the same moment.
-- It matches your Plasma theme and shows sizes in the units you chose in
-  *Region & Language*. Rings turn amber, then red, when something runs hot
-  or fills up.
+- CPU, GPU and memory at a glance, with their temperatures beside them.
+- Network and disk activity.
+- Your AI usage limits: how much you've used, when they reset, and whether
+  you're on pace to run out. These are off until you turn them on.
+- Click any item for graphs of the last minute, hour or day, the busiest
+  processes and more.
+- It follows your Plasma theme and units. Rings turn amber, then red, when
+  something runs hot or fills up.
 
 ![The CPU, GPU, memory, network and disk popups](docs/popups.png)
 
 ## Install
 
-Grab `ringside.plasmoid` from the
-[latest release](https://github.com/emilyhamedian/ringside/releases/latest).
-You can install it from *Add or Manage Widgets… → Get New… → Install Widget
-From Local File…*, or from a terminal:
+Download `ringside.plasmoid` from the
+[latest release](https://github.com/emilyhamedian/ringside/releases/latest),
+then install it from *Add or Manage Widgets… → Get New… → Install Widget From
+Local File…*, or from a terminal:
 
 ```bash
 kpackagetool6 --type Plasma/Applet --install ringside.plasmoid
@@ -42,133 +38,109 @@ kpackagetool6 --type Plasma/Applet --install ringside.plasmoid
 
 Then add **Ringside** to a panel like any other widget.
 
-To update to a new release, run the same command with `--upgrade` instead of
-`--install`, then restart Plasma by logging out and back in, or with
-`systemctl --user restart plasma-plasmashell`. To uninstall, remove it from
-your panel and run:
+- **Update:** run the same command with `--upgrade` instead of `--install`,
+  then log out and back in, or run
+  `systemctl --user restart plasma-plasmashell`.
+- **Remove:** take it off your panel, then run
+  `kpackagetool6 --type Plasma/Applet --remove dev.emily.ringside`.
+- **From source:** clone this repository and run `scripts/install.sh`.
 
-```bash
-kpackagetool6 --type Plasma/Applet --remove dev.emily.ringside
-```
+### What you need
 
-Building from source? Clone the repository and run `scripts/install.sh`.
+- KDE Plasma 6.8 or later, with ksystemstats and libksysguard, which come
+  with Plasma's System Monitor. Older Plasma 6 versions may work, but aren't
+  supported.
+- Python 3.11 or later, only for the AI usage items.
+- Qt's LocalStorage module, only to keep graphs across restarts
+  (`qml6-module-qtquick-localstorage` on Debian and Ubuntu).
 
-### Requirements
+### Known limits
 
-Ringside supports KDE Plasma 6.8 and later, with ksystemstats and
-libksysguard, normally installed with Plasma's System Monitor. Older
-Plasma 6 releases may work, but aren't officially supported.
+- Ringside shows what your hardware and drivers report. Anything they don't
+  report shows as a dash.
+- Intel GPUs on the i915 driver don't report temperature or video memory. On
+  xe, that depends on your hardware and kernel.
+- Listing the processes using an NVIDIA GPU needs `nvidia-smi`, and shows only
+  your own. GPU use the kernel doesn't count, such as ROCm compute work, shows
+  as a dash.
 
-### Graph history
-
-To keep the last hour and day across restarts, turn on *Keep the last hour
-and day across restarts* under *General*. This needs Qt's LocalStorage
-module, packaged as `qml6-module-qtquick-localstorage` on Debian and Ubuntu.
-
-### Limitations
-
-- Readings depend on what your hardware and drivers report. Missing
-  readings show as a dash or are left out.
-- Intel GPUs using i915 don't report temperature or VRAM. With xe, package
-  temperature and dedicated VRAM depend on hardware and kernel support.
-- Listing the processes using an NVIDIA GPU needs `nvidia-smi`. Only your
-  own GPU processes are listed. Where the kernel doesn't count compute
-  work's GPU usage (ROCm's, say), that shows as a dash.
-
-## Claude, Codex, Kimi and OpenCode Go
+## AI usage limits
 
 ![The Claude popup: the weekly limit, the Fable limit in amber with a sentence saying when it is on pace to run out, and a graph of this week's usage with a dashed amber line at the time the Fable limit runs out](docs/usage.png)
 
-These need Python 3.11 or later. Turn them on in *Configure Ringside… →
-Panel Items*.
+Turn them on in *Configure Ringside… → Panel Items*. Each needs:
 
-- **Claude** needs [Claude Code](https://docs.claude.com/en/docs/claude-code)
-  signed in with a subscription. Ringside uses its login to ask Anthropic for
-  your limits, and renews it the same way Claude Code does, so you stay
-  signed in.
-- **Codex** needs the [Codex CLI](https://github.com/openai/codex) signed in,
-  and Ringside asks it for your limits.
-- **Kimi** needs a Kimi Code subscription, signed in to
-  [Kimi Code](https://www.kimi.com/code) or connected as *Kimi For Coding*
-  in [OpenCode](https://opencode.ai). Ringside uses whichever it finds first
-  to ask Kimi for your limits, and never renews Kimi Code's sign-in itself:
-  if that's the only one and it has expired, open Kimi Code to renew it.
-- **OpenCode Go** needs an
-  [OpenCode Go](https://opencode.ai/docs/console/go/) subscription and
-  [OpenCode](https://opencode.ai) signed in to the OpenCode Console
-  (`opencode auth login opencode`). Ringside uses that sign-in to ask
-  OpenCode for your limits and never renews it itself: if it has expired,
-  open OpenCode to renew it.
+- **Claude:** [Claude Code](https://docs.claude.com/en/docs/claude-code),
+  signed in with a subscription.
+- **Codex:** the [Codex CLI](https://github.com/openai/codex), signed in.
+- **Kimi:** a Kimi Code subscription, signed in to
+  [Kimi Code](https://www.kimi.com/code) or connected as *Kimi For Coding* in
+  [OpenCode](https://opencode.ai).
+- **OpenCode Go:** an
+  [OpenCode Go](https://opencode.ai/docs/console/go/) subscription, with
+  OpenCode signed in to the OpenCode Console
+  (`opencode auth login opencode`).
 
-The ring shows how much of your weekly limit you've used, or for Kimi and
-OpenCode Go your monthly limit, and how long until it resets. If your plan
-also has a per-model limit, that shows on an inner ring. On first load,
-connection failures retry for up to 30 seconds while the rings keep loading.
-When a check fails, the ring greys out, and if it keeps failing, it's struck
-through; the popup tells you why. If a limit resets before it was due, the
-popup says so and how much you got back, for a day or until you've seen it.
-If Plasma can't find `claude` or `codex`, you can tell it where they are
-under *AI Providers*.
+Each ring shows how much of your limit you've used and how long until it
+resets: weekly for Claude and Codex, monthly for Kimi and OpenCode Go. If your
+plan also has a per-model limit, it shows as an inner ring. Click the ring for
+a graph and whether you're on pace to run out.
 
-**Remaining credits.** Enabled providers collect balances automatically and
-show them below their popup's graph. *Show remaining credits* under *AI
-Providers* hides or shows the rows for both providers. Balances update with
-the usage checks, at most once every five minutes. Claude makes a separate
-balance request; Codex uses its existing response. Disabled credits and
-empty balances take up no space. A failed check keeps the last balance
-marked as cached; hover over it to see when it was read.
+If a check fails, the ring greys out, and is crossed out if it keeps failing;
+the popup says why. If a limit resets early, the popup tells you. Ringside
+keeps Claude Code signed in, but never renews Kimi Code's or OpenCode's
+sign-in. If one of those expires, open that app and Ringside picks it up
+within five minutes. If Plasma can't find `claude` or `codex`, tell it where
+they are under *AI Providers*.
 
-When a reported limit is exhausted and the balance falls between checks,
-the panel shows one full blue ring around the provider's mark, which breathes
-until a check finds the balance no lower.
-The percentage and countdown still show the week. Blue means credits were
-used since the previous check; it uses the same readings, with no extra
-requests. Hiding the balance rows keeps this indication.
+**Credits.** For Claude and Codex, the popup shows your remaining credits
+under the graph. When you've used up a limit and are spending credits, the
+ring turns blue. *Show remaining credits* under *AI Providers* hides them.
 
 **Auto start.** Ringside can start your next five-hour session, or your next
-Codex week, the moment the last one ends, so the clock is already running when
-you're back. It offers only what your plan has: turn on *Auto start session*
-or *Auto start week* at the bottom of the popup. Each start is a one-word
-message that counts toward your limits.
+Codex week, as soon as the last one ends, so the clock is already running
+when you're back. Turn it on with the switch at the bottom of the popup. Each
+start sends a one-word message, which counts toward your limits.
 
 ## Privacy
 
-Ringside doesn't talk to anything outside your computer unless you turn on a
-feature that needs to.
+Ringside doesn't contact anything outside your computer unless you turn on a
+feature that needs it:
 
-- Your system readings come from ksystemstats, the service behind Plasma's
-  System Monitor, and from a small script,
-  [`ringside-info.sh`](package/contents/code/ringside-info.sh), that reads
-  `/proc`, `/sys` and udev as you.
-- When you turn on Claude, Codex, Kimi or OpenCode Go, Ringside runs
-  [`usage.py`](package/contents/code/usage.py). It sends your Claude Code
-  login only to Anthropic (`api.anthropic.com`, and `platform.claude.com` to
-  renew it), asks the Codex CLI on your computer about Codex, sends your
-  Kimi Code sign-in or key only to Kimi (`api.kimi.ai`, or `api.kimi.com`
-  for China), sends OpenCode's sign-in only to OpenCode (`opencode.ai`), and
-  keeps the readings in `~/.cache/ringside/`.
-- The public address, off until you turn it on under *General*, shows the
-  address websites see in the network popup. To find it, Ringside asks
-  [ipify.org](https://www.ipify.org), Mullvad's connection check (which can
-  also tell you the city) or a service you choose, only while the popup is
-  open and no more than once a minute. The answer is never saved.
-- Graph history stays in memory unless you choose to keep it across
-  restarts. It's then saved under
-  `~/.local/share/plasmashell/QML/OfflineStorage/Databases/`, and turning the
-  setting off deletes it again.
+- If you want your **Claude** limits, Ringside has to send your Claude Code
+  login to Anthropic (`api.anthropic.com`, and `platform.claude.com` to keep
+  it signed in).
+- If you want your **Codex** limits, Ringside asks the Codex CLI on your
+  computer, which checks with OpenAI using its own login.
+- If you want your **Kimi** limits, Ringside has to send your Kimi Code
+  sign-in or key to Kimi (`api.kimi.ai`, or `api.kimi.com` in China).
+- If you want your **OpenCode Go** limits, Ringside has to send OpenCode's
+  sign-in to OpenCode (`opencode.ai`).
+- If you want your **public address** in the network popup, Ringside has to
+  fetch it from [ipify.org](https://www.ipify.org), Mullvad (which can also
+  tell you your city) or a service you choose. It asks only while the popup
+  is open, at most once a minute, and never saves the answer. Turn it on
+  under *General*.
 
-## When something looks wrong
+Everything else stays on your computer. System readings come from Plasma's
+System Monitor service and a small script,
+[`ringside-info.sh`](package/contents/code/ringside-info.sh), that reads
+`/proc`, `/sys` and udev. Usage readings are kept in `~/.cache/ringside/`.
+Graphs are kept in memory, or in `~/.local/share/plasmashell/` if you turn on
+*Keep the last hour and day across restarts* under *General*; turning it off
+deletes them.
 
-Ringside notes what went wrong in Plasma's journal, without tokens, addresses
-or account details. To see today's notes:
+## If something looks wrong
+
+Ringside logs problems to Plasma's journal, never with tokens, addresses or
+account details. To see today's:
 
 ```bash
 journalctl --user --since today QT_CATEGORY=ringside.usage QT_CATEGORY=ringside.network QT_CATEGORY=ringside.gpu QT_CATEGORY=ringside.setup
 ```
 
-For more detail, including every check and how long it took, add the rule
-`ringside.*.debug=true` in KDE's Debug Settings (`kdebugsettings`) and
-restart Plasma.
+For every check and how long it took, add the rule `ringside.*.debug=true` in
+KDE's Debug Settings (`kdebugsettings`) and restart Plasma.
 
 ## Contributing
 
