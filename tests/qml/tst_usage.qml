@@ -3653,6 +3653,22 @@ TestRoot {
             verify(button.leadItem !== null);
         }
 
+        // With the setting off the switches are hidden, and keep the rows
+        // their plan gives them: GridLayout refuses two items in one cell,
+        // hidden or not.
+        function test_hiddenStarterSwitchesKeepTheirRows() {
+            failOnWarning(/already taken/);
+            setStarter("codex", { enabled: false, state: "off", windows: ["session", "week"] });
+            monitor.usage.starterOptions = Object.assign({}, monitor.usage.starterOptions, { codex: false });
+            const popup = load("codex");
+            waitForRendering(popup);
+            monitor.usage.starterOptions = Object.assign({}, monitor.usage.starterOptions, { codex: true });
+            waitForRendering(popup);
+            const [session, week] = starterSwitches(popup);
+            verify(week.mapToItem(popup, Qt.point(0, 0)).y > session.mapToItem(popup, Qt.point(0, 0)).y,
+                   "the week's switch under the session's");
+        }
+
         function test_starterToggle_data() {
             return [{ tag: "sticks", sticks: true }, { tag: "refused", sticks: false }];
         }
