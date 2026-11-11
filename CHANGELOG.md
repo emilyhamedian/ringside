@@ -16,7 +16,7 @@ follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
-- Hovering one GPU's graph marks the other GPU's graphs too.
+- Hovering one GPU's graph no longer marks the other GPU's graphs.
 
 ## [0.4.0] - 2026-10-18
 
