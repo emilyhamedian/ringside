@@ -21,6 +21,7 @@ follows [Semantic Versioning](https://semver.org/).
   rings only when the credit balance fell.
 - After a lost connection, a Claude or Codex popup now offers *Try again* as
   soon as the other provider or the public address shows the internet is back.
+- Hovering one GPU's graph no longer marks the other GPU's graphs.
 
 ## [0.4.0] - 2026-10-18
 
