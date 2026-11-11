@@ -17,8 +17,9 @@ set -u
 # Qt 6 builds; set QMLLINT and QMLTESTRUNNER to use others.
 #
 # Usage: [TEST_JOBS=N] sh scripts/test.sh
-# Independent checks run in parallel (nproc by default). Their complete logs
-# print in the order below, with failed checks marked FAIL.
+# Independent checks run in parallel (nproc by default). Each says PASS or
+# FAIL in one line as it finishes; their complete logs then print in the
+# order below.
 
 cd "$(dirname "$0")/.." || exit 1
 
@@ -162,8 +163,12 @@ check_reuse() {
 run_check() {
     check_dir=$1
     shift
+    started=$(date +%s)
     "$@" > "$check_dir/output" 2>&1 || failed=1
     printf '%s\n' "$failed" > "$check_dir/status"
+    # One short write per line, so lines from parallel checks don't mix.
+    if [ "$failed" -eq 0 ]; then result=PASS; else result=FAIL; fi
+    printf '%s  %s (%s s)\n' "$result" "$(cat "$check_dir/title")" "$(($(date +%s) - started))"
 }
 
 # xargs starts fresh shells, so a check's failure cannot change another's
@@ -228,6 +233,8 @@ queue_check shellcheck check_shellcheck
 queue_check "reuse lint" check_reuse
 
 xargs -0 -n 5 -P "$jobs" sh scripts/test.sh --check "$work" < "$work/jobs" || fail "could not run every check"
+
+printf '\nscripts/test.sh: every check has finished; their output follows\n'
 
 check=1
 while [ "$check" -le "$checks" ]; do
