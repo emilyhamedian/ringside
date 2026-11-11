@@ -1,8 +1,10 @@
 #!/bin/sh
 # SPDX-FileCopyrightText: 2026 Emily Hamedian <me@emily.dev>
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Check functions and the Qt suite callback are invoked indirectly.
-# shellcheck disable=SC2329
+# Check functions and the Qt suite callback are invoked indirectly, which
+# ShellCheck 0.10 and later report as SC2329 and 0.9 (Ubuntu 24.04's, as CI
+# runs) as SC2317.
+# shellcheck disable=SC2317,SC2329
 
 set -u
 
