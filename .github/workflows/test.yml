@@ -46,11 +46,6 @@ jobs:
     # series rather than silently moving the supported baseline.
     container:
       image: ubuntu:24.04@sha256:534baea6a22c03a63003dbc8dbe78fe34bc0d7e595d9a9dc9834884ff530eb55
-      # The runner's resolver returns no answer for archive.ubuntu.com and
-      # security.ubuntu.com (since November 2026; Google's 8.8.8.8 fails the
-      # same way), so apt can't install anything. Cloudflare's resolver still
-      # answers. Drop this once the default resolver answers for both again.
-      options: --dns 1.1.1.1 --dns 1.0.0.1
     env:
       DEBIAN_FRONTEND: noninteractive
       PIP_CACHE_DIR: /var/cache/pip
