@@ -102,10 +102,8 @@ TestRoot {
 
         // Layouts settle on their next polish; nothing need be drawn.
         function settle() {
-            wait(50);
-            for (const item of root.children) {
-                verify(waitForPolish(item), "laid out");
-            }
+            wait(0);
+            verify(waitForPolish(root.Window.window), "laid out");
         }
 
         function strip(applet) {
