@@ -23,7 +23,6 @@ QtObject {
     property var itemOrder: ["cpu", "gpu", "memory", "network", "disk"]
     property var hiddenItems: ["disk"]
     property var ringsOnly: []
-    property string fillPanel: ""
     property string cpuTemperatureSensor: ""
     property string outerGpu: ""
     property string innerGpu: ""
