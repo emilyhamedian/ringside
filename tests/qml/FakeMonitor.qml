@@ -87,6 +87,11 @@ QtObject {
     property var cpuTemperatureHistory: slept(wave(cpuTemperature, 2.5, 9))
     property var cpuTemperatureHighs: highsOf(cpuTemperatureHistory, 8, 9, Infinity)
     property var cpuTemperatureExtent: []
+    // Each thread's usage as the Monitor's Sensors give it, by processor number.
+    property var cpuThreadSensors: threadReadings(cpuIds, cpuUsage, 1)
+    // Empty for one CPU; FakeCpuPackages for more (see twoPackages()).
+    property var cpuPackages: []
+    property bool cpuPackageTemperatures: true
 
     property real memoryTotal: 31.9 * gib
     property real memoryUsed: 13.4 * gib
@@ -231,6 +236,60 @@ QtObject {
         }
         out[out.length - 1] = level;
         return out;
+    }
+
+    // Readings around `level` for the given threads, shaped like Sensors.
+    function threadReadings(ids, level, seed) {
+        const sensors = {};
+        let state = seed * 7919;
+        for (const id of ids) {
+            state = random(state);
+            sensors[id] = { value: Math.min(100, level * 2 * (state / 2147483647)) };
+        }
+        return sensors;
+    }
+
+    // Two packages of the CPU's model sharing its threads, numbered as
+    // Linux numbers a two-socket machine's: each package's first threads,
+    // then their siblings.
+    function twoPackages(usages, temperatures) {
+        const half = cpuCores / 2;
+        const made = [0, 1].map(n => {
+            const first = Array.from({ length: half }, (_, i) => n * half + i);
+            return packageComponent.createObject(monitor, {
+                packageId: n, model: cpuModel, cores: half, threads: half * 2,
+                ids: first.concat(first.map(i => i + cpuCores)), coreIds: first,
+                usage: usages[n], temperature: temperatures[n],
+                history: slept(wave(usages[n], 14, 20 + n)),
+                temperatureHistory: slept(wave(temperatures[n], 2.5, 30 + n))
+            });
+        });
+        made.forEach(p => {
+            p.highs = highsOf(p.history, 40, 20 + p.packageId, 100);
+            p.temperatureHighs = highsOf(p.temperatureHistory, 8, 30 + p.packageId, Infinity);
+        });
+        return made;
+    }
+
+    property Component packageComponent: Component {
+        FakeCpuPackage {}
+    }
+
+    // Shaped like Monitor.qml's CpuPackage.
+    component FakeCpuPackage: QtObject {
+        property int packageId: 0
+        property string model: ""
+        property int cores: 0
+        property int threads: 0
+        property var ids: []
+        property var coreIds: []
+        property real usage: NaN
+        property real temperature: NaN
+        property var history: []
+        property var highs: []
+        property var temperatureHistory: []
+        property var temperatureHighs: []
+        property var temperatureExtent: []
     }
 
     component FakeGpu: QtObject {

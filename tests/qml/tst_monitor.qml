@@ -1210,6 +1210,77 @@ TestRoot {
         }
 
         // Every Sensor the monitor holds directly or through its reader sets.
+        // The stub's report with the CPU split into two packages, on
+        // made-up thread numbers, so the machine's own threads aren't read.
+        function twoPackages(tempLabel) {
+            const cpu = Object.assign({}, monitor.hardware.cpu, {
+                ids: [90, 91, 92, 93], cores: 4, threads: 4, tempLabel: tempLabel,
+                packages: [{ id: 0, model: "Intel(R) Xeon(R) Gold 6338", cores: 2, threads: 2, ids: [90, 92], coreIds: [90, 92] },
+                           { id: 1, model: "Intel(R) Xeon(R) Gold 6338", cores: 2, threads: 2, ids: [91, 93], coreIds: [91, 93] }]
+            });
+            monitor.hardware = Object.assign({}, monitor.hardware, { cpu: cpu });
+        }
+
+        function threadIds(kind) {
+            return sensorsOf(monitor).map(s => s.sensorId).filter(id => new RegExp("^cpu/cpu\\d+/" + kind + "$").test(id)).sort();
+        }
+
+        // With one CPU each thread is read only while the CPU popup shows
+        // its bars, at the graphs' pace, and no package is made.
+        function test_oneCpuReadsThreadsOnlyForThePopup() {
+            compare(monitor.cpuPackages.length, 0);
+            compare(threadIds("usage"), []);
+            monitor.openPopup = "cpu";
+            compare(threadIds("usage"), ["cpu/cpu0/usage", "cpu/cpu1/usage", "cpu/cpu2/usage", "cpu/cpu3/usage"]);
+            verify(sensorsOf(monitor).every(s => s.updateRateLimit === monitor.readInterval));
+            compare(Object.keys(monitor.cpuThreadSensors).sort(), ["0", "1", "2", "3"]);
+            monitor.openPopup = "memory";
+            compare(threadIds("usage"), []);
+            compare(threadIds("temperature"), []);
+            verify(!monitor.readings().some(r => r.key.startsWith("cpuPackage")));
+        }
+
+        // Two packages read every thread's usage and, on Intel, a thread
+        // of each core's temperature, all the time and on one Sensor each,
+        // and graph each package. AMD's k10temp reading, or a sensor picked
+        // in the settings, is the machine's, so no package graphs one.
+        function test_twoPackagesReadTheirThreads_data() {
+            return [{ tag: "coretemp", label: "", picked: "", temperatures: true },
+                    { tag: "k10temp", label: "Tctl", picked: "", temperatures: false },
+                    { tag: "picked", label: "", picked: "lmsensors/madeup-isa-0000/temp9", temperatures: false }];
+        }
+
+        function test_twoPackagesReadTheirThreads(data) {
+            config.cpuTemperatureSensor = data.picked;
+            twoPackages(data.label);
+            tryCompare(monitor.cpuPackages, "length", 2);
+            compare(monitor.cpuPackages.map(p => [p.packageId, p.model, p.cores, p.threads, p.ids, p.coreIds]),
+                    [[0, "Intel Xeon Gold 6338", 2, 2, [90, 92], [90, 92]], [1, "Intel Xeon Gold 6338", 2, 2, [91, 93], [91, 93]]]);
+            compare(monitor.cpuPackageTemperatures, data.temperatures);
+            compare(threadIds("usage"), ["cpu/cpu90/usage", "cpu/cpu91/usage", "cpu/cpu92/usage", "cpu/cpu93/usage"]);
+            compare(threadIds("temperature"), data.temperatures
+                    ? ["cpu/cpu90/temperature", "cpu/cpu91/temperature", "cpu/cpu92/temperature", "cpu/cpu93/temperature"] : []);
+            const ids = sensorsOf(monitor).map(s => s.sensorId);
+            compare(new Set(ids).size, ids.length, ids.join());
+            verify(sensorsOf(monitor).every(s => s.updateRateLimit === monitor.readInterval));
+            // The popup opening neither remakes the Sensors nor adds a second.
+            const before = monitor.cpuThreadSensors[90];
+            monitor.openPopup = "cpu";
+            compare(threadIds("usage").length, 4);
+            verify(monitor.cpuThreadSensors[90] === before);
+
+            const keys = monitor.readings().map(r => r.key).filter(k => k.startsWith("cpuPackage"));
+            compare(keys, data.temperatures ? ["cpuPackage:0", "cpuPackageTemperature:0", "cpuPackage:1", "cpuPackageTemperature:1"]
+                                            : ["cpuPackage:0", "cpuPackage:1"]);
+            // The made-up threads never read, so each package graphs gaps.
+            monitor.sample();
+            for (const p of monitor.cpuPackages) {
+                compare(p.history.length, 1);
+                verify(Number.isNaN(p.usage));
+                compare(p.temperatureHistory.length, data.temperatures ? 1 : 0);
+            }
+        }
+
         function sensorsOf(m) {
             const found = [];
             for (const child of m.data) {

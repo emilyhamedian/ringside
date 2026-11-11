@@ -63,8 +63,57 @@ cpu_json() {
         grep -qx Tdie "$h"/temp*_label 2>/dev/null && label=Tdie
         break
     done
-    printf '"cpu":{"model":%s,"cores":%d,"threads":%d,"ids":[%s],"tempLabel":%s}' \
-        "$(str "$model")" "$cores" "${threads:-0}" "$ids" "$(str "$label")"
+    printf '"cpu":{"model":%s,"cores":%d,"threads":%d,"ids":[%s],"tempLabel":%s%s}' \
+        "$(str "$model")" "$cores" "${threads:-0}" "$ids" "$(str "$label")" "$(packages_json "$ids" "$model")"
+}
+
+# ',"packages":[...]' on a machine with more than one CPU package (socket),
+# else nothing. Each package lists its model, its cores and threads, the
+# processor numbers ksystemstats names its threads by, and the first of each
+# core's threads: a core's threads share one temperature sensor.
+packages_json() {
+    for id in $(printf '%s' "$1" | tr ',' ' '); do
+        t=$sys/devices/system/cpu/cpu$id/topology
+        package=0
+        core=$id
+        { read -r package < "$t/physical_package_id"; } 2>/dev/null
+        { read -r core < "$t/core_cpus_list"; } 2>/dev/null
+        printf '%s %s %s\n' "$package" "$id" "${core%%[,-]*}"
+    done | awk -v cpuinfo="$proc/cpuinfo" -v fallback="$2" '
+        BEGIN {
+            while ((getline line < cpuinfo) > 0) {
+                split(line, f, /[[:space:]]*:[[:space:]]*/)
+                if (f[1] == "processor") p = f[2] + 0
+                else if (f[1] == "model name") model[p] = f[2]
+            }
+        }
+        {
+            if (!($1 in threads)) order[++count] = $1
+            threads[$1]++
+            ids[$1] = ids[$1] (ids[$1] == "" ? "" : ",") $2
+            if (!(($1, $3) in seen)) {
+                seen[$1, $3] = 1
+                cores[$1]++
+                coreIds[$1] = coreIds[$1] (coreIds[$1] == "" ? "" : ",") $2
+            }
+            if (!($1 in name)) name[$1] = ($2 in model) ? model[$2] : fallback
+        }
+        END {
+            if (count < 2) exit
+            for (i = 1; i <= count; i++) {
+                p = order[i]
+                printf "%s\t%d\t%d\t%s\t%s\t%s\n", p, cores[p], threads[p], ids[p], coreIds[p], name[p]
+            }
+        }' | sort -n | {
+        sep=""
+        while IFS="$(printf '\t')" read -r package cores threads ids core_ids model; do
+            [ -n "$sep" ] || printf ',"packages":['
+            printf '%s{"id":%d,"model":%s,"cores":%d,"threads":%d,"ids":[%s],"coreIds":[%s]}' \
+                "$sep" "$package" "$(str "$model")" "$cores" "$threads" "$ids" "$core_ids"
+            sep=,
+        done
+        [ -z "$sep" ] || printf ']'
+    }
 }
 
 # Module type, speed and sizes from systemd's dmi_memory_id, which udev keeps

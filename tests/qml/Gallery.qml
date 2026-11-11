@@ -173,6 +173,27 @@ TestRoot {
         ]
     }
 
+    // Two Xeon packages, whose cores ksystemstats reads one by one.
+    FakeMonitor {
+        id: twoCpus
+        cpuModel: "Intel Xeon Gold 6338"
+        cpuCores: 16
+        cpuThreads: 32
+        cpuTemperatureLabel: ""
+        Component.onCompleted: cpuPackages = twoPackages([34, 71], [58, 79])
+    }
+
+    // Two EPYC packages, which ksystemstats gives one temperature.
+    FakeMonitor {
+        id: twoCpusShared
+        cpuModel: "AMD EPYC 9124"
+        cpuCores: 16
+        cpuThreads: 32
+        cpuTemperatureLabel: "Tctl"
+        cpuPackageTemperatures: false
+        Component.onCompleted: cpuPackages = twoPackages([34, 71], [NaN, NaN])
+    }
+
     // A discrete Intel xe GPU with temperature and dedicated video memory.
     FakeMonitor {
         id: xe
@@ -572,9 +593,27 @@ TestRoot {
             }
         }
 
-        GalleryFrame {
-            label: "GPU · Intel xe · temperature and dedicated VRAM"
-            GpuPopup { monitor: xe }
+        RowLayout {
+            spacing: 2 * Kirigami.Units.gridUnit
+            Layout.alignment: Qt.AlignTop
+
+            GalleryFrame {
+                Layout.alignment: Qt.AlignTop
+                label: "GPU · Intel xe · temperature and dedicated VRAM"
+                GpuPopup { monitor: xe }
+            }
+
+            GalleryFrame {
+                Layout.alignment: Qt.AlignTop
+                label: "CPU · two packages, each with its temperature"
+                CpuPopup { monitor: twoCpus }
+            }
+
+            GalleryFrame {
+                Layout.alignment: Qt.AlignTop
+                label: "CPU · two packages sharing AMD's one temperature"
+                CpuPopup { monitor: twoCpusShared }
+            }
         }
 
         RowLayout {
