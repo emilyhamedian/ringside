@@ -436,7 +436,7 @@ TestRoot {
         function load(popup, monitor, mirrored, width) {
             const loader = createTemporaryObject(mirrored ? mirroredHost : host, root, width ? { width: width } : {});
             loader.setSource(Qt.resolvedUrl("../../package/contents/ui/popups/" + popup + ".qml"), { monitor: monitor });
-            waitForRendering(loader.item);
+            verify(waitForPolish(root.Window.window), "laid out");
             return loader.item;
         }
 
@@ -1542,7 +1542,7 @@ TestRoot {
             const entries = all(popup, i => i.swatch !== undefined && i.text !== undefined);
             compare(entries.length, 3);
             popup.width = popup.implicitWidth + Kirigami.Units.gridUnit * 6;
-            waitForRendering(popup);
+            verify(waitForPolish(root.Window.window), "laid out");
             tryVerify(() => entries[0].y === entries[2].y, 1000, "one line");
             // The bar's own mapping would include its mirroring flip.
             const left = i => i.parent.mapToItem(popup, Qt.point(i.x, 0)).x;
@@ -1888,7 +1888,7 @@ TestRoot {
                 loader.setSource(Qt.resolvedUrl("../../package/contents/ui/popups/" + popup + ".qml"),
                                  item ? { monitor: monitor, item: item } : { monitor: monitor });
                 compare(loader.status, Loader.Ready, popup);
-                waitForRendering(loader.item);
+                verify(waitForPolish(root.Window.window), "laid out");
                 return all(loader.item, i => i.visible && i.partsShown !== undefined);
             };
             const found = [].concat(headers("CpuPopup", normal), headers("GpuPopup", normal), headers("GpuPopup", intel),
@@ -2180,7 +2180,7 @@ TestRoot {
             loader.setSource(Qt.resolvedUrl("../../package/contents/ui/popups/GpuPopup.qml"), { monitor: monitor });
             const popup = loader.item;
             popup.room = roomAt(1);
-            waitForRendering(popup);
+            verify(waitForPolish(root.Window.window), "laid out");
             compare(popup.width, data.width);
             compare(popup.implicitWidth, Kirigami.Units.gridUnit * 20, "the names do not widen the popup");
             const left = i => i.mapToItem(popup, Qt.point(0, 0)).x;
@@ -2599,7 +2599,7 @@ TestRoot {
             const host = createTemporaryObject(escapeHost, root, { width: widePage });
             host.setSource(Qt.resolvedUrl("../../package/contents/ui/popups/CpuPopup.qml"), { monitor: fresh });
             const popup = host.item;
-            waitForRendering(popup);
+            verify(waitForPolish(root.Window.window), "laid out");
             const tile = temperatureTiles(popup)[0];
             verify(tile);
             const height = popup.implicitHeight;
@@ -2668,13 +2668,13 @@ TestRoot {
             compare(scan.model, null);
             const height = popup.implicitHeight;
             m.processesReadable = true;
-            waitForRendering(popup);
+            verify(waitForPolish(root.Window.window), "laid out");
             verify(list.active);
             verify(scan.model !== null);
             list.key = "none";
             scan.processes = [];
             scan.scanned = true;
-            waitForRendering(popup);
+            verify(waitForPolish(root.Window.window), "laid out");
             verify(!list.visible);
             compare(popup.implicitHeight, height);
             popup.visible = false;
@@ -2697,16 +2697,16 @@ TestRoot {
             verify(header.processesLoading && !list.visible);
             verify(dividers.every(i => !i.visible));
             scan.scanned = true;
-            waitForRendering(popup);
+            verify(waitForPolish(root.Window.window), "laid out");
             const height = popup.implicitHeight;
             verify(!header.processesLoading && !list.visible);
             verify(list.active);
             m.processSample = [{ name: "firefox", usage: 1, memory: 1024, count: 1 }];
-            waitForRendering(popup);
+            verify(waitForPolish(root.Window.window), "laid out");
             verify(list.visible && dividers.some(i => i.visible));
             verify(popup.implicitHeight > height);
             m.processSample = [];
-            waitForRendering(popup);
+            verify(waitForPolish(root.Window.window), "laid out");
             verify(!list.visible && dividers.every(i => !i.visible));
             compare(popup.implicitHeight, height);
             verify(!header.processesLoading);
@@ -2737,7 +2737,7 @@ TestRoot {
         function test_gpusFitTheScreen(data) {
             const popup = load("GpuPopup", data.monitor);
             popup.room = roomAt(data.scale);
-            waitForRendering(popup);
+            verify(waitForPolish(root.Window.window), "laid out");
             verify(popup.implicitHeight <= popup.room, popup.implicitHeight + " px in " + popup.room + " at a grid unit of "
                    + Kirigami.Units.gridUnit);
             compare(popup.processCount, data.rows);
@@ -2754,7 +2754,7 @@ TestRoot {
         function test_gpuRowsFillTheRoom(data) {
             const popup = load("GpuPopup", normal);
             popup.room = data.room;
-            waitForRendering(popup);
+            verify(waitForPolish(root.Window.window), "laid out");
             const lists = all(popup, i => i.heightFor !== undefined);
             compare(lists.length, 2);
             // Wrapped names settle after width, then the rows fit the new height.
@@ -2804,19 +2804,19 @@ TestRoot {
             verify(m.gpuOuter.usage > 0);
             popup.room = height;
             m.gpuProcessSample = normal.gpuProcessSample;
-            waitForRendering(popup);
+            verify(waitForPolish(root.Window.window), "laid out");
             tryCompare(popup, "processCount", 0);
             compare(gpuLists(popup).length, 0);
             m.gpuProcessSample = [];
-            waitForRendering(popup);
+            verify(waitForPolish(root.Window.window), "laid out");
             compare(gpuLists(popup).length, 0);
             popup.room = height + 200;
             m.gpuProcessSample = normal.gpuProcessSample;
-            waitForRendering(popup);
+            verify(waitForPolish(root.Window.window), "laid out");
             tryVerify(() => popup.processCount > 0);
             compare(gpuLists(popup).length, 1);
             m.gpuProcessSample = [];
-            waitForRendering(popup);
+            verify(waitForPolish(root.Window.window), "laid out");
             compare(gpuLists(popup).length, 0);
             compare(popup.implicitHeight, height);
             verify(!texts(popup).includes("Nothing of yours is using this GPU"));
@@ -2831,12 +2831,12 @@ TestRoot {
             const height = popup.implicitHeight;
             const value = header.ringValue;
             m.gpuProcessesScanned = true;
-            waitForRendering(popup);
+            verify(waitForPolish(root.Window.window), "laid out");
             verify(!header.processesLoading);
             compare(header.ringValue, value);
             compare(popup.implicitHeight, height);
             m.gpuProcesses = normal.gpuProcessSample;
-            waitForRendering(popup);
+            verify(waitForPolish(root.Window.window), "laid out");
             compare(gpuLists(popup).length, 1);
         }
 
@@ -2847,11 +2847,11 @@ TestRoot {
             // Enough room for one GPU's row, but not a row on each GPU.
             popup.room = popup.implicitHeight + lists[0].heightFor(1) + 1;
             m.gpuProcessSample = normal.gpuProcessSample;
-            waitForRendering(popup);
+            verify(waitForPolish(root.Window.window), "laid out");
             tryCompare(popup, "processCount", 0);
             compare(gpuLists(popup).length, 0);
             m.gpuProcessSample = normal.gpuProcessSample.filter(p => p.gpu === normal.gpuInner.bdf);
-            waitForRendering(popup);
+            verify(waitForPolish(root.Window.window), "laid out");
             tryVerify(() => popup.processCount > 0);
             compare(gpuLists(popup).length, 1);
             verify(popup.implicitHeight <= popup.room);
@@ -2867,13 +2867,13 @@ TestRoot {
             compare(scans.length, 1);
             // Stand in for libksysguard before 6.4, without GPU attributes.
             scans[0].model.enabledAttributes = [];
-            waitForRendering(popup);
+            verify(waitForPolish(root.Window.window), "laid out");
             verify(!popup.nvidiaListed);
             compare(gpuLists(popup).length, 0);
             verify(all(popup, i => i.ringValue !== undefined && i.processesLoading !== undefined)
                    .every(i => !i.processesLoading));
             m.gpuOuter.phase = "resting";
-            waitForRendering(popup);
+            verify(waitForPolish(root.Window.window), "laid out");
             compare(scans[0].model, null);
         }
 
@@ -3296,7 +3296,7 @@ TestRoot {
             const host = createTemporaryObject(escapeHost, root, { width: widePage });
             host.setSource(Qt.resolvedUrl("../../package/contents/ui/popups/CpuPopup.qml"), { monitor: monitor });
             const popup = host.item;
-            waitForRendering(popup);
+            verify(waitForPolish(root.Window.window), "laid out");
             const span = spanOf(graphs(popup)[0]);
             const menu = span.menu;
             span.forceActiveFocus(Qt.TabFocusReason);

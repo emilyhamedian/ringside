@@ -179,7 +179,7 @@ TestRoot {
             const loader = createTemporaryObject(mirrored ? mirroredHost : host, root);
             loader.setSource(Qt.resolvedUrl("../../package/contents/ui/popups/NetworkPopup.qml"), { monitor: monitor });
             compare(loader.status, Loader.Ready);
-            waitForRendering(loader.item);
+            verify(waitForPolish(loader.item.Window.window), "laid out");
             return loader.item;
         }
 
@@ -640,7 +640,7 @@ TestRoot {
             set.checker.open = true;
             compare(set.made.length, 4, "asked again");
             compare(set.checker.status, "shown");
-            waitForRendering(page);
+            verify(waitForPolish(page.Window.window), "laid out");
             compare(addressLines(page).map(l => l.spoken), before);
             verify(before[1].indexOf("through VPN wg0-mullvad") >= 0, before);
             compare(visibleTexts(page).filter(t => t.indexOf("Asking") === 0), []);
@@ -1022,14 +1022,14 @@ TestRoot {
 
             // Asked again after the failure, the last address stays in view
             // and the block keeps its height.
-            waitForRendering(page);
+            verify(waitForPolish(page.Window.window), "laid out");
             const height = block(page).implicitHeight;
             root.now += 61000;
             set.checker.open = false;
             set.checker.open = true;
             compare(set.made.length, 4, "asked again");
             compare(set.checker.status, "checking");
-            waitForRendering(page);
+            verify(waitForPolish(page.Window.window), "laid out");
             const asking = visibleTexts(page);
             verify(asking.includes("Asking popupnotes.example…"), asking);
             verify(asking.includes("Last seen 198.51.100.24 at " + seen), asking);
@@ -1251,7 +1251,7 @@ TestRoot {
             const page = popup(set.monitor, data.mirrored);
             const width = block(page).width;
             answer(set.made, "v4", 200, JSON.stringify({ ip: "198.51.100.24", city: city, country: country }));
-            waitForRendering(page);
+            verify(waitForPolish(page.Window.window), "laid out");
             const t = placeTexts(page)[0];
             compare(t.text, "Near " + city + ", " + country);
             verify(t.truncated, "cut short");
@@ -1297,7 +1297,7 @@ TestRoot {
             answer(set.made, "v4", 503, "");
             answer(set.made, "v6", 503, "");
             compare(set.checker.status, "failed");
-            waitForRendering(page);
+            verify(waitForPolish(page.Window.window), "laid out");
             return { set: set, page: page, config: config, width: width };
         }
 
@@ -1344,7 +1344,7 @@ TestRoot {
             compare(fresh.map(r => r.sent), [true, true]);
             compare(set.checker.status, "checking");
             compare(Lookup.peek(key).attemptAt, root.now, "counts as a check");
-            waitForRendering(page);
+            verify(waitForPolish(page.Window.window), "laid out");
             compare(onScreen(tryAgain(page)), false);
             const asking = visibleTexts(page);
             verify(asking.includes("Asking tryclick.example…"), asking);
@@ -1355,7 +1355,7 @@ TestRoot {
             answer(set.made, "v6", 200, "2001:db8::1c");
             compare(set.checker.status, "shown");
             compare(Lookup.peek(key).result.v4, "203.0.113.7");
-            waitForRendering(page);
+            verify(waitForPolish(page.Window.window), "laid out");
             compare(addressLines(page).map(l => l.spoken).slice(1),
                     ["Public address 203.0.113.7", "Public address 2001:db8::1c"]);
             compare(onScreen(tryAgain(page)), false);
@@ -1399,7 +1399,7 @@ TestRoot {
             answer(set.made, "v6", 0, "");
             compare(set.made.length, sent + 2);
             compare(set.checker.status, "failed");
-            waitForRendering(page);
+            verify(waitForPolish(page.Window.window), "laid out");
             verify(onScreen(tryAgain(page)), "offered again");
             mouseClick(tryAgain(page));
             compare(set.made.length, sent + 4);
@@ -1620,7 +1620,7 @@ TestRoot {
             }
             answer(set.made, "v4", 200, "198.51.100.24");
             answer(set.made, "v6", 200, "2001:db8:85a3:4d1c:9d2e:51f4:c8a3:7e61");
-            waitForRendering(page);
+            verify(waitForPolish(page.Window.window), "laid out");
 
             const lines = addressLines(page);
             compare(lines.length, 3);
@@ -1663,7 +1663,7 @@ TestRoot {
         function general(props, mirrored) {
             const page = createTemporaryObject(generalComponent, root, Object.assign({ rightToLeft: mirrored === true }, props));
             verify(page);
-            waitForRendering(page);
+            verify(waitForPolish(page.Window.window), "laid out");
             return page;
         }
 
@@ -1747,7 +1747,7 @@ TestRoot {
                     mouseClick(c.box);
                 }
                 compare(c.box.checked, on);
-                waitForRendering(page);
+                verify(waitForPolish(page.Window.window), "laid out");
                 const line = on ? data.line : data.off ?? data.line;
                 compare(c.line.text, line, on ? "ticked" : "unticked");
                 compare(c.box.Accessible.description, line);
@@ -1993,7 +1993,7 @@ TestRoot {
             compare(c.line.text, data.reason === "" ? "Asks a.example, which sees your address, when the popup opens."
                                                     : "Asks nothing while a URL isn't valid.");
             if (data.reason !== "") {
-                waitForRendering(page);
+                verify(waitForPolish(page.Window.window), "laid out");
                 const note = all(field.parent, i => i instanceof QQC2.Label && i.visible)[0];
                 compare(note.color, Kirigami.Theme.negativeTextColor);
                 verify(note.mapToItem(page, Qt.point(0, 0)).y >= field.mapToItem(page, Qt.point(0, 0)).y + field.height - 0.5,

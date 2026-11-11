@@ -186,7 +186,7 @@ TestRoot {
         function make(component, properties) {
             const page = createTemporaryObject(component, root, properties);
             verify(page);
-            waitForRendering(page);
+            verify(waitForPolish(root.Window.window), "laid out");
             return page;
         }
 
@@ -805,7 +805,7 @@ TestRoot {
             const config = fakeConfiguration(start);
             const page = open(data.source, config, data.order);
             const d = dialog(page, config, data.order);
-            waitForRendering(page);
+            verify(waitForPolish(root.Window.window), "laid out");
             data.drive(page);
             verify(d.applyEnabled, "the control left Apply off");
             d.apply();
@@ -825,7 +825,7 @@ TestRoot {
             const config = fakeConfiguration(settings());
             const page = open("config/ConfigGeneral.qml", config, data.order);
             const d = dialog(page, config, data.order);
-            waitForRendering(page);
+            verify(waitForPolish(root.Window.window), "laid out");
             const box = find(page, i => i.text === "Show in the Network popup" && i.checked !== undefined);
             box.forceActiveFocus();
             keyClick(Qt.Key_Space);
@@ -916,7 +916,7 @@ TestRoot {
             const page = host.page;
             // Both Program rows, one with a problem under it.
             showPrograms(page, "broken-claude");
-            waitForRendering(host);
+            verify(waitForPolish(root.Window.window), "laid out");
             const texts = [];
             const walk = item => {
                 if (!item.visible) {
@@ -1059,7 +1059,7 @@ TestRoot {
                 page.usageStatus = Object.assign({}, page.usageStatus,
                                                  { claude: Object.assign({}, page.usageStatus.claude, { starter: false }) });
             }
-            waitForRendering(page);
+            verify(waitForPolish(root.Window.window), "laid out");
             for (const command of ["claude", "codex"]) {
                 const shown = data[command] !== null;
                 compare(field(page, command).visible, shown, command + "'s field");
@@ -1201,7 +1201,7 @@ TestRoot {
             const host = createTemporaryObject(stretchedProviders, root, { mirrored: true, width: 660, height: root.height });
             const page = host.page;
             showPrograms(page, "custom");
-            waitForRendering(host);
+            verify(waitForPolish(root.Window.window), "laid out");
             const f = accessible(page, root.stretch("Path to codex"));
             const button = accessible(page, root.stretch("Choose where codex is"));
             compare(f.effectiveHorizontalAlignment, TextInput.AlignLeft);
