@@ -216,6 +216,29 @@ Item {
     property var cpuTemperatureHighs: []
     // [coolest, hottest] across the three spans, [] with no reading.
     property var cpuTemperatureExtent: []
+    // Each CPU package (socket) on a machine with more than one, as a
+    // CpuPackage; empty with one, which shows as a single CPU. ksystemstats
+    // reads each thread and the whole machine but no package, so a
+    // package's usage is its threads' average and its temperature its
+    // hottest core's. Those take every thread's usage and every core's
+    // temperature, so they're read only where there is more than one package.
+    readonly property var cpuPackages: Array.from({ length: cpuPackageSet.count }, (_, i) => member(cpuPackageSet, i))
+        .filter(Boolean)
+    // Whether each package has a temperature of its own. ksystemstats
+    // gives each thread its core's coretemp sensor on Intel, but every
+    // thread the same k10temp sensor on AMD, one package's, whichever it
+    // found last. A temperature sensor picked in the settings is the
+    // machine's too.
+    readonly property bool cpuPackageTemperatures: cpuPackageInfo.length > 1 && !config.cpuTemperatureSensor
+        && !hardware.cpu.tempLabel
+    readonly property var cpuPackageInfo: hardware.cpu && Array.isArray(hardware.cpu.packages)
+        && hardware.cpu.packages.length > 1 ? hardware.cpu.packages : []
+    // Each thread's usage Sensor by processor number, for the CPU popup's
+    // bars: read while the popup is open, and always with more than one
+    // package, whose graphs are made from them.
+    readonly property var cpuThreadSensors: sensorsByThread(cpuThreadReaders)
+    // A bool, so the popup opening on such a machine doesn't remake them.
+    readonly property bool cpuThreadsRead: cpuPackageInfo.length > 1 || openPopup === "cpu"
 
     // Memory. ksystemstats' "used" is the total minus MemAvailable, and its
     // "cache" (Cached plus Slab) also counts shared memory and unreclaimable
@@ -331,6 +354,31 @@ Item {
         return group.objectAt(index);
     }
 
+    // A ThreadReaders' Sensors by processor number.
+    function sensorsByThread(group) {
+        const sensors = {};
+        for (let i = 0; i < group.count; ++i) {
+            const s = member(group, i);
+            if (s) {
+                sensors[s.thread] = s;
+            }
+        }
+        return sensors;
+    }
+
+    // Sets each package's usage and temperature from its threads' and
+    // cores' latest readings, once a sample rather than on every one.
+    function measurePackages() {
+        const cores = sensorsByThread(cpuCoreTemperatureReaders);
+        const valid = t => Format.temperatureValid(t) ? t : NaN;
+        for (const p of cpuPackages) {
+            const reading = Hardware.packageReading(p.ids.map(id => Hardware.sensorValue(cpuThreadSensors[id])),
+                                                    p.coreIds.map(id => valid(Hardware.sensorValue(cores[id]))));
+            p.usage = reading.usage;
+            p.temperature = reading.temperature;
+        }
+    }
+
     function groupValue(group, index) {
         return Hardware.sensorValue(member(group, index));
     }
@@ -425,6 +473,13 @@ Item {
             { key: "diskTemperature:" + diskTemperatureSensorId, into: monitor, prefix: "diskTemperature",
               minute: diskTemperature, gaps: true }
         ];
+        for (const p of cpuPackages) {
+            list.push({ key: "cpuPackage:" + p.packageId, into: p, prefix: "", minute: p.usage });
+            if (cpuPackageTemperatures) {
+                list.push({ key: "cpuPackageTemperature:" + p.packageId, into: p, prefix: "temperature",
+                            minute: p.temperature, gaps: true });
+            }
+        }
         // A GPU's readings are its reader's own, or its leader's: taking
         // them reads nothing more. The hour and the day take what is known
         // rather than what is shown (see GpuReader.recordedUsage).
@@ -442,6 +497,7 @@ Item {
         const now = nowMs ?? Date.now();
         sampled = true;
         sampledAt = now;
+        measurePackages();
         const closed = { hour: [], day: [] };
         for (const entry of readings()) {
             const s = seriesOf(entry.key);
@@ -628,6 +684,7 @@ Item {
     // A ring's GPU, its history at once rather than at the next close.
     onGpuOuterChanged: Qt.callLater(monitor.showAll)
     onGpuInnerChanged: Qt.callLater(monitor.showAll)
+    onCpuPackagesChanged: Qt.callLater(monitor.showAll)
 
     // Moves the panel to the live readings: all of them, or only those that
     // have appeared or gone away.
@@ -727,7 +784,7 @@ Item {
         const sensors = [cpuUsageSensor, coreCountSensor, memoryTotalSensor, memoryUsedSensor, memoryApplicationSensor,
                          memoryCacheSensor, memoryBufferSensor, swapUsedSensor, swapTotalSensor, pressureSensor];
         for (const group of [cpuTemperatureReaders, networkReaders, networkInfoReaders, diskReaders, volumeReaders,
-                             diskTemperatureReaders].concat(readers().map(r => r.sensors))) {
+                             diskTemperatureReaders, cpuThreadReaders, cpuCoreTemperatureReaders].concat(readers().map(r => r.sensors))) {
             for (let i = 0; i < group.count; ++i) {
                 sensors.push(group.objectAt(i));
             }
@@ -787,6 +844,58 @@ Item {
     ReaderSet {
         id: cpuTemperatureReaders
         model: [monitor.cpuTemperatureSensorId]
+    }
+
+    // A reading of each listed thread, by processor number.
+    component ThreadReaders: Instantiator {
+        id: threadReaders
+
+        property string reading
+
+        delegate: Reader {
+            required property int modelData
+            readonly property int thread: modelData
+            sensorId: "cpu/cpu" + modelData + "/" + threadReaders.reading
+        }
+    }
+
+    ThreadReaders {
+        id: cpuThreadReaders
+        reading: "usage"
+        model: monitor.cpuThreadsRead ? monitor.cpuIds : []
+    }
+
+    // A core's threads share its sensor, so one thread each.
+    ThreadReaders {
+        id: cpuCoreTemperatureReaders
+        reading: "temperature"
+        model: monitor.cpuPackageTemperatures ? [].concat(...monitor.cpuPackageInfo.map(p => p.coreIds)) : []
+    }
+
+    Instantiator {
+        id: cpuPackageSet
+        model: monitor.cpuPackageInfo
+
+        delegate: CpuPackage {}
+    }
+
+    component CpuPackage: QtObject {
+        required property var modelData
+        // ksystemstats' number for it, from 0.
+        readonly property int packageId: modelData.id
+        readonly property string model: Format.cpuModel(modelData.model)
+        readonly property int cores: modelData.cores
+        readonly property int threads: modelData.threads
+        // Its threads' processor numbers, and one thread of each core.
+        readonly property var ids: modelData.ids
+        readonly property var coreIds: modelData.coreIds
+        property real usage: NaN
+        property real temperature: NaN
+        property var history: []
+        property var highs: []
+        property var temperatureHistory: []
+        property var temperatureHighs: []
+        property var temperatureExtent: []
     }
 
     ReaderSet {

@@ -75,4 +75,15 @@ TestCase {
         verify(Number.isNaN(parts.cached));
         verify(Number.isNaN(Hardware.memoryParts(16e9, 8e9, NaN, 4e9, 0).free));
     }
+
+    // A package's usage is its threads' average and its temperature its
+    // hottest core's; a thread or core yet to read is left out.
+    function test_packageReading() {
+        const both = Hardware.packageReading([10, 30, NaN, 50], [61, NaN, 72]);
+        compare(both.usage, 30);
+        compare(both.temperature, 72);
+        const none = Hardware.packageReading([NaN], []);
+        verify(Number.isNaN(none.usage));
+        verify(Number.isNaN(none.temperature));
+    }
 }

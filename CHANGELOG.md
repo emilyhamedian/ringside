@@ -6,6 +6,12 @@ follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- CPU popup shows a section for each CPU on machines with more than one, each
+  with its model, cores and threads, usage, threads and graphs. Each CPU's
+  temperature shows on Intel; AMD's shows once for the whole machine.
+
 ### Changed
 
 - Popups offer an auto start switch for each window your plan has: Claude's

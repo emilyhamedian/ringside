@@ -767,6 +767,124 @@ TestRoot {
             tiles.forEach(t => checkUninspected(t, false));
         }
 
+        // A FakeMonitor with two CPU packages, AMD's shared temperature
+        // when `shared`.
+        function twoCpus(values, shared) {
+            const monitor = monitorWith(values ?? {});
+            monitor.cpuPackages = monitor.twoPackages([30, 60], [55, 92]);
+            monitor.cpuPackageTemperatures = !shared;
+            return monitor;
+        }
+
+        // Two packages get a section each, as GPUs do: its own header,
+        // usage, temperature and threads, after a rule from the first. The
+        // frequency, load and processes are the machine's, once, under
+        // them. With one temperature for both, the machine has it.
+        function test_twoCpusHaveASectionEach_data() {
+            return [{ tag: "coretemp", shared: false }, { tag: "k10temp", shared: true }];
+        }
+
+        function test_twoCpusHaveASectionEach(data) {
+            const monitor = twoCpus({}, data.shared);
+            const popup = load("CpuPopup", monitor);
+            const headers = all(popup, i => i.partsShown !== undefined && i.visible);
+            compare(headers.map(h => h.title), ["CPU 1", "CPU 2"]);
+            compare(headers.map(h => h.subtitle), ["AMD Ryzen 7 7840HS · 4C / 8T", "AMD Ryzen 7 7840HS · 4C / 8T"]);
+            compare(headers.map(h => h.ringValue), [30, 60]);
+            compare(headers.map(h => h.value), data.shared ? ["", ""] : [Format.temperature(55, false), Format.temperature(92, false)]);
+            if (!data.shared) {
+                compare(String(readings(headers[1]).find(r => r.visible && r.degreeUnit !== "").color),
+                        String(Kirigami.Theme.negativeTextColor), "a hot package in red");
+            }
+            const top = item => item.mapToItem(popup, Qt.point(0, 0)).y;
+            const bars = all(popup, i => i.Accessible.role === Accessible.ProgressBar && i.modelData !== undefined);
+            compare(bars.map(b => b.modelData), [0, 1, 2, 3, 8, 9, 10, 11, 4, 5, 6, 7, 12, 13, 14, 15]);
+            verify(bars.slice(0, 8).every(b => top(b) < top(headers[1])), "each package's threads in its section");
+            verify(bars.slice(8).every(b => top(b) > top(headers[1])));
+            fuzzyCompare(bars[0].usage, monitor.cpuThreadSensors[0].value, 1e-9, "the Monitor's reading");
+            for (const caption of ["Frequency", "Load average"]) {
+                const tiles = all(popup, i => i.visible && i.caption === caption);
+                compare(tiles.length, 1, caption);
+                verify(top(tiles[0]) > top(bars[15]), caption + " under the packages");
+            }
+            compare(all(popup, i => i.visible && i.caption === "Usage").length, 2);
+            const temperatures = temperatureTiles(popup);
+            compare(temperatures.length, data.shared ? 1 : 2);
+            const machine = all(popup, i => i.visible && i.caption === "Temperature" && i.hasReading === undefined);
+            compare(machine.length, data.shared ? 1 : 0, "the machine's temperature reading");
+            if (data.shared) {
+                compare(readings(machine[0])[0].value, Format.temperature(monitor.cpuTemperature, false));
+                verify(top(temperatures[0]) > top(bars[15]), "the machine's temperature under the packages");
+            }
+            const rules = all(popup, i => i.visible && i.height > 0 && i.height <= 1 && i.radius !== undefined && i.width > 0
+                                          && !ancestor(i, a => a.limitY !== undefined || a.foot !== undefined));
+            compare(rules.length, 3, "between the packages, before the machine's readings and the processes");
+        }
+
+        // One package's graphs follow only each other, as a GPU's do; with
+        // a shared temperature, its graph is the machine's and follows
+        // neither.
+        function test_linkedInspectionStaysWithinACpu_data() {
+            const rows = [];
+            for (const span of ["minute", "hour"]) {
+                for (const source of [0, 1, 2, 3]) {
+                    rows.push({ tag: span + " tile " + source, span: span, source: source });
+                }
+            }
+            return rows;
+        }
+
+        function test_linkedInspectionStaysWithinACpu(data) {
+            const monitor = twoCpus({ graphSpan: data.span });
+            const words = createTemporaryObject(wordsComponent, root, { monitor: monitor });
+            const popup = load("CpuPopup", monitor, false, widePage);
+            const tiles = inspectionTiles(popup);
+            compare(tiles.map(t => t.caption), ["Usage", "Temperature", "Usage", "Temperature"]);
+            const own = tiles.filter((t, i) => (i < 2) === (data.source < 2));
+            const other = tiles.filter(t => !own.includes(t));
+            const index = Math.floor(monitor.historyLength * 0.85);
+            inspect(tiles[data.source], index);
+            own.forEach(t => checkInspected(t, index, words));
+            other.forEach(t => checkUninspected(t, false));
+            inspect(other[0], index - 5);
+            other.forEach(t => checkInspected(t, index - 5, words));
+            own.forEach(t => checkUninspected(t, false));
+            mouseMove(popup, 1, 1);
+            tryVerify(() => tiles.every(t => t.graphReading === ""));
+        }
+
+        function test_sharedCpuTemperatureFollowsNoPackage() {
+            const monitor = twoCpus({}, true);
+            const words = createTemporaryObject(wordsComponent, root, { monitor: monitor });
+            const popup = load("CpuPopup", monitor, false, widePage);
+            const tiles = inspectionTiles(popup);
+            compare(tiles.map(t => t.caption), ["Usage", "Usage", "Temperature"]);
+            inspect(tiles[0], 50);
+            checkInspected(tiles[0], 50, words);
+            checkUninspected(tiles[1], false);
+            checkUninspected(tiles[2], false);
+            inspect(tiles[2], 40);
+            checkInspected(tiles[2], 40, words);
+            checkUninspected(tiles[0], false);
+        }
+
+        // One CPU is one section titled CPU, as it was, its graphs marking
+        // a moment together across the popup.
+        function test_oneCpuIsOneSection() {
+            const monitor = monitorWith({});
+            const popup = load("CpuPopup", monitor, false, widePage);
+            const headers = all(popup, i => i.partsShown !== undefined && i.visible);
+            compare(headers.map(h => h.title), ["CPU"]);
+            compare(headers[0].subtitle, "AMD Ryzen 7 7840HS · 8C / 16T");
+            const tiles = inspectionTiles(popup);
+            compare(tiles.map(t => t.caption), ["Usage", "Temperature"]);
+            inspect(tiles[0], 50);
+            tryVerify(() => tiles.every(t => t.graphReading !== ""));
+            compare(popup.graphCursor.owner !== null, true, "the popup's cursor");
+            compare(all(popup, i => i.visible && ["Frequency", "Load average", "Per thread"].includes(i.caption))
+                    .map(t => t.caption), ["Frequency", "Load average", "Per thread"]);
+        }
+
         function test_gpuMarkerClearsOnSpan() {
             const monitor = monitorWith({ "gpuInner.kind": "discrete" });
             const popup = load("GpuPopup", monitor, false, widePage);
@@ -1194,7 +1312,7 @@ TestRoot {
             const row = first[0].parent;
             verify(/^\S+ over 1 minute, \S+ over 5 minutes, \S+ over 15 minutes$/.test(row.Accessible.name), row.Accessible.name);
             // A missing average is a word, never the dash on screen.
-            compare(popup.loadAverageName(NaN, 0.5, NaN),
+            compare(tile.loadAverageName(NaN, 0.5, NaN),
                     "unavailable over 1 minute, " + Format.load(0.5) + " over 5 minutes, unavailable over 15 minutes");
             verify(first[0].accessibleIgnored);
             verify(parts(first[0]).number.Accessible.ignored && parts(first[0]).suffix.Accessible.ignored, "not spoken on its own");
@@ -2026,15 +2144,17 @@ TestRoot {
             compare(rules.length, Math.max(0, headers.length - 1) + (headers.length > 0 ? data.off.length : 0));
         }
 
-        // The CPU popup's own readings, the average frequency and each
-        // thread's bar, are read as often as the graph above them, so at a
-        // long update interval the whole popup still moves together.
+        // The CPU popup's own reading, the average frequency, is read as
+        // often as the graph above it, so at a long update interval the
+        // whole popup still moves together. Its threads' bars read the
+        // Monitor's Sensors, which are (see tst_monitor).
         function test_cpuPopupReadsWithItsGraph() {
             const monitor = monitorWith({ interval: 5000 });
-            const own = held(load("CpuPopup", monitor),
-                             o => o.sensorId === "cpu/all/averageFrequency" || /^cpu\/cpu\d+\/usage$/.test(o.sensorId));
-            verify(own.length > 2, "the frequency and the threads: " + own.length);
-            verify(own.every(s => s.updateRateLimit === monitor.readInterval), own.map(s => s.updateRateLimit).join());
+            const own = held(load("CpuPopup", monitor), o => typeof o.sensorId === "string");
+            const frequency = own.filter(o => o.sensorId === "cpu/all/averageFrequency");
+            compare(frequency.length, 1);
+            compare(frequency[0].updateRateLimit, monitor.readInterval);
+            compare(own.filter(o => /^cpu\/cpu\d+\//.test(o.sensorId)).length, 0, "no thread's Sensor of its own");
         }
 
         // Every GPU header is laid out as the CPU popup's is, on the

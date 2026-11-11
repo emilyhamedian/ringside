@@ -53,3 +53,15 @@ function gpuView(outer, inner) {
 function sensorValue(sensor) {
     return sensor && typeof sensor.value === "number" ? sensor.value : NaN;
 }
+
+// A CPU package's usage, the average of its threads' usages, and its
+// temperature, the hottest of its cores' (see Monitor.cpuPackages). A
+// reading still missing, NaN, is left out; with none, NaN.
+function packageReading(usages, temperatures) {
+    const read = usages.filter(Number.isFinite);
+    const hot = temperatures.filter(Number.isFinite);
+    return {
+        usage: read.length > 0 ? read.reduce((sum, v) => sum + v, 0) / read.length : NaN,
+        temperature: hot.length > 0 ? Math.max(...hot) : NaN
+    };
+}
