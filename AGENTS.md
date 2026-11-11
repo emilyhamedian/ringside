@@ -87,8 +87,8 @@ must have its own branch and pull request, and land on `main` as one squashed
 commit. A branch is named `type/short-name`, the type one of `feat`, `fix`,
 `docs` or `ci`; a release's branch is `release/<version>`. Agents must open
 pull requests as drafts and mark one ready once it is ready for the
-maintainer's review and merge; only the maintainer merges or turns on
-auto-merge, and it then merges once CI passes. A
+maintainer's review and merge. Only the maintainer merges a pull request,
+directly or by turning on auto-merge, which merges it once CI passes. A
 release must be its own pull request that only bumps the version and dates
 the changelog; once it lands, tag it on `main` and attach `ringside.plasmoid`
 from `scripts/package.sh`.

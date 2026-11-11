@@ -48,8 +48,8 @@ on it once it's out of draft, unless it only touches the README, this file,
 the changelog or the pictures in `docs/`.
 
 Nothing lands on `main` without the maintainer's go-ahead: pull requests open
-as drafts and are marked ready once they're ready for review, and the
-maintainer merges them or turns on auto-merge, after which they merge as soon
+as drafts and are marked ready once they're ready for review. The maintainer
+merges each one, directly or by turning on auto-merge, which merges it as soon
 as CI passes. Each change gets its own pull request and goes
 in as one squashed commit. A release is a separate
 pull request that bumps the version and dates the changelog, and is tagged
