@@ -45,11 +45,12 @@ sh scripts/package.sh     # ringside.plasmoid from the last commit
 
 Work on a branch and open a pull request against `main`. CI runs the tests
 on it once it's out of draft, unless it only touches the README, this file,
-the changelog or the pictures in `docs/`.
+the changelog or the pictures in `docs/`. On a pull request from outside
+the project, CI waits for the maintainer to approve the run.
 
-Nothing lands on `main` without the maintainer's go-ahead: pull requests open
-as drafts, and the maintainer marks one ready for review and turns on
-auto-merge, after which it merges as soon as CI passes. Each change gets its own pull request and goes
+Nothing lands on `main` without the maintainer's go-ahead. The maintainer
+merges each pull request, directly or by turning on auto-merge, which merges
+it as soon as CI passes. Each change gets its own pull request and goes
 in as one squashed commit. A release is a separate
 pull request that bumps the version and dates the changelog, and is tagged
 once it lands.
