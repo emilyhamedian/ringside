@@ -7,6 +7,7 @@ import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
 import "../code/format.js" as Format
 import "../code/pace.js" as Pace
+import "../code/providers.js" as Providers
 import "../code/style.js" as Style
 import ".."
 
@@ -31,8 +32,9 @@ PopupPage {
     readonly property var usage: monitor.usage
     readonly property var entry: usage.entry(item)
     readonly property var weekly: entry && entry.weekly ? entry.weekly : null
-    // Kimi's limit spans a month; the words for it say so.
-    readonly property bool monthly: words.monthly(weekly)
+    // Kimi's limit spans a month; the words for it say so, before a first
+    // reading too.
+    readonly property bool monthly: words.monthly(weekly) || Providers.FACTS[item].monthly === true
     readonly property var innerLimit: usage.inner(item)
     // The last check failed. Its reading stays, greyed, until it is struck
     // (see UsageData.struck()), and then nothing of it is shown.

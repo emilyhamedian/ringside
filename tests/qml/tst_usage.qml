@@ -2844,6 +2844,13 @@ TestRoot {
             verify(root.find(popup, i => i.caption === "This month") !== null, "the graph's tile names the month");
             const said = sentence(rows(popup)[0]).text;
             verify(said.startsWith("The monthly limit is on pace to run out "), said);
+            // A first check that failed has no window to say so, and the
+            // popup still names the month.
+            u.entries = Object.assign({}, u.entries, { kimi: { status: "error", lastError: "can't reach api.kimi.ai",
+                                                               lastErrorAt: u.createdAt, reason: "offline", host: "api.kimi.ai",
+                                                               retryAt: u.createdAt + 300 } });
+            const failed = root.texts(load("kimi"));
+            verify(failed.includes("Monthly limit") && !failed.includes("Weekly limit"), JSON.stringify(failed));
         }
 
         function resetNotice(popup) {

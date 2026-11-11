@@ -7,8 +7,10 @@
 // company that sets them, the command a user signs in with, and the product
 // that command is. Proper names, which the words put into translated
 // sentences as they are; usage.py keeps the same facts for the journal.
+// `monthly` marks a provider whose limit is always a month, which the popup
+// says before a first reading has shown it.
 var FACTS = {
     claude: { company: "Anthropic", command: "claude", product: "Claude Code" },
     codex: { company: "OpenAI", command: "codex", product: "Codex" },
-    kimi: { company: "Moonshot AI", command: "kimi", product: "Kimi Code" }
+    kimi: { company: "Moonshot AI", command: "kimi", product: "Kimi Code", monthly: true }
 };
