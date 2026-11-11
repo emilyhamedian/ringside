@@ -763,7 +763,7 @@ TestRoot {
                 { tag: "showCredits", source: providers,
                   drive: page => press(page, "Show remaining credits"), saved: { showCredits: false } },
                 { tag: "claudeSessionStarter", source: providers, start: programs,
-                  drive: page => press(page, "Claude: Auto start session or week"), saved: { claudeSessionStarter: false } },
+                  drive: page => press(page, "Claude: Auto start session"), saved: { claudeSessionStarter: false } },
                 { tag: "codexSessionStarter", source: providers, start: programs,
                   drive: page => press(page, "OpenAI: Auto start session or week"), saved: { codexSessionStarter: false } },
                 { tag: "claudeInnerLimit", source: providers, start: limits, drive: page => pickIn(page, "Claude inner ring", 2),
@@ -1489,7 +1489,7 @@ TestRoot {
         function test_sessionStarterSettingsArePerProvider() {
             const page = make(providers, { cfg_itemOrder: ["claude", "codex"], cfg_hiddenItems: [],
                                            cfg_claudeSessionStarter: true, cfg_codexSessionStarter: true, knownLimits: {} });
-            const claude = accessible(page, "Claude: Auto start session or week");
+            const claude = accessible(page, "Claude: Auto start session");
             const codex = accessible(page, "OpenAI: Auto start session or week");
             verify(claude.visible && claude.checked && codex.visible && codex.checked);
             compare(all(page, i => typeof i.text === "string" && i.text.startsWith("Auto start") && i.toggled !== undefined).length, 2);
@@ -1504,6 +1504,41 @@ TestRoot {
             page.cfg_hiddenItems = [];
             verify(!page.cfg_claudeSessionStarter && !page.cfg_codexSessionStarter,
                    "turning items on again keeps each opt-out");
+        }
+
+        // Each provider's setting names what its plan lets Ringside start,
+        // as the widget last reported, and a Claude plan with no five-hour
+        // limit has none: a line says why instead.
+        function test_sessionStarterSettingsFollowThePlan_data() {
+            return [
+                { tag: "not reported", claude: undefined, codex: undefined,
+                  claudeText: "Auto start session", codexText: "Auto start session or week" },
+                { tag: "a session, a session and a week", claude: ["session"], codex: ["session", "week"],
+                  claudeText: "Auto start session", codexText: "Auto start session or week",
+                  codexTip: "When a session or week ends, Ringside sends Codex a one-word message to start the next one. Turn this off to hide the popup switches." },
+                { tag: "nothing, a week", claude: [], codex: ["week"], claudeText: "", codexText: "Auto start week",
+                  codexTip: "When a week ends, Ringside sends Codex a one-word message to start the next one. Turn this off to hide the popup switch." },
+                { tag: "a session alone", claude: ["session"], codex: ["session"],
+                  claudeText: "Auto start session", codexText: "Auto start session",
+                  codexTip: "When a session ends, Ringside sends Codex a one-word message to start the next one. Turn this off to hide the popup switch." }
+            ];
+        }
+
+        function test_sessionStarterSettingsFollowThePlan(data) {
+            const status = (windows, name) => Object.assign({ status: "ok", starter: false,
+                                                              program: { path: "/usr/bin/" + name, chosen: false, problem: "" } },
+                                                            windows === undefined ? {} : { windows: windows });
+            const page = make(providers, { cfg_itemOrder: ["claude", "codex"], cfg_hiddenItems: [], knownLimits: {},
+                                           usageStatus: { claude: status(data.claude, "claude"), codex: status(data.codex, "codex") } });
+            const boxes = all(page, i => i.visible && typeof i.text === "string" && i.text.startsWith("Auto start") && i.toggled !== undefined);
+            compare(boxes.map(b => b.text), (data.claudeText ? [data.claudeText] : []).concat([data.codexText]));
+            compare(boxes.map(b => b.Accessible.name),
+                    (data.claudeText ? ["Claude: " + data.claudeText] : []).concat(["OpenAI: " + data.codexText]));
+            if (data.codexTip) {
+                compare(boxes[boxes.length - 1].Accessible.description, data.codexTip);
+            }
+            const note = "Your plan has no five-hour limit, and its week resets on a set schedule, so there's nothing to start.";
+            compare(all(page, i => i.visible && i.text === note).length, data.claudeText ? 0 : 1);
         }
 
         // Codex is chosen until the setting says openai, and each choice

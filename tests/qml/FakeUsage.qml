@@ -56,16 +56,18 @@ QtObject {
     property var innerChoices: ({ claude: "", codex: "" })
     // Each provider's setting, which hides its starter control and stops its runs.
     property var starterOptions: ({ claude: true, codex: true })
-    // The session starter per provider, as the helper reports it.
+    // The session starter per provider, as the helper reports it: Claude's
+    // plan has a five-hour limit and Codex's, as its reading shows, only a week.
     property var starters: ({
-        claude: { enabled: false, state: "off", at: null, next: null, reason: null },
-        codex: { enabled: false, state: "off", at: null, next: null, reason: null }
+        claude: { enabled: false, on: [], windows: ["session"], state: "off", at: null, next: null, reason: null },
+        codex: { enabled: false, on: [], windows: ["week"], state: "off", at: null, next: null, reason: null }
     })
+    // As UsageData's: the windows asked for per id, "session,week" or "".
     property var starterWanted: ({})
     // Whether answerStarter() reports the switch changes asked for, or
     // the switch positions as they were.
     property bool starterSticks: true
-    // Every setStarter() call, as [id, on].
+    // Every setStarter() call, as [id, window, on].
     property var starterRequests: []
     // Ids with no report yet, which show as loading until they have an
     // entry, as UsageData's do until their first report.
@@ -156,20 +158,32 @@ QtObject {
         return starters[id] ?? null;
     }
 
-    function starterOn(id) {
-        return starterWanted[id] ?? starter(id)?.enabled === true;
+    // As UsageData's.
+    function startable(id) {
+        return Array.from(starter(id)?.windows ?? (id === "claude" ? ["session"] : ["session", "week"]));
+    }
+
+    function starterWindows(id) {
+        const wanted = starterWanted[id];
+        return wanted !== undefined ? wanted.split(",").filter(w => w !== "") : Array.from(starter(id)?.on ?? []);
+    }
+
+    function starterOn(id, window) {
+        return starterWindows(id).includes(window);
     }
 
     function starterEnabled(id) {
         return starterOptions[id] === true;
     }
 
-    function setStarter(id, on) {
-        if (on && !starterEnabled(id)) {
+    function setStarter(id, window, on) {
+        const can = startable(id);
+        if (on && (!starterEnabled(id) || !can.includes(window))) {
             return;
         }
-        starterRequests = starterRequests.concat([[id, on]]);
-        starterWanted = Object.assign({}, starterWanted, { [id]: on });
+        starterRequests = starterRequests.concat([[id, window, on]]);
+        const set = ["session", "week"].filter(w => can.includes(w) && (w === window ? on : starterOn(id, w)));
+        starterWanted = Object.assign({}, starterWanted, { [id]: set.join(",") });
     }
 
     // Stands in for the helper's report after --starter-set: a starter just
@@ -178,8 +192,9 @@ QtObject {
         const next = Object.assign({}, starters);
         if (starterSticks) {
             for (const id in starterWanted) {
-                next[id] = { enabled: starterWanted[id], state: starterWanted[id] ? "waiting" : "off",
-                             at: null, next: starterWanted[id] ? Math.floor(Date.now() / 1000) : null, reason: null };
+                const on = starterWanted[id].split(",").filter(w => w !== "");
+                next[id] = { enabled: on.length > 0, on: on, windows: startable(id), state: on.length > 0 ? "waiting" : "off",
+                             at: null, next: on.length > 0 ? Math.floor(Date.now() / 1000) : null, reason: null };
             }
         }
         starters = next;

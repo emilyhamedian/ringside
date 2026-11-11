@@ -25,8 +25,10 @@ import "code/shell.js" as Shell
 // hidden, the settings page saying why from usageStatus.
 //
 // It also drives the opt-in session starter: the helper reports each
-// provider's starter in every report, and the widget runs the helper with
-// --start when one is due and with --starter-set when its switch is turned.
+// provider's starter in every report, with the windows its plan lets
+// Ringside start and those the user switched on, and the widget runs the
+// helper with --start when one is due and with --starter-set, the
+// provider's whole set of windows, when one of its switches is turned.
 //
 // Each run's report carries the helper's lines for the journal, which go
 // there under ringside.usage, as does a helper run that gave no report.
@@ -84,7 +86,15 @@ Item {
     property var starterDisableRuns: ({})
     // The session starter per id, as the last report gave it.
     property var starters: ({})
-    // The switch positions asked for and not yet reported back, per id.
+    // The windows a provider's starter can work toward, in the order the
+    // helper writes them.
+    readonly property var windowOrder: ["session", "week"]
+    // What a provider's plan is taken to allow before any report says:
+    // Claude's week runs on a set schedule, so only a session can be
+    // started; Codex's week starts with a message, as its session does.
+    readonly property var assumedWindows: ({ claude: ["session"], codex: ["session", "week"] })
+    // The switch positions asked for and not yet reported back, per id, as
+    // the set of windows written: "session,week", or "" for none.
     property var starterWanted: ({})
     // A same-valued request made after an earlier one is a new request: the
     // earlier command's completion must not settle it.
@@ -96,8 +106,9 @@ Item {
     // starter's when it failed. Kept while reports show the starter on and
     // due, or in that state with next no later than the retry.
     property var startFailures: ({})
-    // Per id, the switch change that didn't take: { on, error }. Shown
-    // until the switch is turned again or reported where it was asked.
+    // Per id, the switch change that didn't take: { on, error }, on being
+    // the windows asked for. Shown until a switch is turned again or the
+    // report shows them as asked.
     property var switchFailures: ({})
     // The helper's own failure last written to the journal, so a failure
     // that repeats on every check is written once, and its end once.
@@ -121,6 +132,31 @@ Item {
         return config[id + "SessionStarter"] === true;
     }
 
+    // The windows the provider's plan lets Ringside start, as last reported
+    // (merge() keeps them across a report that can't tell), or as stored
+    // for the settings page, or else as assumed.
+    function knownWindows(id) {
+        const reported = starters[id]?.windows;
+        if (reported) {
+            return Array.from(reported);
+        }
+        try {
+            const stored = JSON.parse(config.usageStatus || "{}")[id]?.windows;
+            return stored ? Array.from(stored) : null;
+        } catch (err) {
+            return null;
+        }
+    }
+
+    function startable(id) {
+        return knownWindows(id) ?? Array.from(assumedWindows[id] ?? []);
+    }
+
+    // A reported starter's switched-on windows, as --starter-set writes them.
+    function onText(s) {
+        return Array.from(s?.on ?? []).join(",");
+    }
+
     function entry(id) {
         return entries[id] ?? null;
     }
@@ -139,10 +175,11 @@ Item {
     }
 
     // What a helper run is for, read from the end of its command (see
-    // helperCommand()): the switch it sets, as { id, on }, or null;
+    // helperCommand()): the switches it sets, as { id, on }, on being the
+    // windows written ("" for off), or null;
     function starterSet(source) {
-        const set = / --starter-set (\w+)=(on|off)$/.exec(source);
-        return set ? { id: set[1], on: set[2] === "on" } : null;
+        const set = / --starter-set (\w+)=([\w,]+)$/.exec(source);
+        return set ? { id: set[1], on: set[2] === "off" ? "" : set[2] } : null;
     }
 
     // the ids a check polls, none for any other run;
@@ -175,23 +212,34 @@ Item {
         const s = starters[id] ?? null;
         const w = switchFailures[id];
         const f = startFailures[id];
-        return s && w && s.enabled !== w.on ? Object.assign({}, s, { state: "failed", reason: "switch", error: w.error })
+        return s && w && onText(s) !== w.on ? Object.assign({}, s, { state: "failed", reason: "switch", error: w.error })
              : s && f ? Object.assign({}, s, { state: "failed", reason: "helper", at: f.at, next: f.retryAt, error: f.error })
              : s;
     }
 
-    // Where the switch stands: as asked while the helper writes it, then as
-    // reported, so a change that didn't stick snaps back.
-    function starterOn(id) {
-        return starterWanted[id] ?? starter(id)?.enabled === true;
+    // The windows switched on: as asked while the helper writes them, then
+    // as reported, so a change that didn't stick snaps back.
+    function starterWindows(id) {
+        const wanted = starterWanted[id];
+        return wanted !== undefined ? wanted.split(",").filter(w => w !== "") : Array.from(starter(id)?.on ?? []);
     }
 
-    function setStarter(id, on) {
-        if (!ids.includes(id) || on && !starterEnabled(id)) {
+    // Where one window's switch stands.
+    function starterOn(id, window) {
+        return starterWindows(id).includes(window);
+    }
+
+    // Turning one switch writes the provider's whole set, in order, of the
+    // windows its plan can start, so a window the plan no longer has goes
+    // with the next change.
+    function setStarter(id, window, on) {
+        const can = startable(id);
+        if (!ids.includes(id) || on && (!starterEnabled(id) || !can.includes(window))) {
             return;
         }
+        const set = windowOrder.filter(w => can.includes(w) && (w === window ? on : starterOn(id, w))).join(",");
         starterGeneration += 1;
-        starterWanted = Object.assign({}, starterWanted, { [id]: on });
+        starterWanted = Object.assign({}, starterWanted, { [id]: set });
         starterWantedGeneration = Object.assign({}, starterWantedGeneration, { [id]: starterGeneration });
         if (switchFailures[id]) {
             const failures = Object.assign({}, switchFailures);
@@ -234,7 +282,7 @@ Item {
     function starterDisableFailed(id, error) {
         starterDisablePending = Object.assign({}, starterDisablePending, { [id]: true });
         starterDisableRetryAt = Object.assign({}, starterDisableRetryAt, { [id]: nowSeconds() + 300 });
-        switchRefused(id, false, error);
+        switchRefused(id, "", error);
     }
 
     function starterDisableSucceeded(id) {
@@ -259,7 +307,7 @@ Item {
             return;
         }
         if (!runner.connectedSources.some(s => starterSet(s) !== null)) {
-            const source = helperCommand(ids, " --starter-set " + id + "=" + (starterWanted[id] ? "on" : "off"));
+            const source = helperCommand(ids, " --starter-set " + id + "=" + (starterWanted[id] || "off"));
             starterWrites = Object.assign({}, starterWrites, { [source]: starterWantedGeneration[id] });
             runner.connectSource(source);
         }
@@ -279,7 +327,7 @@ Item {
         // nothing either, until it is turned again.
         const due = ids.filter(id => {
             const s = starter(id);
-            return starterEnabled(id) && starterOn(id) && s?.reason !== "switch" && Number.isFinite(s?.next) && s.next <= now;
+            return starterEnabled(id) && starterWindows(id).length > 0 && s?.reason !== "switch" && Number.isFinite(s?.next) && s.next <= now;
         });
         if (due.length > 0 && !busy) {
             runner.connectSource(helperCommand(due, " --start"));
@@ -458,8 +506,11 @@ Item {
             if (next && next.credits !== undefined) {
                 balances[id] = next.credits;
             }
+            // A report that can't tell what the plan allows keeps what the
+            // last one said.
+            const windows = next?.starter?.windows ? Array.from(next.starter.windows) : knownWindows(id);
             if (next?.starter) {
-                starting[id] = next.starter;
+                starting[id] = Object.assign({}, next.starter, { windows: windows });
             }
             if (!next) {
                 if (was) {
@@ -471,10 +522,11 @@ Item {
                 continue;
             }
             // What the settings page needs of this check: whether the
-            // program was found or can run, and whether the starter is
-            // on, which is when Claude's program is needed.
+            // program was found or can run, whether the starter is on,
+            // which is when Claude's program is needed, and the windows the
+            // plan lets it start, which decide the provider's setting.
             latest[id] = { status: next.status, message: next.message ?? "", program: next.program,
-                           starter: next.starter?.enabled === true };
+                           starter: next.starter?.enabled === true, windows: windows };
             if (next.status === "ok" || next.status === "signed_out") {
                 merged[id] = next;
             } else if (was || loading(id)) {
@@ -519,10 +571,12 @@ Item {
         starters = starting;
         startFailures = failures;
         // Another widget may have opted a provider in after this one disabled
-        // it. The retry timer turns only that provider off again.
+        // it. The retry timer turns only that provider off again. A switch
+        // the plan can't use counts: it would start sessions again should
+        // the plan change.
         const pending = Object.assign({}, starterDisablePending);
         Items.USAGE.forEach(id => {
-            if (!starterEnabled(id) && starting[id]?.enabled === true) {
+            if (!starterEnabled(id) && onText(starting[id]) !== "") {
                 pending[id] = true;
             }
         });
@@ -708,13 +762,13 @@ Item {
                     usage.startLeftDue(started, reason);
                 }
                 if (settled && reason !== "" && report.providers[settled]?.starter
-                    && report.providers[settled].starter.enabled !== set.on) {
+                    && usage.onText(report.providers[settled].starter) !== set.on) {
                     usage.switchRefused(settled, set.on, reason);
                 }
             }
             if (disabling) {
                 const failed = !report?.providers || failure.detail !== ""
-                    || report.providers[disabling]?.starter?.enabled === true;
+                    || usage.onText(report.providers[disabling]?.starter) !== "";
                 if (failed) {
                     const error = report?.providers && failure.detail === ""
                         ? i18nc("@info", "The automatic-start switch could not be turned off.")

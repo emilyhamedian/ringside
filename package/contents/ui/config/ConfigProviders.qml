@@ -48,6 +48,24 @@ ConfigPage {
         return usageStatus[id]?.program ?? { path: "", chosen: false, problem: "" };
     }
 
+    // The windows a provider's plan lets Ringside start, as the widget last
+    // learned them, else as UsageData assumes: Claude's week runs on a set
+    // schedule, so it has at most a session; Codex's week starts with a
+    // message, as its session does. Array.from: it may be a Qt sequence.
+    function startable(id) {
+        const known = usageStatus[id]?.windows;
+        return known ? Array.from(known) : id === "claude" ? ["session"] : ["session", "week"];
+    }
+    readonly property var claudeWindows: startable("claude")
+    readonly property var codexWindows: startable("codex")
+
+    // A provider's setting, named for what its plan can start.
+    function starterText(windows) {
+        return windows.length > 1 ? i18nc("@option:check", "Auto start session or week")
+             : windows[0] === "session" ? i18nc("@option:check", "Auto start session")
+             : i18nc("@option:check", "Auto start week");
+    }
+
     // Whether a provider's program ran in the helper's last check: found by
     // itself, or chosen with nothing wrong. A path typed since counts once
     // Apply has had it checked, so nothing moves while it is typed. True
@@ -241,16 +259,24 @@ ConfigPage {
             visible: page.claudeOn || page.claudeHasLimits || page.claudeProgramShown
         }
 
+        // Claude only ever starts a session, so a plan without a five-hour
+        // limit has nothing to offer.
         QQC2.CheckBox {
-            visible: claudeHeading.visible
-            text: i18nc("@option:check", "Auto start session or week")
-            Accessible.name: i18nc("@option:check", "Claude: Auto start session or week")
+            visible: claudeHeading.visible && page.claudeWindows.length > 0
+            text: page.starterText(page.claudeWindows)
+            Accessible.name: i18nc("@option:check %1 is the check box's text, such as Auto start session", "Claude: %1", text)
             Accessible.description: i18nc("@info", "When a session ends, Ringside sends Claude a one-word message to start the next one. Turn this off to hide the popup switch.")
             checked: page.cfg_claudeSessionStarter
             onToggled: page.cfg_claudeSessionStarter = checked
             QQC2.ToolTip.text: Accessible.description
             QQC2.ToolTip.visible: hovered
             QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
+        }
+
+        Note {
+            visible: claudeHeading.visible && page.claudeWindows.length === 0
+            text: i18nc("@info under the Claude heading, for a plan with no five-hour limit",
+                        "Your plan has no five-hour limit, and its week resets on a set schedule, so there's nothing to start.")
         }
 
         Picker {
@@ -291,10 +317,14 @@ ConfigPage {
         }
 
         QQC2.CheckBox {
-            visible: openaiHeading.visible
-            text: i18nc("@option:check", "Auto start session or week")
-            Accessible.name: i18nc("@option:check", "OpenAI: Auto start session or week")
-            Accessible.description: i18nc("@info", "When a session or week ends, Ringside sends Codex a one-word message to start the next one. Turn this off to hide the popup switch.")
+            visible: openaiHeading.visible && page.codexWindows.length > 0
+            text: page.starterText(page.codexWindows)
+            Accessible.name: i18nc("@option:check %1 is the check box's text, such as Auto start week", "OpenAI: %1", text)
+            Accessible.description: page.codexWindows.length > 1
+                ? i18nc("@info", "When a session or week ends, Ringside sends Codex a one-word message to start the next one. Turn this off to hide the popup switches.")
+                : page.codexWindows[0] === "session"
+                ? i18nc("@info", "When a session ends, Ringside sends Codex a one-word message to start the next one. Turn this off to hide the popup switch.")
+                : i18nc("@info", "When a week ends, Ringside sends Codex a one-word message to start the next one. Turn this off to hide the popup switch.")
             checked: page.cfg_codexSessionStarter
             onToggled: page.cfg_codexSessionStarter = checked
             QQC2.ToolTip.text: Accessible.description

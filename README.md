@@ -116,14 +116,16 @@ requests. Hiding the balance rows keeps this indication.
 
 **Starting the next session or week.** A Claude five-hour session, or a
 Codex five-hour session or week, only begins when you next send a message.
-With the switch at the bottom of the popup turned on, Ringside starts the next
-one for you as soon as the last one ends, so the clock is already running by
-the time you're back. Codex follows its five-hour window when your plan
-reports one, and its weekly window otherwise. Ringside does this by sending a
-short message, which counts toward your limits like any other, so if you pay
-for usage beyond your plan, you'll probably want to leave it off. Each
-provider's *Auto start session or week* switch under *AI Providers* turns its
-feature off and hides that provider's popup switch.
+Claude's week resets on a set schedule, so it needs nothing from you. The
+bottom of each popup has a switch for each one your plan has: *Auto start
+session* where the plan has a five-hour limit, and for Codex *Auto start week*
+on every plan. Claude Ultra has no five-hour limit, so its popup has none.
+With a switch on, Ringside starts the next one for you as soon as the last one
+ends, so the clock is already running by the time you're back. Ringside does
+this by sending a short message, which counts toward your limits like any
+other, so if you pay for usage beyond your plan, you'll probably want to leave
+it off. Each provider's *Auto start* setting under *AI Providers* turns its
+feature off and hides that provider's popup switches.
 
 ## Privacy
 
