@@ -1145,7 +1145,7 @@ TestRoot {
             made.push(loader);
             loader.setSource(Qt.resolvedUrl("../../package/contents/ui/popups/GpuPopup.qml"), { monitor: monitor });
             const popup = loader.item;
-            waitForRendering(popup);
+            verify(waitForPolish(popup.Window.window), "laid out");
             return popup;
         }
 
@@ -1177,7 +1177,7 @@ TestRoot {
             verify(inner.first, "the integrated GPU's section still opens the page");
             // The height follows at the layout's next polish.
             tryVerify(() => heights.length > 0, 1000, "the popup's height changes");
-            waitForRendering(popup);
+            verify(waitForPolish(popup.Window.window), "laid out");
             compare(heights.length, 1, "one change of height: " + JSON.stringify(heights));
             heights.length = 0;
             monitor.gpuOuter.phase = "live";
