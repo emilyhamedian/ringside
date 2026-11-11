@@ -66,7 +66,7 @@ Item {
     // width: only the chord at its cap height.
     readonly property real chord: 2 * Math.sqrt(Math.max(0, room * room / 4 - smallest.tightBoundingRect.height ** 2 / 4))
     readonly property var art: mark === "claude" ? Marks.CLAUDE : mark === "openai" ? Marks.OPENAI
-                             : mark === "kimi" ? Marks.KIMI : Marks.CODEX
+                             : mark === "kimi" ? Marks.MOONSHOT : Marks.CODEX
     // A little taller than a name's line, so a mark fills its ring about as
     // much as CPU or MEM fill theirs, by the mark's own scale, kept a pixel
     // clear of the innermost ring, and none at all where there is no room.

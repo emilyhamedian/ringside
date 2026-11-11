@@ -1,10 +1,11 @@
-package/contents/icons/kimi.svg is the Kimi logo, the K and its dot, as a
-single-colour mask, after the drawing in Simple Icons (CC0-1.0), which follows
-Moonshot AI's branding guide. The KIMI entry in
+package/contents/icons/moonshot.svg is the Moonshot AI logo as a
+single-colour mask, after the drawing in LobeHub's icon set
+(github.com/lobehub/lobe-icons, MIT). The MOONSHOT entry in
 package/contents/ui/code/marks.js holds the same outline as path data, which
-Ringside draws in the theme's colours.
+Ringside draws in the theme's colours to label its Kimi item.
 
-Kimi and the Kimi logo are trademarks of Moonshot AI. Ringside is not
-affiliated with or endorsed by Moonshot AI and includes the logo only to label
-its Kimi item. Neither copy is covered by Ringside's GPL-3.0-or-later
-licence, and including them grants no rights to use the mark.
+Kimi, Moonshot AI and the Moonshot AI logo are trademarks of Moonshot AI.
+Ringside is not affiliated with or endorsed by Moonshot AI and includes the
+logo only to label its Kimi item. Neither copy is covered by Ringside's
+GPL-3.0-or-later licence, and including them grants no rights to use the
+mark.

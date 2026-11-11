@@ -40,9 +40,9 @@ class MarksTest(unittest.TestCase):
 
     def test_marks_are_the_icons(self):
         found = marks()
-        self.assertEqual(sorted(found), ["CLAUDE", "CODEX", "KIMI", "OPENAI"])
+        self.assertEqual(sorted(found), ["CLAUDE", "CODEX", "MOONSHOT", "OPENAI"])
         for name, svg in (("CLAUDE", "claude.svg"), ("CODEX", "codex.svg"), ("OPENAI", "openai.svg"),
-                          ("KIMI", "kimi.svg")):
+                          ("MOONSHOT", "moonshot.svg")):
             with self.subTest(mark=name):
                 mark = found[name]
                 view_box, fill_rule, d = icon(svg)
