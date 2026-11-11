@@ -9,9 +9,11 @@ import "code/style.js" as Style
 // provider's mark inside it and the chosen model's limit as an inner ring,
 // and beside it the weekly percentage over the time left until the week
 // resets. The ring and its percentage turn amber or red with the weekly
-// reading, and the inner ring with the model's limit. The ring breathes from
-// 90 % until the limit is hit. Recent credit spending past an exhausted
-// limit shows one full blue ring; the figures still give the weekly reading.
+// reading, and the inner ring with the model's limit. From 90 % until the
+// limit is hit, the ring breathes while the percentage climbs from one check
+// to the next. Recent credit spending past an exhausted limit shows one full
+// blue ring, which breathes while the balance falls from one check to the
+// next; the figures still give the weekly reading.
 // A failed check keeps the last reading in
 // grey while it is under two check intervals old and its week runs; after
 // that the ring is struck through and the readings go to dashes, until a
@@ -102,7 +104,8 @@ Item {
         levelColors: !content.creditUsed
         inner: !content.creditUsed && content.innerLimit !== null
         innerValue: content.innerLimit ? content.innerLimit.percent : NaN
-        pulsing: content.creditUsed || value >= 90 && value < 100
+        pulsing: content.creditUsed ? content.usage.draining(content.item, "credit", content.nowMs)
+                                    : value >= 90 && value < 100 && content.usage.draining(content.item, "weekly", content.nowMs)
         cancelled: content.failed && !content.staleShown
         stale: content.staleShown
         loading: content.loading
