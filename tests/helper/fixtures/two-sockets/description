@@ -1,0 +1,6 @@
+Two Xeon packages of two cores with two threads each, numbered as Linux does
+on such machines: each package's first threads (0-3), then their siblings
+(4-7). Thread 7 is offline, so it is missing from /proc/cpuinfo, has no
+topology, and its core lists only thread 3. Each package has its own
+coretemp chip. The packages are listed by id with their own threads, and the
+first thread of each core stands for its temperature.
