@@ -114,26 +114,11 @@ The percentage and countdown still show the week. Blue means credits were
 used since the previous check; it uses the same readings, with no extra
 requests. Hiding the balance rows keeps this indication.
 
-**Starting the next session or week.** A five-hour session or Codex week
-starts when you send your first message. If you return after the previous
-window ended, the new one starts when you next send a message. Auto start
-begins the next window as soon as the previous one ends, so it's already
-counting down when you return and resets sooner.
-
-Ringside works out which limits your plan has and shows switches at the bottom
-of each provider's popup. They are off until you turn them on:
-
-- *Auto start session* is available for plans with a five-hour limit, such as
-  Claude Pro and Max or the $20 Codex plan. Claude Ultra has no five-hour
-  limit, so it has no switch.
-- *Auto start week* is available for Codex on every plan. Claude's weekly
-  limit resets on a fixed schedule by itself, so it needs no switch.
-
-Auto start sends a one-word message through the provider's command-line tool,
-`claude` or `codex`. It counts toward your limits like any other message, so
-if you pay for usage beyond your plan, you'll probably want to leave it off.
-Each provider's *Auto start* setting under *AI Providers* disables auto start
-for that provider and hides its popup switches when turned off.
+**Auto start.** Ringside can start your next five-hour session, or your next
+Codex week, the moment the last one ends, so the clock is already running when
+you're back. It offers only what your plan has: turn on *Auto start session*
+or *Auto start week* at the bottom of the popup. Each start is a one-word
+message that counts toward your limits.
 
 ## Privacy
 
