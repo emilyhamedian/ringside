@@ -5,6 +5,7 @@ import QtQuick
 import "../../package/contents/ui/code/limits.js" as Limits
 import "../../package/contents/ui/code/reset.js" as Reset
 import "../../package/contents/ui/code/credits.js" as Credits
+import "../../package/contents/ui/code/drain.js" as Drain
 
 // Fixed Claude and Codex readings in the shape of UsageData.qml, for the
 // tests and the preview gallery: every property, signal and function the
@@ -44,6 +45,13 @@ QtObject {
     property var credits: ({})
     property bool showCredits: true
     property var ids: ["claude", "codex"]
+    // As UsageData's: per id, { at, weekly, credit }, what the last check
+    // found draining. None by default, so no ring pulses.
+    property var drains: ({})
+
+    function draining(id, kind, nowMs) {
+        return ids.includes(id) && !degraded(id) && Drain.active(drains[id], kind, refreshMinutes, nowMs / 1000);
+    }
 
     function credit(id) {
         return showCredits && ids.includes(id) ? credits[id] ?? null : null;
@@ -81,6 +89,8 @@ QtObject {
     property real lastRun: createdAt - 60
     // Every checkNow() call.
     property int checks: 0
+    // As UsageData's.
+    property real answeredAt: NaN
     // The newest early reset each popup has shown, as UsageData keeps it.
     property var seenResets: ({})
 
@@ -142,14 +152,26 @@ QtObject {
         return lastRun + Math.max(1, Math.ceil((hold - lastRun - 10) / step)) * step;
     }
 
+    // As UsageData's.
+    function backOnline(id) {
+        const e = entry(id);
+        if (e === null || e.lastError === undefined || !["offline", "timeout"].includes(e.reason)) {
+            return false;
+        }
+        return answeredAt > e.lastErrorAt || Object.keys(entries).some(other => {
+            const o = other !== id ? entry(other) : null;
+            return o !== null && o.status === "ok" && o.lastError === undefined && o.fetchedAt > e.lastErrorAt;
+        });
+    }
+
     function canRetry(id, nowMs) {
         const e = entry(id);
         const now = nowMs / 1000;
         return e !== null && e.lastError !== undefined && !["files", "missing", "not-installed", "program", "busy"].includes(e.reason)
-            && !checking && now >= e.retryAt && nextCheck(id) - now > 60;
+            && !checking && (now >= e.retryAt || backOnline(id)) && nextCheck(id) - now > 60;
     }
 
-    function checkNow() {
+    function checkNow(id) {
         ++checks;
         checking = true;
     }

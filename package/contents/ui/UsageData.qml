@@ -6,6 +6,7 @@ import QtQuick
 import org.kde.plasma.plasma5support as P5Support
 import "code/items.js" as Items
 import "code/credits.js" as Credits
+import "code/drain.js" as Drain
 import "code/limits.js" as Limits
 import "code/log.js" as Log
 import "code/report.js" as Report
@@ -50,6 +51,9 @@ Item {
     property var entries: ({})
     // Credit reports stay independent of the weekly reading kept on failure.
     property var credits: ({})
+    // Per id, what the last check that reported on it found draining since
+    // the check before (see code/drain.js).
+    property var drains: ({})
     // Why the helper itself gave no report; empty once one arrives.
     property string helperError: ""
     // Bound to a bool, so they notify only when they flip, not on every poll.
@@ -117,6 +121,12 @@ Item {
     // so an early reset it told of counts as seen once it closes.
     property string openPopup: ""
     property string lastPopup: ""
+    // When something else this widget asks of the internet last answered, in
+    // epoch seconds, or NaN: Monitor gives the public address check's.
+    property real answeredAt: NaN
+    // The ids the next check asks the helper to try again despite its hold
+    // (see checkNow()), taken by refresh().
+    property var retryIds: []
 
     LoggingCategory {
         id: journal
@@ -169,6 +179,13 @@ Item {
         return ids.includes(id) && Credits.used(entry(id), credits[id], refreshMinutes, nowMs);
     }
 
+    // Whether the weekly percentage ("weekly") or the credit balance
+    // ("credit") drained between the last two checks, which is when the ring
+    // pulses. A failed check shows nothing draining.
+    function draining(id, kind, nowMs) {
+        return ids.includes(id) && !degraded(id) && Drain.active(drains[id], kind, refreshMinutes, nowMs / 1000);
+    }
+
     // The time in whole epoch seconds, as the helper gives its times.
     function nowSeconds() {
         return Math.floor(Date.now() / 1000);
@@ -192,14 +209,16 @@ Item {
         return / --providers ([\w,]+) --start$/.exec(source)?.[1].split(",") ?? [];
     }
 
-    // The chosen programs and first-check ids come before --providers, so
-    // the patterns that read a run's ids and mode from its end stay fixed.
-    function helperCommand(providerIds, args, initialIds = []) {
+    // The chosen programs, first-check and retried ids come before
+    // --providers, so the patterns that read a run's ids and mode from its
+    // end stay fixed.
+    function helperCommand(providerIds, args, initialIds = [], retriedIds = []) {
         return providerIds.length > 0
             ? "python3 -B " + Shell.quoted(helperPath)
               + providerIds.filter(id => programs[id]).map(id => " --program " + Shell.quoted(id + "=" + programs[id]))
                            .join("")
               + (args === "" && initialIds.length > 0 ? " --initial-providers " + initialIds.join(",") : "")
+              + (args === "" && retriedIds.length > 0 ? " --retry-providers " + retriedIds.join(",") : "")
               + (args === "" ? " --credits-providers " + providerIds.join(",") : "")
               + " --providers " + providerIds.join(",") + args : "";
     }
@@ -428,7 +447,9 @@ Item {
     function refresh() {
         // Snapshot the first-check ids for this run. Answering changes no
         // command binding, so its report doesn't trigger another check.
-        const source = helperCommand(ids, "", ids.filter(id => !answered.includes(id)));
+        const source = helperCommand(ids, "", ids.filter(id => !answered.includes(id)),
+                                     ids.filter(id => retryIds.includes(id)));
+        retryIds = [];
         if (source !== "" && !runner.connectedSources.includes(source)) {
             // Set first: a source the engine still holds answers at once.
             checking = true;
@@ -448,23 +469,44 @@ Item {
         return lastRun + Math.max(1, Math.ceil((hold - lastRun - 10) / step)) * step;
     }
 
-    // Whether a failed check is worth trying again now: only once the
-    // helper's hold is over, so it would really ask; not while a check
-    // runs or with the next tick under a minute away; and never for a
-    // helper that can't read its files or can't be started, or a Codex CLI
-    // that isn't installed or a chosen one that can't run, which would only
-    // fail again until the user acts, or one that found another check
-    // holding its lock, which a click would only queue behind.
+    // Whether a check that failed for want of a connection, reaching no
+    // server or getting no answer in time, has seen the internet answer
+    // since: the other provider's check read, or the public address was
+    // found, after it failed, and that source's newest word is still a
+    // success. A retry that fails again is newer than both, so each retry
+    // waits for the internet to answer once more.
+    function backOnline(id) {
+        const e = entry(id);
+        if (e === null || e.lastError === undefined || !["offline", "timeout"].includes(e.reason)) {
+            return false;
+        }
+        return answeredAt > e.lastErrorAt || Object.keys(entries).some(other => {
+            const o = other !== id ? entry(other) : null;
+            return o !== null && o.status === "ok" && o.lastError === undefined && o.fetchedAt > e.lastErrorAt;
+        });
+    }
+
+    // Whether a failed check is worth trying again now: once the helper's
+    // hold is over, so it would really ask, or after a connection failure
+    // once the internet is back (see backOnline()), when the helper skips
+    // that hold, which is its own and no wait the provider asked for; not
+    // while a check runs or with the next real check under a minute away;
+    // and never for a helper that can't read its files or can't be started,
+    // or a Codex CLI that isn't installed or a chosen one that can't run,
+    // which would only fail again until the user acts, or one that found
+    // another check holding its lock, which a click would only queue behind.
     function canRetry(id, nowMs) {
         const e = entry(id);
         const now = nowMs / 1000;
         return e !== null && e.lastError !== undefined && !["files", "missing", "not-installed", "program", "busy"].includes(e.reason)
-            && !checking && now >= e.retryAt && nextCheck(id) - now > 60;
+            && !checking && (now >= e.retryAt || backOnline(id)) && nextCheck(id) - now > 60;
     }
 
     // Checks now, and counts the next interval from here: the timer's
-    // start runs the check.
-    function checkNow() {
+    // start runs the check. A provider back online is checked despite the
+    // helper's hold, while there is one; a timer tick never asks for that.
+    function checkNow(id) {
+        retryIds = backOnline(id) && nowSeconds() < entry(id).retryAt ? [id] : [];
         poller.restart();
     }
 
@@ -476,7 +518,7 @@ Item {
             ids.filter(id => map[id] !== undefined).forEach(id => { kept[id] = map[id]; });
             return kept;
         };
-        for (const name of ["entries", "credits", "starters", "starterWanted", "starterWantedGeneration", "startFailures", "switchFailures"]) {
+        for (const name of ["entries", "credits", "drains", "starters", "starterWanted", "starterWantedGeneration", "startFailures", "switchFailures"]) {
             if (Object.keys(usage[name]).some(id => !ids.includes(id))) {
                 usage[name] = only(usage[name]);
             }
@@ -548,8 +590,14 @@ Item {
         if (Object.keys(events).length > 0) {
             resetsDetected(events);
         }
+        // Each provider this check reported on, against the check before.
+        const falling = Object.assign({}, drains);
+        ids.filter(id => report.providers[id]).forEach(id => {
+            falling[id] = Drain.step(drains[id], entries[id], merged[id], credits[id], balances[id], refreshMinutes, now);
+        });
         entries = merged;
         credits = balances;
+        drains = falling;
         statuses = latest;
         if (reported.length > 0) {
             answered = answered.concat(reported);

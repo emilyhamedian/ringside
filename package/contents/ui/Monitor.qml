@@ -970,6 +970,7 @@ Item {
         config: monitor.config
         providers: monitor.enabledItems.filter(Items.isUsage)
         openPopup: monitor.openPopup
+        answeredAt: publicChecker.answeredAt
     }
 
     // Static facts, read once. The report also goes into the configuration,

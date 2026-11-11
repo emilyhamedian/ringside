@@ -10,6 +10,7 @@ import "../../package/contents/ui"
 import "../../package/contents/ui/popups"
 import "../../package/contents/ui/code/format.js" as Format
 import "../../package/contents/ui/code/credits.js" as Credits
+import "../../package/contents/ui/code/drain.js" as Drain
 import "../../package/contents/ui/code/report.js" as Report
 import "../../package/contents/ui/code/shell.js" as Shell
 import "../../package/contents/ui/code/style.js" as Style
@@ -148,6 +149,81 @@ TestRoot {
             const credit = { status: data.status ?? "ok", spent: data.spent ?? true,
                              fetchedAt: now - (data.creditAge ?? 0), balance: { amount: data.amount ?? 18.42 } };
             compare(Credits.used(entry, data.absent ? null : credit, data.minutes ?? 5, now * 1000), data.active);
+        }
+    }
+
+    TestCase {
+        name: "Drain"
+
+        // Two checks five minutes apart of a week at 94 % with 18.42 USD
+        // left, the second changed as `data` says, and what it finds
+        // draining. Percentages are whole, so only a higher one counts.
+        function test_step_data() {
+            return [
+                { tag: "first check", first: true, percent: 95, amount: 17 },
+                { tag: "climbed", percent: 95, weekly: true },
+                { tag: "unchanged", percent: 94 },
+                { tag: "fell", percent: 93 },
+                { tag: "week reset", percent: 3, moved: 7 * 86400 },
+                { tag: "early reset in place", percent: 0 },
+                { tag: "new window, higher", percent: 96, moved: 3601 },
+                { tag: "reset jitter", percent: 95, moved: 2, weekly: true },
+                { tag: "previous check failed", beforeFailed: true, percent: 95 },
+                { tag: "this check failed", afterFailed: true, percent: 95 },
+                { tag: "signed out", afterStatus: "signed_out", percent: 95 },
+                { tag: "a minute late", ago: 360, percent: 95, amount: 17, weekly: true, credit: true },
+                { tag: "after a suspend", ago: 361, percent: 95, amount: 17 },
+                { tag: "clock stepped back", ago: -1, percent: 95, amount: 17 },
+                { tag: "cached reading keeps a climb", same: true, lastWeekly: true, weekly: true },
+                { tag: "cached reading keeps none", same: true, percent: 95 },
+                { tag: "spent", amount: 18.4, credit: true },
+                { tag: "top-up", amount: 25 },
+                { tag: "balance unchanged", amount: 18.42 },
+                { tag: "currency changed", amount: 17, currency: "EUR" },
+                { tag: "scale changed", amount: 17, precision: 0 },
+                { tag: "balance failed before", creditBefore: "error", amount: 17 },
+                { tag: "balance failed now", creditAfter: "error", amount: 17 },
+                { tag: "balance gone", amount: null },
+                { tag: "weekly failed, balance read", beforeFailed: true, amount: 17, credit: true },
+                { tag: "cached balance keeps use", sameCredit: true, lastCredit: true, credit: true },
+                { tag: "cached balance keeps none", sameCredit: true, amount: 17 }
+            ];
+        }
+
+        function test_step(data) {
+            const now = 100000;
+            const resetsAt = now + 86400;
+            const before = { status: "ok", fetchedAt: now - 300, weekly: { percent: 94, resetsAt: resetsAt } };
+            const after = { status: data.afterStatus ?? "ok", fetchedAt: data.same ? before.fetchedAt : now,
+                            weekly: { percent: data.percent ?? 94, resetsAt: resetsAt + (data.moved ?? 0) } };
+            if (data.beforeFailed) before.lastError = "offline";
+            if (data.afterFailed) after.lastError = "offline";
+            const creditBefore = { status: data.creditBefore ?? "ok", fetchedAt: now - 300,
+                                   balance: { amount: 18.42, currency: "USD", precision: 2 } };
+            const creditAfter = { status: data.creditAfter ?? "ok", fetchedAt: data.sameCredit ? creditBefore.fetchedAt : now,
+                                  balance: data.amount === null ? null
+                                         : { amount: data.amount ?? 18.42, currency: data.currency ?? "USD", precision: data.precision ?? 2 } };
+            const last = data.first ? undefined
+                       : { at: now - (data.ago ?? 300), weekly: data.lastWeekly ?? false, credit: data.lastCredit ?? false };
+            compare(Drain.step(last, before, after, creditBefore, creditAfter, 5, now),
+                    { at: now, weekly: data.weekly ?? false, credit: data.credit ?? false });
+        }
+
+        // A check's finding stands until the next check is over a minute late.
+        function test_active_data() {
+            return [
+                { tag: "just found", ago: 0, active: true }, { tag: "next check due", ago: 300, active: true },
+                { tag: "a minute late", ago: 360, active: true }, { tag: "over a minute late", ago: 361, active: false },
+                { tag: "longer interval", minutes: 60, ago: 3660, active: true },
+                { tag: "from the future", ago: -1, active: false }, { tag: "nothing found", ago: 0, found: false, active: false },
+                { tag: "the other kind", ago: 0, kind: "credit", active: false }, { tag: "no check yet", absent: true, active: false }
+            ];
+        }
+
+        function test_active(data) {
+            const now = 100000;
+            const drain = data.absent ? undefined : { at: now - data.ago, weekly: data.found ?? true, credit: false };
+            compare(Drain.active(drain, data.kind ?? "weekly", data.minutes ?? 5, now), data.active);
         }
     }
 
@@ -775,6 +851,55 @@ TestRoot {
             compare(timers().filter(t => t.running).map(t => t.interval), [5 * 60000]);
         }
 
+        // "Try again" after a connection failure, once the internet has
+        // answered since, asks the helper to skip its hold for that provider
+        // alone; a second click while it runs adds no check, and the ticks
+        // after it ask for no skip.
+        function test_checkNowAfterTheInternetIsBack() {
+            start("slow");
+            const runs = commands();
+            const now = usage.nowSeconds();
+            usage.lastRun = now - 60;
+            usage.entries = {
+                claude: Object.assign({}, usage.entry("claude"), { lastError: "x", lastErrorAt: now - 60, reason: "offline",
+                                                                  host: "api.anthropic.com", retryAt: now + 240 }),
+                codex: Object.assign({}, usage.entry("codex"), { fetchedAt: now - 90 })
+            };
+            verify(!usage.canRetry("claude", now * 1000), "held, with nothing to show the internet is back");
+            usage.answeredAt = now - 30;
+            verify(usage.canRetry("claude", now * 1000));
+            verify(!usage.backOnline("codex"), "a provider that didn't fail isn't retried");
+            usage.checkNow("claude");
+            usage.checkNow("claude");
+            tryCompare(runs, "count", 1, 2000);
+            const retried = runs.signalArguments[0][0];
+            verify(retried.endsWith(" --retry-providers claude --credits-providers claude,codex --providers claude,codex"), retried);
+            compare(usage.polledIds(retried), ["claude", "codex"]);
+            tryCompare(usage, "checking", false, 10000);
+            compare(runs.count, 1, "one click, one check");
+            usage.refresh();
+            tryCompare(runs, "count", 2, 2000);
+            compare(runs.signalArguments[1][0], usage.command, "a tick asks for no skip");
+            tryCompare(usage, "checking", false, 10000);
+        }
+
+        // A click once the hold is over asks for no skip, whatever the
+        // internet has done since.
+        function test_checkNowAfterTheHoldAsksForNoSkip() {
+            start("ok");
+            const runs = commands();
+            const now = usage.nowSeconds();
+            usage.entries = Object.assign({}, usage.entries, {
+                claude: Object.assign({}, usage.entry("claude"), { lastError: "x", lastErrorAt: now - 400, reason: "offline",
+                                                                  host: "api.anthropic.com", retryAt: now - 100 })
+            });
+            verify(usage.backOnline("claude"), "Codex has read since");
+            usage.checkNow("claude");
+            tryCompare(runs, "count", 1, 2000);
+            compare(runs.signalArguments[0][0], usage.command);
+            tryCompare(usage, "checking", false, 10000);
+        }
+
         // After a suspend the poller's tick is late by the wall clock. While
         // a check has failed, a tick over a minute overdue runs at once, and
         // one that isn't waits.
@@ -855,7 +980,24 @@ TestRoot {
                 { tag: "tick within a minute", ran: 850, retryAt: -100, can: false },
                 { tag: "tick a minute and more away", ran: 830, retryAt: -100, can: true },
                 { tag: "not failed", ran: 400, retryAt: -100, ok: true, can: false },
-                { tag: "five minutes", minutes: 5, ran: 60, retryAt: 240, can: false }
+                { tag: "five minutes", minutes: 5, ran: 60, retryAt: 240, can: false },
+                // A connection failure once the internet has answered since
+                // skips the helper's own hold, and nothing else does.
+                { tag: "offline, Codex read since", minutes: 5, ran: 60, retryAt: 240, codexAt: -30, can: true },
+                { tag: "offline, address found since", minutes: 5, ran: 60, retryAt: 240, answered: -30, can: true },
+                { tag: "timeout, Codex read since", minutes: 5, ran: 60, retryAt: 240, reason: "timeout", codexAt: -30, can: true },
+                { tag: "Codex read in the same second", minutes: 5, ran: 60, retryAt: 240, codexAt: -60, can: false },
+                { tag: "Codex read before the failure", minutes: 5, ran: 60, retryAt: 240, codexAt: -90, can: false },
+                { tag: "Codex failed since", minutes: 5, ran: 60, retryAt: 240, codexAt: -30, codexFailed: true, can: false },
+                { tag: "address found before the failure", minutes: 5, ran: 60, retryAt: 240, answered: -90, can: false },
+                { tag: "rate limited, internet back", ran: 400, retryAt: 3000, reason: "rate-limited", codexAt: -30, can: false },
+                { tag: "server error, internet back", minutes: 5, ran: 60, retryAt: 240, reason: "server", codexAt: -30, can: false },
+                { tag: "helper, internet back", minutes: 5, ran: 60, retryAt: 240, reason: "helper", answered: -30, can: false },
+                { tag: "not installed, internet back", ran: 400, retryAt: 100, reason: "not-installed", codexAt: -30, can: false },
+                { tag: "lock busy, internet back", ran: 400, retryAt: 100, reason: "busy", codexAt: -30, can: false },
+                { tag: "internet back, checking", minutes: 5, ran: 60, retryAt: 240, codexAt: -30, checking: true, can: false },
+                { tag: "internet back, tick within a minute", minutes: 5, ran: 250, retryAt: 50, codexAt: -30, can: false },
+                { tag: "first check failed, internet back", minutes: 5, ran: 60, retryAt: 240, codexAt: -30, noReading: true, can: true }
             ];
         }
 
@@ -866,13 +1008,23 @@ TestRoot {
             config.usageRefreshMinutes = data.minutes ?? 15;
             usage.lastRun = now - data.ran;
             usage.checking = data.checking ?? false;
-            const entry = { status: "ok", retryAt: now + data.retryAt, reason: data.reason ?? "offline" };
-            usage.entries = { claude: data.ok ? entry : Object.assign(entry, { lastError: "x", lastErrorAt: now - data.ran }) };
+            usage.answeredAt = data.answered === undefined ? NaN : now + data.answered;
+            const entry = { status: data.noReading ? "error" : "ok", retryAt: now + data.retryAt, reason: data.reason ?? "offline" };
+            const entries = { claude: data.ok ? entry : Object.assign(entry, { lastError: "x", lastErrorAt: now - data.ran }) };
+            if (data.codexAt !== undefined) {
+                entries.codex = { status: "ok", fetchedAt: now + data.codexAt };
+                if (data.codexFailed) {
+                    Object.assign(entries.codex, { lastError: "y", lastErrorAt: now - 10, reason: "offline", retryAt: now + 290 });
+                }
+            }
+            usage.entries = entries;
             compare(usage.canRetry("claude", now * 1000), data.can);
-            compare(usage.canRetry("codex", now * 1000), false, "no entry, nothing to retry");
+            if (data.codexAt === undefined) {
+                compare(usage.canRetry("codex", now * 1000), false, "no entry, nothing to retry");
+            }
             const fake = createTemporaryObject(fakeUsageComponent, root, { refreshMinutes: config.usageRefreshMinutes,
                                                                           lastRun: usage.lastRun, checking: usage.checking,
-                                                                          entries: usage.entries });
+                                                                          entries: usage.entries, answeredAt: usage.answeredAt });
             compare(fake.canRetry("claude", now * 1000), data.can, "the tests' stand-in agrees");
         }
 
@@ -1766,6 +1918,68 @@ TestRoot {
             compare(logged, ["ringside.usage warning the session starter run for claude failed: "
                              + "the usage helper exited with code 1 (RuntimeError)"]);
         }
+
+        // Each check that reports on a provider compares its readings with
+        // the check before's: a climb, or a fall in the balance, drains until
+        // the next check, and a reading back from the helper's cache keeps
+        // what was found. A first check, a failed one, the check after it
+        // and one after a suspend have nothing to compare with.
+        function test_drainsBetweenChecks() {
+            start("ok", ["claude"]);
+            const draining = kind => usage.draining("claude", kind, Date.now());
+            verify(!draining("weekly") && !draining("credit"), "the first check");
+            const resetsAt = usage.entries.claude.weekly.resetsAt;
+            let at = usage.entries.claude.fetchedAt;
+            const reading = (percent, fetchedAt) => ({ status: "ok", fetchedAt: fetchedAt, scoped: [],
+                weekly: { percent: percent, exhausted: false, resetsAt: resetsAt, windowSeconds: 7 * 86400 } });
+            const check = claude => usage.merge({ providers: { claude: claude } });
+
+            check(reading(90, ++at));
+            verify(draining("weekly"), "52 % to 90 %");
+            check(reading(90, at));
+            verify(draining("weekly"), "the same reading, from the helper's cache");
+            check(reading(90, ++at));
+            verify(!draining("weekly"), "90 % again");
+            check(reading(91, ++at));
+            verify(draining("weekly"));
+            check({ status: "error", message: "offline", reason: "offline" });
+            verify(!draining("weekly"), "a failed check");
+            check(reading(92, ++at));
+            verify(!draining("weekly"), "the check after a failed one");
+            check(reading(93, ++at));
+            verify(draining("weekly"));
+            poll("traceback");
+            verify(!draining("weekly"), "a helper run that gave no report");
+            check(reading(94, ++at));
+            verify(!draining("weekly"), "the check after it");
+            check(reading(95, ++at));
+            verify(draining("weekly"));
+            usage.drains = { claude: Object.assign({}, usage.drains.claude, { at: usage.drains.claude.at - 361 }) };
+            verify(!draining("weekly"), "the next check is over a minute late, as after a suspend");
+            check(reading(96, ++at));
+            verify(!draining("weekly"), "the check after a suspend");
+
+            const balance = (amount, status) => ({ status: status ?? "ok", spent: false, fetchedAt: ++at,
+                                                   balance: { amount: amount, currency: "USD", precision: 2 } });
+            const credits = credit => check(Object.assign(reading(96, at), { credits: credit }));
+            credits(balance(20));
+            verify(!draining("credit"), "the first balance");
+            credits(balance(19.5));
+            verify(draining("credit"), "20 to 19.50");
+            check(reading(96, at));
+            verify(draining("credit"), "a check that left the balance as it was read");
+            credits(balance(19.5));
+            verify(!draining("credit"), "19.50 again");
+            credits(balance(25));
+            verify(!draining("credit"), "a top-up");
+            credits(balance(24));
+            verify(draining("credit"));
+            credits(balance(23, "error"));
+            verify(!draining("credit"), "a failed balance read");
+            credits(balance(22));
+            verify(!draining("credit"), "the read after it");
+            verify(!draining("weekly"), "the week stayed at 96 %");
+        }
     }
 
     TestCase {
@@ -1850,6 +2064,7 @@ TestRoot {
 
         function test_pulse(data) {
             claudeAt(data.percent, lastHours);
+            drain("claude", { weekly: true });
             compare(cell("claude").children[0].pulsing, data.pulsing);
         }
 
@@ -1866,6 +2081,7 @@ TestRoot {
                             scoped: [Object.assign(usage.window(78, lastHours, []), { id: "Fable", label: "Fable" })] };
             usage.entries = { [data.item]: entry };
             usage.credits = { [data.item]: { status: "ok", spent: true, balance: { amount: 18.42 }, fetchedAt: now } };
+            drain(data.item, { credit: true });
             usage.showCredits = !data.hidden;
             const c = cell(data.item);
             const gauge = c.children[0];
@@ -1987,10 +2203,11 @@ TestRoot {
                      lastErrorAt: Math.floor(now), reason: "offline", host: "api.anthropic.com", retryAt: Math.floor(now) + 300 };
         }
 
-        // Claude near its limit, with Fable on the inner ring.
+        // Claude near its limit and climbing, with Fable on the inner ring.
         function hotClaude() {
             const usage = monitor.usage;
             setEntry("claude", Object.assign({}, usage.entries.claude, { weekly: usage.window(95, lastHours, []) }));
+            drain("claude", { weekly: true });
             return usage.entries.claude;
         }
 
@@ -2386,6 +2603,59 @@ TestRoot {
             verify(outerArc(codex).animating);
             compare(outerArc(claude).animating, false);
             tryCompare(outerArc(codex), "animating", false, 5000);
+        }
+
+        // Gives `item` what its last check found draining, `ago` seconds
+        // before the fake's readings were taken.
+        function drain(item, found, ago) {
+            const usage = monitor.usage;
+            usage.drains = Object.assign({}, usage.drains, { [item]: { at: usage.createdAt - (ago ?? 0),
+                                                                       weekly: found.weekly === true,
+                                                                       credit: found.credit === true } });
+        }
+
+        // From 90 % the ring breathes only while its last check found the
+        // percentage climbing, and stops once the next check is over a
+        // minute late. A falling balance alone doesn't make it breathe. At
+        // Instant it doesn't breathe at all.
+        function test_redPulseNeedsAClimb() {
+            claudeAt(95, lastHours);
+            const c = cell("claude");
+            const gauge = c.children[0];
+            verify(!gauge.pulsing, "95 % that didn't climb");
+            drain("claude", { credit: true });
+            verify(!gauge.pulsing, "a falling balance alone");
+            drain("claude", { weekly: true });
+            verify(gauge.pulsing);
+            verify(gauge.breathing);
+            c.nowMs = (monitor.usage.createdAt + 361) * 1000;
+            verify(!gauge.pulsing, "the next check is over a minute late");
+            c.nowMs = (monitor.usage.createdAt + 360) * 1000;
+            verify(gauge.pulsing, "a minute late");
+            gauge.settle = 0;
+            verify(!gauge.breathing, "at Instant");
+        }
+
+        // The blue ring breathes only while its last check found the balance
+        // falling. A climbing week alone doesn't make it breathe, and a ring
+        // that stops breathing stays blue while credit use is fresh.
+        function test_bluePulseNeedsAFallingBalance() {
+            const usage = monitor.usage;
+            claudeAt(95, lastHours);
+            setEntry("claude", Object.assign({}, usage.entries.claude, {
+                session: Object.assign(usage.window(100, 3600, []), { exhausted: true }) }));
+            usage.credits = { claude: { status: "ok", spent: true, balance: { amount: 18.42 }, fetchedAt: usage.createdAt } };
+            drain("claude", { weekly: true });
+            const c = cell("claude");
+            const gauge = c.children[0];
+            verify(c.creditUsed);
+            compare(gauge.color, c.creditColor);
+            verify(!gauge.pulsing, "a climbing week alone");
+            drain("claude", { credit: true });
+            verify(gauge.pulsing);
+            drain("claude", { credit: true }, 361);
+            verify(!gauge.pulsing, "the next check is over a minute late");
+            verify(c.creditUsed, "still blue");
         }
     }
 
@@ -3857,7 +4127,11 @@ TestRoot {
         function test_tryAgain_data() {
             return [
                 { tag: "hold over", minutes: 15, ran: 400, retryAt: -100, shown: true },
-                { tag: "held", minutes: 15, ran: 400, retryAt: 200, shown: false }
+                { tag: "held", minutes: 15, ran: 400, retryAt: 200, shown: false },
+                { tag: "held, internet back since", minutes: 5, ran: 60, retryAt: 240, answered: 1, shown: true },
+                { tag: "held, internet back before the failure", minutes: 5, ran: 60, retryAt: 240, answered: -1, shown: false },
+                { tag: "rate limited, internet back", minutes: 15, ran: 400, retryAt: 3000, reason: "rate-limited", answered: 1,
+                  shown: false }
             ];
         }
 
@@ -3867,6 +4141,9 @@ TestRoot {
             usage.refreshMinutes = data.minutes;
             usage.lastRun = now - data.ran;
             failClaude(600, { retryAt: now + data.retryAt, reason: data.reason ?? "offline" });
+            if (data.answered !== undefined) {
+                usage.answeredAt = usage.entry("claude").lastErrorAt + data.answered;
+            }
             const popup = load("claude");
             const button = tryAgain(popup);
             compare(button.visible, data.shown);

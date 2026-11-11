@@ -1045,6 +1045,46 @@ class ReadingCache(Isolated):
         self.collect(1000, codex=mock.Mock(side_effect=usage.SignedOut()))
         self.assertEqual(self.cached()["codex"], {"status": "signed_out", "heldUntil": 1300, "holdSeconds": 300})
 
+    # A retry the user asked for once the internet answered skips the
+    # helper's own hold after a connection failure, and only that: every
+    # other failure, a wait the provider asked for and a fresh reading stand.
+    def test_a_retry_skips_only_a_connection_hold(self):
+        for name, failure, polled in (
+                ("claude", usage.CheckFailed("x", "offline", "api.anthropic.com"), True),
+                ("codex", usage.CheckFailed("x", "timeout"), True),
+                ("claude", usage.CheckFailed("x", "server", "api.anthropic.com", 503), False),
+                ("codex", usage.RateLimited(60), False),
+                ("claude", usage.RateLimited(600, "api.anthropic.com"), False),
+                ("codex", usage.SignedOut(), False),
+                ("codex", usage.CheckFailed("codex CLI not found", "not-installed"), False),
+                ("codex", RuntimeError("unexpected"), False)):
+            with self.subTest(failure=repr(failure)):
+                usage.CACHE_FILE.unlink(missing_ok=True)
+                self.collect(1000, **{name: mock.Mock(side_effect=failure)})
+                again = mock.Mock(return_value=reading(3, 5))
+                result = usage.collect({name: again}, 1100, retrying=[name])[name]
+                self.assertEqual(again.call_count, int(polled))
+                self.assertEqual(result["status"] == "ok", polled)
+
+    def test_a_retry_holds_back_only_the_provider_it_names(self):
+        offline = usage.CheckFailed("x", "offline", "api.anthropic.com")
+        self.collect(1000, claude=mock.Mock(side_effect=offline), codex=mock.Mock(side_effect=usage.CheckFailed("x", "timeout")))
+        claude, codex = mock.Mock(return_value=reading(3, 5)), mock.Mock(return_value=reading(4, 5))
+        result = usage.collect({"claude": claude, "codex": codex}, 1100, retrying=["claude"])
+        self.assertEqual((result["claude"]["status"], result["codex"]["status"]), ("ok", "error"))
+        codex.assert_not_called()
+
+    def test_a_retry_serves_a_fresh_reading_and_keeps_anthropics_wait(self):
+        self.write_cache({"codex": self.good})
+        fetch = mock.Mock()
+        self.assertEqual(usage.collect({"codex": fetch}, 1100, retrying=["codex"])["codex"]["fetchedAt"], 1000)
+        fetch.assert_not_called()
+        self.write_cache({"_anthropicHold": 2000,
+                          "claude": {"status": "error", "message": "x", "heldUntil": 1300, "holdSeconds": 300,
+                                     "reason": "offline", "host": "api.anthropic.com"}})
+        self.assertEqual(usage.collect({"claude": fetch}, 1100, retrying=["claude"])["claude"]["status"], "rate_limited")
+        fetch.assert_not_called()
+
     def test_malformed_cache_entries_read_as_missing(self):
         window = {"percent": 1, "resetsAt": 5, "windowSeconds": WEEK}
         for entry in ({"status": "ok", "fetchedAt": "soon", "weekly": {}}, {"status": "ok", "fetchedAt": 999},
@@ -1306,6 +1346,17 @@ class ProviderChoice(Isolated):
         self.assertEqual(set(self.run_main("--providers", "codex,claude")["providers"]), {"claude", "codex"})
         self.assertEqual(self.claude.call_count, 1)
         self.assertEqual(self.codex.call_count, 1)
+
+    def test_retry_providers_are_for_polled_usage_checks_only(self):
+        for argv in (["--providers", "claude", "--retry-providers", "codex"], ["--retry-providers", "gemini"],
+                     ["--retry-providers", "claude", "--start"],
+                     ["--retry-providers", "claude", "--starter-set", "claude=off"]):
+            with self.subTest(argv), mock.patch("sys.stderr", new=io.StringIO()), \
+                    self.assertRaises(SystemExit) as exit_:
+                usage.main(argv)
+            self.assertEqual(exit_.exception.code, 2)
+        self.claude.assert_not_called()
+        self.assertEqual(usage.arguments(["--retry-providers", "codex"]).retry_providers, ["codex"])
 
     def test_names_are_trimmed_and_deduplicated(self):
         self.assertEqual(usage.provider_list(" codex,claude,codex"), ["codex", "claude"])

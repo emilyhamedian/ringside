@@ -128,6 +128,15 @@ class Checks(Isolated):
             {"level": "debug", "kind": "held",
              "message": "Codex: next check in 200 s, after the Codex CLI didn't answer in 20 s"}])
 
+    def test_a_retry_that_skips_a_hold_is_debug(self):
+        self.collect(1000, claude=self.failing(usage.CheckFailed("private transport details", "offline", "api.anthropic.com")))
+        usage.EVENTS.clear()
+        usage.collect({"claude": lambda: reading(5, 9)}, 1100, retrying=["claude"])
+        self.assertEqual(lines("level", "kind", "message")[0],
+                         {"level": "debug", "kind": "retry",
+                          "message": "Claude: checking again 200 s early, as asked once the internet answered"})
+        self.assertNotIn("private transport details", json.dumps(usage.EVENTS))
+
     def test_a_run_that_cant_get_the_lock_says_so(self):
         usage.EVENTS.clear()
         usage.waiting(["claude"], "another usage check is still running")

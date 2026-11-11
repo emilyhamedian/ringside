@@ -26,7 +26,11 @@ it does not say when the balance was spent.
 default. --initial-providers names those awaiting their first report: safe
 connection failures retry at five-second intervals within one 30-second
 window, before a final result is cached. Existing readings and holds still
-apply. A window is {"percent": 0-100, "resetsAt": <epoch seconds>,
+apply. --retry-providers names those whose failed connection the user asked
+to try again once the internet was seen to answer: their five-minute hold
+after an "offline" or "timeout" failure is skipped for this run. A reading
+still stands for five minutes, and a wait a provider asked for still holds.
+A window is {"percent": 0-100, "resetsAt": <epoch seconds>,
 "windowSeconds": <its length>, "history": [[<epoch seconds>, <percent>], ...]}.
 "weekly" is the all-models window; "scoped" lists the model-specific weekly
 windows, each a window with an "id" that stays stable across polls and a
@@ -323,6 +327,7 @@ MESSAGES = {
     "cached": "{name}: the reading taken {age} s ago still stands",
     "held": "{name}: next check in {wait} s, after {why}",
     "initial-retry": "{name}: connection not ready; retrying during first load",
+    "retry": "{name}: checking again {wait} s early, as asked once the internet answered",
     "failed": "{name}: check failed after {ms} ms: {why}",
     "failed-again": "{name}: check failed again after {ms} ms: {why}",
     "recovered": "{name}: checked in {ms} ms, working again after: {why}",
@@ -1434,6 +1439,10 @@ def fresh(entry, now):
 
 # Failures that depend on which program was run.
 PROGRAM_REASONS = ("not-installed", "program")
+# Failures that never got an answer from the provider. Their hold is
+# Ringside's own, not one the provider asked for, so --retry-providers may
+# skip it.
+CONNECTION_REASONS = ("offline", "timeout")
 
 
 def held(entry, now, chosen):
@@ -1482,7 +1491,7 @@ def replay(entry, wait, now):
     return {"status": "error", "message": entry["message"], **failure}
 
 
-def collect(fetchers, now=None, *, initial=(), credits=()):
+def collect(fetchers, now=None, *, initial=(), credits=(), retrying=()):
     """Poll each provider unless its last poll is recent enough to report
     again.
 
@@ -1499,14 +1508,15 @@ def collect(fetchers, now=None, *, initial=(), credits=()):
     from reading the cache to writing it and the history, so a run that
     waited for another finds its result fresh; the time is taken once the
     lock is held, since a reading from a run that started later would
-    otherwise look like one from the future.
+    otherwise look like one from the future. A provider in retrying has its
+    hold after a connection failure skipped, and nothing else.
     """
     with locked():
         now = int(time.time()) if now is None else now
         started = time.monotonic()
         context_token = CREDITS_CONTEXT.set({"eligible": set(credits), "observed": {}})
         try:
-            providers, history = collect_locked(fetchers, now, initial=initial)
+            providers, history = collect_locked(fetchers, now, initial=initial, retrying=retrying)
         finally:
             CREDITS_CONTEXT.reset(context_token)
         finished = now + int(time.monotonic() - started)
@@ -1515,7 +1525,7 @@ def collect(fetchers, now=None, *, initial=(), credits=()):
     return providers
 
 
-def collect_locked(fetchers, now, *, initial=()):
+def collect_locked(fetchers, now, *, initial=(), retrying=()):
     """collect's work, for a caller already holding the lock: the entries
     and the history, which isn't attached yet."""
     cache = read_cache()
@@ -1540,7 +1550,9 @@ def collect_locked(fetchers, now, *, initial=()):
                                           now, ""), shared, now)
             continue
         wait = held(entry, now, PROGRAMS.get(name, ""))
-        if wait:
+        if wait and name in retrying and entry["status"] == "error" and entry.get("reason") in CONNECTION_REASONS:
+            event("debug", name, "retry", wait=wait)
+        elif wait:
             if entry["heldUntil"] - now > wait:
                 entry["heldUntil"] = now + wait
                 stepped = True
@@ -2651,6 +2663,8 @@ def arguments(argv):
                         help="providers whose prepaid credits may be reported")
     parser.add_argument("--initial-providers", type=provider_list, default=[],
                         help="providers awaiting their first report; briefly retry connection failures")
+    parser.add_argument("--retry-providers", type=provider_list, default=[],
+                        help="providers to check again now after a connection failure, skipping its hold")
     parser.add_argument("--start", action="store_true",
                         help="run the session starter of each listed provider that is switched on and due")
     parser.add_argument("--starter-set", type=switch, action="append", default=[], metavar="PROVIDER=on|off|WINDOWS",
@@ -2663,8 +2677,10 @@ def arguments(argv):
         parser.error("--credits-providers must be a subset of --providers")
     if any(name not in args.providers for name in args.initial_providers):
         parser.error("--initial-providers must be a subset of --providers")
-    if args.initial_providers and (args.start or args.starter_set):
-        parser.error("--initial-providers is only for usage checks")
+    if any(name not in args.providers for name in args.retry_providers):
+        parser.error("--retry-providers must be a subset of --providers")
+    if (args.initial_providers or args.retry_providers) and (args.start or args.starter_set):
+        parser.error("--initial-providers and --retry-providers are only for usage checks")
     return args
 
 
@@ -2694,7 +2710,7 @@ def main(argv=None):
     sources = fetchers()
     try:
         providers = collect({name: sources[name] for name in ids}, initial=args.initial_providers,
-                            credits=args.credits_providers)
+                            credits=args.credits_providers, retrying=args.retry_providers)
     except Busy as err:
         providers = waiting(ids, str(err), credits=args.credits_providers)
     report = {"fetchedAt": int(time.time()), "providers": providers, "events": EVENTS}
