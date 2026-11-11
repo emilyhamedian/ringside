@@ -968,7 +968,9 @@ TestRoot {
             make("ok", []);
             verify(timers().every(t => !t.running));
             compare(usage.command, "");
-            wait(1500);
+            const runs = commands();
+            wait(0);
+            compare(runs.count, 0, "no helper is queued without providers");
             compare(usage.entries, {});
             compare(config.knownLimitsWrites + config.usageStatusWrites, 0);
 
@@ -1102,6 +1104,13 @@ TestRoot {
             return timers().find(t => t.objectName === "starterTimer");
         }
 
+        // Move the reported deadline to now instead of waiting for real seconds.
+        function makeDue(id) {
+            const next = usage.nowSeconds();
+            usage.starters = Object.assign({}, usage.starters, { [id]: Object.assign({}, usage.starters[id], { next: next }) });
+            return usage.starter(id).next;
+        }
+
         function test_startersFromEveryReport() {
             start("starter");
             compare(usage.starter("claude").state, "waiting");
@@ -1227,7 +1236,7 @@ TestRoot {
             const run = commands();
             starterTick().triggered();
             compare(ran(run, " --start"), [], "not due yet");
-            const due = usage.starter("claude").next;
+            const due = makeDue("claude");
             tryVerify(() => Date.now() / 1000 >= due, 5000);
             starterTick().triggered();
             // Codex comes due too while Claude's start runs: it waits for
@@ -1247,7 +1256,7 @@ TestRoot {
         function test_switchedOffStartsNothing() {
             start("starter-slow-set");
             const run = commands();
-            const due = usage.starter("claude").next;
+            const due = makeDue("claude");
             tryVerify(() => Date.now() / 1000 >= due, 5000);
             usage.setStarter("claude", false);
             starterTick().triggered();
@@ -1263,7 +1272,7 @@ TestRoot {
         function test_startWaitsForASwitchChange() {
             start("starter-slow-set");
             const run = commands();
-            const due = usage.starter("claude").next;
+            const due = makeDue("claude");
             tryVerify(() => Date.now() / 1000 >= due, 5000);
             usage.setStarter("codex", true);
             starterTick().triggered();
@@ -1281,7 +1290,7 @@ TestRoot {
         function test_failedStartBacksOff() {
             start("starter-start-fails");
             const run = commands();
-            const due = usage.starter("claude").next;
+            const due = makeDue("claude");
             tryVerify(() => Date.now() / 1000 >= due, 5000);
             starterTick().triggered();
             compare(ran(run, " --start").length, 1);
@@ -1324,7 +1333,7 @@ TestRoot {
         // tick. The readings it brings are taken.
         function test_startLeftDueBacksOff() {
             start("starter");
-            const due = usage.starter("claude").next;
+            const due = makeDue("claude");
             tryVerify(() => Date.now() / 1000 >= due, 5000);
             const command = usage.helperCommand(["claude"], " --start");
             const answer = providers => runner().newData(command, { "exit code": 0, "exit status": 0, stderr: "",
@@ -1353,7 +1362,7 @@ TestRoot {
         // that reports a new state, or a next past the retry, ends it.
         function test_startBackOffOutlastsTheHelpersClaim() {
             start("starter");
-            const due = usage.starter("claude").next;
+            const due = makeDue("claude");
             tryVerify(() => Date.now() / 1000 >= due, 5000);
             const crash = () => runner().newData(usage.helperCommand(["claude"], " --start"), {
                 "exit code": 1, "exit status": 0, stdout: "", stderr: "Traceback (most recent call last):\nOSError: boom\n" });
@@ -1387,7 +1396,7 @@ TestRoot {
         // status gives the reason the helper printed.
         function test_startBackOffOutlastsPollsThatSayDue() {
             start("starter");
-            const due = usage.starter("claude").next;
+            const due = makeDue("claude");
             tryVerify(() => Date.now() / 1000 >= due, 5000);
             const answer = (command, stderr) => {
                 const now = Math.floor(Date.now() / 1000);
@@ -1448,7 +1457,7 @@ TestRoot {
             tryVerify(() => Object.keys(usage.starterWanted).length === 0, 10000);
             verify(usage.starterOn("claude"), "the helper kept it on");
             compare([usage.starter("claude").reason, usage.starter("claude").error], ["switch", refused]);
-            const due = usage.starter("claude").next;
+            const due = makeDue("claude");
             tryVerify(() => Date.now() / 1000 >= due, 5000);
             starterTick().triggered();
             compare(ran(run, " --start"), [], "the user turned it off");
@@ -1456,7 +1465,7 @@ TestRoot {
             usage.setStarter("claude", true);
             tryVerify(() => Object.keys(usage.starterWanted).length === 0, 10000);
             verify(usage.starter("claude").reason !== "switch", "turned again, the failure is gone");
-            const next = usage.starter("claude").next;
+            const next = makeDue("claude");
             tryVerify(() => Date.now() / 1000 >= next, 5000);
             starterTick().triggered();
             compare(ran(run, " --start").length, 1);
@@ -1617,7 +1626,7 @@ TestRoot {
         function test_aFailedStartIsWritten() {
             start("starter-start-fails");
             journal();
-            const due = usage.starter("claude").next;
+            const due = makeDue("claude");
             tryVerify(() => Date.now() / 1000 >= due, 5000);
             starterTick().triggered();
             tryVerify(() => usage.starter("claude").state === "failed", 10000);
@@ -3257,7 +3266,7 @@ TestRoot {
             const rect = i => ({ left: i.mapToItem(popup, Qt.point(0, 0)).x, right: i.mapToItem(popup, Qt.point(i.width, 0)).x,
                                  top: i.mapToItem(popup, Qt.point(0, 0)).y, bottom: i.mapToItem(popup, Qt.point(0, i.height)).y });
             const margin = Math.round(Kirigami.Units.largeSpacing * 2);
-            waitForRendering(popup);
+            verify(waitForPolish(popup.Window.window), "the footer is laid out");
             const block = { top: rect(label).top, bottom: rect(status).bottom };
             const middle = (block.top + block.bottom) / 2;
             const track = rect(toggle.indicator);
@@ -3343,6 +3352,7 @@ TestRoot {
             const status = starterStatus(popup);
             const tip = status.resources.find(r => r.delay !== undefined && r.text !== undefined);
             verify(tip);
+            tip.delay = 1;
             setStarter("claude", { enabled: true, state: "failed", reason: "not-installed" });
             waitForRendering(popup);
             verify(!status.truncated);
@@ -3644,7 +3654,7 @@ TestRoot {
             compare(r.cancelled, data.struck);
             compare(r.stale, !data.struck);
             tryCompare(r, "struck", data.struck ? 1 : 0, 3000);
-            waitForRendering(popup);
+            verify(waitForPolish(popup.Window.window), "the failed popup is laid out");
             compare(rows(popup).length, data.struck ? 0 : 2);
             verify(checkStatus(popup).visible);
             // Its reason wraps to the room the layout then gives it.
