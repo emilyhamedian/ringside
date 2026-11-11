@@ -11,13 +11,15 @@ latest release.
 Most of Ringside just draws what Plasma already knows. The parts that do more
 are the two helper scripts it runs as you:
 
-- [`usage.py`](package/contents/code/usage.py) runs the Claude, Codex and
-  Kimi items. It reads Claude Code's login to ask Anthropic for your limits,
+- [`usage.py`](package/contents/code/usage.py) runs the Claude, Codex, Kimi
+  and OpenCode Go items. It reads Claude Code's login to ask Anthropic for your limits,
   and when the login expires it renews it and saves it back the way Claude
   Code does. For Codex it asks the Codex CLI and reads the CLI's login file
   to keep cached balances with the right login. For Kimi it reads, and never
   writes, Kimi Code's settings and sign-in in `~/.kimi-code/` and the Kimi
-  Code keys OpenCode keeps in `~/.local/share/opencode/`.
+  Code keys OpenCode keeps in `~/.local/share/opencode/`. For OpenCode Go it
+  reads, and never writes or renews, OpenCode's sign-in to the OpenCode
+  Console in the same folder.
 - [`ringside-info.sh`](package/contents/code/ringside-info.sh) reads `/proc`,
   `/sys` and udev. While the network popup shows your public address, it
   also runs `ip route get` every 3 seconds to see which interface you're
@@ -47,6 +49,10 @@ Nothing, until you turn on something that needs it.
   Code's own endpoints are sent; a Moonshot Platform key is never used. Each
   result, errors included, is reused for five minutes by every Ringside
   widget.
+- **OpenCode Go** sends OpenCode's Console sign-in and the ID of the
+  organisation it belongs to only to `opencode.ai`, and only when that
+  sign-in is for opencode.ai's Console. Each result is reused for five
+  minutes, as for Kimi.
 - **Remaining credits** are collected automatically for enabled providers.
   Claude asks `api.anthropic.com` for its organization's prepaid balance
   during usage checks, at most once every five minutes across all Ringside
@@ -81,7 +87,7 @@ Nothing, until you turn on something that needs it.
 
 ## What stays on your computer
 
-- **Claude, Codex and Kimi readings** are kept in `~/.cache/ringside/`. The same
+- **Claude, Codex, Kimi and OpenCode Go readings** are kept in `~/.cache/ringside/`. The same
   private cache keeps each balance, when it was read, when it may be checked
   again, and the identity needed to keep it with the right login. It does
   not keep credentials. It records whether the balance fell since the
@@ -98,10 +104,10 @@ Nothing, until you turn on something that needs it.
   removing the widget while it's on doesn't. To clear it all, delete the
   database and the `.ini` beside it that names it `ringside` while Plasma
   isn't running.
-- **The journal** gets what goes wrong: failed checks and why, the Anthropic
-  or Kimi host or address service involved, the session starter's steps, a
-  weekly or monthly limit that resets early, a discrete GPU sleeping or waking, and sensors
-  that don't answer. Never tokens, addresses, places, account names or file
+- **The journal** gets what goes wrong: failed checks and why, the Anthropic,
+  Kimi or OpenCode host or address service involved, the session starter's
+  steps, a weekly or monthly limit that resets early, a discrete GPU sleeping
+  or waking, and sensors that don't answer. Never tokens, addresses, places, account names or file
   contents. Program paths show your home folder as `~`. Anyone who can read
   your journal can read these: you, administrators, and groups such as
   `systemd-journal`.

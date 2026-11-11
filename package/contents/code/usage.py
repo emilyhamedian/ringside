@@ -2,31 +2,33 @@
 # SPDX-FileCopyrightText: 2026 Emily Hamedian <me@emily.dev>
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""Report the usage windows of Claude Code, Codex and Kimi Code as one JSON
-object: Claude's and Codex's weeks, and Kimi's month.
+"""Report the usage windows of Claude Code, Codex, Kimi Code and OpenCode Go
+as one JSON object: Claude's and Codex's weeks, and Kimi's and OpenCode Go's
+months.
 
-Ringside runs this on a timer while a Claude, Codex or Kimi item is switched
-on. Each provider is queried on its own, so a failure on one side never hides
-the others. Output shape:
+Ringside runs this on a timer while a Claude, Codex, Kimi or OpenCode Go item
+is switched on. Each provider is queried on its own, so a failure on one
+side never hides the others. Output shape:
 
     {"fetchedAt": <epoch seconds>,
      "providers": {
          "claude": {"status": "ok", "fetchedAt": ..., "weekly": {...}, "scoped": [...]},
          "codex":  {"status": "ok", "fetchedAt": ..., "weekly": {...}, "scoped": [...]},
-         "kimi":   {"status": "ok", "fetchedAt": ..., "weekly": {...}, "scoped": []}}}
+         "kimi":   {"status": "ok", "fetchedAt": ..., "weekly": {...}, "scoped": []},
+         "opencode": {"status": "ok", "fetchedAt": ..., "weekly": {...}, "scoped": []}}}
 
 --credits-providers names providers whose prepaid credits may be collected
 and reported alongside weekly usage, at most once per five minutes including
 failures. The widget supplies every enabled provider regardless of whether
-credits are shown; Kimi, which has none, is left out. Codex credits reuse
-its weekly response. Credits have
+credits are shown; Kimi and OpenCode Go, which have none, are left out.
+Codex credits reuse its weekly response. Credits have
 their own status and cached balance, independent of weekly readings. No
 credit-only check renews a login. A credit record's "spent" says a successful
 observation found a lower positive balance in the same currency and scale;
 it does not say when the balance was spent.
 
---providers claude,codex,kimi names the providers to poll and report; all
-by default. --initial-providers names those awaiting their first report: safe
+--providers claude,codex,kimi,opencode names the providers to poll and
+report; all by default. --initial-providers names those awaiting their first report: safe
 connection failures retry at five-second intervals within one 30-second
 window, before a final result is cached. Existing readings and holds still
 apply. --retry-providers names those whose failed connection the user asked
@@ -36,8 +38,8 @@ still stands for five minutes, and a wait a provider asked for still holds.
 A window is {"percent": 0-100, "resetsAt": <epoch seconds>,
 "windowSeconds": <its length>, "history": [[<epoch seconds>, <percent>], ...]}.
 "weekly" is the all-models window, a week for Claude and Codex (five hours
-for a Codex plan with only that) and a month for Kimi; "scoped" lists the
-model-specific weekly windows, each a window with an "id" that stays stable
+for a Codex plan with only that) and a month for Kimi and OpenCode Go;
+"scoped" lists the model-specific weekly windows, each a window with an "id" that stays stable
 across polls and a display "label". An ok entry's "fetchedAt" is when it was
 polled, which a cached reading keeps. Status is one of "ok", "signed_out",
 "rate_limited" (with "retryAfter", the seconds until the provider is polled
@@ -45,7 +47,9 @@ again) or "error", and the last two carry a "message" to show, a "reason"
 the widget can put in its own words ("offline", "timeout", "server",
 "rate-limited", "not-installed" when the Codex CLI isn't, "program" when the
 codex program chosen with --program can't be run, "expired" when Kimi's
-only credential is a Kimi Code sign-in Kimi Code hasn't renewed, "busy" when
+only credential is a Kimi Code sign-in Kimi Code hasn't renewed, or OpenCode's
+Console sign-in has run out, "not-subscribed" when the OpenCode account has no
+Go subscription, "busy" when
 another run held the lock too long, or "other"), the "host" that failed, or
 "" when none did, and "retryAt", when the provider may be polled again
 (epoch seconds). Tokens never reach stdout or stderr.
@@ -158,7 +162,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 VERSION = "0.4.0"
 
-PROVIDERS = ("claude", "codex", "kimi")
+PROVIDERS = ("claude", "codex", "kimi", "opencode")
 # The providers with prepaid credits, and those whose CLI Ringside can be
 # told where to find (--program) and runs for the session starter.
 CREDITED = ("claude", "codex")
@@ -207,7 +211,7 @@ LOCK_WAIT = 150
 HOLD_MAX = 24 * 3600
 # A week of polls five minutes apart is 2016 points; flat stretches collapse,
 # so this is only reached by a series that changes on nearly every poll. A
-# longer window, as Kimi's month, keeps as many for each week of it.
+# longer window, as a month, keeps as many for each week of it.
 HISTORY_POINTS = 2100
 # A fall of this many points means the provider cleared the window early.
 HISTORY_CLEARED = 20
@@ -287,7 +291,8 @@ class RateLimited(Exception):
 
 class CheckFailed(RuntimeError):
     """A failed check whose cause is known: reason is "offline", "timeout",
-    "server", "not-installed", "program" or "expired" (Kimi Code's sign-in),
+    "server", "not-installed", "program", "expired" (a sign-in Ringside
+    doesn't renew) or "not-subscribed" (an OpenCode account without Go),
     host the server that failed, or "" for none, and status the HTTP status a
     server answered with."""
 
@@ -330,15 +335,15 @@ CODEX_TRANSPORT = re.compile(
 # token, so none of those can reach the journal.
 EVENTS = []
 
-NAMES = {"claude": "Claude", "codex": "Codex", "kimi": "Kimi"}
+NAMES = {"claude": "Claude", "codex": "Codex", "kimi": "Kimi", "opencode": "OpenCode Go"}
 # What signs a provider in, as the journal names it.
-PRODUCTS = {"claude": "Claude Code", "codex": "the Codex CLI", "kimi": "Kimi Code"}
+PRODUCTS = {"claude": "Claude Code", "codex": "the Codex CLI", "kimi": "Kimi Code", "opencode": "OpenCode"}
 # Who asks Ringside to wait, when the refusal names no host.
-COMPANIES = {"claude": "Anthropic", "codex": "OpenAI", "kimi": "Moonshot AI"}
+COMPANIES = {"claude": "Anthropic", "codex": "OpenAI", "kimi": "Moonshot AI", "opencode": "OpenCode"}
 # The windows a provider's starter can ever start, in order: Claude's week
 # resets on a set schedule, while Codex's, like a session, waits for a message.
-# Kimi has no starter.
-OFFERED = {"claude": ("session",), "codex": ("session", "week"), "kimi": ()}
+# Kimi and OpenCode Go have no starter.
+OFFERED = {"claude": ("session",), "codex": ("session", "week"), "kimi": (), "opencode": ()}
 STARTERS = tuple(name for name in PROVIDERS if OFFERED[name])
 # The window each names before a reading has told it the plan.
 WINDOWS = {"claude": "session", "codex": "week"}
@@ -397,7 +402,8 @@ def event(level, provider, kind, ms=None, **fields):
 def own_host(host):
     """host if it is one Ringside asks, else "": a cache that was tampered
     with can't put anything else in the journal."""
-    return host if host in (CLAUDE_USAGE_URL.split("/")[2], CLAUDE_TOKEN_URL.split("/")[2], *KIMI_HOSTS.values()) else ""
+    return host if host in (CLAUDE_USAGE_URL.split("/")[2], CLAUDE_TOKEN_URL.split("/")[2], *KIMI_HOSTS.values(),
+                            OPENCODE_GO_URL.split("/")[2]) else ""
 
 
 def failure_why(name, failure, asked=None, hold=None):
@@ -422,7 +428,9 @@ def failure_why(name, failure, asked=None, hold=None):
     if reason == "not-installed":
         return "the codex CLI isn't installed"
     if reason == "expired":
-        return "the Kimi Code sign-in has expired"
+        return f"the {PRODUCTS[name]} sign-in has expired"
+    if reason == "not-subscribed":
+        return "the OpenCode account has no Go subscription"
     if reason == "program":
         # A hold keeps the program it was for, which a recovery may have
         # moved on from.
@@ -1108,34 +1116,45 @@ KIMI_USAGE_PATH = "/coding/v1/usages"
 KIMI_HOME = Path(os.environ.get("KIMI_CODE_HOME") or Path.home() / ".kimi-code")
 KIMI_BASES = {"https://api.kimi.ai/coding/v1": "global", "https://api.kimi.com/coding/v1": "china"}
 KIMI_GLOBAL_SIGN_IN = "https://auth.kimi.ai"
-# Seconds before its expiry a stored Kimi Code token counts as expired.
-KIMI_EXPIRY_MARGIN = 60
+# Seconds before its expiry a stored sign-in Ringside never renews counts as
+# expired.
+SIGN_IN_MARGIN = 60
 OPENCODE_DATA = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share") / "opencode"
 # OpenCode's providers for a Kimi Code subscription, by region.
 OPENCODE_KIMI = {"kimi-code-plan-global": "global", "kimi-code-plan-cn": "china"}
+
+
+def opencode_credentials(integrations):
+    """OpenCode 2's active credentials for these integrations, as
+    (integration, value), from its database, which is only read; missing or
+    unreadable gives none."""
+    database = OPENCODE_DATA / "opencode.db"
+    if not sqlite3 or not database.exists():
+        return []
+    try:
+        connection = sqlite3.connect(database.as_uri() + "?mode=ro", uri=True, timeout=2)
+        try:
+            rows = connection.execute(
+                "SELECT integration_id, value FROM credential WHERE active = 1 AND integration_id IN "
+                f"({', '.join('?' * len(integrations))})", tuple(integrations)).fetchall()
+        finally:
+            connection.close()
+    except sqlite3.Error:
+        return []
+    found = []
+    for integration, value in rows:
+        with contextlib.suppress(ValueError, TypeError):
+            if isinstance(credential := json.loads(value), dict):
+                found.append((integration, credential))
+    return found
 
 
 def opencode_kimi_keys():
     """The Kimi Code API keys OpenCode keeps, as (region, key): OpenCode 2's
     active ones in its database, then OpenCode 1's in auth.json. Both are
     only read; anything missing or unreadable gives none."""
-    found = []
-    database = OPENCODE_DATA / "opencode.db"
-    rows = []
-    if sqlite3 and database.exists():
-        try:
-            connection = sqlite3.connect(database.as_uri() + "?mode=ro", uri=True, timeout=2)
-            try:
-                rows = connection.execute(
-                    "SELECT integration_id, value FROM credential WHERE active = 1 AND integration_id IN (?, ?)",
-                    tuple(OPENCODE_KIMI)).fetchall()
-            finally:
-                connection.close()
-        except sqlite3.Error:
-            rows = []
-        for provider, value in rows:
-            with contextlib.suppress(ValueError, TypeError):
-                found.append((OPENCODE_KIMI[provider], json.loads(value).get("key")))
+    found = [(OPENCODE_KIMI[provider], credential.get("key"))
+             for provider, credential in opencode_credentials(OPENCODE_KIMI)]
     try:
         auth = read_json(OPENCODE_DATA / "auth.json")
     except (OSError, ValueError):
@@ -1187,7 +1206,7 @@ def kimi_code_credentials(now):
             if not isinstance(token, dict) or not usable(token.get("access_token")):
                 continue
             expires = token.get("expires_at")
-            if finite_share(expires) and expires - now > KIMI_EXPIRY_MARGIN:
+            if finite_share(expires) and expires - now > SIGN_IN_MARGIN:
                 found.append(("Kimi Code's sign-in", region, token["access_token"]))
             else:
                 expired = True
@@ -1260,6 +1279,74 @@ def kimi_usage():
             raise
         return parse_kimi(body)
     raise SignedOut()
+
+
+# --- OpenCode Go -----------------------------------------------------------
+
+# OpenCode Go's limits, which OpenCode itself reads with its sign-in to the
+# OpenCode Console, for the organisation that sign-in belongs to. Only a
+# sign-in to opencode.ai's Console, at its address or its old one, is sent;
+# one to any other Console reads as none.
+OPENCODE_GO_URL = "https://opencode.ai/zen/go/v1/usage"
+OPENCODE_CONSOLES = ("https://opencode.ai/console", "https://console.opencode.ai")
+
+
+def opencode_sign_in(now):
+    """The token and organisation OpenCode's Console sign-in asks with. The
+    sign-in is only read: OpenCode renews it itself, with a refresh token
+    that a renewal here would use up, signing OpenCode out. Its access token
+    lasts weeks, and once it has run out the check fails until OpenCode runs
+    and renews it."""
+    for _, credential in opencode_credentials(("opencode",)):
+        metadata = credential.get("metadata")
+        metadata = metadata if isinstance(metadata, dict) else {}
+        server = metadata.get("server", OPENCODE_CONSOLES[0])
+        organisation = metadata.get("orgID")
+        if not isinstance(server, str) or server.rstrip("/") not in OPENCODE_CONSOLES or not usable(organisation):
+            continue
+        if credential.get("type") == "key" and usable(credential.get("key")):
+            return credential["key"], organisation
+        if credential.get("type") != "oauth" or not usable(credential.get("access")):
+            continue
+        # Epoch milliseconds, 0 for a token that doesn't expire.
+        expires = credential.get("expires")
+        if finite_share(expires) and (expires == 0 or expires / 1000 - now > SIGN_IN_MARGIN):
+            return credential["access"], organisation
+        raise CheckFailed("OpenCode's sign-in has expired; open OpenCode to renew it", "expired")
+    raise SignedOut()
+
+
+def parse_opencode_go(body):
+    """Reduce a Go usage body to its monthly window, the limit the five-hour
+    and weekly ones are shares of. Like Kimi's, the reply says when the month
+    resets, not how long it is, so it started a calendar month before. A
+    month OpenCode reports as limited is used up whatever its share says."""
+    usage = body.get("usage") if isinstance(body, dict) else None
+    month = usage.get("monthly") if isinstance(usage, dict) else None
+    percent = month.get("percent") if isinstance(month, dict) else None
+    if not finite_share(percent):
+        raise RuntimeError("no monthly usage in Go usage reply")
+    reset = epoch_seconds(month.get("resetsAt"))
+    if reset is None:
+        raise RuntimeError("no monthly reset in Go usage reply")
+    if month.get("status") == "rate-limited":
+        percent = max(percent, 100)
+    return {"weekly": window_from(percent, reset, reset - month_before(reset)), "scoped": []}
+
+
+def opencode_usage():
+    """Ask OpenCode for Go's limits. A 403 means the sign-in's organisation
+    has no Go subscription, as OpenCode itself reads it."""
+    token, organisation = opencode_sign_in(time.time())
+    try:
+        body = http_json(OPENCODE_GO_URL, {"Authorization": f"Bearer {token}", "x-opencode-org-id": organisation,
+                                           "Accept": "application/json"})
+    except CheckFailed as failure:
+        if failure.status != 403:
+            raise
+        raise CheckFailed("the OpenCode account has no Go subscription", "not-subscribed",
+                          failure.host, 403) from failure
+    return parse_opencode_go(body)
 
 
 # --- prepaid credits -------------------------------------------------------
@@ -2614,7 +2701,7 @@ def send_codex(binary, wanted):
 # when a run needs them: the tests patch the fetchers and senders on the
 # module, which a dict built at import would not see.
 def fetchers():
-    return {"claude": claude_usage, "codex": codex_usage, "kimi": kimi_usage}
+    return {"claude": claude_usage, "codex": codex_usage, "kimi": kimi_usage, "opencode": opencode_usage}
 
 
 # How each provider's starter sends its message.
@@ -2849,9 +2936,9 @@ def chosen_program(text):
 
 
 def arguments(argv):
-    parser = argparse.ArgumentParser(description="Report the usage limits of Claude Code, Codex and Kimi Code as JSON.")
+    parser = argparse.ArgumentParser(description="Report the usage limits of Claude Code, Codex, Kimi Code and OpenCode Go as JSON.")
     parser.add_argument("--providers", type=provider_list, default=list(PROVIDERS),
-                        help="comma-separated providers to poll and report (default: claude,codex,kimi)")
+                        help="comma-separated providers to poll and report (default: claude,codex,kimi,opencode)")
     parser.add_argument("--credits-providers", type=provider_list, default=[],
                         help="providers whose prepaid credits may be reported")
     parser.add_argument("--initial-providers", type=provider_list, default=[],
