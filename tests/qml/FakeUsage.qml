@@ -5,6 +5,7 @@ import QtQuick
 import "../../package/contents/ui/code/limits.js" as Limits
 import "../../package/contents/ui/code/reset.js" as Reset
 import "../../package/contents/ui/code/credits.js" as Credits
+import "../../package/contents/ui/code/drain.js" as Drain
 
 // Fixed Claude and Codex readings in the shape of UsageData.qml, for the
 // tests and the preview gallery: every property, signal and function the
@@ -44,6 +45,13 @@ QtObject {
     property var credits: ({})
     property bool showCredits: true
     property var ids: ["claude", "codex"]
+    // As UsageData's: per id, { at, weekly, credit }, what the last check
+    // found draining. None by default, so no ring pulses.
+    property var drains: ({})
+
+    function draining(id, kind, nowMs) {
+        return ids.includes(id) && !degraded(id) && Drain.active(drains[id], kind, refreshMinutes, nowMs / 1000);
+    }
 
     function credit(id) {
         return showCredits && ids.includes(id) ? credits[id] ?? null : null;

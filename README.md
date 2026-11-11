@@ -109,7 +109,8 @@ empty balances take up no space. A failed check keeps the last balance
 marked as cached; hover over it to see when it was read.
 
 When a reported limit is exhausted and the balance falls between checks,
-the panel shows one full blue ring that breathes around the provider's mark.
+the panel shows one full blue ring around the provider's mark, which breathes
+until a check finds the balance no lower.
 The percentage and countdown still show the week. Blue means credits were
 used since the previous check; it uses the same readings, with no extra
 requests. Hiding the balance rows keeps this indication.

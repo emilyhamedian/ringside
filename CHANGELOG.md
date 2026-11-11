@@ -14,6 +14,12 @@ follows [Semantic Versioning](https://semver.org/).
 - Each provider's *Auto start* setting under AI Providers turns its starter
   off and hides that provider's popup switches.
 
+### Fixed
+
+- Claude and Codex rings no longer pulse while nothing is being used: near a
+  limit they pulse only when usage rose since the previous check, and blue
+  rings only when the credit balance fell.
+
 ## [0.4.0] - 2026-10-18
 
 ### Added
