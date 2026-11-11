@@ -14,6 +14,11 @@ follows [Semantic Versioning](https://semver.org/).
 - Each provider's *Auto start* setting under AI Providers turns its starter
   off and hides that provider's popup switches.
 
+### Fixed
+
+- No *Try again* in a Claude or Codex popup after a lost connection, once
+  the other provider or the public address shows the internet is back.
+
 ## [0.4.0] - 2026-10-18
 
 ### Added
