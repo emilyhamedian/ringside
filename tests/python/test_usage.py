@@ -1676,9 +1676,9 @@ class Kimi(Isolated):
             with self.subTest(argv), mock.patch("sys.stderr", new=io.StringIO()), self.assertRaises(SystemExit):
                 usage.arguments(argv)
 
-    # Kimi's Extra Usage balance comes in the same reply as its limits: a
-    # millionth of a cent a unit, in the currency its cap or this month's
-    # spending names, else the account's region's.
+    # Kimi's Extra Usage balance comes in the same reply as its limits. Its
+    # amounts are in millionths of a cent. The currency comes from the
+    # monthly cap or this month's spending, or else the account's region.
     def test_extra_usage_balance_comes_with_the_limits(self):
         self.opencode(auth={"kimi-code-plan-global": {"type": "api", "key": "k"}})
         wallet = {"balance": {"type": "BOOSTER", "amount": "20000000000", "amountLeft": "10000000000"},

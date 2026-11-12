@@ -20,8 +20,9 @@ side never hides the others. Output shape:
 --credits-providers names providers whose prepaid credits may be collected
 and reported alongside weekly usage, at most once per five minutes including
 failures. The widget supplies every enabled provider regardless of whether
-credits are shown; OpenCode Go, whose balance its sign-in can't read, is
-left out. Codex's and Kimi's credits reuse their usage responses. Credits have
+credits are shown. OpenCode Go is left out, because its balance can't be
+read with its sign-in. Codex's and Kimi's credits come from their usage
+responses. Credits have
 their own status and cached balance, independent of weekly readings. No
 credit-only check renews a login. A credit record's "spent" says a successful
 observation found a lower positive balance in the same currency and scale;
@@ -1537,14 +1538,14 @@ def parse_codex_credits(raw):
     return "ok", {"amount": amount, "currency": "", "precision": 2} if amount else None
 
 
-# The currency of a Kimi balance whose reply names none, by the region of
-# the account: Kimi prices its China plans in RMB.
+# The currency to assume for a Kimi balance when the reply doesn't name one,
+# by the account's region. Kimi prices its China plans in RMB.
 KIMI_CURRENCIES = {"global": "USD", "china": "CNY"}
 
 
 def kimi_units(value):
-    """A Kimi wallet amount, a whole number that may arrive as a string, or
-    None."""
+    """Return a Kimi wallet amount as an int, or None if it isn't a whole,
+    non-negative number. Kimi sometimes sends these as strings."""
     if type(value) is int and value >= 0:
         return value
     if isinstance(value, str) and re.fullmatch(r"[0-9]{1,30}", value):
@@ -1553,11 +1554,14 @@ def kimi_units(value):
 
 
 def parse_kimi_credits(raw, region):
-    """Kimi's Extra Usage balance from its usage reply's "boosterWallet", as
-    Kimi Code reads it: a wallet that was ever topped up has a "BOOSTER"
-    balance whose amounts count a millionth of a cent, a missing amount
-    left being none. The reply names the currency only beside a monthly
-    cap or this month's spending."""
+    """Return Kimi's Extra Usage balance from the "boosterWallet" in its
+    usage reply, read the way Kimi Code reads it.
+
+    A wallet that has ever been topped up has a balance of type "BOOSTER".
+    Its amounts are in millionths of a cent, and a missing "amountLeft"
+    means nothing is left. The reply names the currency only alongside a
+    monthly spending cap or this month's spending; otherwise the account's
+    region decides it."""
     wallet = raw.get("boosterWallet") if isinstance(raw, dict) else None
     balance = wallet.get("balance") if isinstance(wallet, dict) else None
     if not isinstance(balance, dict) or balance.get("type") != "BOOSTER":
@@ -1575,10 +1579,11 @@ def parse_kimi_credits(raw, region):
 
 
 def credit_snapshot(name, record, observed=None):
-    """What binds a balance to its login: Claude's (identity, organisation),
-    the digest of Codex's login file, or the digest of the credential
-    Kimi's usage check used this run, else of the one the balance was last
-    read with."""
+    """Return what ties a balance to the login it was read with. For Claude
+    that's (identity, organisation); for Codex, the digest of its login
+    file. For Kimi it's the digest of the credential this run's usage check
+    used or, in a run that didn't check, of the credential the balance was
+    last read with."""
     if name == "claude":
         return claude_credit_identity()
     if name == "codex":
@@ -1635,7 +1640,8 @@ def collect_credits(cache, providers, now):
             extra = raw.get("extra_usage") if isinstance(raw, dict) else None
             enabled = extra.get("is_enabled") if isinstance(extra, dict) else None
         elif name != "codex":
-            # Kimi's reply has no switch Ringside can rely on.
+            # Kimi's reply has no on/off switch for Extra Usage that Ringside
+            # can rely on.
             continue
         else:
             limit = codex_credit_limit(raw)

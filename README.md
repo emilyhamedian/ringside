@@ -96,8 +96,9 @@ within five minutes. If Plasma can't find `claude` or `codex`, tell it where
 they are under *AI Providers*.
 
 **Credits.** For Claude, Codex and Kimi, the popup shows your remaining
-credits under the graph: Kimi's are its Extra Usage balance. When you've used up a limit and are spending credits, the
-ring turns blue. *Show remaining credits* under *AI Providers* hides them.
+credits under the graph. For Kimi, that's your Extra Usage balance. When
+you've used up a limit and are spending credits, the ring turns blue. *Show
+remaining credits* under *AI Providers* hides them.
 
 **Banked resets.** If your Claude or Codex account has banked resets, the
 popup shows a ticket for each one, with how long until it expires. A reset
