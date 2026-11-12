@@ -2981,10 +2981,11 @@ TestRoot {
         function test_innerLimit() {
             const popup = load("claude");
             const shown = root.texts(popup);
-            for (const text of ["Claude", "Weekly limits", "until reset", "All models", "Fable", root.localized("52%"), root.localized("78%"),
+            for (const text of ["Claude", "Weekly limits", "until reset", "Fable", root.localized("52%"), root.localized("78%"),
                                 "— All models", "- - Fable"]) {
                 verify(shown.includes(text), text + " in " + JSON.stringify(shown));
             }
+            verify(!shown.includes("All models"), "the header's ring is the shared limit's bar");
             verify(shown.some(t => /^THIS WEEK · resets .+ EDT$/.test(t)), JSON.stringify(shown));
             verify(!shown.some(t => t.startsWith("resets in")), "Fable resets with the week");
             verify(!shown.includes("System Monitor"), "the footer has the gear alone");
@@ -3340,15 +3341,19 @@ TestRoot {
                    "amber below 90 %, red from it, as drawn: " + JSON.stringify(seen));
         }
 
-        // Every model's limit gets a row, whichever the ring shows.
+        // Every model's limit gets a bar, whichever the ring shows; the
+        // shared limit's is the header's ring.
         function test_severalLimits() {
             const usage = monitor.usage;
             setClaude({ scoped: [Object.assign({ id: "Fable", label: "Fable" }, usage.window(78, 2 * usage.day + 21 * 3600, [])),
                                  Object.assign({ id: "Sonnet", label: "Sonnet" }, usage.window(12, 4 * usage.day, []))] });
-            const shown = root.texts(load("claude"));
-            for (const text of ["All models", "Fable", "Sonnet", "78%", "12%", "resets in 4d 0h"].map(root.localized)) {
+            const popup = load("claude");
+            const shown = root.texts(popup);
+            for (const text of ["Fable", "Sonnet", "78%", "12%", "resets in 4d 0h"].map(root.localized)) {
                 verify(shown.includes(text), text + " in " + JSON.stringify(shown));
             }
+            verify(!shown.includes("All models"), JSON.stringify(shown));
+            compare(rows(popup).map(r => bars(r).visible), [false, true, true]);
             verify(!shown.some(t => t.startsWith("- - ")), "two limits and no choice: no inner ring");
         }
 
@@ -3472,7 +3477,14 @@ TestRoot {
             compare(text.text, expected);
             compare(String(text.color), String(data.ago === undefined ? Kirigami.Theme.textColor : Style.dim(Kirigami.Theme.textColor)));
             compare(text.textFormat, Text.PlainText);
-            if (all.length > 1) {
+            // The header's limit has no bar, so its sentence comes first.
+            if (data.row === 0) {
+                verify(!bars(all[0]).visible);
+                if (all.length > 1) {
+                    verify(text.mapToItem(popup, Qt.point(0, text.height)).y <= bars(all[1]).mapToItem(popup, Qt.point(0, 0)).y,
+                           "above the models' bars");
+                }
+            } else {
                 const bar = bars(all[data.row]);
                 verify(bar.visible);
                 verify(text.mapToItem(popup, Qt.point(0, 0)).y >= bar.mapToItem(popup, Qt.point(0, bar.height)).y,

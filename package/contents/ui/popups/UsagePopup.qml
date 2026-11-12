@@ -12,11 +12,11 @@ import "../code/style.js" as Style
 import ".."
 
 // Claude's or Codex's weekly limits, or a monthly one: the all-models
-// window in the header with the time left until it resets, a bar for it and
-// for each model's own limit with a sentence under one of them on where the
-// current pace leads, and the window so far as a graph. With one limit the
-// header's ring is its bar. Under the models' bars, one for each shorter
-// limit the plan has: its five hours, and a week beside a month.
+// window in the header with the time left until it resets, its ring its
+// bar; a bar for each model's own limit, and one for each shorter limit the
+// plan has, its five hours and a week beside a month; a sentence on where
+// the current pace leads, under the header or under the model's bar it is
+// about; and the window so far as a graph.
 // A failed check is said under the header, with the last reading kept in
 // grey for as long as the panel keeps it; once the panel's ring is struck,
 // so is the header's, and the status under it is all the popup shows. A
@@ -265,11 +265,11 @@ PopupPage {
         nowMs: popup.nowMs
     }
 
-    // A bar per limit when there are several, with the pace sentence under
-    // the bar it is about; with one limit, the sentence alone.
+    // A bar per limit but the header's, with the pace sentence under the bar
+    // it is about; for the header's, the sentence alone, first.
     ColumnLayout {
         id: barsColumn
-        visible: popup.weekly !== null && (popup.limits.length > 1 || popup.paceText !== "" || popup.shorter.length > 0)
+        visible: popup.weekly !== null && (popup.limits.length + popup.shorter.length > 1 || popup.paceText !== "")
         Layout.fillWidth: true
         Layout.leftMargin: Style.contentEdge(Kirigami.Units.largeSpacing)
         Layout.rightMargin: Layout.leftMargin
@@ -288,6 +288,8 @@ PopupPage {
                 required property int index
                 // One of the shorter limits, which always has its bar.
                 readonly property bool short: index >= popup.limits.length
+                // Every limit but the header's has a bar.
+                readonly property bool barred: index > 0
                 readonly property var limit: (short ? popup.shorter[index - popup.limits.length] : popup.limits[index])
                     ?? ({ id: "", label: "", percent: NaN, resetsAt: NaN })
                 readonly property real reading: Math.max(0, Math.min(100, limit.percent))
@@ -301,11 +303,11 @@ PopupPage {
                 readonly property int level: Format.level(Number.isFinite(reading) ? bar.shown + reading - Math.round(reading) : NaN)
 
                 // The bar and its percentage follow the reading as a ring
-                // does, and at once with one limit, which has no bar.
+                // does, and at once for the header's limit, which has none.
                 Follower {
                     id: bar
                     target: Number.isFinite(row.reading) ? Math.round(row.reading) : 0
-                    settle: (row.short || popup.limits.length > 1) && Style.animated(Kirigami.Units) ? Kirigami.Units.veryLongDuration : 0
+                    settle: row.barred && Style.animated(Kirigami.Units) ? Kirigami.Units.veryLongDuration : 0
                     // A quarter of a pixel of the bar.
                     precision: 25 / Math.max(1, track.width)
                 }
@@ -314,7 +316,7 @@ PopupPage {
                 spacing: Kirigami.Units.smallSpacing
 
                 ColumnLayout {
-                    visible: row.short || popup.limits.length > 1
+                    visible: row.barred
                     Layout.fillWidth: true
                     spacing: Kirigami.Units.smallSpacing
 

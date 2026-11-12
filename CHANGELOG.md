@@ -17,7 +17,8 @@ follows [Semantic Versioning](https://semver.org/).
   renewing it, and is off until you turn it on.
 - Usage popups show a bar for each limit shorter than the ring's: the
   five-hour limit, and the weekly one on OpenCode Go and older Kimi plans,
-  with when it resets while it runs.
+  with when it resets while it runs. The ring's own limit no longer repeats
+  as an "All models" bar beside the models' limits.
 - OpenCode Go popup offers an auto start switch for its five-hour session,
   which sends a one-word message through OpenCode when a session ends. It
   waits while Go's weekly or monthly limit is used up.
