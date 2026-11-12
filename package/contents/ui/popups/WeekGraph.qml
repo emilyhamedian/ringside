@@ -18,11 +18,11 @@ import "../code/style.js" as Style
 // ends at the last poll, so the empty stretch to its right is the time
 // left; only when the last poll is hours old does a marker say where now
 // is. While checks fail, the marker shows once the gap is wide enough to
-// see, and the gap is hatched. The limit the pace tile under the graph
+// see, and the gap is hatched. The limit the pace line under the graph
 // names, when it is on course to run out before the reset, gets a dashed
 // line from the rule to the floor at the moment it runs out, in the colour
-// of that limit's level as its bar has it. The tile gives its time, keyed
-// to the line, so the graph writes none.
+// of that limit's level as its bar has it. The pace line gives its time,
+// keyed to this dashed one, so the graph writes none.
 // A poll that adds a reading draws the new stretch of line on from the old
 // end, and a run-out it brings fades in once the line has landed. A run-out
 // that goes fades out where and as it was, the marker for now and a first
@@ -53,7 +53,7 @@ Item {
     readonly property color color: Kirigami.Theme.textColor
     readonly property real fillOpacity: Style.AREA
     // The series whose run-out is drawn, "main" or "second", or "" for none:
-    // the limit the popup's pace tile names, so the two agree.
+    // the limit the popup's pace line names, so the two agree.
     property string projected: ""
     // A new stretch of line draws on over twice this, and the rest fades
     // over it or half of it: Kirigami's long duration, or 0 at Plasma's
@@ -90,7 +90,7 @@ Item {
     property var describe: null
     readonly property string reading: hover.index >= 0 && describe ? describe(hover.index) : ""
     // When that limit runs out, in epoch seconds, while the pace says it
-    // will before the reset, as the popup's pace tile reads it; NaN
+    // will before the reset, as the popup's pace line reads it; NaN
     // otherwise.
     readonly property real runOutAt: projected === "main" ? runOut(mainPoints, window)
                                    : projected === "second" ? runOut(secondPoints, secondWindow)

@@ -2144,7 +2144,7 @@ TestRoot {
         // read `polledAgo` seconds before now, and the tones they give the
         // ring, the inner ring and the percentage. Only the reading sets the
         // tone, amber from 75 % and red from 90 %, whatever the pace: a limit
-        // on course to run out early says so in the popup's pace tile alone.
+        // on course to run out early says so in the popup's pace line alone.
         // The time to the reset stays dim.
         function test_paceNeverRaisesTheLevel_data() {
             const day = 86400;
@@ -2810,7 +2810,7 @@ TestRoot {
             return found;
         }
 
-        // The pace tile under the graph.
+        // The pace line under the graph.
         function paceTile(popup) {
             return root.find(popup, i => i.objectName === "pace");
         }
@@ -2819,7 +2819,7 @@ TestRoot {
             return root.find(paceTile(popup), i => i.unit !== undefined && i.value !== undefined);
         }
 
-        // What the pace tile says, its caption then its reading, or nothing
+        // What the pace line says, its caption then its reading, or nothing
         // while it is hidden.
         function paceText(popup) {
             const tile = paceTile(popup);
@@ -3578,7 +3578,7 @@ TestRoot {
         // Only a limit's reading sets its colour, amber from 75 % and red from
         // 90 %: a run-out before the reset leaves the row's percentage and
         // bar and the header's ring at their own level, and says so in the
-        // pace tile alone.
+        // pace line alone.
         function test_paceNeverRaisesThePopupsLevel() {
             const red = String(Kirigami.Theme.negativeTextColor);
             const amber = String(Kirigami.Theme.neutralTextColor);
@@ -4190,7 +4190,7 @@ TestRoot {
 
         // Once the reading is two check intervals old the popup strikes it
         // as the panel does, and shows nothing of it: the header's ring is
-        // struck with no number, and the countdown, the bars, the pace tile
+        // struck with no number, and the countdown, the bars, the pace line
         // and the graph go. The status under the header stays,
         // saying when the last reading was taken. The check that finds the
         // reading too old strikes it with the popup open, and the next good
@@ -4333,7 +4333,7 @@ TestRoot {
             compare(popup.pollAt, usage.entries.claude.weekly.history[usage.entries.claude.weekly.history.length - 1][0]);
         }
 
-        // The graph draws the run-out the pace tile names and no other.
+        // The graph draws the run-out the pace line names and no other.
         // With the week and Fable both on course to run out, it is the
         // sooner one the tile gives; when that is a model limit the
         // graph has no line for, it draws none. Each week began four days

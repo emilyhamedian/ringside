@@ -95,7 +95,7 @@ PopupPage {
         const out = events.filter(e => e.p.state === "out").reduce((a, b) => !a || b.p.runOut < a.p.runOut ? b : a, null);
         return out ?? events.find(e => e.p.state === "reached") ?? (events[0].p.state !== "none" ? events[0] : null);
     }
-    readonly property var paceWords: paceEvent ? paceTileWords(limits[paceEvent.index], paceEvent.p) : null
+    readonly property var paceWords: paceEvent ? paceLineWords(limits[paceEvent.index], paceEvent.p) : null
     // Stepped by the timer below, for the countdowns and the paces, and
     // with each report, so the check that finds a reading too old strikes it.
     property real nowMs: Date.now()
@@ -117,7 +117,7 @@ PopupPage {
 
     // The pace line's caption and reading. The line is the popup's, so it
     // speaks of the header's limit unless its caption names a model.
-    function paceTileWords(limit, p) {
+    function paceLineWords(limit, p) {
         const model = limit.id !== "" ? limit.label : "";
         switch (p.state) {
         case "reached":
