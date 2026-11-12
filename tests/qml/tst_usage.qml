@@ -2832,6 +2832,56 @@ TestRoot {
             monitor.usage.entries = Object.assign({}, entries, { claude: Object.assign({}, entries.claude, changes) });
         }
 
+        // Under the models' bars, one for each limit shorter than the
+        // header's: five hours anywhere, and a week beside a month. Five
+        // hours not running read 0% and give no reset: Claude's when none
+        // runs, Codex's or Go's when idle, which give a reset one window
+        // from the reading, and any that ended since.
+        function test_shorterLimits_data() {
+            // Windows from FakeUsage `u`, ending `left` seconds after it was made.
+            const at = (percent, left, seconds) => u => ({ percent: percent, resetsAt: u.createdAt + left, windowSeconds: seconds });
+            const month = u => Object.assign(u.window(55, 13 * u.day, []), { windowSeconds: 31 * u.day });
+            const hours = 5 * 3600;
+            const week = 7 * 86400;
+            return [
+                { tag: "Go", item: "opencode", entry: { weekly: month, session: at(12, 7200, hours), week: at(30, 4 * 86400, week) },
+                  bars: [["5-hour limit", 12, "2h 0m"], ["Weekly limit", 30, "4d 0h"]] },
+                { tag: "Go idle", item: "opencode", entry: { weekly: month, session: at(0, hours, hours), week: at(0, 4 * 86400, week) },
+                  bars: [["5-hour limit", 0, ""], ["Weekly limit", 0, "4d 0h"]] },
+                { tag: "Kimi", item: "kimi", entry: { weekly: month, session: at(3, 3 * 3600, hours) },
+                  bars: [["5-hour limit", 3, "3h 0m"]] },
+                { tag: "Claude without a session", item: "claude", entry: { session: u => null },
+                  bars: [["5-hour limit", 0, ""]], models: 2 },
+                { tag: "Claude's session ended since", item: "claude", entry: { session: at(40, -60, hours) },
+                  bars: [["5-hour limit", 0, ""]], models: 2 },
+                { tag: "Claude Ultra", item: "claude", entry: {}, bars: [], models: 2 },
+                { tag: "Claude garbled", item: "claude", entry: { sessionUnknown: u => true }, bars: [], models: 2 },
+                { tag: "Codex in use with no reset", item: "codex",
+                  entry: { session: u => ({ percent: 40, resetsAt: null, windowSeconds: hours }) },
+                  bars: [["5-hour limit", 40, ""]] },
+                { tag: "Codex five hours only", item: "codex",
+                  entry: { weekly: u => Object.assign(u.window(24, 3 * 3600, []), { windowSeconds: hours }) }, bars: [] }
+            ];
+        }
+        function test_shorterLimits(data) {
+            const u = monitor.usage;
+            const changes = {};
+            Object.keys(data.entry).forEach(key => changes[key] = data.entry[key](u));
+            u.entries = Object.assign({}, u.entries, {
+                [data.item]: Object.assign({ status: "ok", fetchedAt: u.createdAt, scoped: [] }, u.entries[data.item] ?? {}, changes) });
+            const popup = load(data.item);
+            const all = rows(popup);
+            compare(all.filter(r => !r.short).length, data.models ?? 1);
+            const shorter = all.filter(r => r.short);
+            compare(shorter.map(r => [r.limit.label, r.limit.percent, r.resets]),
+                    data.bars.map(([label, percent, resets]) => [label, percent, root.localized(resets)]));
+            shorter.forEach(r => {
+                verify(bars(r).visible, r.limit.label);
+                compare(bars(r).Accessible.name, r.limit.label);
+                verify(rowText(r, root.localized(r.limit.percent + "%")), r.limit.label);
+            });
+        }
+
         // Kimi's limit is a month, and its popup says so throughout.
         function test_kimisMonth() {
             const u = monitor.usage;

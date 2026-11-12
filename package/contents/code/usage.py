@@ -87,8 +87,9 @@ reset and so no longer started a window's length before it.
 Each entry whose plan has a five-hour limit also carries "session", that
 window, or null when no session is running; a plan without one, as Claude
 Ultra, leaves it out. "sessionUnknown": true stands in for it when the plan
-has the limit but the reply can't be read. OpenCode Go's entry also carries
-"week", its weekly limit, beside the month in "weekly".
+has the limit but the reply can't be read. OpenCode Go's entry, and Kimi's
+on a plan with one, also carries "week", its weekly limit, beside the month
+in "weekly".
 
 --program <provider>=<path> names the program to run for Claude, Codex or
 OpenCode, as the user chose it in Ringside's settings; ~ stands for the home
@@ -1247,25 +1248,37 @@ def month_before(at):
     return int(stamp.replace(year=year, month=month, day=min(stamp.day, calendar.monthrange(year, month)[1])).timestamp())
 
 
-def parse_kimi(body):
-    """Reduce a /coding/v1/usages body to its monthly window, the total
-    every Kimi feature draws on, which Kimi Code stops at once it is used
-    up. The reply says when the month resets, not how long it is, so it
-    started a calendar month before."""
-    usages = body.get("usages") if isinstance(body, dict) else None
-    month = usages.get("limit_month_total") if isinstance(usages, dict) else None
-    # The share used, 0 to 1, may come as a number or as a numeric string.
-    ratio = month.get("used_ratio") if isinstance(month, dict) else None
+def kimi_limit(usages, key):
+    """One of a /coding/v1/usages body's limits, as (percent, reset), or
+    None when it is missing or can't be read. The share used, 0 to 1, may
+    come as a number or as a numeric string."""
+    limit = usages.get(key) if isinstance(usages, dict) else None
+    ratio = limit.get("used_ratio") if isinstance(limit, dict) else None
     if isinstance(ratio, str):
         with contextlib.suppress(ValueError):
             ratio = float(ratio)
+    reset = epoch_seconds(limit.get("reset_time")) if isinstance(limit, dict) else None
+    return (ratio * 100, reset) if finite_share(ratio) and reset is not None else None
+
+
+def parse_kimi(body):
+    """Reduce a /coding/v1/usages body to its windows: the month, the total
+    every Kimi feature draws on, which Kimi Code stops at once it is used
+    up, as "weekly"; Kimi Code's five hours as "session", and on the plans
+    sold before Plus its week as "week", each only shown. The reply says
+    when the month resets, not how long it is, so it started a calendar
+    month before. The five hours follow one another on a fixed clock, so
+    Kimi always gives when they reset."""
+    usages = body.get("usages") if isinstance(body, dict) else None
+    month = kimi_limit(usages, "limit_month_total")
     # As for Claude: a missing share read as 0% could pass for an idle month.
-    if not finite_share(ratio):
+    if month is None:
         raise RuntimeError("no monthly usage in usages reply")
-    reset = epoch_seconds(month.get("reset_time"))
-    if reset is None:
-        raise RuntimeError("no monthly reset in usages reply")
-    return {"weekly": window_from(ratio * 100, reset, reset - month_before(reset)), "scoped": []}
+    reading = {"weekly": window_from(*month, month[1] - month_before(month[1])), "scoped": []}
+    for key, slot, seconds in (("limit_5h", "session", SESSION_SECONDS), ("limit_7d", "week", WEEK_SECONDS)):
+        if limit := kimi_limit(usages, key):
+            reading[slot] = window_from(*limit, seconds)
+    return reading
 
 
 def kimi_usage():
@@ -1738,7 +1751,7 @@ def fresh(entry, now, name):
     return (isinstance(entry, dict) and entry.get("status") == "ok"
             and type(entry.get("fetchedAt")) is int and 0 <= now - entry["fetchedAt"] < CACHE_TTL
             and well_formed(entry.get("weekly")) and isinstance(entry.get("scoped", []), list)
-            and (entry.get("session") is None or well_formed(entry["session"]))
+            and all(entry.get(key) is None or well_formed(entry[key]) for key in ("session", "week"))
             and all(well_formed(entry.get(key)) for key in ALWAYS.get(name, ()))
             and all(well_formed(w, scoped=True) for w in entry.get("scoped", [])))
 

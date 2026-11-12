@@ -84,7 +84,8 @@ Turn them on in *Configure Ringside… → Panel Items*. Each needs:
 Each ring shows how much of your limit you've used and how long until it
 resets: weekly for Claude and Codex, monthly for Kimi and OpenCode Go. If your
 plan also has a per-model limit, it shows as an inner ring. Click the ring for
-a graph and whether you're on pace to run out.
+a graph, whether you're on pace to run out, and a bar for each shorter limit
+your plan has, such as the five-hour one.
 
 If a check fails, the ring greys out, and is crossed out if it keeps failing;
 the popup says why. If a limit resets early, the popup tells you. Ringside
