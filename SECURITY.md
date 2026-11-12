@@ -62,8 +62,9 @@ Nothing, until you turn on something that needs it.
   during usage checks, at most once every five minutes across all Ringside
   widgets. Failed attempts count too. The request uses the existing login
   and does not renew it solely for credits. A rate limit holds both Claude
-  reads back, honoring any longer wait Anthropic requests. Codex credits
-  come from its existing usage response, with no extra request.
+  reads back, honoring any longer wait Anthropic requests. Codex's and
+  Kimi's credits come from their existing usage responses, with no extra
+  request.
   Neither balance check sends a model request or starts a session. *Show
   remaining credits* is on by default and only controls whether the rows
   appear; hiding them does not stop balance collection.

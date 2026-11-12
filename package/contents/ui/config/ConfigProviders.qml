@@ -259,7 +259,7 @@ ConfigPage {
         }
 
         Note {
-            text: i18nc("@info", "Applies to all enabled providers. Balances are checked even when hidden: Claude makes an extra read from Anthropic alongside its usage check, at most once every 5 minutes. Codex uses existing usage checks.")
+            text: i18nc("@info", "Applies to all enabled providers. Balances are checked even when hidden: Claude makes an extra read from Anthropic alongside its usage check, at most once every 5 minutes. Codex and Kimi use their existing usage checks.")
         }
 
         // Each provider's section shows only while it has something to set.
