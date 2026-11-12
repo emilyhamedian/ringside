@@ -224,6 +224,49 @@ class CodexParsing(Isolated):
             for value in (report["weekly"], report["scoped"][0], report["session"]):
                 self.assertEqual((value["percent"], value["exhausted"]), (100, exhausted))
 
+    # Each available reset's expiry, soonest first; one redeemed, being
+    # redeemed or without a readable time has none, and the count is the
+    # reply's, as its list may be cut short.
+    def test_banked_resets_are_counted_with_their_expiry(self):
+        result = fixture("codex_rate_limits.json")
+        result["rateLimitResetCredits"] = {"availableCount": 4, "credits": [
+            {"status": "available", "expiresAt": 1796163778},
+            {"status": "redeemed", "expiresAt": 1790000000},
+            {"status": "available", "expiresAt": 1795000000.5},
+            {"status": "available", "expiresAt": None},
+            {"status": "available", "expiresAt": "soon"},
+            {"status": "available", "expiresAt": json.loads("1e999")},
+            "credit"]}
+        self.assertEqual(usage.parse_codex(result)["bankedResets"],
+                         {"count": 4, "expires": [1795000000, 1796163778]})
+
+    def test_banked_resets_need_a_count(self):
+        for summary in ("absent", None, [], {}, {"availableCount": 0, "credits": []},
+                        {"availableCount": "2"}, {"availableCount": True}, {"availableCount": 2.0},
+                        {"availableCount": -1}):
+            with self.subTest(summary=summary):
+                result = fixture("codex_rate_limits.json")
+                if summary != "absent":
+                    result["rateLimitResetCredits"] = summary
+                report = usage.parse_codex(result)
+                self.assertNotIn("bankedResets", report)
+                self.assertEqual(report["weekly"], window(34, 1788926677))
+
+    def test_banked_resets_without_details_are_only_counted(self):
+        for credits in ("absent", None, {}, []):
+            with self.subTest(credits=credits):
+                summary = {"availableCount": 2}
+                if credits != "absent":
+                    summary["credits"] = credits
+                result = dict(fixture("codex_rate_limits.json"), rateLimitResetCredits=summary)
+                self.assertEqual(usage.parse_codex(result)["bankedResets"], {"count": 2, "expires": []})
+
+    def test_banked_resets_list_no_more_expiries_than_resets(self):
+        credits = [{"status": "available", "expiresAt": at} for at in (30, 10, 20)]
+        result = dict(fixture("codex_rate_limits.json"),
+                      rateLimitResetCredits={"availableCount": 2, "credits": credits})
+        self.assertEqual(usage.parse_codex(result)["bankedResets"], {"count": 2, "expires": [10, 20]})
+
     def test_window_length_is_the_picked_windows(self):
         result = fixture("codex_rate_limits.json")
         result["rateLimitsByLimitId"]["codex"]["primary"]["windowDurationMins"] = 1440
@@ -840,6 +883,13 @@ class ReadingCache(Isolated):
         self.assertEqual(served, dict(self.good, weekly=dict(self.good["weekly"], history=[])))
         fetch.assert_not_called()
 
+    def test_cached_banked_resets_are_served_with_the_reading(self):
+        banked = {"count": 2, "expires": [1500, 2000]}
+        self.write_cache({"codex": dict(self.good, bankedResets=banked)})
+        fetch = mock.Mock()
+        self.assertEqual(self.collect(1000 + 299, codex=fetch)["codex"]["bankedResets"], banked)
+        fetch.assert_not_called()
+
     def test_stale_reading_is_polled_again(self):
         self.write_cache({"codex": self.good})
         fetch = mock.Mock(return_value=reading(2, 6))
@@ -1096,6 +1146,10 @@ class ReadingCache(Isolated):
                       {"status": "ok", "fetchedAt": 999, "weekly": dict(window, windowSeconds=float(WEEK))},
                       {"status": "ok", "fetchedAt": 999, "weekly": {"percent": 1, "resetsAt": 5}},
                       {"status": "ok", "fetchedAt": 999, "weekly": window, "scoped": [window]},
+                      {"status": "ok", "fetchedAt": 999, "weekly": window, "bankedResets": None},
+                      {"status": "ok", "fetchedAt": 999, "weekly": window, "bankedResets": {"count": 0, "expires": []}},
+                      {"status": "ok", "fetchedAt": 999, "weekly": window, "bankedResets": {"count": 1, "expires": [1, 2]}},
+                      {"status": "ok", "fetchedAt": 999, "weekly": window, "bankedResets": {"count": 2, "expires": ["soon"]}},
                       {"status": "rate_limited", "heldUntil": "later"},
                       {"status": "error", "heldUntil": 1100, "holdSeconds": 300}):
             with self.subTest(entry=entry):

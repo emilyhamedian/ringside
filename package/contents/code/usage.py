@@ -91,6 +91,11 @@ has the limit but the reply can't be read. OpenCode Go's entry also carries
 "week", its weekly limit, beside the monthly limit in "weekly". Kimi's
 entry carries "week" too on plans that have a weekly limit.
 
+Codex's entry also carries "bankedResets" while the account has banked
+resets to use: {"count": <how many>, "expires": [<epoch seconds>, ...]},
+when each expires, soonest first, for those the reply details. It may detail
+fewer than the count, or none, and a reset that never expires has no time.
+
 --program <provider>=<path> names the program to run for Claude, Codex or
 OpenCode, as the user chose it in Ringside's settings; ~ stands for the home
 folder.
@@ -689,7 +694,27 @@ def parse_codex(result):
     # starter must not mistake that for a plan with no five-hour limit.
     if session_unknown and "session" not in reading:
         reading["sessionUnknown"] = True
+    banked = banked_resets(result.get("rateLimitResetCredits"))
+    if banked:
+        reading["bankedResets"] = banked
     return reading
+
+
+def banked_resets(summary):
+    """The banked resets in an account/rateLimits/read result's
+    "rateLimitResetCredits", as {"count", "expires"}, or None when there are
+    none. Only shown, never used, so a summary it can't read counts as none,
+    and a reset whose expiry it can't read has none."""
+    if not isinstance(summary, dict):
+        return None
+    count = summary.get("availableCount")
+    if type(count) is not int or count <= 0:
+        return None
+    credits = summary.get("credits")
+    expires = sorted(int(credit["expiresAt"]) for credit in (credits if isinstance(credits, list) else [])
+                     if isinstance(credit, dict) and credit.get("status") == "available"
+                     and type(credit.get("expiresAt")) in (int, float) and math.isfinite(credit["expiresAt"]))
+    return {"count": count, "expires": expires[:count]}
 
 
 def cli_or_reason(name):
@@ -1757,7 +1782,15 @@ def fresh(entry, now, name):
             and well_formed(entry.get("weekly")) and isinstance(entry.get("scoped", []), list)
             and all(entry.get(key) is None or well_formed(entry[key]) for key in ("session", "week"))
             and all(well_formed(entry.get(key)) for key in ALWAYS.get(name, ()))
-            and all(well_formed(w, scoped=True) for w in entry.get("scoped", [])))
+            and all(well_formed(w, scoped=True) for w in entry.get("scoped", []))
+            and ("bankedResets" not in entry or banked_resets_well_formed(entry["bankedResets"])))
+
+
+def banked_resets_well_formed(banked):
+    """Whether a cached "bankedResets" is one banked_resets() could give."""
+    return (isinstance(banked, dict) and type(banked.get("count")) is int and banked["count"] > 0
+            and isinstance(banked.get("expires"), list) and len(banked["expires"]) <= banked["count"]
+            and all(type(epoch) is int for epoch in banked["expires"]))
 
 
 # Failures that depend on which program was run.

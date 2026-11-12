@@ -91,7 +91,9 @@ Nothing, until you turn on something that needs it.
 
 ## What stays on your computer
 
-- **Claude, Codex, Kimi and OpenCode Go readings** are kept in `~/.cache/ringside/`. The same
+- **Claude, Codex, Kimi and OpenCode Go readings** are kept in `~/.cache/ringside/`.
+  Codex's include how many banked resets the account has and when each
+  expires, from the same reply, but not which resets they are. The same
   private cache keeps each balance, when it was read, when it may be checked
   again, and the identity needed to keep it with the right login. It does
   not keep credentials. It records whether the balance fell since the
