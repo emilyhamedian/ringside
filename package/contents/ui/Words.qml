@@ -425,16 +425,27 @@ QtObject {
                     "The week reset at %1, with no reading since.", resetDate(window));
     }
 
-    // A time within a window, such as when its limit runs out, as a day and
-    // time: "Tue 3:30 AM", or in a monthly window "Tue 12/1/26 3:30 AM". It
-    // carries no zone; the words around it say which clock the window keeps.
-    function weekdayTime(epoch, window) {
+    // Formats a time within a window, such as when its limit runs out, as a
+    // weekday and time: "Tue 3:30 AM". A time six or more days from now also
+    // gets its date, "Tue 12/1/26 3:30 AM" (see dayNear()). No time zone is
+    // shown; the text around the time says which clock the window uses.
+    function weekdayTime(epoch, window, nowMs = Date.now()) {
         if (!Format.usable(epoch)) {
             return "";
         }
         const date = zonedDate(epoch, window);
         return i18nc("@info day and time within a usage window, e.g. Tue 3:30 AM or Tue 12/1/26 3:30 AM", "%1 %2",
-                     dayOf(date, window), shortTime(date));
+                     dayNear(date, epoch, nowMs), shortTime(date));
+    }
+
+    // The weekday of `date`, the wall-clock time at `epoch`: "Tue". When
+    // `epoch` is six or more days from now, the weekday alone could be read
+    // as this week's, so the date follows it: "Tue 10/13/26".
+    function dayNear(date, epoch, nowMs) {
+        const weekday = Qt.locale().dayName(date.getDay(), Locale.ShortFormat);
+        return Math.abs(epoch * 1000 - nowMs) < 6 * 86400000 ? weekday
+            : i18nc("@info a weekday and a date, e.g. Tue 10/13/26", "%1 %2", weekday,
+                    date.toLocaleDateString(Qt.locale(), Locale.ShortFormat));
     }
 
     // What the session starter is doing, under its switches in the Claude,
@@ -465,12 +476,7 @@ QtObject {
             return clockZone ? { clockZone: clockZone, resetsAt: epoch } : null;
         };
         const date = epoch => zonedDate(Math.round(epoch / 60) * 60, zone(epoch));
-        const day = epoch => {
-            const weekday = Qt.locale().dayName(date(epoch).getDay(), Locale.ShortFormat);
-            return Math.abs(epoch * 1000 - nowMs) < 6 * 86400000 ? weekday
-                : i18nc("@info a weekday and a date, e.g. Tue 10/13/26", "%1 %2", weekday,
-                        date(epoch).toLocaleDateString(Qt.locale(), Locale.ShortFormat));
-        };
+        const day = epoch => dayNear(date(epoch), epoch, nowMs);
         const time = epoch => shortTime(date(epoch));
         const onDay = (epoch, today, otherDay) =>
             date(epoch).toDateString() === zonedDate(nowMs / 1000, zone(epoch)).toDateString() ? today : otherDay;

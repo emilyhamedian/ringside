@@ -66,7 +66,7 @@ Then add **Ringside** to a panel like any other widget.
 
 ## AI usage limits
 
-![The Claude popup: the weekly limit, the Fable limit in amber with a sentence saying when it is on pace to run out, and a graph of this week's usage with a dashed amber line at the time the Fable limit runs out](docs/usage.png)
+![The Claude popup: the weekly limit, the Fable limit in amber, a graph of this week's usage with a dashed amber line at the time the Fable limit runs out, and a line under it saying when that is](docs/usage.png)
 
 Turn them on in *Configure Ringside… → Panel Items*. Each needs:
 

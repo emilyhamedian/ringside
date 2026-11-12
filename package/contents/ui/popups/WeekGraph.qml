@@ -18,10 +18,11 @@ import "../code/style.js" as Style
 // ends at the last poll, so the empty stretch to its right is the time
 // left; only when the last poll is hours old does a marker say where now
 // is. While checks fail, the marker shows once the gap is wide enough to
-// see, and the gap is hatched. The limit the pace sentence under the bars names, when it is on
-// course to run out before the reset, gets a dashed line from the rule to
-// the floor at the moment it runs out, with the sentence's time under the
-// floor, in the colour of that limit's level as its bar has it.
+// see, and the gap is hatched. If the limit the pace line names is on
+// course to run out before the reset, a dashed line runs from the rule to
+// the floor at the moment it runs out, in the colour of that limit's level
+// as its bar shows it. The pace line gives the time, so the graph shows
+// none.
 // A poll that adds a reading draws the new stretch of line on from the old
 // end, and a run-out it brings fades in once the line has landed. A run-out
 // that goes fades out where and as it was, the marker for now and a first
@@ -52,10 +53,8 @@ Item {
     readonly property color color: Kirigami.Theme.textColor
     readonly property real fillOpacity: Style.AREA
     // The series whose run-out is drawn, "main" or "second", or "" for none:
-    // the limit the popup's pace sentence names, so the two agree.
+    // the limit the popup's pace line names, so the two agree.
     property string projected: ""
-    // When it runs out, as the pace sentence words it: "Fri 7:20 AM".
-    property string runOutText: ""
     // A new stretch of line draws on over twice this, and the rest fades
     // over it or half of it: Kirigami's long duration, or 0 at Plasma's
     // Instant speed, where everything is drawn at once. A test seam.
@@ -66,11 +65,8 @@ Item {
     readonly property real start: window ? end - window.windowSeconds : NaN
     readonly property bool placed: end > start
 
-    // The plot, over the run-out's time, which takes room only while there
-    // is a run-out, as the pace sentence does.
     readonly property real plotHeight: Math.round(Kirigami.Units.gridUnit * 3.2)
     readonly property real floorY: plotHeight - 1
-    readonly property bool timeShown: runOutOpacity > 0 || ghostRunOutX >= 0 && ghostOpacity > 0
 
     readonly property var mainPoints: points(window)
     readonly property var secondPoints: points(secondWindow)
@@ -94,7 +90,7 @@ Item {
     property var describe: null
     readonly property string reading: hover.index >= 0 && describe ? describe(hover.index) : ""
     // When that limit runs out, in epoch seconds, while the pace says it
-    // will before the reset, as the popup's sentence reads it; NaN
+    // will before the reset, as the popup's pace line reads it; NaN
     // otherwise.
     readonly property real runOutAt: projected === "main" ? runOut(mainPoints, window)
                                    : projected === "second" ? runOut(secondPoints, secondWindow)
@@ -117,7 +113,6 @@ Item {
     property bool runOutShown: false
     property real runOutOpacity: 0
     property real shownRunOutAt: NaN
-    property string shownRunOutText: ""
     // Its limit's level, 0 to 2, as its bar and ring show it.
     property int shownRunOutLevel: 0
     readonly property real runOutX: Math.round(Math.max(0, Math.min(width - 1, xAt(shownRunOutAt))))
@@ -129,7 +124,6 @@ Item {
     property var ghostMain: []
     property var ghostSecond: []
     property real ghostRunOutX: -1
-    property string ghostRunOutText: ""
     property int ghostRunOutLevel: 0
     property real ghostMarkerX: -1
     property real ghostOpacity: 0
@@ -183,7 +177,6 @@ Item {
             ghostSecond = seenSecond ? pointsOn(seenSecond.history, begin, end) : [];
             ghostRunOutX = runOutOpacity > 0
                 ? Math.round(Math.max(0, Math.min(width - 1, (shownRunOutAt - begin) / (end - begin) * width))) : -1;
-            ghostRunOutText = shownRunOutText;
             ghostRunOutLevel = shownRunOutLevel;
             ghostMarkerX = markerShown ? markerShownX : -1;
             // The new week's own run-out and marker fade in once placed.
@@ -254,7 +247,6 @@ Item {
     // so the level kept here is current for as long as the run-out shows.
     function keepRunOut() {
         shownRunOutAt = runOutAt;
-        shownRunOutText = runOutText;
         shownRunOutLevel = Format.level((projected === "second" ? secondWindow : window)?.percent);
     }
 
@@ -272,7 +264,6 @@ Item {
     onWindowChanged: poll()
     onSecondWindowChanged: poll()
     onRunOutAtChanged: place()
-    onRunOutTextChanged: place()
     onStaleChanged: place()
     onMarkerXChanged: place()
     onMainPointsChanged: if (mainPoints.length > 0) mainDotAt = mainPoints[0]
@@ -364,10 +355,7 @@ Item {
         return Style.levelColor(grey ? 0 : level, Kirigami.Theme, graph.color);
     }
 
-    // The run-out's time, the text the tile ends on while it shows.
-    readonly property Item foot: timeShown ? runOutTime : null
-
-    implicitHeight: plotHeight + (timeShown ? Math.round(Kirigami.Units.smallSpacing / 2) + runOutTime.implicitHeight : 0)
+    implicitHeight: plotHeight
     clip: true
 
     GraphHover {
@@ -545,16 +533,13 @@ Item {
     }
 
     // The run-out: a dashed line from the rule to the floor at the moment
-    // the limit runs out, so it reads as a forecast rather than as a reading,
-    // with its time centred under the floor, inside the graph.
+    // the limit runs out, so it reads as a forecast rather than as a reading.
     component RunOut: Item {
         id: runOut
 
         property real at: 0
         property int level: 0
-        property string text: ""
         readonly property color color: graph.levelColor(level)
-        readonly property alias label: label
 
         anchors.fill: parent
 
@@ -573,18 +558,6 @@ Item {
                 color: Qt.alpha(runOut.color, 0.6 * runOut.color.a)
             }
         }
-
-        Text {
-            id: label
-            x: Math.max(0, Math.min(graph.width - implicitWidth, Math.round(runOut.at + 0.5 - implicitWidth / 2)))
-            y: graph.plotHeight + Math.round(Kirigami.Units.smallSpacing / 2)
-            text: runOut.text
-            color: runOut.level === 0 ? Style.dim(Kirigami.Theme.textColor) : runOut.color
-            font.pointSize: Kirigami.Theme.smallFont.pointSize
-            textFormat: Text.PlainText
-            // The pace sentence says it.
-            Accessible.ignored: true
-        }
     }
 
     Item {
@@ -601,7 +574,6 @@ Item {
             visible: graph.ghostRunOutX >= 0
             at: graph.ghostRunOutX
             level: graph.ghostRunOutLevel
-            text: graph.ghostRunOutText
         }
 
         Marker {
@@ -617,14 +589,9 @@ Item {
     }
 
     RunOut {
-        id: shownRunOut
         visible: graph.runOutOpacity > 0
         opacity: graph.runOutOpacity
         at: graph.runOutX
         level: graph.shownRunOutLevel
-        text: graph.shownRunOutText
     }
-
-    // For the foot, which has to name an item rather than a component's.
-    readonly property Item runOutTime: shownRunOut.label
 }

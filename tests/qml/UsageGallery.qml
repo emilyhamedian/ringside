@@ -299,7 +299,7 @@ ColumnLayout {
     }
 
     // Two days into the week, Claude at 25 % lasts it, while Fable at 55 %
-    // runs out before the reset at this pace. The pace sentence says so;
+    // runs out before the reset at this pace. The pace line says so;
     // neither is coloured, as a colour comes from the reading alone.
     FakeMonitor {
         id: fablePace
@@ -856,13 +856,13 @@ ColumnLayout {
             spacing: 2 * Kirigami.Units.gridUnit
 
             GalleryFrame {
-                label: "Breeze Light · Claude · the pace sentence on Fable"
+                label: "Breeze Light · Claude · the pace line on Fable"
                 flat: true
                 UsagePopup { monitor: section.monitor; item: "claude" }
             }
 
             GalleryFrame {
-                label: "Breeze Light · Codex · one limit, the pace sentence"
+                label: "Breeze Light · Codex · one limit, the pace line"
                 flat: true
                 UsagePopup { monitor: codexPace; item: "codex" }
             }

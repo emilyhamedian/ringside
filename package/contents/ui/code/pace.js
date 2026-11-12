@@ -4,7 +4,7 @@
 .pragma library
 
 // Where a weekly limit is heading at the rate it has been used so far, for
-// the popup's pace sentence and the week graph's run-out line. Colours, in
+// the popup's pace line and the week graph's run-out line. Colours, in
 // the panel and the popup, follow the reading alone. Times are epoch
 // seconds; the words are the popup's, since a .pragma library file can't
 // translate.
