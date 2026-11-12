@@ -26,8 +26,8 @@ are the two helper scripts it runs as you:
   going out through. That only looks at the routing table; it sends
   nothing.
 
-With the session starter on, `usage.py` also runs the `claude` or `codex` CLI
-to send one word. They run in an empty folder of their own,
+With the session starter on, `usage.py` also runs the `claude`, `codex` or
+`opencode` CLI to send one word. They run in an empty folder of their own,
 `~/.local/state/ringside/work`, with a trimmed-down environment, so API keys
 and provider overrides from your session aren't passed on.
 
@@ -63,9 +63,13 @@ Nothing, until you turn on something that needs it.
   Neither balance check sends a model request or starts a session. *Show
   remaining credits* is on by default and only controls whether the rows
   appear; hiding them does not stop balance collection.
-- **The session starter** sends "Hi" through the Claude Code or Codex CLI
-  when a session or week ends. It counts against your limits like any other
-  message. To pick Codex's model it reads `~/.codex/models_cache.json`.
+- **The session starter** sends "Hi" through the Claude Code, Codex or
+  OpenCode CLI when a session or week ends. It counts against your limits
+  like any other message. To pick Codex's model it reads
+  `~/.codex/models_cache.json`. For OpenCode Go it asks `opencode models`
+  which Go models there are and sends with the cheapest it knows, through a
+  private OpenCode server that stops with it; OpenCode keeps the message as
+  an archived session titled "Ringside".
 - **The public address** asks one service, the one you pick: ipify.org
   (`api.ipify.org` and `api6.ipify.org`), Mullvad (`ipv4.am.i.mullvad.net`
   and `ipv6.am.i.mullvad.net`), or URLs you set. It asks when the network

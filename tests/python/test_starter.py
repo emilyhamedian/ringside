@@ -47,6 +47,15 @@ def codex(fetched, percent, resets_at, session=None, session_percent=0):
             "session": None if session is None else week(session_percent, session, SESSION)}
 
 
+def go(fetched, session=None, session_percent=0, week_percent=0, month_percent=0):
+    """An OpenCode Go reading; session is the five-hour reset, or None for
+    five idle hours, which Go gives as a reset five hours from the read."""
+    return {"status": "ok", "fetchedAt": fetched, "scoped": [],
+            "weekly": week(month_percent, fetched + 9 * 86400, 30 * 86400),
+            "session": week(session_percent, fetched + SESSION if session is None else session, SESSION),
+            "week": week(week_percent, fetched + 2 * 86400)}
+
+
 def codex_week(fetched, percent, resets_at):
     """A Codex reading from a plan with no reported five-hour window."""
     reading = codex(fetched, percent, resets_at)
@@ -640,6 +649,46 @@ class CodexUnreadableSession(unittest.TestCase):
         self.assertEqual((h.record["state"], h.record["reason"]), ("failed", "unchecked"))
 
 
+class OpenCodeGo(unittest.TestCase):
+    """Go's five hours start with a message, as Codex's session does; its
+    week and month run on set schedules, and either used up holds."""
+
+    def test_idle_hours_get_a_message_and_the_hours_it_started_confirm_it(self):
+        h = Harness(NOW, go(NOW), provider="opencode")
+        h.step()
+        self.assertEqual(h.count("send"), 1)
+        h.reading = go(NOW + 300, session=NOW + SESSION)
+        h.step(NOW + 300)
+        self.assertEqual(h.shows(), ("started", NOW, NOW + SESSION + 1))
+
+    def test_running_hours_are_waited_out(self):
+        h = Harness(NOW, go(NOW, session=NOW + 2 * HOUR, session_percent=12), provider="opencode")
+        h.step()
+        self.assertEqual((h.count("send"), h.shows()), (0, ("waiting", None, NOW + 2 * HOUR + 1)))
+
+    def test_a_used_up_week_or_month_holds_until_the_last_of_them_resets(self):
+        for week_percent, month_percent, until in ((100, 40, NOW + 2 * 86400), (60, 100, NOW + 9 * 86400),
+                                                   (100, 100, NOW + 9 * 86400)):
+            with self.subTest(week=week_percent, month=month_percent):
+                h = Harness(NOW, go(NOW, week_percent=week_percent, month_percent=month_percent), provider="opencode")
+                h.step()
+                self.assertEqual((h.count("send"), h.shows()), (0, ("weekly", None, until + 1)))
+
+    def test_a_week_used_up_with_no_reset_is_as_good_as_unread(self):
+        reading = go(NOW, week_percent=100)
+        reading["week"]["resetsAt"] = None
+        self.assertIs(usage.used_up(reading), reading["week"])
+        h = Harness(NOW, reading, provider="opencode")
+        h.step()
+        self.assertEqual((h.count("send"), h.record["reason"]), (0, "unchecked"))
+
+    def test_a_week_that_reset_early_ends_the_hold(self):
+        h = Harness(NOW, go(NOW, week_percent=100), provider="opencode")
+        h.step()
+        self.assertFalse(usage.overtaken("opencode", h.record, go(NOW + 600, week_percent=100), NOW + 600, ["session"]))
+        self.assertTrue(usage.overtaken("opencode", h.record, go(NOW + 600), NOW + 600, ["session"]))
+
+
 class Reading(Isolated):
     def cache(self, **entries):
         self.write_cache(entries)
@@ -866,6 +915,52 @@ class Commands(Isolated):
         self.runner(subprocess.TimeoutExpired("codex", 60))
         usage.send_codex("/mock/codex", switched_on)
 
+    GO_MODELS = "kimi-code-plan-global/k3\nopencode-go/beam-free\nopencode-go/hy3\nopencode-go/mimo-v2.5\n"
+
+    def test_opencode_lists_its_models_then_sends_one_archived_message(self):
+        source = {"HOME": "/home/test", "PATH": "/usr/bin", "OPENCODE_CONFIG_DIR": "/cfg/opencode",
+                  "OPENCODE_CONFIG_CONTENT": '{"model": "anthropic/x"}', "OPENCODE_SERVER_PASSWORD": "secret"}
+        with mock.patch.dict(os.environ, source, clear=True):
+            calls = self.runner((0, self.GO_MODELS), (0, ""))
+            usage.send_opencode("/mock/opencode", switched_on)
+        (models, env, preflight), (argv, send_env, timeout) = calls
+        self.assertEqual(models, ["/mock/opencode", "models", "--standalone"])
+        self.assertEqual(preflight, usage.PREFLIGHT_TIMEOUT)
+        self.assertEqual(argv, ["/mock/opencode", "run", "--standalone", "--archived", "--title", "Ringside",
+                                "--model", "opencode-go/mimo-v2.5", "Hi"])
+        self.assertEqual(timeout, usage.SEND_TIMEOUT)
+        self.assertEqual(env, {"HOME": "/home/test", "PATH": "/usr/bin", "OPENCODE_CONFIG_DIR": "/cfg/opencode"})
+        self.assertEqual(send_env, env)
+
+    def test_opencode_sends_with_the_first_listed_model_it_knows(self):
+        for listing, model in (("opencode-go/glm-5.3-flash opencode-go/mimo-v2.6-flash", "opencode-go/mimo-v2.6-flash"),
+                               ("opencode-go/glm-5.3-flash\n", "opencode-go/glm-5.3-flash"),
+                               ("opencode-go/beam-free\nopencode-go/mimo-v2.6-flash-x\nmimo-v2.5\n", None), ("", None)):
+            with self.subTest(listing):
+                self.assertEqual(usage.opencode_model(listing), model)
+
+    def test_opencode_without_a_known_model_or_an_answer_sends_nothing(self):
+        for results, raised, reason in (([(0, "opencode-go/beam-free\n")], usage.Failed, "no-model"),
+                                        ([(1, self.GO_MODELS)], usage.NotSent, "not-responding"),
+                                        ([subprocess.TimeoutExpired("opencode", 20)], usage.NotSent, "not-responding"),
+                                        ([OSError("exec format error")], usage.NotSent, "not-responding")):
+            with self.subTest(results=results):
+                calls = self.runner(*results)
+                with self.assertRaises(raised) as caught:
+                    usage.send_opencode("/mock/opencode", switched_on)
+                self.assertEqual((caught.exception.reason, len(calls)), (reason, 1))
+        calls = self.runner((0, self.GO_MODELS))
+        with self.assertRaises(usage.SwitchedOff):
+            usage.send_opencode("/mock/opencode", lambda: False)
+        self.assertEqual(len(calls), 1)
+
+    def test_opencode_that_couldnt_start_never_left_and_a_timeout_did(self):
+        self.runner((0, self.GO_MODELS), OSError("exec format error"))
+        with self.assertRaises(usage.NotSent):
+            usage.send_opencode("/mock/opencode", switched_on)
+        self.runner((0, self.GO_MODELS), subprocess.TimeoutExpired("opencode", 60))
+        usage.send_opencode("/mock/opencode", switched_on)
+
     def test_the_cli_is_found_in_local_bin_before_path(self):
         self.enterContext(mock.patch.object(usage, "find_cli", REAL_FIND_CLI))
         local = Path.home() / ".local" / "bin"
@@ -1022,8 +1117,8 @@ class StarterRuns(Isolated):
     # window there was to start.
     def test_a_switch_stored_as_true_is_on_for_every_window(self):
         usage.STARTER_FILE.parent.mkdir(parents=True)
-        usage.STARTER_FILE.write_text('{"claude": true, "codex": true}')
-        self.assertEqual(usage.read_switches(), {"claude": ["session"], "codex": ["session", "week"]})
+        usage.STARTER_FILE.write_text('{"claude": true, "codex": true, "opencode": true}')
+        self.assertEqual(usage.read_switches(), {"claude": ["session"], "codex": ["session", "week"], "opencode": ["session"]})
 
     def test_a_switch_that_cant_be_written_reports_it_unchanged(self):
         self.run_main("--providers", "claude", "--starter-set", "claude=on")
@@ -1323,7 +1418,7 @@ class Report(Isolated):
         providers = self.run_main()["providers"]
         self.assertEqual({name: entry.get("starter") for name, entry in providers.items()},
                          {"claude": dict(OFF, windows=["session"]), "codex": dict(OFF, windows=["session", "week"]),
-                          "kimi": None, "opencode": None})
+                          "kimi": None, "opencode": dict(OFF, windows=None)})
 
     def test_the_current_reading_names_the_window_before_stored_state(self):
         record = dict(usage.blank_record(), period=SESSION)

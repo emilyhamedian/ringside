@@ -34,7 +34,7 @@ GridLayout {
     readonly property var starter: usage.starter(item)
     readonly property bool struck: usage.struck(item, nowMs)
     readonly property string status: struck
-        ? i18nc("@info under the session starter's switch, which can't be turned while the Claude or Codex limits can't be checked",
+        ? i18nc("@info under the session starter's switch, which can't be turned while the provider's limits can't be checked",
                 "Can be changed once Ringside can check your usage again.")
         : texts.starterStatus(item, starter, nowMs)
     // Something the user has to fix, or a send that didn't take, rather than

@@ -97,10 +97,12 @@ they are under *AI Providers*.
 under the graph. When you've used up a limit and are spending credits, the
 ring turns blue. *Show remaining credits* under *AI Providers* hides them.
 
-**Auto start.** Ringside can start your next five-hour session, or your next
-Codex week, as soon as the last one ends, so the clock is already running
-when you're back. Turn it on with the switch at the bottom of the popup. Each
-start sends a one-word message, which counts toward your limits.
+**Auto start.** Ringside can start your next five-hour session on Claude,
+Codex or OpenCode Go, or your next Codex week, as soon as the last one ends,
+so the clock is already running when you're back. Turn it on with the switch
+at the bottom of the popup. Each start sends a one-word message, which counts
+toward your limits. Kimi's five-hour windows follow each other on a fixed
+schedule, so there's nothing to start.
 
 ## Privacy
 

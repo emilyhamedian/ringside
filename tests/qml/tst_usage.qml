@@ -3560,7 +3560,8 @@ TestRoot {
         // FakeUsage's Codex plan has only a week to start.
         function test_starterSwitch_data() {
             return [{ tag: "claude", item: "claude", label: "Auto start session" },
-                    { tag: "codex", item: "codex", label: "Auto start week" }];
+                    { tag: "codex", item: "codex", label: "Auto start week" },
+                    { tag: "opencode", item: "opencode", label: "Auto start session" }];
         }
 
         // The switch sits in the footer, left of the configure button, its
@@ -4612,6 +4613,21 @@ TestRoot {
                     "Can't start a week: Codex isn't installed.");
             compare(words.starterStatus("codex", { state: "paused", next: 3600, window: "week" }, 0),
                     "Couldn't confirm two weeks in a row. Paused until " + words.shortTime(new Date(3600000)) + ".");
+        }
+
+        // OpenCode Go starts only sessions, and names OpenCode, its program
+        // and its sign-in in its own words.
+        function test_opencodeStarterStatus() {
+            compare(words.starterStatus("opencode", { state: "off" }, 0),
+                    "When a session ends, Ringside sends OpenCode Go a one-word message to start the next one.");
+            compare(words.starterStatus("opencode", { state: "weekly", next: 3600, window: "session" }, 3600000),
+                    "Weekly or monthly limit reached. The next session starts at " + words.shortTime(new Date(3600000)) + ", when it resets.");
+            compare(words.starterStatus("opencode", { state: "failed", reason: "signed-out", window: "session" }, 0),
+                    "Can't start a session: OpenCode is signed out. Run opencode auth login opencode to sign in.");
+            compare(words.starterStatus("opencode", { state: "failed", reason: "no-model", window: "session" }, 0),
+                    "Can't start a session: OpenCode lists none of the Go models Ringside sends its message with.");
+            compare(words.starterStatus("opencode", { state: "paused", next: 3600, window: "session" }, 0),
+                    "Couldn't confirm two sessions in a row. Paused until " + words.shortTime(new Date(3600000)) + ".");
         }
 
         function test_starterStatusOfAnUnknownState() {

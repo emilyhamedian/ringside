@@ -113,6 +113,10 @@
       <label>Allow Codex's session starter; turning this off stops its automatic starts</label>
       <default>true</default>
     </entry>
+    <entry name="opencodeSessionStarter" type="Bool">
+      <label>Allow OpenCode Go's session starter; turning this off stops its automatic starts</label>
+      <default>true</default>
+    </entry>
     <entry name="claudeInnerLimit" type="String">
       <label>Per-model limit on Claude's inner ring: empty for automatic, "none", or its id</label>
       <default></default>
@@ -130,6 +134,10 @@
     </entry>
     <entry name="codexProgram" type="String">
       <label>Where the codex program is, as shown with ~; empty finds it automatically</label>
+      <default></default>
+    </entry>
+    <entry name="opencodeProgram" type="String">
+      <label>Where the opencode program is, for the session starter, as shown with ~; empty finds it automatically</label>
       <default></default>
     </entry>
     <entry name="knownLimits" type="String">

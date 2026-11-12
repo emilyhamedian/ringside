@@ -12,8 +12,8 @@ import "../code/items.js" as Items
 import "../code/shell.js" as Shell
 import "../code/style.js" as Style
 
-// The settings for the Claude and Codex items. Switching the items on and
-// ordering them stays on Panel Items.
+// The settings for the Claude, Codex and OpenCode Go items. Switching the
+// items on and ordering them stays on Panel Items.
 ConfigPage {
     id: page
 
@@ -49,15 +49,17 @@ ConfigPage {
     }
 
     // The windows a provider's plan lets Ringside start, as the widget last
-    // learned them, else as UsageData assumes: Claude's week runs on a set
-    // schedule, so it has at most a session; Codex's week starts with a
-    // message, as its session does. Array.from: it may be a Qt sequence.
+    // learned them, else as UsageData assumes: Claude's week and OpenCode
+    // Go's week and month run on set schedules, so they have at most a
+    // session; Codex's week starts with a message, as its session does.
+    // Array.from: it may be a Qt sequence.
     function startable(id) {
         const known = usageStatus[id]?.windows;
-        return known ? Array.from(known) : id === "claude" ? ["session"] : ["session", "week"];
+        return known ? Array.from(known) : id === "codex" ? ["session", "week"] : ["session"];
     }
     readonly property var claudeWindows: startable("claude")
     readonly property var codexWindows: startable("codex")
+    readonly property var opencodeWindows: startable("opencode")
 
     // A provider's setting, named for what its plan can start.
     function starterText(windows) {
@@ -78,25 +80,34 @@ ConfigPage {
     readonly property bool codexOn: enabledItems.includes("codex")
     readonly property bool codexRuns: runs("codex")
 
+    readonly property bool opencodeOn: enabledItems.includes("opencode")
+
     // A Program line shows only where it has something to say: a path the
     // user chose, or a program that is needed and missing. Codex is needed
-    // to read OpenAI's limits at all; Claude only by its session starter.
+    // to read OpenAI's limits at all; Claude and OpenCode only by their
+    // session starters.
     readonly property bool codexProgramWanted: codexOn && (cfg_codexProgram !== "" || !codexRuns)
     readonly property bool claudeProgramWanted: claudeOn && (cfg_claudeProgram !== ""
                                                              || usageStatus.claude?.starter === true && !runs("claude"))
+    readonly property bool opencodeProgramWanted: opencodeOn && (cfg_opencodeProgram !== ""
+                                                                 || usageStatus.opencode?.starter === true && !runs("opencode"))
     // Once shown, a Program line stays while the page is open, so emptying
     // the field to type another path, or to go back to automatic, doesn't
     // take it away mid-edit.
     property bool codexProgramKept: false
     property bool claudeProgramKept: false
+    property bool opencodeProgramKept: false
     onCodexProgramWantedChanged: if (codexProgramWanted) codexProgramKept = true
     onClaudeProgramWantedChanged: if (claudeProgramWanted) claudeProgramKept = true
+    onOpencodeProgramWantedChanged: if (opencodeProgramWanted) opencodeProgramKept = true
     Component.onCompleted: {
         codexProgramKept = codexProgramWanted;
         claudeProgramKept = claudeProgramWanted;
+        opencodeProgramKept = opencodeProgramWanted;
     }
     readonly property bool codexProgramShown: codexOn && (codexProgramWanted || codexProgramKept)
     readonly property bool claudeProgramShown: claudeOn && (claudeProgramWanted || claudeProgramKept)
+    readonly property bool opencodeProgramShown: opencodeOn && (opencodeProgramWanted || opencodeProgramKept)
 
     // Under each inner ring picker.
     readonly property string automaticLine: i18nc("@info", "Automatic shows the per-model limit when your plan has just one. With more than one, pick it here.")
@@ -378,6 +389,43 @@ ConfigPage {
 
         ProgramNote {
             program: codexProgram
+        }
+
+        Item {
+            id: opencodeHeading
+            Kirigami.FormData.isSection: true
+            Kirigami.FormData.label: i18nc("@title:group settings for the OpenCode Go item", "OpenCode Go")
+            visible: page.opencodeOn || page.opencodeProgramShown
+        }
+
+        // Go's week and month run on set schedules, so only its five hours
+        // can be started.
+        QQC2.CheckBox {
+            visible: opencodeHeading.visible && page.opencodeWindows.length > 0
+            text: page.starterText(page.opencodeWindows)
+            Accessible.name: i18nc("@option:check %1 is the check box's text, such as Auto start session", "OpenCode Go: %1", text)
+            Accessible.description: i18nc("@info", "When a session ends, Ringside sends OpenCode Go a one-word message to start the next one. Turn this off to hide the popup switch.")
+            checked: page.cfg_opencodeSessionStarter
+            onToggled: page.cfg_opencodeSessionStarter = checked
+            QQC2.ToolTip.text: Accessible.description
+            QQC2.ToolTip.visible: hovered
+            QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
+        }
+
+        ProgramField {
+            id: opencodeProgram
+            visible: page.opencodeProgramShown
+            command: "opencode"
+            chosen: page.cfg_opencodeProgram
+            found: page.program("opencode")
+            note: i18nc("@info under OpenCode Go's Program", "Only starting sessions needs it. Usage is read without it.")
+            lostNote: i18nc("@info under OpenCode Go's Program: Not found, shown while the session starter is on",
+                            "Not in ~/.local/bin or on Plasma's PATH. Starting sessions needs it; if opencode is installed elsewhere, choose it.")
+            onChoose: path => page.cfg_opencodeProgram = path
+        }
+
+        ProgramNote {
+            program: opencodeProgram
         }
     }
 }

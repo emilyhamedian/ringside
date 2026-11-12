@@ -647,7 +647,10 @@ TestRoot {
                 { tag: "ProvidersClaudeProgram", source: "config/ConfigProviders.qml", key: "claudeProgram",
                   value: "~/.bun/bin/claude" },
                 { tag: "ProvidersCodexProgram", source: "config/ConfigProviders.qml", key: "codexProgram",
-                  value: "/opt/my tools/codex" }
+                  value: "/opt/my tools/codex" },
+                { tag: "ProvidersOpencodeSessionStarter", source: "config/ConfigProviders.qml", key: "opencodeSessionStarter", value: false },
+                { tag: "ProvidersOpencodeProgram", source: "config/ConfigProviders.qml", key: "opencodeProgram",
+                  value: "~/.opencode/bin/opencode" }
             ]);
         }
         function test_applySavesTheChange(data) {
@@ -713,7 +716,7 @@ TestRoot {
             const everyItem = ["cpu", "gpu", "memory", "network", "disk", "claude", "codex", "kimi", "opencode"];
             const limits = { knownLimits: JSON.stringify({ claude: [{ id: "opus", label: "Opus", reported: true }],
                                                            codex: [{ id: "gpt5", label: "GPT-5", reported: true }] }) };
-            const programs = { itemOrder: ["cpu", "claude", "codex"], hiddenItems: [],
+            const programs = { itemOrder: ["cpu", "claude", "codex", "opencode"], hiddenItems: [],
                                usageStatus: JSON.stringify(programStates()["notfound-on"].status) };
             const listed = page => { page.listed = root.listed; };
             return [
@@ -765,6 +768,8 @@ TestRoot {
                   drive: page => press(page, "Claude: Auto start session"), saved: { claudeSessionStarter: false } },
                 { tag: "codexSessionStarter", source: providers, start: programs,
                   drive: page => press(page, "OpenAI: Auto start session or week"), saved: { codexSessionStarter: false } },
+                { tag: "opencodeSessionStarter", source: providers, start: programs,
+                  drive: page => press(page, "OpenCode Go: Auto start session"), saved: { opencodeSessionStarter: false } },
                 { tag: "claudeInnerLimit", source: providers, start: limits, drive: page => pickIn(page, "Claude inner ring", 2),
                   saved: { claudeInnerLimit: "opus" } },
                 { tag: "codexInnerLimit", source: providers, start: limits, drive: page => pickIn(page, "OpenAI inner ring", 2),
@@ -775,7 +780,9 @@ TestRoot {
                   drive: page => typeInto(page, "Path to claude", "~/bin/claude"), saved: { claudeProgram: "~/bin/claude" } },
                 { tag: "codexProgram", source: providers, start: programs,
                   drive: page => typeInto(page, "Path to codex", "~/.npm-global/bin/codex"),
-                  saved: { codexProgram: "~/.npm-global/bin/codex" } }
+                  saved: { codexProgram: "~/.npm-global/bin/codex" } },
+                { tag: "opencodeProgram", source: providers, start: programs,
+                  drive: page => typeInto(page, "Path to opencode", "~/bin/opencode"), saved: { opencodeProgram: "~/bin/opencode" } }
             ];
         }
 
@@ -976,7 +983,8 @@ TestRoot {
                     codex: { status: "error", starter: false, program: program("", false) } } },
                 "notfound-on": { claude: "", codex: "", status: {
                     claude: { status: "ok", starter: true, program: program("", false) },
-                    codex: { status: "error", starter: false, program: program("", false) } } },
+                    codex: { status: "error", starter: false, program: program("", false) },
+                    opencode: { status: "ok", starter: true, program: program("", false) } } },
                 custom: { claude: "~/.bun/bin/claude", codex: "HOME/.nvm/versions/node/v22.12.0/bin/codex", status: {
                     claude: { status: "ok", starter: true, program: program("HOME/.bun/bin/claude", true) },
                     codex: { status: "ok", starter: false, program: program("HOME/.nvm/versions/node/v22.12.0/bin/codex", true) } } },
@@ -1486,23 +1494,30 @@ TestRoot {
         }
 
         function test_sessionStarterSettingsArePerProvider() {
-            const page = make(providers, { cfg_itemOrder: ["claude", "codex"], cfg_hiddenItems: [],
-                                           cfg_claudeSessionStarter: true, cfg_codexSessionStarter: true, knownLimits: {} });
+            const page = make(providers, { cfg_itemOrder: ["claude", "codex", "opencode"], cfg_hiddenItems: [],
+                                           cfg_claudeSessionStarter: true, cfg_codexSessionStarter: true,
+                                           cfg_opencodeSessionStarter: true, knownLimits: {} });
             const claude = accessible(page, "Claude: Auto start session");
             const codex = accessible(page, "OpenAI: Auto start session or week");
-            verify(claude.visible && claude.checked && codex.visible && codex.checked);
-            compare(all(page, i => typeof i.text === "string" && i.text.startsWith("Auto start") && i.toggled !== undefined).length, 2);
+            const opencode = accessible(page, "OpenCode Go: Auto start session");
+            verify(claude.visible && claude.checked && codex.visible && codex.checked && opencode.visible && opencode.checked);
+            compare(all(page, i => typeof i.text === "string" && i.text.startsWith("Auto start") && i.toggled !== undefined).length, 3);
             claude.toggle();
             claude.toggled();
-            verify(!page.cfg_claudeSessionStarter && page.cfg_codexSessionStarter,
-                   "Claude's switch doesn't change OpenAI's");
+            verify(!page.cfg_claudeSessionStarter && page.cfg_codexSessionStarter && page.cfg_opencodeSessionStarter,
+                   "Claude's switch doesn't change the others'");
             codex.toggle();
             codex.toggled();
-            verify(!page.cfg_codexSessionStarter);
-            page.cfg_hiddenItems = ["claude", "codex"];
+            verify(!page.cfg_codexSessionStarter && page.cfg_opencodeSessionStarter);
+            opencode.toggle();
+            opencode.toggled();
+            verify(!page.cfg_opencodeSessionStarter);
+            page.cfg_hiddenItems = ["claude", "codex", "opencode"];
             page.cfg_hiddenItems = [];
-            verify(!page.cfg_claudeSessionStarter && !page.cfg_codexSessionStarter,
+            verify(!page.cfg_claudeSessionStarter && !page.cfg_codexSessionStarter && !page.cfg_opencodeSessionStarter,
                    "turning items on again keeps each opt-out");
+            page.cfg_itemOrder = ["claude", "codex"];
+            verify(!opencode.visible, "OpenCode Go's setting shows only while its item is on");
         }
 
         // Each provider's setting names what its plan lets Ringside start,

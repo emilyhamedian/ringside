@@ -437,8 +437,8 @@ QtObject {
                      dayOf(date, window), shortTime(date));
     }
 
-    // What the session starter is doing, under its switches in the Claude or
-    // Codex popup. `starter` is the helper's { enabled, on, windows, state,
+    // What the session starter is doing, under its switches in the Claude,
+    // Codex or OpenCode Go popup. `starter` is the helper's { enabled, on, windows, state,
     // at, next, reason, window, clockZone, atClockZone } (see usage.py), or
     // UsageData's "failed" with the helper's error and reason "helper" after
     // a --start that didn't run, or "switch" after a switch change that
@@ -455,9 +455,11 @@ QtObject {
     function starterStatus(item, starter, nowMs) {
         const s = starter ?? { state: "off" };
         const claude = item === "claude";
+        // OpenCode Go has only a session to start, so its sentences are its own.
+        const opencode = item === "opencode";
         // Older reports and test stand-ins default to Claude's session and
         // Codex's week; current reports name the detected window explicitly.
-        const session = s.window ? s.window === "session" : claude;
+        const session = s.window ? s.window === "session" : claude || opencode;
         const zone = epoch => {
             const clockZone = epoch === s.at && s.atClockZone ? s.atClockZone : s.clockZone;
             return clockZone ? { clockZone: clockZone, resetsAt: epoch } : null;
@@ -481,7 +483,9 @@ QtObject {
         case "off": {
             // What the plan lets Ringside start, when the report says.
             const can = s.windows ? Array.from(s.windows) : [session ? "session" : "week"];
-            return claude
+            return opencode
+                ? i18nc("@info under the session starter's switch while it is off", "When a session ends, Ringside sends OpenCode Go a one-word message to start the next one.")
+                : claude
                 ? i18nc("@info under the session starter's switch while it is off", "When a session ends, Ringside sends Claude a one-word message to start the next one.")
                 : can.includes("session") && can.includes("week")
                 ? i18nc("@info under the Auto start session and Auto start week switches while they are off; either is a session or a week",
@@ -513,12 +517,32 @@ QtObject {
                 : onDay(s.at, i18nc("@info %1 is a time today", "Started this week at %1.", time(s.at)),
                         i18nc("@info %1 is a weekday, or a weekday and date, %2 a time", "Started this week %1 %2.", day(s.at), time(s.at)));
         case "weekly":
+            // Go's week or month, whichever holds it longer.
+            if (opencode) {
+                return onDay(s.next, i18nc("@info %1 is a time today", "Weekly or monthly limit reached. The next session starts at %1, when it resets.", time(s.next)),
+                             i18nc("@info %1 is a weekday, or a weekday and date, %2 a time", "Weekly or monthly limit reached. The next session starts %1 %2, when it resets.", day(s.next), time(s.next)));
+            }
             return session
                 ? onDay(s.next, i18nc("@info %1 is a time today", "Weekly limit reached. The next session starts at %1, when the limit resets.", time(s.next)),
                         i18nc("@info %1 is a weekday, or a weekday and date, %2 a time", "Weekly limit reached. The next session starts %1 %2, when the limit resets.", day(s.next), time(s.next)))
                 : onDay(s.next, i18nc("@info %1 is a time today", "Weekly limit reached. The next week starts at %1, when the limit resets.", time(s.next)),
                         i18nc("@info %1 is a weekday, or a weekday and date, %2 a time", "Weekly limit reached. The next week starts %1 %2, when the limit resets.", day(s.next), time(s.next)));
         case "failed":
+            if (opencode) {
+                switch (s.reason) {
+                case "not-installed":
+                    return i18nc("@info", "Can't start a session: OpenCode isn't installed.");
+                case "program":
+                    return i18nc("@info", "Can't start a session: the opencode program set in Settings can't be run.");
+                case "signed-out":
+                    return i18nc("@info", "Can't start a session: OpenCode is signed out. Run opencode auth login opencode to sign in.");
+                case "no-model":
+                    return i18nc("@info", "Can't start a session: OpenCode lists none of the Go models Ringside sends its message with.");
+                case "not-responding":
+                    return onDay(s.next, i18nc("@info %1 is a time today", "Can't start a session: OpenCode isn't responding. Trying again at %1.", time(s.next)),
+                                 i18nc("@info %1 is a weekday, or a weekday and date, %2 a time", "Can't start a session: OpenCode isn't responding. Trying again %1 %2.", day(s.next), time(s.next)));
+                }
+            }
             if (s.reason === "not-installed") {
                 return claude ? i18nc("@info", "Can't start a session: Claude Code isn't installed.")
                               : session ? i18nc("@info", "Can't start a session: Codex isn't installed.")

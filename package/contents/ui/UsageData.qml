@@ -43,7 +43,8 @@ Item {
 
     // Plasmoid.configuration, or an object with the keys usageRefreshMinutes,
     // claudeInnerLimit, codexInnerLimit, knownLimits, usageStatus and
-    // seenResets, and optionally claudeProgram and codexProgram.
+    // seenResets, and optionally claudeProgram, codexProgram and
+    // opencodeProgram.
     required property var config
     // Ids to poll, e.g. ["claude", "codex"].
     property var providers: []
@@ -78,9 +79,10 @@ Item {
     // quoted (see code/shell.js). -B keeps Python from writing bytecode into
     // the package.
     readonly property string command: helperCommand(ids, "")
-    // The claude and codex programs chosen in the settings; empty finds
-    // them. Every run passes them, so choosing one checks it at once.
-    readonly property var programs: ({ claude: String(config.claudeProgram ?? ""), codex: String(config.codexProgram ?? "") })
+    // The claude, codex and opencode programs chosen in the settings; empty
+    // finds them. Every run passes them, so choosing one checks it at once.
+    readonly property var programs: ({ claude: String(config.claudeProgram ?? ""), codex: String(config.codexProgram ?? ""),
+                                       opencode: String(config.opencodeProgram ?? "") })
     readonly property var innerChoices: ({ claude: config.claudeInnerLimit, codex: config.codexInnerLimit })
     // The last poll's status per id, as the settings page reads it.
     property var statuses: ({})
@@ -98,9 +100,10 @@ Item {
     // helper writes them.
     readonly property var windowOrder: ["session", "week"]
     // What a provider's plan is taken to allow before any report says:
-    // Claude's week runs on a set schedule, so only a session can be
-    // started; Codex's week starts with a message, as its session does.
-    readonly property var assumedWindows: ({ claude: ["session"], codex: ["session", "week"] })
+    // Claude's week and OpenCode Go's week and month run on set schedules,
+    // so only a session can be started; Codex's week starts with a message,
+    // as its session does.
+    readonly property var assumedWindows: ({ claude: ["session"], codex: ["session", "week"], opencode: ["session"] })
     // The switch positions asked for and not yet reported back, per id, as
     // the set of windows written: "session,week", or "" for none.
     property var starterWanted: ({})
@@ -710,11 +713,13 @@ Item {
         target: usage.config
         function onClaudeSessionStarterChanged() { usage.requestDisable("claude"); }
         function onCodexSessionStarterChanged() { usage.requestDisable("codex"); }
+        function onOpencodeSessionStarterChanged() { usage.requestDisable("opencode"); }
     }
 
     Component.onCompleted: {
         requestDisable("claude");
         requestDisable("codex");
+        requestDisable("opencode");
     }
 
     // Also sent while the widget starts; a choice made before any reading

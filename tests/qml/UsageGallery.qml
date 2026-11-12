@@ -390,7 +390,8 @@ ColumnLayout {
 
     // Each of the starter's states for Claude and for Codex, but those for
     // one of them only, Codex's plan with a session and a week to start;
-    // then Codex's off with only a week.
+    // then Codex's off with only a week, and OpenCode Go's states that have
+    // words of their own.
     readonly property var starterFooters: {
         const footers = [];
         StarterStates.ROWS.forEach(row => ["claude", "codex"].forEach(item => {
@@ -399,6 +400,10 @@ ColumnLayout {
             }
         }));
         footers.push({ item: "codex", row: StarterStates.ROWS[0], windows: ["week"] });
+        StarterStates.ROWS.filter(row => (row.only ?? "opencode") === "opencode"
+                                  && (["off", "weekly"].includes(row.state)
+                                      || ["not-installed", "program", "signed-out", "not-responding", "no-model"].includes(row.reason)))
+            .forEach(row => footers.push({ item: "opencode", row: row, windows: ["session"] }));
         return footers;
     }
 
@@ -746,7 +751,8 @@ ColumnLayout {
         }
     }
 
-    // The footer alone, Claude's beside Codex's, in each starter state.
+    // The footer alone, Claude's beside Codex's, in each starter state, then
+    // OpenCode Go's own.
     GridLayout {
         columns: 4
         columnSpacing: 2 * Kirigami.Units.gridUnit
@@ -766,7 +772,7 @@ ColumnLayout {
                                                                             starterFrame.modelData.windows) })
                 }
 
-                label: (item === "claude" ? "Claude" : "Codex") + " · starter " + modelData.row.label
+                label: ({ claude: "Claude", codex: "Codex", opencode: "OpenCode Go" })[item] + " · starter " + modelData.row.label
                        + (modelData.windows.length === 1 && item === "codex" ? " · week only" : "")
 
                 PopupFooter {
