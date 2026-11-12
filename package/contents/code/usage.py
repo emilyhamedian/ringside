@@ -1573,7 +1573,8 @@ def parse_kimi_credits(raw, region):
         return "unavailable", None
     named = [part.get("currency") for part in (wallet.get("monthlyChargeLimit"), wallet.get("monthlyUsed")) if isinstance(part, dict)]
     currency = next((c for c in named if isinstance(c, str) and re.fullmatch(r"[A-Z]{3}", c)), KIMI_CURRENCIES[region])
-    # Whole cents, and a part of one as one, as Kimi Code shows it.
+    # Rounded to whole cents, with any fraction of a cent shown as one cent,
+    # as Kimi Code shows it.
     cents = max(1, round(left / 1_000_000)) if left > 0 else 0
     return "ok", {"amount": cents / 100, "currency": currency, "precision": 2} if cents else None
 
