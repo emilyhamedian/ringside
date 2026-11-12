@@ -28,10 +28,11 @@ follows [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
-- Usage popups show where your pace leads in a tile under the graph, in
-  place of the sentence over the bars: "At this pace 70% by the reset",
-  "Runs out Fri 3:30 AM", or "Fable ran out Sun 3:00 PM" when it's about a
-  model's limit.
+- Usage popups say where your pace leads on one quiet line under the graph,
+  in place of the sentence over the bars: "At this pace · 70% by the reset",
+  "Runs out · Fri 3:30 AM", or "Fable ran out · Sun 3:00 PM" when it's about a
+  model's limit. A run-out's time is said there once, marked with a stretch
+  of the graph's dashed line, rather than under the graph as well.
 - Times in usage popups give their date only when they're six or more days
   away, in a monthly popup as in a weekly one, as the auto start times do.
 - Popups offer an auto start switch for each window your plan has: Claude's

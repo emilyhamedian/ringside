@@ -630,12 +630,11 @@ TestRoot {
         // The run-out's line and time, as drawn: the graph's own, not the
         // last week's.
         function runOutOf(g) {
-            return g.children.find(i => i.level !== undefined && i.label !== undefined);
+            return g.children.find(i => i.level !== undefined && i.at !== undefined);
         }
 
         // The new stretch draws on from the old end and lands on the new
-        // reading; the run-out it brings, its line and its time, waits until
-        // then and fades in.
+        // reading; the run-out it brings waits until then and fades in.
         function test_drawsOnThenTheRunOutFadesIn() {
             const g = make();
             const old = end(g.mainPoints);
@@ -659,9 +658,9 @@ TestRoot {
         }
 
         // A poll that moves the run-out eases the line along the axis to its
-        // new place, slowing as it lands, and the time follows at once.
+        // new place, slowing as it lands.
         function test_runOutEasesToItsNewPlace() {
-            const g = make({ window: window([[start, 0], [start + 2 * day, 50]], 50), runOutText: "Thu 12:00 AM" });
+            const g = make({ window: window([[start, 0], [start + 2 * day, 50]], 50) });
             compare(g.runOutOpacity, 1);
             const from = g.runOutX;
             // Each frame's time and place.
@@ -670,12 +669,10 @@ TestRoot {
             g.window = window([[start, 0], [start + 2 * day, 50], [start + 3 * day, 60]], 60);
             g.pollAt = start + 3 * day;
             g.nowMs = g.pollAt * 1000;
-            g.runOutText = "Fri 12:00 AM";
             const to = Math.round(g.xAt(g.runOutAt));
             verify(to > from + 20, from + " to " + to);
             tryCompare(g, "runOutX", to, 2000);
             compare(g.runOutOpacity, 1, "shown all along");
-            compare(g.shownRunOutText, "Fri 12:00 AM");
             const xs = seen.map(([, x]) => x);
             verify(xs.filter(x => x > from && x < to).length > 2, "eased: " + JSON.stringify(xs));
             verify(xs.every((x, i) => i === 0 || x >= xs[i - 1]), "one way: " + JSON.stringify(xs));
@@ -722,10 +719,9 @@ TestRoot {
             g.projected = "";
             verify(!Number.isFinite(g.runOutAt));
             // Read together: a slow machine can see the fade at any point.
-            tryVerify(() => shown.opacity > 0 && shown.opacity < 1 && g.timeShown, 2000, "fading out, its time with it");
+            tryVerify(() => shown.opacity > 0 && shown.opacity < 1, 2000, "fading out");
             compare(g.runOutX, x, "where it was");
             tryVerify(() => !shown.visible, 4000, "gone");
-            verify(!g.timeShown, "and then its room");
         }
 
         // An amber run-out that goes because the limit is used up fades out
@@ -764,19 +760,19 @@ TestRoot {
         // week's first reading fades in as a dot.
         function test_newWeekFadesTheOldOneOut() {
             const g = make({ window: window([[start, 0], [start + 3 * day, 95]], 95), pollAt: start + 3 * day,
-                             nowMs: (start + 3 * day + 3 * 3600) * 1000, runOutText: "Sat 12:00 AM" });
+                             nowMs: (start + 3 * day + 3 * 3600) * 1000 });
             compare(g.runOutOpacity, 1);
             verify(g.markerShown);
             const old = g.mainPoints.map(p => [p.x, p.y]);
-            const runOut = [g.runOutX, g.shownRunOutText, runOutOf(g).level];
-            compare(runOut[2], 2, "red, as the new week's 1 % isn't");
-            verify(g.runOutX > 0 && g.shownRunOutText !== "");
+            const runOut = [g.runOutX, runOutOf(g).level];
+            compare(runOut[1], 2, "red, as the new week's 1 % isn't");
+            verify(g.runOutX > 0);
             const markerX = g.markerShownX;
             g.window = { resetsAt: start + 2 * week, windowSeconds: week, percent: 1, history: [[start + week + 3600, 1]] };
             g.pollAt = start + week + 3600;
             g.nowMs = g.pollAt * 1000;
             compare(g.ghostMain.map(p => [p.x, p.y]), old);
-            compare([g.ghostRunOutX, g.ghostRunOutText, g.ghostRunOutLevel], runOut);
+            compare([g.ghostRunOutX, g.ghostRunOutLevel], runOut);
             compare(g.ghostMarkerX, markerX);
             compare(g.ghostOpacity, 1);
             compare(g.runOutOpacity, 0, "the new week's own run-out starts out");
@@ -784,10 +780,8 @@ TestRoot {
             const dot = g.children.find(i => i.shown !== undefined && i.color === g.color);
             verify(dot.shown);
             verify(dot.opacity < 1, "the new week's dot fades in");
-            verify(g.timeShown, "last week's time keeps its room while it fades");
             tryCompare(g, "ghostOpacity", 0, 2000);
             tryCompare(dot, "opacity", 1, 1000);
-            verify(!g.timeShown);
         }
 
         // At a new week with the model's run-out shown, the model's window
@@ -796,7 +790,7 @@ TestRoot {
         function test_newWeekKeepsTheSecondRunOutLevel() {
             const at = start + 3 * day;
             const g = make({ window: window([[start, 0], [at, 60]], 60), projected: "second", pollAt: at,
-                             nowMs: (at + 3 * 3600) * 1000, runOutText: "Fri 12:00 AM",
+                             nowMs: (at + 3 * 3600) * 1000,
                              secondWindow: window([[start, 0], [at, 95]], 95) });
             compare(g.runOutOpacity, 1);
             compare(runOutOf(g).level, 2);

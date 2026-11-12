@@ -3299,9 +3299,8 @@ TestRoot {
         }
 
         // The week's tile ends on its legend's baseline with a model limit,
-        // without one on the run-out's time under the graph while it shows,
-        // else on the graph's floor; each sits as far from the tile's bottom
-        // as the caption's capitals from its top.
+        // else on the graph's floor, a run-out or not; each sits as far from
+        // the tile's bottom as the caption's capitals from its top.
         function test_weekTilePadding_data() {
             return [{ tag: "legend", item: "claude", legend: true },
                     { tag: "graph", item: "codex", legend: false },
@@ -3315,13 +3314,11 @@ TestRoot {
             const popup = load(data.item);
             const tile = root.find(popup, i => i.visible && i.graphTop !== undefined);
             const week = root.find(tile, i => i.mainPoints !== undefined);
-            compare(tile.foot !== null, data.legend || data.runOut === true);
+            compare(tile.foot !== null, data.legend);
             if (data.runOut) {
-                verify(week.timeShown);
-                compare(tile.foot, week.runOutTime);
-            } else if (!data.legend) {
-                verify(!week.timeShown);
+                compare(week.runOutOpacity, 1, "with a run-out drawn");
             }
+            compare(week.implicitHeight, week.plotHeight, "no room under the graph for a time");
             const caption = root.find(tile, i => i.label !== undefined && i.detail !== undefined);
             const capTop = caption.mapToItem(tile, Qt.point(0, caption.baselineOffset)).y - tile.capHeight;
             const graph = root.find(tile, i => i.mainPoints !== undefined);
@@ -3369,11 +3366,11 @@ TestRoot {
             verify(!shown.some(t => t.startsWith("- - ")), "two limits and no choice: no inner ring");
         }
 
-        // The one thing worth saying about the pace, in a tile under the
+        // The one thing worth saying about the pace, on a line under the
         // graph whatever it is about: its caption names a model when it is
-        // about one, over a reading in the text colour. Times are rounded as
-        // the tile rounds them.
-        function test_paceTile_data() {
+        // about one, beside a reading in the text colour. Times are rounded
+        // as the line rounds them.
+        function test_paceLine_data() {
             const day = 86400;
             const window = (percent, left, points) => ({ percent: percent, left: left, points: points });
             return [
@@ -3460,7 +3457,7 @@ TestRoot {
             return words.weekdayTime(Math.round(epoch / step) * step, usage.entries.claude.weekly);
         }
 
-        function test_paceTile(data) {
+        function test_paceLine(data) {
             const usage = monitor.usage;
             const changes = {};
             if (data.weekly) {
@@ -3487,7 +3484,50 @@ TestRoot {
             compare(String(reading.color), String(data.ago === undefined ? Kirigami.Theme.textColor : Style.dim(Kirigami.Theme.textColor)));
             const g = graph(popup);
             verify(paceTile(popup).mapToItem(popup, Qt.point(0, 0)).y >= g.mapToItem(popup, Qt.point(0, g.height)).y,
-                   "the tile sits under the graph");
+                   "the line sits under the graph");
+        }
+
+        // The caption at the near end and the reading at the far end, on one
+        // baseline, mirrored for a right-to-left language; the key sits
+        // between them, by the reading.
+        function test_paceLineLayout_data() {
+            return [{ tag: "left to right", mirrored: false }, { tag: "right to left", mirrored: true }];
+        }
+
+        function test_paceLineLayout(data) {
+            const popup = load("claude", data.mirrored);
+            const line = paceTile(popup);
+            verify(line.visible && line.keyed && !line.stacked);
+            const caption = root.find(line, i => i.label !== undefined && i.detail !== undefined);
+            const reading = paceReading(popup);
+            const x = i => i.mapToItem(line, Qt.point(0, 0)).x;
+            const baseline = i => i.mapToItem(line, Qt.point(0, i.baselineOffset)).y;
+            fuzzyCompare(baseline(caption), baseline(reading), 1);
+            const inner = line.width - line.horizontalPadding;
+            if (data.mirrored) {
+                compare(x(reading), line.horizontalPadding, "the reading at the left");
+                fuzzyCompare(x(caption) + caption.width, inner, 1);
+                compare(caption.effectiveHorizontalAlignment, Text.AlignRight);
+            } else {
+                compare(x(reading) + Math.ceil(reading.implicitWidth), inner, "the reading at the right");
+                compare(x(caption), line.horizontalPadding);
+            }
+            const key = root.find(line, i => i.spacing === 2 && i.children.length >= 2);
+            verify(key.visible);
+            verify(data.mirrored ? x(key) > x(reading) + reading.implicitWidth : x(key) + key.width < x(reading), "beside the reading");
+        }
+
+        // Too narrow for both on a line, the reading goes under the caption.
+        function test_paceLineStacks() {
+            const popup = load("claude");
+            const line = paceTile(popup);
+            const reading = paceReading(popup);
+            const caption = root.find(line, i => i.label !== undefined && i.detail !== undefined);
+            const tall = line.implicitHeight;
+            line.Layout.maximumWidth = line.horizontalPadding * 2 + reading.implicitWidth + 4;
+            tryVerify(() => line.stacked, 1000);
+            verify(line.implicitHeight > tall);
+            verify(reading.mapToItem(line, Qt.point(0, 0)).y >= caption.mapToItem(line, Qt.point(0, caption.height)).y, "under it");
         }
 
         // A run-out is said to ten minutes, but never at or after the reset
@@ -4319,7 +4359,7 @@ TestRoot {
             if (!data.drawn) {
                 verify(!Number.isFinite(g.runOutAt));
                 compare(g.runOutOpacity, 0, "no run-out drawn");
-                verify(!g.timeShown);
+                verify(!paceTile(popup).keyed, "so the line keys to none");
                 return;
             }
             compare(g.runOutOpacity, 1, "a run-out drawn");
@@ -4327,9 +4367,12 @@ TestRoot {
             compare(g.runOutX, Math.round(g.xAt(said.runOut)));
             compare(g.shownRunOutLevel, rows(popup)[data.said].level, "in its limit's level");
             const when = popup.runOutWhen(popup.limits[data.said], said);
-            compare(g.runOutTime.text, when);
-            verify(g.runOutTime.visible);
-            verify(paceText(popup).endsWith(" " + when), "the time the tile gives");
+            verify(paceText(popup).endsWith(" " + when), "the time the line gives");
+            // Keyed to the graph's line, in its colour.
+            const line = paceTile(popup);
+            verify(line.keyed);
+            const tone = [Kirigami.Theme.textColor, Kirigami.Theme.neutralTextColor, Kirigami.Theme.negativeTextColor][g.shownRunOutLevel];
+            compare(String(line.keyColor), String(Qt.alpha(tone, 0.6 * tone.a)));
         }
 
         function test_emptyHistory() {
@@ -4812,7 +4855,6 @@ TestRoot {
             return createTemporaryObject(graphComponent, root, {
                 window: { resetsAt: start + week, windowSeconds: week, percent: o.percent ?? NaN, history: history },
                 projected: o.projected ?? "",
-                runOutText: o.runOutText ?? "",
                 pollAt: o.at ?? NaN,
                 nowMs: (o.now ?? o.at ?? start + day) * 1000,
                 failed: o.failed ?? false
@@ -4903,7 +4945,7 @@ TestRoot {
 
         // The run-out as drawn: the graph's own, not the last week's.
         function runOutOf(g) {
-            return g.children.find(i => i.level !== undefined && i.label !== undefined);
+            return g.children.find(i => i.level !== undefined && i.at !== undefined);
         }
 
         function dashes(runOut) {
@@ -4911,16 +4953,16 @@ TestRoot {
         }
 
         // Only for a limit on course to run out before the reset: a dashed
-        // line from the rule to the floor at the moment it runs out, and the
-        // pace tile's time centred under the floor, inside the graph. It
-        // takes its limit's level, as the limit's bar and ring do: the text
-        // colour with the time dim below 75 %, amber from 75 and red from 90.
+        // line from the rule to the floor at the moment it runs out. It takes
+        // its limit's level, as the limit's bar and ring do: the text colour
+        // below 75 %, amber from 75 and red from 90. The pace line gives its
+        // time, so the graph keeps no room for one.
         function test_runOutOnlyWhenOut_data() {
             return [
                 { tag: "out", percent: 60, at: start + 3 * day, runOut: start + 5 * day, level: 0 },
                 { tag: "outAmber", percent: 80, at: start + 3 * day, runOut: start + 3 * day * 100 / 80, level: 1 },
                 { tag: "outRed", percent: 95, at: start + 3 * day, runOut: start + 3 * day * 100 / 95, level: 2 },
-                { tag: "nearTheReset", percent: 97, at: start + 6.75 * day, runOut: start + 6.75 * day * 100 / 97, level: 2, atTheEnd: true },
+                { tag: "nearTheReset", percent: 97, at: start + 6.75 * day, runOut: start + 6.75 * day * 100 / 97, level: 2 },
                 { tag: "lasts", percent: 30, at: start + 3 * day },
                 { tag: "reached", percent: 100, at: start + 3 * day },
                 { tag: "tooEarlyToTell", percent: 5, at: start + 3 * 3600 },
@@ -4929,16 +4971,14 @@ TestRoot {
         }
 
         function test_runOutOnlyWhenOut(data) {
-            const g = make([[start, 0], [data.at, data.percent]], Object.assign({ projected: "main", runOutText: "Fri 7:20 AM" }, data));
+            const g = make([[start, 0], [data.at, data.percent]], Object.assign({ projected: "main" }, data));
             const r = runOutOf(g);
             verify(r);
             if (data.runOut === undefined) {
                 verify(!Number.isFinite(g.runOutAt));
                 compare(g.runOutOpacity, 0);
                 verify(!r.visible);
-                verify(!g.timeShown);
-                compare(g.foot, null);
-                compare(g.implicitHeight, g.plotHeight, "no room kept for a time");
+                compare(g.implicitHeight, g.plotHeight);
                 return;
             }
             verify(r.visible);
@@ -4955,18 +4995,7 @@ TestRoot {
             const colour = [Kirigami.Theme.textColor, Kirigami.Theme.neutralTextColor, Kirigami.Theme.negativeTextColor][data.level];
             compare(g.shownRunOutLevel, data.level);
             d.forEach(i => compare(String(i.color), String(Qt.alpha(colour, 0.6 * colour.a))));
-            const time = r.label;
-            verify(time.visible);
-            compare(time.text, "Fri 7:20 AM");
-            compare(String(time.color), String(data.level === 0 ? Style.dim(Kirigami.Theme.textColor) : colour));
-            verify(time.y >= g.floorY + 1, "under the floor");
-            if (data.atTheEnd) {
-                compare(time.x + time.implicitWidth, g.width, "kept inside the graph");
-            } else {
-                fuzzyCompare(time.x + time.implicitWidth / 2, x + 0.5, 0.5);
-            }
-            compare(g.foot, time);
-            compare(g.implicitHeight, time.y + time.implicitHeight);
+            compare(g.implicitHeight, g.plotHeight, "no room under the graph for a time");
         }
 
         // With both limits on course to run out, only the named one's run-out

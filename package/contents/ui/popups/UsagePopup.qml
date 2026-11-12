@@ -16,7 +16,7 @@ import ".."
 // and the time until it resets. Below it are a bar for each model's own
 // limit and for each shorter limit the plan has (the five-hour limit, and a
 // weekly limit beside a monthly one), then a graph of the window so far,
-// and under the graph a tile on where the current pace leads.
+// and under the graph a line on where the current pace leads.
 // A failed check is said under the header, with the last reading kept in
 // grey for as long as the panel keeps it; once the panel's ring is struck,
 // so is the header's, and the status under it is all the popup shows. A
@@ -101,7 +101,7 @@ PopupPage {
     property real nowMs: Date.now()
     onEntryChanged: nowMs = Date.now()
 
-    // When a limit on pace to run out does, as the pace tile and the
+    // When a limit on pace to run out does, as the pace line and the
     // graph give it: to ten minutes on the clock it is shown in, which in a
     // zone such as Nepal's is not the UTC grid, since a projection to the
     // minute claims more than it knows. Rounded up, it could land on the
@@ -115,7 +115,7 @@ PopupPage {
         return words.weekdayTime(nearest <= limit.resetsAt - 60 ? nearest : down, popup.weekly, popup.nowMs);
     }
 
-    // The pace tile's caption and reading. The tile is the popup's, so it
+    // The pace line's caption and reading. The line is the popup's, so it
     // speaks of the header's limit unless its caption names a model.
     function paceTileWords(limit, p) {
         const model = limit.id !== "" ? limit.label : "";
@@ -383,7 +383,7 @@ PopupPage {
             // The rule's, so only while the graph draws one.
             graphTop: week.placed ? words.percent(100) : ""
             graphReading: week.reading
-            foot: popup.innerLimit !== null ? allModels : week.foot
+            foot: popup.innerLimit !== null ? allModels : null
             detail: {
                 const date = words.resetDate(popup.weekly);
                 return date ? i18nc("@title:group after THIS WEEK or THIS MONTH: when it starts over, e.g. · resets Sun 7:00 AM EDT",
@@ -410,16 +410,12 @@ PopupPage {
                 pollAt: popup.pollAt
                 failed: popup.greyShown
                 grey: popup.greyShown
-                // The run-out the pace tile names, if the graph draws that
+                // The run-out the pace line names, if the graph draws that
                 // limit: the week, or the model on the inner ring.
                 projected: {
                     const e = popup.paceEvent;
                     return !e ? "" : e.index === 0 ? "main"
                          : popup.innerLimit !== null && popup.limits[e.index].id === popup.innerLimit.id ? "second" : "";
-                }
-                runOutText: {
-                    const e = popup.paceEvent;
-                    return e && e.p.state === "out" ? popup.runOutWhen(popup.limits[e.index], e.p) : "";
                 }
             }
 
@@ -443,13 +439,20 @@ PopupPage {
             }
         }
 
-        // Where the current pace leads, as the CPU popup's tiles give a
-        // reading: the share used by the reset, or when a limit runs out.
-        Tile {
+        // Where the current pace leads, on one quiet line under the graph: the
+        // share used by the reset, or when a limit runs out. A run-out the
+        // graph draws is keyed to its line, which carries no time of its own.
+        LineTile {
             objectName: "pace"
             visible: popup.paceWords !== null
             caption: popup.paceWords?.caption ?? ""
-            foot: paceReading
+            reading: paceReading
+            readingCap: Style.capHeight(bodyMetrics, bodyCap)
+            keyed: popup.paceEvent?.p.state === "out" && week.projected !== ""
+            keyColor: {
+                const tone = popup.tone(popup.paceEvent ? Format.level(popup.limits[popup.paceEvent.index].percent) : 0);
+                return Qt.alpha(tone, 0.6 * tone.a);
+            }
 
             // Greyed with a kept reading, as the bars are.
             Reading {
@@ -457,7 +460,17 @@ PopupPage {
                 value: popup.paceWords?.value ?? ""
                 unit: popup.paceWords?.unit ?? ""
                 color: popup.greyShown ? Style.dim(Kirigami.Theme.textColor) : Kirigami.Theme.textColor
-                pointSize: Style.tilePointSize(Kirigami.Theme.defaultFont.pointSize)
+            }
+
+            FontMetrics {
+                id: bodyMetrics
+                font: Kirigami.Theme.defaultFont
+            }
+
+            TextMetrics {
+                id: bodyCap
+                font: Kirigami.Theme.defaultFont
+                text: "H"
             }
         }
     }
