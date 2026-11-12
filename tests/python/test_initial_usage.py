@@ -51,10 +51,12 @@ class InitialUsage(Isolated):
         result = usage.collect({"claude": lambda: fetch("claude", 2),
                                 "codex": lambda: fetch("codex", 1)}, initial=usage.PROVIDERS)
         self.assertEqual(calls, [("claude", 0), ("codex", 0), ("claude", 5), ("codex", 5), ("claude", 10)])
-        self.assertEqual({name: entry["fetchedAt"] for name, entry in result.items()}, {"claude": 1010, "codex": 1005})
+        # Both readings count from when the run began, however many rounds
+        # they took, so the next run five minutes on checks both again.
+        self.assertEqual({name: entry["fetchedAt"] for name, entry in result.items()}, {"claude": 1000, "codex": 1000})
         history = json.loads(usage.HISTORY_FILE.read_text())
-        self.assertEqual(history["claude"]["weekly"], [[1010, 12]])
-        self.assertEqual(history["codex"]["weekly"], [[1005, 12]])
+        self.assertEqual(history["claude"]["weekly"], [[1000, 12]])
+        self.assertEqual(history["codex"]["weekly"], [[1000, 12]])
 
     def test_deadline_is_shared_and_a_retry_does_not_start_at_its_end(self):
         calls = []
@@ -72,7 +74,7 @@ class InitialUsage(Isolated):
         result = usage.collect({"claude": claude, "codex": codex}, initial=usage.PROVIDERS)
         self.assertEqual(calls, [("claude", 0), ("codex", 20), ("claude", 25), ("codex", 25)])
         self.assertEqual(self.clock.elapsed, 30)
-        self.assertEqual([entry["retryAt"] for entry in result.values()], [1330, 1330])
+        self.assertEqual([entry["retryAt"] for entry in result.values()], [1300, 1300])
 
     def test_every_provider_gets_its_first_attempt_even_after_the_deadline(self):
         def slow():
@@ -82,8 +84,8 @@ class InitialUsage(Isolated):
         peer = mock.Mock(return_value=reading(8, 2000000))
         result = usage.collect({"claude": slow, "codex": peer}, initial=usage.PROVIDERS)
         peer.assert_called_once()
-        self.assertEqual(result["codex"]["fetchedAt"], 1035)
-        self.assertEqual(result["claude"]["retryAt"], 1335)
+        self.assertEqual(result["codex"]["fetchedAt"], 1000)
+        self.assertEqual(result["claude"]["retryAt"], 1300)
         self.assertEqual(self.clock.sleeps, [])
 
     def test_a_retry_started_before_the_deadline_can_complete_after_it(self):
@@ -98,9 +100,9 @@ class InitialUsage(Isolated):
 
         result = usage.collect({"claude": fetch}, initial=["claude"])
         self.assertEqual(starts, [0, 25])
-        self.assertEqual((result["claude"]["status"], result["claude"]["fetchedAt"]), ("ok", 1045))
+        self.assertEqual((result["claude"]["status"], result["claude"]["fetchedAt"]), ("ok", 1000))
 
-    def test_exhaustion_holds_for_five_minutes_from_finalization_and_reload_reuses_it(self):
+    def test_exhaustion_holds_for_five_minutes_from_the_runs_start_and_reload_reuses_it(self):
         starts = []
 
         def fetch():
@@ -109,9 +111,9 @@ class InitialUsage(Isolated):
 
         first = usage.collect({"claude": fetch}, initial=["claude"])
         self.assertEqual(starts, [0, 5, 10, 15, 20, 25])
-        self.assertEqual(first["claude"]["retryAt"], 1330)
+        self.assertEqual(first["claude"]["retryAt"], 1300)
         again = mock.Mock(return_value=reading(3, 2000000))
-        self.clock.advance(299)
+        self.clock.advance(299 - self.clock.elapsed)
         self.assertEqual(usage.collect({"claude": again}, initial=["claude"])["claude"], first["claude"])
         again.assert_not_called()
         self.clock.advance(1)
@@ -120,11 +122,12 @@ class InitialUsage(Isolated):
         for data in (first, json.loads(usage.CACHE_FILE.read_text())):
             self.assertNotIn("_retryable", json.dumps(data))
 
-    def test_terminal_peer_hold_begins_when_all_startup_attempts_finish(self):
+    def test_a_terminal_peer_is_held_from_the_runs_start_like_the_rest(self):
         result = usage.collect({"claude": mock.Mock(side_effect=RuntimeError("unreadable reply")),
                                 "codex": mock.Mock(side_effect=self.transient())}, initial=usage.PROVIDERS)
-        self.assertEqual(result["claude"]["retryAt"], 1330)
-        self.assertEqual(json.loads(usage.CACHE_FILE.read_text())["claude"]["heldUntil"], 1330)
+        self.assertEqual(self.clock.elapsed, 30)
+        self.assertEqual([result[name]["retryAt"] for name in ("claude", "codex")], [1300, 1300])
+        self.assertEqual(json.loads(usage.CACHE_FILE.read_text())["claude"]["heldUntil"], 1300)
 
     def test_ordinary_and_unmarked_provider_checks_do_not_retry(self):
         for initial in ([], ["codex"]):
@@ -174,7 +177,7 @@ class InitialUsage(Isolated):
         with mock.patch.object(usage, "locked", delayed_lock):
             result = usage.collect({"claude": fetch}, initial=["claude"])
         self.assertEqual(fetch.call_count, 2)
-        self.assertEqual(result["claude"]["fetchedAt"], 1085)
+        self.assertEqual(result["claude"]["fetchedAt"], 1080, "the run began once it had the lock")
 
     def test_main_retries_only_the_requested_initial_provider_and_reloads_cache(self):
         claude = mock.Mock(side_effect=[self.transient(), reading(3, 2000000)])

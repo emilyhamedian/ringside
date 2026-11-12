@@ -957,6 +957,29 @@ class ReadingCache(Isolated):
                 self.assertEqual(self.collect(1000 + 300, **{name: again})[name]["status"], "ok")
                 again.assert_called_once()
 
+    # A run checks its providers one after another, so the later ones answer
+    # seconds after it began. Their readings and failures still count from
+    # the run's start, so the widget's next run, five minutes on, checks each
+    # one again. A rate limit is still waited out from when the run ended.
+    def test_every_provider_is_due_at_the_next_run(self):
+        elapsed = [0]
+        self.enterContext(mock.patch.object(usage.time, "monotonic", lambda: elapsed[0]))
+
+        def answers(result):
+            def fetch():
+                elapsed[0] += 8
+                if isinstance(result, BaseException):
+                    raise result
+                return result
+            return fetch
+
+        self.collect(1000, claude=answers(reading(1, 5)), codex=answers(usage.CheckFailed("HTTP 500", "server")),
+                     kimi=answers(usage.RateLimited(60)))
+        later = {name: mock.Mock(return_value=reading(2, 5)) for name in ("claude", "codex", "kimi")}
+        self.collect(1300, **later)
+        self.assertEqual({name: fetch.call_count for name, fetch in later.items()}, {"claude": 1, "codex": 1, "kimi": 0})
+        self.assertEqual(self.cached()["kimi"]["heldUntil"], 1000 + 24 + 300)
+
     # Two widgets, or a widget and a restart, a moment apart.
     def test_runs_in_quick_succession_after_a_failure_poll_once(self):
         failed = {"status": "error", "message": "HTTP 500 from api.anthropic.com", "reason": "other", "host": ""}

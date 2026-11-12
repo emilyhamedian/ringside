@@ -56,6 +56,9 @@ follows [Semantic Versioning](https://semver.org/).
 - After a lost connection, a Claude or Codex popup now offers *Try again* as
   soon as the other provider or the public address shows the internet is back.
 - Hovering one GPU's graph no longer marks the other GPU's graphs.
+- Every usage item is now checked as often as you set. Before, usually only
+  the first was; the others, and a failed check's retry, often waited a
+  whole interval longer, as did the Claude credit balance.
 
 ### Removed
 
