@@ -2796,7 +2796,8 @@ TestRoot {
             return root.find(header(popup), i => i.text === "until reset");
         }
 
-        // Each limit's bar, in order; the header's limit shows none.
+        // Each limit's row, in order. The ring's own limit has a row, but its
+        // bar is hidden.
         function rows(popup) {
             const found = [];
             const collect = i => {
@@ -2819,8 +2820,8 @@ TestRoot {
             return root.find(paceTile(popup), i => i.unit !== undefined && i.value !== undefined);
         }
 
-        // What the pace line says, its caption then its reading, or nothing
-        // while it is hidden.
+        // The pace line's text: its caption followed by its reading, or "" while
+        // the line is hidden.
         function paceText(popup) {
             const tile = paceTile(popup);
             const reading = paceReading(popup);
@@ -4370,7 +4371,7 @@ TestRoot {
             compare(g.shownRunOutLevel, rows(popup)[data.said].level, "in its limit's level");
             const when = popup.runOutWhen(popup.limits[data.said], said);
             verify(paceText(popup).endsWith(" " + when), "the time the line gives");
-            // Keyed to the graph's line, in its colour.
+            // The line's dashes are drawn in the colour of the graph's dashed line.
             const line = paceTile(popup);
             verify(line.keyed);
             const tone = [Kirigami.Theme.textColor, Kirigami.Theme.neutralTextColor, Kirigami.Theme.negativeTextColor][g.shownRunOutLevel];
@@ -4454,7 +4455,7 @@ TestRoot {
             const spelled = date => locale.dayName(date.getDay(), Locale.ShortFormat) + " " + words.shortTime(date);
             // 7:30 UTC on Friday 25 September 2026, two days before the reset.
             const friday = Date.UTC(2026, 8, 25, 7, 30) / 1000;
-            // Read the day before, so the weekday stands alone.
+            // Read as of the day before, so the time shows its weekday only.
             const now = (friday - 86400) * 1000;
             const systemOffset = -new Date(sunday * 1000).getTimezoneOffset() * 60;
 

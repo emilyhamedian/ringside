@@ -633,8 +633,9 @@ TestRoot {
             return g.children.find(i => i.level !== undefined && i.at !== undefined);
         }
 
-        // The new stretch draws on from the old end and lands on the new
-        // reading; the run-out it brings waits until then and fades in.
+        // A new reading draws the next stretch of line from the old end to the
+        // new reading. A run-out that the reading brings waits until the line
+        // has finished drawing, then fades in.
         function test_drawsOnThenTheRunOutFadesIn() {
             const g = make();
             const old = end(g.mainPoints);
@@ -657,8 +658,8 @@ TestRoot {
             compare(g.runOutX, Math.round(g.xAt(g.runOutAt)));
         }
 
-        // A poll that moves the run-out eases the line along the axis to its
-        // new place, slowing as it lands.
+        // When a new reading moves the run-out, its dashed line slides along
+        // the time axis to the new place, slowing down as it arrives.
         function test_runOutEasesToItsNewPlace() {
             const g = make({ window: window([[start, 0], [start + 2 * day, 50]], 50) });
             compare(g.runOutOpacity, 1);
