@@ -2832,13 +2832,14 @@ TestRoot {
             monitor.usage.entries = Object.assign({}, entries, { claude: Object.assign({}, entries.claude, changes) });
         }
 
-        // Under the models' bars, one for each limit shorter than the
-        // header's: five hours anywhere, and a week beside a month. Five
-        // hours not running read 0% and give no reset: Claude's when none
-        // runs, Codex's or Go's when idle, which give a reset one window
-        // from the reading, and any that ended since.
+        // Under the models' bars there is a bar for each limit shorter than
+        // the ring's: the five-hour limit, and a weekly limit beside a monthly
+        // one. A five-hour window that isn't running shows 0% and no reset
+        // time. That covers Claude with no session, Codex or Go when idle
+        // (they report a reset one window after the reading), and a window
+        // that ended after the reading.
         function test_shorterLimits_data() {
-            // Windows from FakeUsage `u`, ending `left` seconds after it was made.
+            // A window from FakeUsage `u` that resets `left` seconds after it was made.
             const at = (percent, left, seconds) => u => ({ percent: percent, resetsAt: u.createdAt + left, windowSeconds: seconds });
             const month = u => Object.assign(u.window(55, 13 * u.day, []), { windowSeconds: 31 * u.day });
             const hours = 5 * 3600;
@@ -3341,8 +3342,8 @@ TestRoot {
                    "amber below 90 %, red from it, as drawn: " + JSON.stringify(seen));
         }
 
-        // Every model's limit gets a bar, whichever the ring shows; the
-        // shared limit's is the header's ring.
+        // Every model's limit gets a bar, whichever limit the ring shows. The
+        // shared limit has no bar, because the ring shows it.
         function test_severalLimits() {
             const usage = monitor.usage;
             setClaude({ scoped: [Object.assign({ id: "Fable", label: "Fable" }, usage.window(78, 2 * usage.day + 21 * 3600, [])),
@@ -3477,7 +3478,7 @@ TestRoot {
             compare(text.text, expected);
             compare(String(text.color), String(data.ago === undefined ? Kirigami.Theme.textColor : Style.dim(Kirigami.Theme.textColor)));
             compare(text.textFormat, Text.PlainText);
-            // The header's limit has no bar, so its sentence comes first.
+            // The ring's limit has no bar, so its sentence comes first.
             if (data.row === 0) {
                 verify(!bars(all[0]).visible);
                 if (all.length > 1) {

@@ -11,12 +11,13 @@ import "../code/providers.js" as Providers
 import "../code/style.js" as Style
 import ".."
 
-// Claude's or Codex's weekly limits, or a monthly one: the all-models
-// window in the header with the time left until it resets, its ring its
-// bar; a bar for each model's own limit, and one for each shorter limit the
-// plan has, its five hours and a week beside a month; a sentence on where
-// the current pace leads, under the header or under the model's bar it is
-// about; and the window so far as a graph.
+// The popup for a Claude, Codex, Kimi or OpenCode Go item. The header shows
+// the limit the ring tracks, a week or (for Kimi and OpenCode Go) a month,
+// and the time until it resets. Below it are a bar for each model's own
+// limit and for each shorter limit the plan has (the five-hour limit, and a
+// weekly limit beside a monthly one), a sentence on where the current pace
+// leads, and a graph of the window so far. The pace sentence goes under the
+// bar of the limit it describes, or first when it describes the ring's.
 // A failed check is said under the header, with the last reading kept in
 // grey for as long as the panel keeps it; once the panel's ring is struck,
 // so is the header's, and the status under it is all the popup shows. A
@@ -48,11 +49,12 @@ PopupPage {
         ? [Object.assign({}, weekly, { id: "", label: i18nc("@label the weekly limit shared by every model", "All models") })]
             .concat(Array.from(entry.scoped ?? []))
         : []
-    // The plan's limits shorter than the header's, as bars: its five hours,
-    // and OpenCode Go's week or that of a Kimi plan sold before Plus. One
-    // that ended since the reading reads 0%. Idle five hours read 0% and say
-    // nothing of a reset, which an idle account may give as one window from
-    // when it was asked (see usage.py's session_running()).
+    // The plan's limits that are shorter than the ring's, shown as bars: the
+    // five-hour limit, and the weekly limit beside OpenCode Go's or an older
+    // Kimi plan's monthly one. A window whose reset has passed since the
+    // reading shows 0%. An idle five-hour window shows 0% and no reset time,
+    // because an idle account can report a reset one window after the
+    // request (see session_running() in usage.py).
     readonly property var shorter: {
         if (limits.length === 0) {
             return [];
@@ -66,8 +68,8 @@ PopupPage {
             rows.push({ id: "", label: label, percent: percent,
                         resetsAt: Format.usable(reset) && !ended && !rolling ? reset : NaN });
         };
-        // null while Claude has no session running; missing for a plan
-        // without the limit, or a reply that garbled it.
+        // Claude reports null when no session is running. The key is missing
+        // when the plan has no five-hour limit, or the reply couldn't be read.
         if (entry.session !== undefined) {
             add(entry.session, i18nc("@label a limit on the usage in any five hours", "5-hour limit"));
         }
@@ -265,8 +267,8 @@ PopupPage {
         nowMs: popup.nowMs
     }
 
-    // A bar per limit but the header's, with the pace sentence under the bar
-    // it is about; for the header's, the sentence alone, first.
+    // A bar for every limit except the ring's own. The pace sentence goes
+    // under the bar it describes, or first when it describes the ring's.
     ColumnLayout {
         id: barsColumn
         visible: popup.weekly !== null && (popup.limits.length + popup.shorter.length > 1 || popup.paceText !== "")
@@ -286,15 +288,15 @@ PopupPage {
                 id: row
 
                 required property int index
-                // One of the shorter limits, which always has its bar.
+                // Whether this row is one of the shorter limits.
                 readonly property bool short: index >= popup.limits.length
-                // Every limit but the header's has a bar.
+                // Every row has a bar except the ring's own limit.
                 readonly property bool barred: index > 0
                 readonly property var limit: (short ? popup.shorter[index - popup.limits.length] : popup.limits[index])
                     ?? ({ id: "", label: "", percent: NaN, resetsAt: NaN })
                 readonly property real reading: Math.max(0, Math.min(100, limit.percent))
-                // A model's limit that resets apart from the week says when,
-                // and so does a shorter limit while it runs.
+                // When the limit resets: for a shorter limit while it runs,
+                // and for a model's limit that resets apart from the week.
                 readonly property string resets: short
                     ? (Format.usable(limit.resetsAt) ? words.countdown(limit.resetsAt, popup.nowMs) : "")
                     : limit.id !== "" && popup.weekly && Math.abs(limit.resetsAt - popup.weekly.resetsAt) >= 60
@@ -302,8 +304,8 @@ PopupPage {
                 // The level of the bar as drawn, as RingGauge.drawnLevel has it.
                 readonly property int level: Format.level(Number.isFinite(reading) ? bar.shown + reading - Math.round(reading) : NaN)
 
-                // The bar and its percentage follow the reading as a ring
-                // does, and at once for the header's limit, which has none.
+                // The bar and its percentage move to a new reading as a ring
+                // does. The ring's own row has no bar, so it jumps at once.
                 Follower {
                     id: bar
                     target: Number.isFinite(row.reading) ? Math.round(row.reading) : 0

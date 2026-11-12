@@ -1455,8 +1455,9 @@ class Kimi(Isolated):
             with self.subTest(usages), self.assertRaises(RuntimeError):
                 usage.parse_kimi({"usages": usages})
 
-    # The five hours, and the week of a plan sold before Plus, are read when
-    # the reply has them, and left out when it doesn't or garbles them.
+    # The five-hour limit, and the weekly limit on plans sold before Kimi
+    # Plus, are read when the reply has them. A missing or garbled one is
+    # left out.
     def test_the_five_hours_and_an_older_plans_week_are_read_beside_the_month(self):
         older = dict(self.REPLY, usages=dict(self.REPLY["usages"],
                                              limit_7d={"used_ratio": "0.43", "reset_time": "2026-11-13T09:00:00Z"}))

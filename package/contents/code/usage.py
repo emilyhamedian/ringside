@@ -87,9 +87,9 @@ reset and so no longer started a window's length before it.
 Each entry whose plan has a five-hour limit also carries "session", that
 window, or null when no session is running; a plan without one, as Claude
 Ultra, leaves it out. "sessionUnknown": true stands in for it when the plan
-has the limit but the reply can't be read. OpenCode Go's entry, and Kimi's
-on a plan with one, also carries "week", its weekly limit, beside the month
-in "weekly".
+has the limit but the reply can't be read. OpenCode Go's entry also carries
+"week", its weekly limit, beside the monthly limit in "weekly". Kimi's
+entry carries "week" too on plans that have a weekly limit.
 
 --program <provider>=<path> names the program to run for Claude, Codex or
 OpenCode, as the user chose it in Ringside's settings; ~ stands for the home
@@ -1249,9 +1249,9 @@ def month_before(at):
 
 
 def kimi_limit(usages, key):
-    """One of a /coding/v1/usages body's limits, as (percent, reset), or
-    None when it is missing or can't be read. The share used, 0 to 1, may
-    come as a number or as a numeric string."""
+    """Return one limit from a /coding/v1/usages reply as (percent, reset),
+    or None if the limit is missing or can't be read. Kimi gives the share
+    used as a number from 0 to 1, sometimes written as a string."""
     limit = usages.get(key) if isinstance(usages, dict) else None
     ratio = limit.get("used_ratio") if isinstance(limit, dict) else None
     if isinstance(ratio, str):
@@ -1262,13 +1262,17 @@ def kimi_limit(usages, key):
 
 
 def parse_kimi(body):
-    """Reduce a /coding/v1/usages body to its windows: the month, the total
-    every Kimi feature draws on, which Kimi Code stops at once it is used
-    up, as "weekly"; Kimi Code's five hours as "session", and on the plans
-    sold before Plus its week as "week", each only shown. The reply says
-    when the month resets, not how long it is, so it started a calendar
-    month before. The five hours follow one another on a fixed clock, so
-    Kimi always gives when they reset."""
+    """Read a /coding/v1/usages reply.
+
+    The monthly limit becomes "weekly", the limit the ring shows. Every Kimi
+    feature draws on it, and Kimi Code stops once it is used up. The
+    five-hour limit becomes "session", and on plans sold before Kimi Plus
+    the weekly limit becomes "week"; Ringside only displays these two.
+
+    The reply says when the month resets but not how long it is, so the
+    month is taken to start one calendar month before its reset. Kimi's
+    five-hour windows run on a fixed clock, so the reply always says when
+    the current one resets."""
     usages = body.get("usages") if isinstance(body, dict) else None
     month = kimi_limit(usages, "limit_month_total")
     # As for Claude: a missing share read as 0% could pass for an idle month.

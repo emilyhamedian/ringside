@@ -488,8 +488,8 @@ ColumnLayout {
     }
 
     // Kimi's month: 92 % used with 15 days left (red, on pace to run out),
-    // with 34 % of its five hours; and 38 % with 12 days left (lasts to the
-    // reset), on an older plan with a week beside it; then its only
+    // with 34 % of its five-hour limit used; and 38 % with 12 days left
+    // (lasts to the reset) on an older plan with a weekly limit; then its only
     // credential a Kimi Code sign-in that Kimi Code hasn't renewed.
     FakeMonitor {
         id: kimiMonitor
@@ -561,12 +561,12 @@ ColumnLayout {
         spacing: 2 * Kirigami.Units.gridUnit
 
         GalleryFrame {
-            label: "Kimi · 92 % of its month, on pace to run out · five hours 34 %"
+            label: "Kimi · 92 % of its month, on pace to run out · 5-hour limit 34 %"
             UsagePopup { monitor: kimiMonitor; item: "kimi" }
         }
 
         GalleryFrame {
-            label: "Kimi · 38 %, lasts to the reset · an older plan: five hours 3 %, week 41 %"
+            label: "Kimi · 38 %, lasts to the reset · older plan: 5-hour limit 3 %, weekly limit 41 %"
             UsagePopup { monitor: kimiCalm; item: "kimi" }
         }
 
@@ -576,9 +576,9 @@ ColumnLayout {
         }
     }
 
-    // OpenCode Go's month: 55 % used with 13 days left, beside Kimi, with
-    // its five hours idle and 30 % of its week; then an OpenCode account
-    // without Go, whose first check failed.
+    // OpenCode Go's month: 55 % used with 13 days left, beside Kimi, with the
+    // five-hour window idle and 30 % of the week used; then an OpenCode
+    // account without Go, whose first check failed.
     FakeMonitor {
         id: goMonitor
         usage: FakeUsage {
@@ -628,7 +628,7 @@ ColumnLayout {
         spacing: 2 * Kirigami.Units.gridUnit
 
         GalleryFrame {
-            label: "OpenCode Go · 55 % of its month · five hours idle, week 30 %"
+            label: "OpenCode Go · 55 % of its month · 5-hour window idle, weekly limit 30 %"
             UsagePopup { monitor: goMonitor; item: "opencode" }
         }
 
@@ -647,7 +647,7 @@ ColumnLayout {
         }
 
         GalleryFrame {
-            label: "Claude · as beside, with 64 % of a session that ends in 1h 25m"
+            label: "Claude · as beside, with 64 % of a five-hour session that ends in 1h 25m"
             UsagePopup {
                 item: "claude"
                 monitor: FakeMonitor {
