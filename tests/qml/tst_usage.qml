@@ -2902,7 +2902,7 @@ TestRoot {
             verify(shown.includes("Kimi") && shown.includes("Monthly limit"), JSON.stringify(shown));
             verify(!shown.includes("Weekly limit"), JSON.stringify(shown));
             verify(root.find(popup, i => i.caption === "This month") !== null, "the graph's tile names the month");
-            // A run-out a day away gives its weekday alone, as a week's does.
+            // A run-out a day away shows its weekday only, as in a weekly popup.
             const said = paceText(popup);
             verify(said.startsWith("Runs out "), said);
             verify(!/[0-9]+\/[0-9]+\//.test(said), said);
@@ -3298,9 +3298,10 @@ TestRoot {
             verify(!root.find(tile, i => i.visible && i.text === root.localized("100%")), "no 100% on the caption line");
         }
 
-        // The week's tile ends on its legend's baseline with a model limit,
-        // else on the graph's floor, a run-out or not; each sits as far from
-        // the tile's bottom as the caption's capitals from its top.
+        // With a model limit, the week's tile ends on its legend's baseline;
+        // otherwise it ends on the graph's floor, with or without a run-out.
+        // Either way it sits as far from the tile's bottom as the caption's
+        // capitals sit from its top.
         function test_weekTilePadding_data() {
             return [{ tag: "legend", item: "claude", legend: true },
                     { tag: "graph", item: "codex", legend: false },
@@ -3366,10 +3367,10 @@ TestRoot {
             verify(!shown.some(t => t.startsWith("- - ")), "two limits and no choice: no inner ring");
         }
 
-        // The one thing worth saying about the pace, on a line under the
-        // graph whatever it is about: its caption names a model when it is
-        // about one, beside a reading in the text colour. Times are rounded
-        // as the line rounds them.
+        // The pace line says the one thing worth saying about the pace, and
+        // always sits under the graph. Its caption names a model when the line
+        // is about one, and its reading is in the text colour. Times are
+        // rounded the way the line rounds them.
         function test_paceLine_data() {
             const day = 86400;
             const window = (percent, left, points) => ({ percent: percent, left: left, points: points });
@@ -3487,9 +3488,9 @@ TestRoot {
                    "the line sits under the graph");
         }
 
-        // The caption at the near end and the reading at the far end, on one
-        // baseline, mirrored for a right-to-left language; the key sits
-        // between them, by the reading.
+        // The caption sits at the start of the row and the reading at the
+        // end, on one baseline, mirrored in a right-to-left language. The
+        // dashes sit between them, next to the reading.
         function test_paceLineLayout_data() {
             return [{ tag: "left to right", mirrored: false }, { tag: "right to left", mirrored: true }];
         }
@@ -3517,7 +3518,8 @@ TestRoot {
             verify(data.mirrored ? x(key) > x(reading) + reading.implicitWidth : x(key) + key.width < x(reading), "beside the reading");
         }
 
-        // Too narrow for both on a line, the reading goes under the caption.
+        // When the row is too narrow for both, the reading moves under the
+        // caption.
         function test_paceLineStacks() {
             const popup = load("claude");
             const line = paceTile(popup);
@@ -4333,10 +4335,10 @@ TestRoot {
             compare(popup.pollAt, usage.entries.claude.weekly.history[usage.entries.claude.weekly.history.length - 1][0]);
         }
 
-        // The graph draws the run-out the pace line names and no other.
-        // With the week and Fable both on course to run out, it is the
-        // sooner one the tile gives; when that is a model limit the
-        // graph has no line for, it draws none. Each week began four days
+        // The graph draws only the run-out the pace line names. With the week
+        // and Fable both on course to run out, the line gives the sooner one;
+        // when that's a model limit the graph has no line for, the graph
+        // draws no run-out. Each week began four days
         // and three hours ago.
         function test_graphDrawsTheRunOutSaid_data() {
             return [{ tag: "modelSooner", weekly: 62, scoped: [["Fable", 78]], said: 1, drawn: true },
@@ -4500,10 +4502,11 @@ TestRoot {
             compare(words.resetDate({ resetsAt: null }), "");
         }
 
-        // A month's reset carries its date: a weekday alone could be any of
-        // four or five in it. So does any time six or more days from now, in
-        // a month or a week, where the weekday could be today's; one nearer
-        // says its weekday alone, as the starter's times do.
+        // A month's reset shows its date, because a weekday alone could be
+        // any of four or five days in the month. Any time six or more days
+        // from now also shows its date, in a monthly or weekly popup, because
+        // its weekday could be read as this week's. A nearer time shows its
+        // weekday only, as the auto start times do.
         function test_aMonthsTimesCarryTheirDate() {
             const month = { resetsAt: sunday, windowSeconds: 30 * 86400 };
             const date = new Date(sunday * 1000);
@@ -4952,11 +4955,11 @@ TestRoot {
             return runOut.children.filter(i => i.radius !== undefined).sort((a, b) => a.y - b.y);
         }
 
-        // Only for a limit on course to run out before the reset: a dashed
-        // line from the rule to the floor at the moment it runs out. It takes
-        // its limit's level, as the limit's bar and ring do: the text colour
-        // below 75 %, amber from 75 and red from 90. The pace line gives its
-        // time, so the graph keeps no room for one.
+        // A limit on course to run out before the reset gets a dashed line
+        // from the rule to the floor at the moment it runs out, and no other
+        // limit does. The line takes its limit's level, as the limit's bar and
+        // ring do: the text colour below 75 %, amber from 75 and red from 90.
+        // The pace line gives the time, so the graph keeps no room for one.
         function test_runOutOnlyWhenOut_data() {
             return [
                 { tag: "out", percent: 60, at: start + 3 * day, runOut: start + 5 * day, level: 0 },

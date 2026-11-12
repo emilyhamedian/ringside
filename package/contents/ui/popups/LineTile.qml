@@ -6,46 +6,48 @@ import QtQuick
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
 
-// A caption and its reading on one line of a tile's faint panel: the
-// caption at the near end and the reading at the far end, as a bar's label
-// and percentage are, with the reading's figures centred on the row. When
-// the two don't fit on a line, the reading goes under the caption. The
-// reading is the tile's child, named in `reading`; it gives its size and
-// baseline, and the tile places it.
+// A tile with a caption at the start of one row and a reading at the end,
+// laid out like a bar's label and percentage. The reading's digits are
+// centred vertically in the row. If the caption and the reading don't fit
+// side by side, the reading moves under the caption. Put the reading inside
+// the tile and name it in `reading`: the tile positions it, and uses its
+// size and baseline.
 Rectangle {
     id: tile
 
     property string caption: ""
     property Item reading: null
-    // The height of the reading's figures.
+    // The height of the reading's digits, used to centre them.
     property real readingCap: 0
-    // The row is at least this tall, so rows one over the other are of a
-    // height whatever they hold.
+    // The row's minimum height, so that tiles stacked one above another can
+    // share a height whatever they contain.
     property real minimumRowHeight: 0
-    // Two dashes before the reading, a short stretch of the graph's run-out
-    // line: the reading is that line's time.
+    // Whether to draw two short dashes before the reading, like a piece of
+    // the graph's dashed run-out line, to show that the reading is the time
+    // that line marks.
     property bool keyed: false
     property color keyColor: Kirigami.Theme.textColor
     default property alias content: holder.data
 
     readonly property real horizontalPadding: Math.round(Kirigami.Units.largeSpacing * 1.5)
     readonly property real verticalPadding: Kirigami.Units.largeSpacing
-    // Between the caption and what follows it on the row.
+    // The gap between the caption and the reading.
     readonly property real gap: Kirigami.Units.largeSpacing * 2
     readonly property real keyWidth: keyed ? 2 + Kirigami.Units.smallSpacing + 2 : 0
     readonly property real rowHeight: Math.max(minimumRowHeight, reading ? Math.ceil(reading.implicitHeight) : 0)
     readonly property real readingWidth: reading ? Math.ceil(reading.implicitWidth) : 0
-    // From the texts' own widths and the tile's, never from where they are
-    // placed, so placing them can't change it.
+    // Worked out from the text widths and the tile's width only, never from
+    // positions, so laying out the row can't change it.
     readonly property bool stacked: keyWidth + Math.ceil(captionRoom.advanceWidth) + gap + readingWidth > width - 2 * horizontalPadding
     readonly property real captionGap: Math.round(Kirigami.Units.smallSpacing / 2)
-    // The reading's top in its row, its figures' middle on the row's.
+    // The reading's y within its row, which centres its digits vertically.
     readonly property real readingY: reading ? Math.round(rowHeight / 2 - (reading.baselineOffset - readingCap / 2)) : 0
     readonly property real rowTop: stacked ? captionText.implicitHeight + captionGap : 0
     readonly property bool mirrored: LayoutMirroring.enabled
 
-    // An x measured from the near edge of the padded area, as the item's x
-    // from the left, for `width` wide.
+    // Converts an x measured from the start of the row (the left, or the
+    // right in a right-to-left layout) to an x from the left, for an item
+    // `width` wide.
     function near(x, width) {
         return mirrored ? holder.width - x - width : x;
     }
@@ -74,13 +76,14 @@ Rectangle {
             id: captionText
             readonly property real room: holder.width - (tile.stacked ? 0 : tile.gap + tile.keyWidth + tile.readingWidth)
             x: tile.near(0, room)
-            // On the reading's baseline, or over it when stacked.
+            // On the reading's baseline, or above the reading when stacked.
             y: tile.stacked || !tile.reading ? 0 : tile.readingY + tile.reading.baselineOffset - baselineOffset
             width: room
             label: tile.caption
         }
 
-        // As tall together as the reading's figures, and centred on them.
+        // Together the two dashes are about as tall as the reading's digits,
+        // and centred on them.
         Column {
             visible: tile.keyed && tile.reading !== null
             x: tile.near(tile.stacked ? 0 : holder.width - tile.readingWidth - tile.keyWidth, 2)

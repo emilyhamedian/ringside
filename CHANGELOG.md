@@ -28,13 +28,13 @@ follows [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
-- Usage popups say where your pace leads on one quiet line under the graph,
-  in place of the sentence over the bars: "At this pace · 70% by the reset",
-  "Runs out · Fri 3:30 AM", or "Fable ran out · Sun 3:00 PM" when it's about a
-  model's limit. A run-out's time is said there once, marked with a stretch
-  of the graph's dashed line, rather than under the graph as well.
-- Times in usage popups give their date only when they're six or more days
-  away, in a monthly popup as in a weekly one, as the auto start times do.
+- Usage popups show where your pace is heading on a single line under the
+  graph, replacing the sentence above the bars. For example: "At this pace ·
+  70% by the reset", "Runs out · Fri 3:30 AM", or, for a model's limit,
+  "Fable ran out · Sun 3:00 PM". When the graph shows a run-out, its time
+  appears only on this line, marked with two dashes like the graph's line.
+- Times in usage popups show their date only when they're six or more days
+  away, in monthly and weekly popups alike, matching the auto start times.
 - Popups offer an auto start switch for each window your plan has: Claude's
   five-hour session, and Codex's five-hour session and its week, each turned
   on separately. Claude Ultra, which has no five-hour limit, shows none.

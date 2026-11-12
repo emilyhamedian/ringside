@@ -425,10 +425,10 @@ QtObject {
                     "The week reset at %1, with no reading since.", resetDate(window));
     }
 
-    // A time within a window, such as when its limit runs out, as a day and
-    // time: "Tue 3:30 AM", or six or more days from now "Tue 12/1/26 3:30
-    // AM" (see dayNear()). It carries no zone; the words around it say which
-    // clock the window keeps.
+    // Formats a time within a window, such as when its limit runs out, as a
+    // weekday and time: "Tue 3:30 AM". A time six or more days from now also
+    // gets its date, "Tue 12/1/26 3:30 AM" (see dayNear()). No time zone is
+    // shown; the text around the time says which clock the window uses.
     function weekdayTime(epoch, window, nowMs = Date.now()) {
         if (!Format.usable(epoch)) {
             return "";
@@ -438,9 +438,9 @@ QtObject {
                      dayNear(date, epoch, nowMs), shortTime(date));
     }
 
-    // The weekday of `date`, the wall clock at `epoch`, and six or more days
-    // from now, when the weekday could be today's, the date after it: "Tue",
-    // "Tue 10/13/26".
+    // The weekday of `date`, the wall-clock time at `epoch`: "Tue". When
+    // `epoch` is six or more days from now, the weekday alone could be read
+    // as this week's, so the date follows it: "Tue 10/13/26".
     function dayNear(date, epoch, nowMs) {
         const weekday = Qt.locale().dayName(date.getDay(), Locale.ShortFormat);
         return Math.abs(epoch * 1000 - nowMs) < 6 * 86400000 ? weekday

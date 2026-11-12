@@ -18,11 +18,11 @@ import "../code/style.js" as Style
 // ends at the last poll, so the empty stretch to its right is the time
 // left; only when the last poll is hours old does a marker say where now
 // is. While checks fail, the marker shows once the gap is wide enough to
-// see, and the gap is hatched. The limit the pace line under the graph
-// names, when it is on course to run out before the reset, gets a dashed
-// line from the rule to the floor at the moment it runs out, in the colour
-// of that limit's level as its bar has it. The pace line gives its time,
-// keyed to this dashed one, so the graph writes none.
+// see, and the gap is hatched. If the limit the pace line names is on
+// course to run out before the reset, a dashed line runs from the rule to
+// the floor at the moment it runs out, in the colour of that limit's level
+// as its bar shows it. The pace line gives the time, so the graph shows
+// none.
 // A poll that adds a reading draws the new stretch of line on from the old
 // end, and a run-out it brings fades in once the line has landed. A run-out
 // that goes fades out where and as it was, the marker for now and a first

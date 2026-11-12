@@ -115,8 +115,8 @@ PopupPage {
         return words.weekdayTime(nearest <= limit.resetsAt - 60 ? nearest : down, popup.weekly, popup.nowMs);
     }
 
-    // The pace line's caption and reading. The line is the popup's, so it
-    // speaks of the header's limit unless its caption names a model.
+    // The pace line's caption and reading for `limit` and its pace `p`. The
+    // line describes the ring's limit unless its caption names a model.
     function paceLineWords(limit, p) {
         const model = limit.id !== "" ? limit.label : "";
         switch (p.state) {
@@ -129,8 +129,9 @@ PopupPage {
             };
         case "out":
             return {
-                // Projected from a reading hours old, while checks fail, the
-                // run-out can already lie behind now: then it may have happened.
+                // While checks are failing, the run-out is projected from a
+                // reading that may be hours old, and can already be in the
+                // past. Then the limit may already have run out.
                 caption: p.runOut <= popup.nowMs / 1000
                     ? (model ? i18nc("@title:group at the rate of a reading hours old, over when a model's limit would already have been used up, e.g. FABLE MAY HAVE RUN OUT",
                                      "%1 may have run out", model)
@@ -142,7 +143,8 @@ PopupPage {
                 unit: ""
             };
         case "lasts":
-            // Only the header's limit says how its whole span is going.
+            // Only the ring's limit reaches this state; a model's limit is
+            // only mentioned when it runs out or has run out.
             return {
                 caption: i18nc("@title:group over the share of the weekly or monthly limit used by the reset at the rate so far, e.g. 93% by the reset", "At this pace"),
                 value: i18nc("@info a percentage", "%1%", Format.percent(p.atReset)),
@@ -439,9 +441,10 @@ PopupPage {
             }
         }
 
-        // Where the current pace leads, on one quiet line under the graph: the
-        // share used by the reset, or when a limit runs out. A run-out the
-        // graph draws is keyed to its line, which carries no time of its own.
+        // The pace line under the graph: the share of the ring's limit the
+        // current pace will use by the reset, or when a limit runs out. When
+        // the graph draws that run-out, the line's dashes tie its time to the
+        // graph's dashed line, and the graph shows no time of its own.
         LineTile {
             objectName: "pace"
             visible: popup.paceWords !== null
@@ -454,7 +457,7 @@ PopupPage {
                 return Qt.alpha(tone, 0.6 * tone.a);
             }
 
-            // Greyed with a kept reading, as the bars are.
+            // Greyed out while the reading is out of date, like the bars.
             Reading {
                 id: paceReading
                 value: popup.paceWords?.value ?? ""
