@@ -16,7 +16,7 @@ import "../code/style.js" as Style
 Item {
     id: tickets
 
-    // usage.py's "bankedResets": { count, expires }.
+    // The reading's "bankedResets" from usage.py: { count, expires }.
     required property var banked
     required property var texts
     required property real nowMs
