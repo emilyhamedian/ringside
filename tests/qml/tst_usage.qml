@@ -2731,6 +2731,21 @@ TestRoot {
             compare(reading.LayoutMirroring.enabled, false, "the value and unit keep their order in RTL");
             compare(String(reading.color), String(data.status === "ok" ? Kirigami.Theme.textColor : Style.dim(Kirigami.Theme.textColor)));
             verify(row.mapToItem(popup, 0, 0).y >= graph(popup).mapToItem(popup, 0, graph(popup).height).y);
+            // Laid out like the pace line: the caption at the start, the
+            // balance at the end, and the same height.
+            compare(row.caption, row.label);
+            compare(row.reading, reading);
+            // A screen reader hears the line's own name, label and balance
+            // together, and not the caption again.
+            const caption = root.find(row, i => i !== row && i.label !== undefined && i.detail !== undefined);
+            verify(caption.Accessible.ignored, "the caption isn't read a second time");
+            verify(!root.find(paceTile(popup), i => i.label !== undefined && i.detail !== undefined).Accessible.ignored,
+                   "the pace line, which has no name of its own, still reads its caption");
+            const pace = paceTile(popup);
+            if (pace.visible && !pace.stacked && !row.stacked) {
+                compare(row.height, pace.height);
+                compare(row.width, pace.width);
+            }
             if (data.status !== "ok") {
                 verify(row.detail.includes("could not be reached"));
             }
@@ -2756,7 +2771,6 @@ TestRoot {
                 monitor.usage.credits = { claude: credit };
                 verify(!row.visible);
                 tryCompare(popup, "implicitHeight", height);
-                compare(row.Layout.bottomMargin, 0);
                 compare(row.Accessible.ignored, true);
             }
         }

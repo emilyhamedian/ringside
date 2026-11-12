@@ -27,6 +27,10 @@ Rectangle {
     // that line marks.
     property bool keyed: false
     property color keyColor: Kirigami.Theme.textColor
+    // Whether screen readers read the caption on its own. A line that gives
+    // itself an accessible name covering its caption, as the credits line
+    // does, sets this to false so the caption isn't read twice.
+    property bool captionRead: true
     default property alias content: holder.data
 
     readonly property real horizontalPadding: Math.round(Kirigami.Units.largeSpacing * 1.5)
@@ -80,6 +84,7 @@ Rectangle {
             y: tile.stacked || !tile.reading ? 0 : tile.readingY + tile.reading.baselineOffset - baselineOffset
             width: room
             label: tile.caption
+            Accessible.ignored: !tile.captionRead
         }
 
         // Together the two dashes are about as tall as the reading's digits,
