@@ -9,8 +9,8 @@ import "../code/format.js" as Format
 import "../code/style.js" as Style
 import ".."
 
-// A provider's remaining prepaid credits, on a line laid out as the pace's,
-// with when they were checked in its tooltip.
+// A provider's remaining prepaid credits, on a line laid out like the pace
+// line. Its tooltip says when the balance was checked.
 LineTile {
     id: row
 

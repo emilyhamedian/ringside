@@ -2731,8 +2731,8 @@ TestRoot {
             compare(reading.LayoutMirroring.enabled, false, "the value and unit keep their order in RTL");
             compare(String(reading.color), String(data.status === "ok" ? Kirigami.Theme.textColor : Style.dim(Kirigami.Theme.textColor)));
             verify(row.mapToItem(popup, 0, 0).y >= graph(popup).mapToItem(popup, 0, graph(popup).height).y);
-            // A line as the pace's is: its caption at the near end, the
-            // balance at the far end, and as tall.
+            // Laid out like the pace line: the caption at the start, the
+            // balance at the end, and the same height.
             compare(row.caption, row.label);
             compare(row.reading, reading);
             const pace = paceTile(popup);

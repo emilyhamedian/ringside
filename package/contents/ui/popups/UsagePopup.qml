@@ -499,8 +499,8 @@ PopupPage {
         }
     }
 
-    // Under the lines, as far from them as they are from each other. It
-    // stays when the readings are struck: the balance is checked apart.
+    // Below the other lines, with the same gap between them. It stays when
+    // the readings are struck out, because the balance is checked separately.
     CreditsRemaining {
         id: credits
         Layout.leftMargin: Style.contentEdge(Kirigami.Units.largeSpacing)
