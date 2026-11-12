@@ -113,14 +113,14 @@ PopupPage {
         const clock = words.zonedDate(second, popup.weekly);
         const down = second - (clock.getMinutes() * 60 + clock.getSeconds()) % 600;
         const nearest = p.runOut - down >= 300 ? down + 600 : down;
-        return words.weekdayTime(nearest <= limit.resetsAt - 60 ? nearest : down, popup.weekly);
+        return words.weekdayTime(nearest <= limit.resetsAt - 60 ? nearest : down, popup.weekly, popup.nowMs);
     }
 
     function paceSentence(limit, p) {
         const all = limit.id === "";
         switch (p.state) {
         case "reached": {
-            const when = Format.usable(p.reachedAt) ? words.weekdayTime(Math.round(p.reachedAt / 60) * 60, popup.weekly) : "";
+            const when = Format.usable(p.reachedAt) ? words.weekdayTime(Math.round(p.reachedAt / 60) * 60, popup.weekly, popup.nowMs) : "";
             return all ? (when ? i18nc("@info when the weekly limit was used up, e.g. Limit reached Sun 3:00 PM", "Limit reached %1", when)
                                : i18nc("@info the weekly limit is used up", "Limit reached"))
                        : (when ? i18nc("@info when a model's limit was used up, e.g. Fable limit reached Sun 3:00 PM", "%1 limit reached %2", limit.label, when)
@@ -430,7 +430,7 @@ PopupPage {
                                 "%1, %2 %3", used, popup.innerLimit.label, words.percent(second))
                         : used;
                     return i18nc("@info a graph point's reading and when, e.g. 62% · Mon 2:14 PM", "%1 · %2",
-                                 reading, words.weekdayTime(week.mainSamples[i][0], popup.weekly));
+                                 reading, words.weekdayTime(week.mainSamples[i][0], popup.weekly, popup.nowMs));
                 }
                 nowMs: popup.nowMs
                 pollAt: popup.pollAt

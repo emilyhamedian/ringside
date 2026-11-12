@@ -4416,20 +4416,22 @@ TestRoot {
             const spelled = date => locale.dayName(date.getDay(), Locale.ShortFormat) + " " + words.shortTime(date);
             // 7:30 UTC on Friday 25 September 2026, two days before the reset.
             const friday = Date.UTC(2026, 8, 25, 7, 30) / 1000;
+            // Read the day before, so the weekday stands alone.
+            const now = (friday - 86400) * 1000;
             const systemOffset = -new Date(sunday * 1000).getTimezoneOffset() * 60;
 
             // A clock zone three hours east of UTC, or five when that is
             // system time, reads as its own wall clock and names no zone.
             const east = systemOffset === 3 * 3600 ? 5 : 3;
             const elsewhere = { resetsAt: sunday, clockZone: { offset: east * 3600, abbreviation: "XYZ" } };
-            compare(words.weekdayTime(friday, elsewhere), spelled(new Date(2026, 8, 25, 7 + east, 30)));
+            compare(words.weekdayTime(friday, elsewhere, now), spelled(new Date(2026, 8, 25, 7 + east, 30)));
 
             // A clock zone that matches system time at the reset, and no zone
             // at all, read in system time.
             const here = { resetsAt: sunday, clockZone: { offset: systemOffset, abbreviation: "XYZ" } };
-            compare(words.weekdayTime(friday, here), spelled(new Date(friday * 1000)));
-            compare(words.weekdayTime(friday, { resetsAt: sunday }), spelled(new Date(friday * 1000)));
-            compare(words.weekdayTime(friday, null), spelled(new Date(friday * 1000)));
+            compare(words.weekdayTime(friday, here, now), spelled(new Date(friday * 1000)));
+            compare(words.weekdayTime(friday, { resetsAt: sunday }, now), spelled(new Date(friday * 1000)));
+            compare(words.weekdayTime(friday, null, now), spelled(new Date(friday * 1000)));
 
             compare(words.weekdayTime(NaN, elsewhere), "");
         }
@@ -4462,15 +4464,21 @@ TestRoot {
             compare(words.resetDate({ resetsAt: null }), "");
         }
 
-        // A month's times carry their date: a weekday alone could be any of
-        // four or five in it.
+        // A month's reset carries its date: a weekday alone could be any of
+        // four or five in it. So does any time six or more days from now, in
+        // a month or a week, where the weekday could be today's; one nearer
+        // says its weekday alone, as the starter's times do.
         function test_aMonthsTimesCarryTheirDate() {
             const month = { resetsAt: sunday, windowSeconds: 30 * 86400 };
             const date = new Date(sunday * 1000);
-            const day = Qt.locale().dayName(date.getDay(), Locale.ShortFormat) + " "
-                + date.toLocaleDateString(Qt.locale(), Locale.ShortFormat);
+            const weekday = Qt.locale().dayName(date.getDay(), Locale.ShortFormat);
+            const day = weekday + " " + date.toLocaleDateString(Qt.locale(), Locale.ShortFormat);
             compare(words.resetDate(month), day + " " + words.shortTime(date));
-            compare(words.weekdayTime(sunday, month), day + " " + words.shortTime(date));
+            for (const window of [month, { resetsAt: sunday, windowSeconds: 7 * 86400 }]) {
+                compare(words.weekdayTime(sunday, window, (sunday - 6 * 86400) * 1000), day + " " + words.shortTime(date));
+                compare(words.weekdayTime(sunday, window, (sunday + 6 * 86400) * 1000), day + " " + words.shortTime(date));
+                compare(words.weekdayTime(sunday, window, (sunday - 5 * 86400) * 1000), weekday + " " + words.shortTime(date));
+            }
             compare(words.resetPassedText(month), "The month reset at " + words.resetDate(month) + ", with no reading since.");
             const week = { resetsAt: sunday, windowSeconds: 7 * 86400 };
             compare(words.resetPassedText(week), "The week reset at " + words.resetDate(week) + ", with no reading since.");
@@ -4771,7 +4779,7 @@ TestRoot {
             const at = new Date(2026, 8, 27, 9, 15, 42);
             const epoch = at.getTime() / 1000;
             compare(numbers(words.resetDate({ resetsAt: epoch })), 2, words.resetDate({ resetsAt: epoch }));
-            compare(numbers(words.weekdayTime(epoch, null)), 2, words.weekdayTime(epoch, null));
+            compare(numbers(words.weekdayTime(epoch, null, at.getTime())), 2, words.weekdayTime(epoch, null, at.getTime()));
             compare(numbers(words.timeOfDay(epoch, at.getTime())), 2, words.timeOfDay(epoch, at.getTime()));
             const nextDay = new Date(2026, 8, 28, 12, 0).getTime();
             verify(!words.timeOfDay(epoch, nextDay).includes(Format.whole(42)), words.timeOfDay(epoch, nextDay));

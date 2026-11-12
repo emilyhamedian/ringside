@@ -28,6 +28,8 @@ follows [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- Times in usage popups give their date only when they're six or more days
+  away, in a monthly popup as in a weekly one, as the auto start times do.
 - Popups offer an auto start switch for each window your plan has: Claude's
   five-hour session, and Codex's five-hour session and its week, each turned
   on separately. Claude Ultra, which has no five-hour limit, shows none.
