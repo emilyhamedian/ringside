@@ -25,6 +25,8 @@ follows [Semantic Versioning](https://semver.org/).
 - Claude and Codex popups show your banked resets on a line under the pace
   line: a ticket for each reset, with how long until it expires, soonest
   first. A reset with three days or less left turns amber.
+- The Kimi popup shows your Extra Usage balance as remaining credits. It's
+  read from the usage check Ringside already makes, with no extra request.
 - CPU popup shows a section for each CPU on machines with more than one, each
   with its model, cores and threads, usage, threads and graphs. Each CPU's
   temperature shows on Intel; AMD's shows once for the whole machine.

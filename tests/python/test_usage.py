@@ -1665,14 +1665,53 @@ class Kimi(Isolated):
         (usage.OPENCODE_DATA / "opencode.db").write_bytes(b"not a database")
         self.assertEqual(usage.opencode_kimi_keys(), [])
 
-    def test_kimi_has_no_starter_program_or_credits(self):
+    def test_kimi_has_no_starter_or_program(self):
         self.opencode(auth={"kimi-code-plan-global": {"type": "api", "key": "k"}})
         entry = self.run_main("--providers", "kimi", "--credits-providers", "kimi", "--start")["providers"]["kimi"]
         self.assertEqual(entry["status"], "ok")
-        self.assertFalse({"starter", "program", "credits"} & entry.keys())
+        self.assertFalse({"starter", "program"} & entry.keys())
+        # A reply with no wallet has no balance to show.
+        self.assertEqual((entry["credits"]["status"], entry["credits"]["balance"]), ("unavailable", None))
         for argv in (["--program", "kimi=/bin/kimi"], ["--starter-set", "kimi=on"]):
             with self.subTest(argv), mock.patch("sys.stderr", new=io.StringIO()), self.assertRaises(SystemExit):
                 usage.arguments(argv)
+
+    # Kimi's Extra Usage balance comes in the same reply as its limits. Its
+    # amounts are in millionths of a cent. The currency comes from the
+    # monthly cap or this month's spending, or else the account's region.
+    def test_extra_usage_balance_comes_with_the_limits(self):
+        self.opencode(auth={"kimi-code-plan-global": {"type": "api", "key": "k"}})
+        wallet = {"balance": {"type": "BOOSTER", "amount": "20000000000", "amountLeft": "10000000000"},
+                  "monthlyChargeLimitEnabled": True,
+                  "monthlyChargeLimit": {"currency": "CNY", "priceInCents": "20000"},
+                  "monthlyUsed": {"currency": "CNY", "priceInCents": "5000"}}
+        with mock.patch.object(self, "REPLY", dict(self.REPLY, boosterWallet=wallet)):
+            entry = self.run_main("--providers", "kimi", "--credits-providers", "kimi")["providers"]["kimi"]
+        self.assertEqual(len(self.asked), 1, "one request for both")
+        self.assertEqual(entry["credits"]["status"], "ok")
+        self.assertEqual(entry["credits"]["balance"], {"amount": 100.0, "currency": "CNY", "precision": 2})
+
+    def test_extra_usage_wallets(self):
+        cases = [
+            (None, "global", ("unavailable", None)),
+            ({}, "global", ("unavailable", None)),
+            ({"balance": {"type": "OTHER", "amount": "1", "amountLeft": "1"}}, "global", ("unavailable", None)),
+            ({"balance": {"type": "BOOSTER", "amount": "0"}}, "global", ("unavailable", None)),
+            ({"balance": {"type": "BOOSTER", "amount": "5000000"}}, "global", ("ok", None)),
+            ({"balance": {"type": "BOOSTER", "amount": 5000000, "amountLeft": 2500000000}}, "global",
+             ("ok", {"amount": 25.0, "currency": "USD", "precision": 2})),
+            ({"balance": {"type": "BOOSTER", "amount": "5000000", "amountLeft": "1"}}, "china",
+             ("ok", {"amount": 0.01, "currency": "CNY", "precision": 2})),
+            ({"balance": {"type": "BOOSTER", "amount": "9", "amountLeft": "1000000"},
+              "monthlyUsed": {"currency": "usd"}}, "global", ("ok", {"amount": 0.01, "currency": "USD", "precision": 2})),
+        ]
+        for wallet, region, expected in cases:
+            with self.subTest(wallet=wallet, region=region):
+                self.assertEqual(usage.parse_kimi_credits({"boosterWallet": wallet}, region), expected)
+        for broken in ({"type": "BOOSTER", "amount": "lots"}, {"type": "BOOSTER", "amount": 1.5},
+                       {"type": "BOOSTER", "amount": "1", "amountLeft": -1}, {"type": "BOOSTER", "amount": True}):
+            with self.subTest(broken=broken), self.assertRaises(ValueError):
+                usage.parse_kimi_credits({"boosterWallet": {"balance": broken}}, "global")
 
     def test_its_hosts_can_be_named_in_the_journal(self):
         self.assertEqual(usage.own_host("api.kimi.ai"), "api.kimi.ai")

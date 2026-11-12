@@ -20,8 +20,9 @@ side never hides the others. Output shape:
 --credits-providers names providers whose prepaid credits may be collected
 and reported alongside weekly usage, at most once per five minutes including
 failures. The widget supplies every enabled provider regardless of whether
-credits are shown; Kimi and OpenCode Go, which have none, are left out.
-Codex credits reuse its weekly response. Credits have
+credits are shown. OpenCode Go is left out, because its balance can't be
+read with its sign-in. Codex's and Kimi's credits come from their usage
+responses. Credits have
 their own status and cached balance, independent of weekly readings. No
 credit-only check renews a login. A credit record's "spent" says a successful
 observation found a lower positive balance in the same currency and scale;
@@ -176,7 +177,7 @@ VERSION = "0.4.0"
 PROVIDERS = ("claude", "codex", "kimi", "opencode")
 # The providers with prepaid credits, and those whose CLI Ringside can be
 # told where to find (--program) and runs for the session starter.
-CREDITED = ("claude", "codex")
+CREDITED = ("claude", "codex", "kimi")
 CLIS = ("claude", "codex", "opencode")
 
 WEEK_MINUTES = 7 * 24 * 60
@@ -1370,6 +1371,10 @@ def kimi_usage():
             if index + 1 < len(found):
                 continue
             raise
+        context = CREDITS_CONTEXT.get()
+        if context is not None:
+            context["observed"]["kimi"] = {"raw": body, "region": region,
+                                           "identity": hashlib.sha256(token.encode()).hexdigest()}
         return parse_kimi(body)
     raise SignedOut()
 
@@ -1533,6 +1538,60 @@ def parse_codex_credits(raw):
     return "ok", {"amount": amount, "currency": "", "precision": 2} if amount else None
 
 
+# The currency to assume for a Kimi balance when the reply doesn't name one,
+# by the account's region. Kimi prices its China plans in RMB.
+KIMI_CURRENCIES = {"global": "USD", "china": "CNY"}
+
+
+def kimi_units(value):
+    """Return a Kimi wallet amount as an int, or None if it isn't a whole,
+    non-negative number. Kimi sometimes sends these as strings."""
+    if type(value) is int and value >= 0:
+        return value
+    if isinstance(value, str) and re.fullmatch(r"[0-9]{1,30}", value):
+        return int(value)
+    return None
+
+
+def parse_kimi_credits(raw, region):
+    """Return Kimi's Extra Usage balance from the "boosterWallet" in its
+    usage reply, read the way Kimi Code reads it.
+
+    A wallet that has ever been topped up has a balance of type "BOOSTER".
+    Its amounts are in millionths of a cent, and a missing "amountLeft"
+    means nothing is left. The reply names the currency only alongside a
+    monthly spending cap or this month's spending; otherwise the account's
+    region decides it."""
+    wallet = raw.get("boosterWallet") if isinstance(raw, dict) else None
+    balance = wallet.get("balance") if isinstance(wallet, dict) else None
+    if not isinstance(balance, dict) or balance.get("type") != "BOOSTER":
+        return "unavailable", None
+    total, left = kimi_units(balance.get("amount")), kimi_units(balance.get("amountLeft", 0))
+    if total is None or left is None:
+        raise ValueError("invalid credits")
+    if total <= 0:
+        return "unavailable", None
+    named = [part.get("currency") for part in (wallet.get("monthlyChargeLimit"), wallet.get("monthlyUsed")) if isinstance(part, dict)]
+    currency = next((c for c in named if isinstance(c, str) and re.fullmatch(r"[A-Z]{3}", c)), KIMI_CURRENCIES[region])
+    # Rounded to whole cents, with any fraction of a cent shown as one cent,
+    # as Kimi Code shows it.
+    cents = max(1, round(left / 1_000_000)) if left > 0 else 0
+    return "ok", {"amount": cents / 100, "currency": currency, "precision": 2} if cents else None
+
+
+def credit_snapshot(name, record, observed=None):
+    """Return what ties a balance to the login it was read with. For Claude
+    that's (identity, organisation); for Codex, the digest of its login
+    file. For Kimi it's the digest of the credential this run's usage check
+    used or, in a run that didn't check, of the credential the balance was
+    last read with."""
+    if name == "claude":
+        return claude_credit_identity()
+    if name == "codex":
+        return credential_digest(CODEX_AUTH)
+    return (observed or {}).get("identity") or (record if isinstance(record, dict) else {}).get("identity")
+
+
 def anthropic_hold(cache, now):
     at = cache.get("_anthropicHold")
     return max(0, at - now) if type(at) is int else 0
@@ -1581,6 +1640,10 @@ def collect_credits(cache, providers, now):
         if name == "claude":
             extra = raw.get("extra_usage") if isinstance(raw, dict) else None
             enabled = extra.get("is_enabled") if isinstance(extra, dict) else None
+        elif name != "codex":
+            # Kimi's reply has no on/off switch for Extra Usage that Ringside
+            # can rely on.
+            continue
         else:
             limit = codex_credit_limit(raw)
             extra = limit.get("credits") if isinstance(limit, dict) else None
@@ -1596,7 +1659,7 @@ def collect_credits(cache, providers, now):
     for name in context["eligible"] & providers.keys():
         record = records.setdefault(name, {})
         observed = context["observed"].get(name, {})
-        snapshot = claude_credit_identity() if name == "claude" else credential_digest(CODEX_AUTH)
+        snapshot = credit_snapshot(name, record, observed)
         identity = snapshot[0] if name == "claude" and snapshot else snapshot
         if not identity or record.get("identity") != identity:
             # Retain the attempt deadline across login changes and missing files.
@@ -1609,13 +1672,14 @@ def collect_credits(cache, providers, now):
             record.update(status="unavailable", balance=None, fetchedAt=None, reason="signed-out")
         elif record.get("enabled") is False:
             record.update(status="disabled", balance=None, fetchedAt=None, reason=None)
-        elif name == "codex":
+        elif name in ("codex", "kimi"):
             if observed:
                 if observed.get("identity") != identity:
                     record.update(status="unavailable", balance=None, fetchedAt=None, reason="signed-out")
                 else:
                     try:
-                        status, balance = parse_codex_credits(observed["raw"])
+                        status, balance = (parse_codex_credits(observed["raw"]) if name == "codex"
+                                           else parse_kimi_credits(observed["raw"], observed["region"]))
                         record.update(status=status, balance=balance, spent=credits_spent(record, balance),
                                       fetchedAt=now, retryAt=None, reason=None)
                     except (ValueError, TypeError, AttributeError, OverflowError):
@@ -2196,7 +2260,7 @@ def waiting(ids, message, *, credits=()):
     records = cache.get("_credits")
     for name in set(credits) & providers.keys():
         record = records.get(name) if isinstance(records, dict) else None
-        snapshot = claude_credit_identity() if name == "claude" else credential_digest(CODEX_AUTH)
+        snapshot = credit_snapshot(name, record)
         identity = snapshot[0] if name == "claude" and snapshot else snapshot
         if identity and isinstance(record, dict) and record.get("identity") == identity:
             if record.get("status") == "disabled" or record.get("enabled") is False:
