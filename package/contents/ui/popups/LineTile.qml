@@ -28,8 +28,9 @@ Rectangle {
     property bool keyed: false
     property color keyColor: Kirigami.Theme.textColor
     // Whether screen readers read the caption on its own. A line that gives
-    // itself an accessible name covering its caption, as the credits line
-    // does, sets this to false so the caption isn't read twice.
+    // itself or its reading an accessible name covering the caption, as the
+    // credits and banked resets lines do, sets this to false so the caption
+    // isn't read twice.
     property bool captionRead: true
     default property alias content: holder.data
 

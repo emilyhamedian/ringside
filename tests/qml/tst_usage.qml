@@ -3598,6 +3598,11 @@ TestRoot {
             verify(tile.visible);
             const tickets = root.find(tile, i => i.slots !== undefined);
             compare(tickets.slots.map(slot => [slot.text, slot.soon]), data.slots.map(([text, soon]) => [root.localized(text), soon]));
+            // A screen reader hears the tickets' name, which counts the
+            // resets, and not the caption before it.
+            verify(/\bbanked resets?\b/.test(tickets.Accessible.name), tickets.Accessible.name);
+            verify(root.find(tile, i => i.label !== undefined && i.detail !== undefined).Accessible.ignored,
+                   "the caption isn't read a second time");
             const shown = root.texts(tile);
             data.slots.filter(([text]) => text !== "").forEach(([text]) => verify(shown.includes(root.localized(text)), text));
             if (data.scoped) {
