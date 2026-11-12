@@ -115,7 +115,8 @@ ColumnLayout {
     }
 
     // Claude at 81 % is amber, and runs out before its reset at this pace;
-    // Fable over 90 % and Codex at its limit are red.
+    // Fable over 90 % and Codex at its limit are red. Codex has three banked
+    // resets, the first expiring in two days.
     FakeMonitor {
         id: hot
         usage: FakeUsage {
@@ -132,7 +133,8 @@ ColumnLayout {
                     status: "ok",
                     fetchedAt: hotUsage.createdAt,
                     weekly: hotUsage.window(100, 14 * 3600 + 5 * 60, section.history(6.4, 100)),
-                    scoped: []
+                    scoped: [],
+                    bankedResets: { count: 3, expires: [2, 12, 21].map(days => hotUsage.createdAt + days * hotUsage.day + 3600) }
                 }
             })
         }
@@ -317,7 +319,8 @@ ColumnLayout {
         }
     }
 
-    // Codex's one limit at 40 % two days in, on pace to run out.
+    // Codex's one limit at 40 % two days in, on pace to run out, with five
+    // banked resets.
     FakeMonitor {
         id: codexPace
         usage: FakeUsage {
@@ -327,7 +330,8 @@ ColumnLayout {
                     status: "ok",
                     fetchedAt: codexPaceUsage.createdAt,
                     weekly: codexPaceUsage.window(40, 5 * codexPaceUsage.day, section.history(2, 40)),
-                    scoped: []
+                    scoped: [],
+                    bankedResets: { count: 5, expires: [4, 9, 15, 20, 28].map(days => codexPaceUsage.createdAt + days * codexPaceUsage.day + 3600) }
                 }
             })
         }
@@ -685,7 +689,7 @@ ColumnLayout {
         }
 
         GalleryFrame {
-            label: "Codex · at its limit"
+            label: "Codex · at its limit, three banked resets, one expiring"
             UsagePopup { monitor: hot; item: "codex" }
         }
 
@@ -752,7 +756,7 @@ ColumnLayout {
         }
 
         GalleryFrame {
-            label: "Codex · one limit at 40 %, on pace to run out"
+            label: "Codex · one limit at 40 %, on pace to run out, five banked resets"
             UsagePopup { monitor: codexPace; item: "codex" }
         }
 
@@ -862,7 +866,7 @@ ColumnLayout {
             }
 
             GalleryFrame {
-                label: "Breeze Light · Codex · one limit, the pace line"
+                label: "Breeze Light · Codex · one limit, the pace line, five banked resets"
                 flat: true
                 UsagePopup { monitor: codexPace; item: "codex" }
             }

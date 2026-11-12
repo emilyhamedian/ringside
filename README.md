@@ -99,6 +99,10 @@ they are under *AI Providers*.
 under the graph. When you've used up a limit and are spending credits, the
 ring turns blue. *Show remaining credits* under *AI Providers* hides them.
 
+**Banked resets.** If your Codex account has banked resets, the popup shows a
+ticket for each, with how long until it expires; one with three days or less
+left turns amber. Use them in Codex itself: Ringside only shows them.
+
 **Auto start.** Ringside can start your next five-hour session on Claude,
 Codex or OpenCode Go, or your next Codex week, as soon as the last one ends,
 so the clock is already running when you're back. Turn it on with the switch
