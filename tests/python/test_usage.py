@@ -1634,7 +1634,7 @@ class Kimi(Isolated):
         (usage.KIMI_HOME / "secret.json").write_text(json.dumps({"access_token": "t", "expires_at": time.time() + 3600}))
         self.kimi_code('[providers.x]\ntype = "kimi"\nbase_url = "https://api.kimi.com/coding/v1"\n'
                        '[providers.x.oauth]\nkey = "oauth/../secret"\n')
-        self.assertEqual(usage.kimi_credentials(time.time()), ([], False))
+        self.assertEqual(usage.kimi_credentials(time.time()), ([], []))
 
     def test_opencodes_keys_after_kimi_codes_each_once(self):
         self.kimi_code('[providers.a]\ntype = "kimi"\nbase_url = "https://api.kimi.com/coding/v1"\napi_key = "same"\n')
@@ -1690,6 +1690,30 @@ class Kimi(Isolated):
         self.assertEqual(len(self.asked), 1, "one request for both")
         self.assertEqual(entry["credits"]["status"], "ok")
         self.assertEqual(entry["credits"]["balance"], {"amount": 100.0, "currency": "CNY", "precision": 2})
+
+    # A run that reuses the cached limits shows the balance only while Kimi
+    # Code still holds the sign-in that read it. An expired sign-in is the
+    # same account; another account's sign-in, or none, hides the balance.
+    def test_a_cached_balance_follows_the_sign_in(self):
+        config = ('[providers."managed:kimi-code"]\ntype = "kimi"\nbase_url = "https://api.kimi.ai/coding/v1"\n'
+                  '[providers."managed:kimi-code".oauth]\nkey = "oauth/kimi-code"\n')
+        later = int(time.time()) + 3600
+        sign_in = lambda token, expires: self.kimi_code(config, {"kimi-code": {"access_token": token, "expires_at": expires}})
+        credits = lambda: self.run_main("--providers", "kimi", "--credits-providers", "kimi")["providers"]["kimi"]["credits"]
+        wallet = {"balance": {"type": "BOOSTER", "amount": "20000000000", "amountLeft": "10000000000"}}
+        self.enterContext(mock.patch.object(self, "REPLY", dict(self.REPLY, boosterWallet=wallet)))
+        for replaced in ("another account", ""):
+            with self.subTest(replaced=replaced):
+                usage.CACHE_FILE.unlink(missing_ok=True)
+                self.asked.clear()
+                sign_in("first", later)
+                self.assertEqual(credits()["balance"]["amount"], 100.0)
+                sign_in("first", int(time.time()) - 60)
+                self.assertEqual(credits()["balance"]["amount"], 100.0, "an expired sign-in is the same account")
+                sign_in(replaced, later)
+                hidden = credits()
+                self.assertEqual((hidden["status"], hidden["balance"]), ("unavailable", None))
+                self.assertEqual(len(self.asked), 1, "the later runs reuse the cached limits")
 
     def test_extra_usage_wallets(self):
         cases = [

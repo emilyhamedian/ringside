@@ -1257,17 +1257,18 @@ def kimi_region(provider):
 
 
 def kimi_code_credentials(now):
-    """Kimi Code's own credentials, as (source, region, token), and whether a
-    sign-in was found expired. Each Kimi Code provider in config.toml gives
-    its sign-in while that is unexpired, or its API key. The files are only
-    read: Kimi Code renews its sign-in itself, with refresh tokens that work
-    once, so a renewal here would sign Kimi Code out."""
+    """Kimi Code's own credentials, as (source, region, token), and the
+    tokens of its sign-ins that have expired. Each Kimi Code provider in
+    config.toml gives its sign-in while that is unexpired, or its API key.
+    The files are only read: Kimi Code renews its sign-in itself, with
+    refresh tokens that work once, so a renewal here would sign Kimi Code
+    out."""
     try:
         with open(KIMI_HOME / "config.toml", "rb") as fh:
             providers = tomllib.load(fh).get("providers")
     except (OSError, tomllib.TOMLDecodeError):
-        return [], False
-    found, expired = [], False
+        return [], []
+    found, expired = [], []
     for provider in providers.values() if isinstance(providers, dict) else ():
         if not isinstance(provider, dict) or provider.get("type") != "kimi" or not (region := kimi_region(provider)):
             continue
@@ -1287,7 +1288,7 @@ def kimi_code_credentials(now):
             if finite_share(expires) and expires - now > SIGN_IN_MARGIN:
                 found.append(("Kimi Code's sign-in", region, token["access_token"]))
             else:
-                expired = True
+                expired.append(token["access_token"])
             continue
         key = provider.get("api_key")
         if not key and isinstance(provider.get("api_key_env"), str):
@@ -1301,7 +1302,7 @@ def kimi_code_credentials(now):
 def kimi_credentials(now):
     """The credentials to ask Kimi with, as (source, region, token), the
     source in the journal's words, each once: Kimi Code's own, then
-    OpenCode's; and whether a Kimi Code sign-in was found expired."""
+    OpenCode's; and the tokens of Kimi Code's expired sign-ins."""
     own, expired = kimi_code_credentials(now)
     unique = []
     for source, region, token in own + [("OpenCode's key", region, key) for region, key in opencode_kimi_keys()]:
@@ -1373,8 +1374,7 @@ def kimi_usage():
             raise
         context = CREDITS_CONTEXT.get()
         if context is not None:
-            context["observed"]["kimi"] = {"raw": body, "region": region,
-                                           "identity": hashlib.sha256(token.encode()).hexdigest()}
+            context["observed"]["kimi"] = {"raw": body, "region": region, "identity": kimi_identity(token)}
         return parse_kimi(body)
     raise SignedOut()
 
@@ -1579,17 +1579,32 @@ def parse_kimi_credits(raw, region):
     return "ok", {"amount": cents / 100, "currency": currency, "precision": 2} if cents else None
 
 
+def kimi_identity(token):
+    """What ties a Kimi balance to the credential that read it: a digest of
+    the token, so the token itself is never stored."""
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
 def credit_snapshot(name, record, observed=None):
     """Return what ties a balance to the login it was read with. For Claude
     that's (identity, organisation); for Codex, the digest of its login
     file. For Kimi it's the digest of the credential this run's usage check
-    used or, in a run that didn't check, of the credential the balance was
-    last read with."""
+    used. A run that didn't check keeps the balance's own digest only while
+    Kimi Code or OpenCode still holds that credential, so the balance stops
+    showing as soon as either signs out or into another account. A sign-in
+    that has only expired is still the same account. Kimi Code's renewals
+    replace the token too, which hides the balance until the next check."""
     if name == "claude":
         return claude_credit_identity()
     if name == "codex":
         return credential_digest(CODEX_AUTH)
-    return (observed or {}).get("identity") or (record if isinstance(record, dict) else {}).get("identity")
+    if observed:
+        return observed.get("identity")
+    known = record.get("identity") if isinstance(record, dict) else None
+    if not known:
+        return None
+    found, expired = kimi_credentials(time.time())
+    return known if known in {kimi_identity(token) for token in [t for _, _, t in found] + expired} else None
 
 
 def anthropic_hold(cache, now):
