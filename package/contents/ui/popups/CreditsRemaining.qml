@@ -4,13 +4,14 @@
 pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls as QQC2
-import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
 import "../code/format.js" as Format
 import "../code/style.js" as Style
 import ".."
 
-RowLayout {
+// A provider's remaining prepaid credits, on a line laid out as the pace's,
+// with when they were checked in its tooltip.
+LineTile {
     id: row
 
     required property var credit
@@ -51,11 +52,9 @@ RowLayout {
     }
 
     visible: shown
-    Layout.fillWidth: true
-    Layout.leftMargin: shown ? Style.contentEdge(Kirigami.Units.largeSpacing) : 0
-    Layout.rightMargin: Layout.leftMargin
-    Layout.bottomMargin: shown ? Kirigami.Units.largeSpacing : 0
-    spacing: Kirigami.Units.largeSpacing
+    caption: label
+    reading: reading
+    readingCap: Style.capHeight(bodyMetrics, bodyCap)
     Accessible.role: Accessible.StaticText
     Accessible.name: i18nc("@info:accessible credit label, value and unit", "%1: %2 %3", label, value, unit)
     Accessible.description: detail
@@ -68,16 +67,19 @@ RowLayout {
         id: hovered
     }
 
-    Text {
-        Layout.fillWidth: true
-        text: row.label
-        color: Style.dim(Kirigami.Theme.textColor)
-        textFormat: Text.PlainText
-        horizontalAlignment: Text.AlignLeft
-        Accessible.ignored: true
+    FontMetrics {
+        id: bodyMetrics
+        font: Kirigami.Theme.defaultFont
+    }
+
+    TextMetrics {
+        id: bodyCap
+        font: Kirigami.Theme.defaultFont
+        text: "H"
     }
 
     Reading {
+        id: reading
         value: row.value
         unit: row.unit
         color: row.cached ? Style.dim(Kirigami.Theme.textColor) : Kirigami.Theme.textColor

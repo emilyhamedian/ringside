@@ -2731,6 +2731,15 @@ TestRoot {
             compare(reading.LayoutMirroring.enabled, false, "the value and unit keep their order in RTL");
             compare(String(reading.color), String(data.status === "ok" ? Kirigami.Theme.textColor : Style.dim(Kirigami.Theme.textColor)));
             verify(row.mapToItem(popup, 0, 0).y >= graph(popup).mapToItem(popup, 0, graph(popup).height).y);
+            // A line as the pace's is: its caption at the near end, the
+            // balance at the far end, and as tall.
+            compare(row.caption, row.label);
+            compare(row.reading, reading);
+            const pace = paceTile(popup);
+            if (pace.visible && !pace.stacked && !row.stacked) {
+                compare(row.height, pace.height);
+                compare(row.width, pace.width);
+            }
             if (data.status !== "ok") {
                 verify(row.detail.includes("could not be reached"));
             }
@@ -2756,7 +2765,6 @@ TestRoot {
                 monitor.usage.credits = { claude: credit };
                 verify(!row.visible);
                 tryCompare(popup, "implicitHeight", height);
-                compare(row.Layout.bottomMargin, 0);
                 compare(row.Accessible.ignored, true);
             }
         }

@@ -36,6 +36,8 @@ follows [Semantic Versioning](https://semver.org/).
   70% by the reset", "Runs out · Fri 3:30 AM", or, for a model's limit,
   "Fable ran out · Sun 3:00 PM". When the graph shows a run-out, its time
   appears only on this line, marked with two dashes like the graph's line.
+- Remaining credits in the Claude and Codex popups appear on a line styled
+  like the pace line, below it.
 - Times in usage popups show their date only when they're six or more days
   away, in monthly and weekly popups alike, matching the auto start times.
 - Popups offer an auto start switch for each window your plan has: Claude's

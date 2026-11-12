@@ -376,7 +376,7 @@ PopupPage {
         // Straight under the header, as far from it as the other popups'
         // tiles are; under the bars, their own wider margin keeps it apart.
         Layout.topMargin: barsColumn.visible ? 0 : Math.round(Kirigami.Units.smallSpacing * 1.5)
-        Layout.bottomMargin: credits.shown ? Kirigami.Units.smallSpacing * 2 : Math.round(Kirigami.Units.largeSpacing * 1.5)
+        Layout.bottomMargin: credits.shown ? Kirigami.Units.largeSpacing : Math.round(Kirigami.Units.largeSpacing * 1.5)
         columns: 1
         rowSpacing: Kirigami.Units.largeSpacing
 
@@ -499,8 +499,14 @@ PopupPage {
         }
     }
 
+    // Under the lines, as far from them as they are from each other. It
+    // stays when the readings are struck: the balance is checked apart.
     CreditsRemaining {
         id: credits
+        Layout.leftMargin: Style.contentEdge(Kirigami.Units.largeSpacing)
+        Layout.rightMargin: Layout.leftMargin
+        Layout.bottomMargin: Math.round(Kirigami.Units.largeSpacing * 1.5)
         credit: popup.usage.credit(popup.item)
+        minimumRowHeight: resetTickets.ticketHeight
     }
 }
