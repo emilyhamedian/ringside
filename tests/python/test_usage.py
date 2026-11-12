@@ -1702,6 +1702,11 @@ class Kimi(Isolated):
              ("ok", {"amount": 25.0, "currency": "USD", "precision": 2})),
             ({"balance": {"type": "BOOSTER", "amount": "5000000", "amountLeft": "1"}}, "china",
              ("ok", {"amount": 0.01, "currency": "CNY", "precision": 2})),
+            # Half a cent rounds up, as in Kimi Code, and not to the even cent.
+            ({"balance": {"type": "BOOSTER", "amount": "5000000", "amountLeft": "2500000"}}, "global",
+             ("ok", {"amount": 0.03, "currency": "USD", "precision": 2})),
+            ({"balance": {"type": "BOOSTER", "amount": "5000000", "amountLeft": "2499999"}}, "global",
+             ("ok", {"amount": 0.02, "currency": "USD", "precision": 2})),
             ({"balance": {"type": "BOOSTER", "amount": "9", "amountLeft": "1000000"},
               "monthlyUsed": {"currency": "usd"}}, "global", ("ok", {"amount": 0.01, "currency": "USD", "precision": 2})),
         ]
