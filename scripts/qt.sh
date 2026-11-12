@@ -23,7 +23,7 @@ qt_suites() {
     # Numbers follow the locale. A German run catches a slide back to
     # toFixed(), an Egyptian Arabic one ASCII digits among the locale's own,
     # in the formatting, in the room the panel's readings keep, and in the
-    # Claude, Codex, Kimi and OpenCode Go cells, popups and pace sentences.
+    # Claude, Codex, Kimi and OpenCode Go cells, popups and pace tiles.
     # Qt reads LANG and LC_ALL with its own locale data, so the glibc locales
     # aren't needed; without them Qt warns that it switched to C.UTF-8, which
     # is harmless.

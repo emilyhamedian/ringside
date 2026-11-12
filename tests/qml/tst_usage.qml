@@ -2144,7 +2144,7 @@ TestRoot {
         // read `polledAgo` seconds before now, and the tones they give the
         // ring, the inner ring and the percentage. Only the reading sets the
         // tone, amber from 75 % and red from 90 %, whatever the pace: a limit
-        // on course to run out early says so in the popup's sentence alone.
+        // on course to run out early says so in the popup's pace tile alone.
         // The time to the reset stays dim.
         function test_paceNeverRaisesTheLevel_data() {
             const day = 86400;
@@ -2796,7 +2796,7 @@ TestRoot {
             return root.find(header(popup), i => i.text === "until reset");
         }
 
-        // Each limit's delegate, in order: its bar and the pace sentence.
+        // Each limit's bar, in order; the header's limit shows none.
         function rows(popup) {
             const found = [];
             const collect = i => {
@@ -2810,17 +2810,26 @@ TestRoot {
             return found;
         }
 
-        function sentence(row) {
-            return row.children.find(c => c.wrapMode === Text.Wrap) ?? null;
+        // The pace tile under the graph.
+        function paceTile(popup) {
+            return root.find(popup, i => i.objectName === "pace");
         }
 
-        function bars(row) {
-            return row.children.find(c => c.wrapMode === undefined);
+        function paceReading(popup) {
+            return root.find(paceTile(popup), i => i.unit !== undefined && i.value !== undefined);
+        }
+
+        // What the pace tile says, its caption then its reading, or nothing
+        // while it is hidden.
+        function paceText(popup) {
+            const tile = paceTile(popup);
+            const reading = paceReading(popup);
+            return tile.visible ? [tile.caption, reading.value, reading.unit].filter(t => t !== "").join(" ") : "";
         }
 
         // The filled part of a row's bar.
         function fill(row) {
-            return root.find(bars(row), i => i.radius !== undefined && i.parent.radius !== undefined);
+            return root.find(row, i => i.radius !== undefined && i.parent.radius !== undefined);
         }
 
         function rowText(row, text) {
@@ -2877,8 +2886,8 @@ TestRoot {
             compare(shorter.map(r => [r.limit.label, r.limit.percent, r.resets]),
                     data.bars.map(([label, percent, resets]) => [label, percent, root.localized(resets)]));
             shorter.forEach(r => {
-                verify(bars(r).visible, r.limit.label);
-                compare(bars(r).Accessible.name, r.limit.label);
+                verify(r.visible, r.limit.label);
+                compare(r.Accessible.name, r.limit.label);
                 verify(rowText(r, root.localized(r.limit.percent + "%")), r.limit.label);
             });
         }
@@ -2893,8 +2902,10 @@ TestRoot {
             verify(shown.includes("Kimi") && shown.includes("Monthly limit"), JSON.stringify(shown));
             verify(!shown.includes("Weekly limit"), JSON.stringify(shown));
             verify(root.find(popup, i => i.caption === "This month") !== null, "the graph's tile names the month");
-            const said = sentence(rows(popup)[0]).text;
-            verify(said.startsWith("The monthly limit is on pace to run out "), said);
+            // A run-out a day away gives its weekday alone, as a week's does.
+            const said = paceText(popup);
+            verify(said.startsWith("Runs out "), said);
+            verify(!/[0-9]+\/[0-9]+\//.test(said), said);
             // A first check that failed has no window to say so, and the
             // popup still names the month.
             u.entries = Object.assign({}, u.entries, { kimi: { status: "error", lastError: "can't reach api.kimi.ai",
@@ -3152,8 +3163,8 @@ TestRoot {
             verify(!shown.includes("All models"), JSON.stringify(shown));
             const only = rows(popup);
             compare(only.length, 1);
-            verify(!bars(only[0]).visible);
-            verify(sentence(only[0]).visible, "the pace sentence takes the bars' place");
+            verify(!only[0].visible);
+            verify(paceTile(popup).visible, "the pace still has its tile");
             verify(shown.includes("Weekly limit") && !shown.includes("Weekly limits"));
             const claude = root.texts(load("claude"));
             verify(claude.includes("Weekly limits") && !claude.includes("Weekly limit"), JSON.stringify(claude));
@@ -3178,7 +3189,7 @@ TestRoot {
             const popup = load("claude");
             const only = rows(popup);
             compare(only.length, 1);
-            verify(!only[0].parent.visible, "no bars and no sentence");
+            verify(!only[0].parent.visible, "no bars");
             const loader = host.createObject(root) as Loader;
             loaders.push(loader);
             loader.setSource(Qt.resolvedUrl("../../package/contents/ui/popups/CpuPopup.qml"), { monitor: monitor });
@@ -3354,92 +3365,93 @@ TestRoot {
                 verify(shown.includes(text), text + " in " + JSON.stringify(shown));
             }
             verify(!shown.includes("All models"), JSON.stringify(shown));
-            compare(rows(popup).map(r => bars(r).visible), [false, true, true]);
+            compare(rows(popup).map(r => r.visible), [false, true, true]);
             verify(!shown.some(t => t.startsWith("- - ")), "two limits and no choice: no inner ring");
         }
 
-        // The one thing worth saying about the pace, under the bar it is
-        // about, in the text colour. `row` is the limit it sits under; times
-        // are rounded as the sentence rounds them.
-        function test_paceSentence_data() {
+        // The one thing worth saying about the pace, in a tile under the
+        // graph whatever it is about: its caption names a model when it is
+        // about one, over a reading in the text colour. Times are rounded as
+        // the tile rounds them.
+        function test_paceTile_data() {
             const day = 86400;
             const window = (percent, left, points) => ({ percent: percent, left: left, points: points });
             return [
-                { tag: "modelOut", row: 1, expect: u => {
+                { tag: "modelOut", expect: u => {
                     // Fable: 78 % four days and three hours in.
                     const w = u.entries.claude.scoped[0];
                     const start = w.resetsAt - w.windowSeconds;
-                    return "Fable is on pace to run out " + wallClock(u, start + (u.createdAt - start) * 100 / 78, 600);
+                    return "Fable runs out " + wallClock(u, start + (u.createdAt - start) * 100 / 78, 600);
                 } },
-                { tag: "allOutFirst", row: 0,
+                { tag: "allOutFirst",
                   weekly: window(60, 4 * day, [[3, 0], [2, 20], [1, 40], [0, 60]]),
                   scoped: [{ id: "Fable", label: "Fable", w: window(30, 4 * day, [[3, 0], [0, 30]]) }],
-                  expect: u => "All models are on pace to run out " + wallClock(u, u.createdAt + 2 * day, 600) },
+                  expect: u => "Runs out " + wallClock(u, u.createdAt + 2 * day, 600) },
                 // With both limits on course to run out, the sooner one is said.
-                { tag: "bothOutModelSooner", row: 1,
+                { tag: "bothOutModelSooner",
                   weekly: window(60, 4 * day, [[3, 0], [0, 60]]),
                   scoped: [{ id: "Fable", label: "Fable", w: window(90, 4 * day, [[3, 0], [0, 90]]) }],
-                  expect: u => "Fable is on pace to run out " + wallClock(u, u.createdAt - 3 * day + 3 * day * 100 / 90, 600) },
-                { tag: "bothOutWeekSooner", row: 0,
+                  expect: u => "Fable runs out " + wallClock(u, u.createdAt - 3 * day + 3 * day * 100 / 90, 600) },
+                { tag: "bothOutWeekSooner",
                   weekly: window(85, 4 * day, [[3, 0], [0, 85]]),
                   scoped: [{ id: "Fable", label: "Fable", w: window(60, 4 * day, [[3, 0], [0, 60]]) }],
-                  expect: u => "All models are on pace to run out " + wallClock(u, u.createdAt - 3 * day + 3 * day * 100 / 85, 600) },
+                  expect: u => "Runs out " + wallClock(u, u.createdAt - 3 * day + 3 * day * 100 / 85, 600) },
                 // A run-out still ahead outranks a model's limit already reached.
-                { tag: "outBeforeModelReached", row: 0,
+                { tag: "outBeforeModelReached",
                   weekly: window(60, 4 * day, [[3, 0], [0, 60]]),
                   scoped: [{ id: "Fable", label: "Fable", w: window(100, 4 * day, [[3, 0], [1, 100], [0, 100]]) }],
-                  expect: u => "All models are on pace to run out " + wallClock(u, u.createdAt + 2 * day, 600) },
-                { tag: "oneLimitOut", row: 0,
+                  expect: u => "Runs out " + wallClock(u, u.createdAt + 2 * day, 600) },
+                { tag: "oneLimitOut",
                   weekly: window(60, 4 * day, [[3, 0], [2, 20], [1, 40], [0, 60]]), scoped: [],
-                  expect: u => "The weekly limit is on pace to run out " + wallClock(u, u.createdAt + 2 * day, 600) },
-                { tag: "lasts", row: 0,
+                  expect: u => "Runs out " + wallClock(u, u.createdAt + 2 * day, 600) },
+                { tag: "lasts",
                   weekly: window(30, 4 * day, [[3, 0], [0, 30]]), scoped: [],
-                  expect: u => root.localized("On pace to use 70% by the reset") },
-                { tag: "everyModelLockedOut", row: 0,
+                  expect: u => root.localized("At this pace 70% by the reset") },
+                { tag: "everyModelLockedOut",
                   weekly: window(100, 2 * day, [[3, 50], [2, 100], [0, 100]]),
-                  expect: u => "Limit reached " + wallClock(u, u.createdAt - 2 * day, 60) },
-                { tag: "reachedAtAnUnknownTime", row: 0,
+                  expect: u => "Ran out " + wallClock(u, u.createdAt - 2 * day, 60) },
+                { tag: "reachedAtAnUnknownTime",
                   weekly: window(100, 2 * day, []), scoped: [],
-                  expect: u => "Limit reached" },
-                { tag: "modelReached", row: 1,
+                  expect: u => "Ran out –" },
+                { tag: "modelReached",
                   scoped: [{ id: "Fable", label: "Fable", w: window(100, 2 * day + 21 * 3600, [[1, 90], [0.5, 100], [0, 100]]) }],
-                  expect: u => "Fable limit reached " + wallClock(u, u.createdAt - day / 2, 60) },
+                  expect: u => "Fable ran out " + wallClock(u, u.createdAt - day / 2, 60) },
                 // A runaway first day already warns.
-                { tag: "runawayFirstDay", row: 0,
+                { tag: "runawayFirstDay",
                   weekly: window(70, 7 * day - 18 * 3600, [[0.75, 0], [0, 70]]), scoped: [],
-                  expect: u => "The weekly limit is on pace to run out "
+                  expect: u => "Runs out "
                       + wallClock(u, u.createdAt - 18 * 3600 + day * 100 / 70, 600) },
                 // A quiet one has nothing to say, and never says it is too early.
-                { tag: "quietFirstDay", row: -1,
+                { tag: "quietFirstDay",
                   weekly: window(5, 7 * day - 3 * 3600, [[0.1, 2], [0, 5]]), scoped: [], expect: u => "" },
-                { tag: "resetPassed", row: -1,
+                { tag: "resetPassed",
                   weekly: window(40, -60, [[3, 10], [0, 40]]), scoped: [], expect: u => "" },
                 // Projected from a reading an hour and a half old, while
                 // checks fail, the run-out has already passed: it may have
-                // happened, not still to come. The sentence greys with the
+                // happened, not still to come. The reading greys with the
                 // reading.
-                { tag: "staleRunOutPast", row: 0, ago: 5400,
+                { tag: "staleRunOutPast", ago: 5400,
                   weekly: window(99, 3 * day, [[4, 0], [0.0625, 99]]), scoped: [],
-                  expect: u => "The weekly limit may already have run out "
+                  expect: u => "May have run out "
                       + wallClock(u, u.createdAt - 4 * day + (4 * day - 5400) * 100 / 99, 600) },
-                { tag: "staleModelRunOutPast", row: 1, ago: 5400,
+                { tag: "staleModelRunOutPast", ago: 5400,
                   weekly: window(20, 3 * day, [[4, 0], [0.0625, 20]]),
                   scoped: [{ id: "Fable", label: "Fable", w: window(99, 3 * day, [[4, 0], [0.0625, 99]]) }],
-                  expect: u => "Fable may already have run out "
+                  expect: u => "Fable may have run out "
                       + wallClock(u, u.createdAt - 4 * day + (4 * day - 5400) * 100 / 99, 600) },
-                { tag: "staleAllRunOutPast", row: 0, ago: 5400,
+                { tag: "staleAllRunOutPast", ago: 5400,
                   weekly: window(99, 3 * day, [[4, 0], [0.0625, 99]]),
                   scoped: [{ id: "Fable", label: "Fable", w: window(20, 3 * day, [[4, 0], [0.0625, 20]]) }],
-                  expect: u => "All models may already have run out "
+                  expect: u => "May have run out "
                       + wallClock(u, u.createdAt - 4 * day + (4 * day - 5400) * 100 / 99, 600) },
                 // At the longest interval a reading just under two hours
                 // old is still grey and says the pace; at two hours it is
                 // struck, and nothing of it is shown.
-                { tag: "staleTwoHours", row: -1, ago: 7200,
+                { tag: "staleTwoHours", ago: 7200,
                   weekly: window(99, 3 * day, [[4, 0], [7200 / day, 99]]), scoped: [], expect: u => "" },
-                { tag: "staleUnderTwoHours", row: 0, ago: 7140,
+                { tag: "staleUnderTwoHours", ago: 7140,
                   weekly: window(60, 3 * day, [[4, 0], [7140 / day, 60]]), scoped: [],
-                  expect: u => "The weekly limit is on pace to run out "
+                  expect: u => "Runs out "
                       + wallClock(u, u.createdAt - 4 * day + (4 * day - 7140) * 100 / 60, 600) }
             ];
         }
@@ -3448,7 +3460,7 @@ TestRoot {
             return words.weekdayTime(Math.round(epoch / step) * step, usage.entries.claude.weekly);
         }
 
-        function test_paceSentence(data) {
+        function test_paceTile(data) {
             const usage = monitor.usage;
             const changes = {};
             if (data.weekly) {
@@ -3466,35 +3478,16 @@ TestRoot {
             }
             setClaude(changes);
             const popup = load("claude");
-            const all = rows(popup);
-            const said = all.map(r => sentence(r)).filter(s => s.visible);
             const expected = data.expect(usage);
-            if (data.row < 0) {
-                compare(said.length, 0);
+            compare(paceText(popup), expected);
+            if (expected === "") {
                 return;
             }
-            compare(said.length, 1);
-            const text = sentence(all[data.row]);
-            compare(text.text, expected);
-            compare(String(text.color), String(data.ago === undefined ? Kirigami.Theme.textColor : Style.dim(Kirigami.Theme.textColor)));
-            compare(text.textFormat, Text.PlainText);
-            // The ring's limit has no bar, so its sentence comes first.
-            if (data.row === 0) {
-                verify(!bars(all[0]).visible);
-                if (all.length > 1) {
-                    verify(text.mapToItem(popup, Qt.point(0, text.height)).y <= bars(all[1]).mapToItem(popup, Qt.point(0, 0)).y,
-                           "above the models' bars");
-                }
-            } else {
-                const bar = bars(all[data.row]);
-                verify(bar.visible);
-                verify(text.mapToItem(popup, Qt.point(0, 0)).y >= bar.mapToItem(popup, Qt.point(0, bar.height)).y,
-                       "the sentence sits under its bar");
-                if (data.row + 1 < all.length) {
-                    verify(text.mapToItem(popup, Qt.point(0, text.height)).y <= all[data.row + 1].mapToItem(popup, Qt.point(0, 0)).y,
-                           "and above the next limit");
-                }
-            }
+            const reading = paceReading(popup);
+            compare(String(reading.color), String(data.ago === undefined ? Kirigami.Theme.textColor : Style.dim(Kirigami.Theme.textColor)));
+            const g = graph(popup);
+            verify(paceTile(popup).mapToItem(popup, Qt.point(0, 0)).y >= g.mapToItem(popup, Qt.point(0, g.height)).y,
+                   "the tile sits under the graph");
         }
 
         // A run-out is said to ten minutes, but never at or after the reset
@@ -3522,7 +3515,7 @@ TestRoot {
             compare(popup.paces[0].runOut, weekly.resetsAt - data.before);
             const said = mark + data.said;
             verify(said <= weekly.resetsAt - 60);
-            compare(sentence(rows(popup)[0]).text, "The weekly limit is on pace to run out " + words.weekdayTime(said, weekly));
+            compare(paceText(popup), "Runs out " + words.weekdayTime(said, weekly));
         }
 
         // Ten minutes on the clock the time is shown in: in a zone a quarter
@@ -3539,13 +3532,13 @@ TestRoot {
             const p = popup.paces[0];
             compare(p.state, "out");
             const said = Math.round((p.runOut + offset) / 600) * 600 - offset;
-            compare(sentence(rows(popup)[0]).text, "The weekly limit is on pace to run out " + words.weekdayTime(said, weekly));
+            compare(paceText(popup), "Runs out " + words.weekdayTime(said, weekly));
         }
 
         // Only a limit's reading sets its colour, amber from 75 % and red from
         // 90 %: a run-out before the reset leaves the row's percentage and
         // bar and the header's ring at their own level, and says so in the
-        // pace sentence alone.
+        // pace tile alone.
         function test_paceNeverRaisesThePopupsLevel() {
             const red = String(Kirigami.Theme.negativeTextColor);
             const amber = String(Kirigami.Theme.neutralTextColor);
@@ -4015,7 +4008,7 @@ TestRoot {
             const shown = root.texts(load("claude"));
             verify(shown.includes("Run claude in a terminal to sign in."), JSON.stringify(shown));
             verify(!shown.includes("All models") && !shown.includes("until reset"), JSON.stringify(shown));
-            verify(!shown.some(t => /on pace|run out|by the reset/i.test(t)), JSON.stringify(shown));
+            verify(!shown.some(t => /pace|runs? out|by the reset/i.test(t)), JSON.stringify(shown));
             monitor.usage.entries = {};
             monitor.usage.helperError = "python3 was not found on the Plasma session's PATH.";
             verify(root.texts(load("codex")).includes(monitor.usage.helperError));
@@ -4157,8 +4150,8 @@ TestRoot {
 
         // Once the reading is two check intervals old the popup strikes it
         // as the panel does, and shows nothing of it: the header's ring is
-        // struck with no number, and the countdown, the bars, the pace
-        // sentence and the graph go. The status under the header stays,
+        // struck with no number, and the countdown, the bars, the pace tile
+        // and the graph go. The status under the header stays,
         // saying when the last reading was taken. The check that finds the
         // reading too old strikes it with the popup open, and the next good
         // check brings it all back.
@@ -4167,9 +4160,9 @@ TestRoot {
             const popup = load("claude");
             const r = ring(popup);
             const g = graph(popup);
-            const sentenceShown = () => rows(popup).some(row => sentence(row).visible);
+            const paceShown = () => paceTile(popup).visible;
             verify(r.stale && !r.cancelled, "grey first");
-            verify(g.visible && rows(popup).length === 2 && sentenceShown() && countdown(popup).length > 0, "with its readings");
+            verify(g.visible && rows(popup).length === 2 && paceShown() && countdown(popup).length > 0, "with its readings");
 
             failClaude(600);
             verify(r.cancelled && !r.stale);
@@ -4194,7 +4187,7 @@ TestRoot {
             verify(!r.cancelled && !r.stale);
             tryCompare(r, "struck", 0, 3000);
             tryCompare(r, "text", root.localized("52%"), 3000);
-            verify(g.visible && rows(popup).length === 2 && sentenceShown() && countdown(popup).length > 0, "its readings back");
+            verify(g.visible && rows(popup).length === 2 && paceShown() && countdown(popup).length > 0, "its readings back");
             verify(!checkStatus(popup).visible);
         }
 
@@ -4300,9 +4293,9 @@ TestRoot {
             compare(popup.pollAt, usage.entries.claude.weekly.history[usage.entries.claude.weekly.history.length - 1][0]);
         }
 
-        // The graph draws the run-out the pace sentence names and no other.
+        // The graph draws the run-out the pace tile names and no other.
         // With the week and Fable both on course to run out, it is the
-        // sooner one the sentence gives; when that is a model limit the
+        // sooner one the tile gives; when that is a model limit the
         // graph has no line for, it draws none. Each week began four days
         // and three hours ago.
         function test_graphDrawsTheRunOutSaid_data() {
@@ -4321,7 +4314,7 @@ TestRoot {
             const popup = load("claude");
             verify(popup.paces.every(p => p.state === "out" || p.state === "lasts"), JSON.stringify(popup.paces));
             compare(popup.paceEvent.index, data.said);
-            verify(sentence(rows(popup)[data.said]).visible);
+            verify(paceTile(popup).visible);
             const g = graph(popup);
             if (!data.drawn) {
                 verify(!Number.isFinite(g.runOutAt));
@@ -4336,7 +4329,7 @@ TestRoot {
             const when = popup.runOutWhen(popup.limits[data.said], said);
             compare(g.runOutTime.text, when);
             verify(g.runOutTime.visible);
-            verify(sentence(rows(popup)[data.said]).text.endsWith(" " + when), "the time the sentence gives");
+            verify(paceText(popup).endsWith(" " + when), "the time the tile gives");
         }
 
         function test_emptyHistory() {
@@ -4919,7 +4912,7 @@ TestRoot {
 
         // Only for a limit on course to run out before the reset: a dashed
         // line from the rule to the floor at the moment it runs out, and the
-        // pace sentence's time centred under the floor, inside the graph. It
+        // pace tile's time centred under the floor, inside the graph. It
         // takes its limit's level, as the limit's bar and ring do: the text
         // colour with the time dim below 75 %, amber from 75 and red from 90.
         function test_runOutOnlyWhenOut_data() {
