@@ -91,6 +91,12 @@ has the limit but the reply can't be read. OpenCode Go's entry also carries
 "week", its weekly limit, beside the monthly limit in "weekly". Kimi's
 entry carries "week" too on plans that have a weekly limit.
 
+Claude's and Codex's entries also carry "bankedResets" while the account
+has banked resets left to use: {"count": <how many>, "expires": [<epoch
+seconds>, ...]}. "expires" lists when each reset expires, soonest first,
+for the resets the reply gives details of. It can be shorter than the count
+or empty, and a reset that never expires has no entry in it.
+
 --program <provider>=<path> names the program to run for Claude, Codex or
 OpenCode, as the user chose it in Ringside's settings; ~ stands for the home
 folder.
@@ -183,6 +189,14 @@ CLAUDE_TOKEN_URL = "https://platform.claude.com/v1/oauth/token"
 # Public client id of the Claude Code CLI; the refresh grant needs it.
 CLAUDE_CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
 CLAUDE_BETA_HEADER = "oauth-2025-04-20"
+# With cedar_ember=1 in the URL, Claude's usage reply also includes the
+# account's banked resets, in a "cedar_ember" block. Anthropic fills that
+# block only for Claude Code 2.1.280 or later, so the usage request
+# identifies itself as a Claude Code release. If Anthropic raises that
+# minimum past this version, the block comes back ineligible and only the
+# banked resets stop showing; the limits are unaffected.
+CLAUDE_USAGE_QUERY = "?cedar_ember=1"
+CLAUDE_CODE_AGENT = "claude-cli/2.1.321 (external, cli)"
 # Cloudflare in front of platform.claude.com rejects the stock urllib agent outright.
 USER_AGENT = f"ringside/{VERSION}"
 # Seconds before expiry to refresh the access token.
@@ -689,7 +703,28 @@ def parse_codex(result):
     # starter must not mistake that for a plan with no five-hour limit.
     if session_unknown and "session" not in reading:
         reading["sessionUnknown"] = True
+    banked = codex_banked_resets(result.get("rateLimitResetCredits"))
+    if banked:
+        reading["bankedResets"] = banked
     return reading
+
+
+def codex_banked_resets(summary):
+    """Return the banked resets in the "rateLimitResetCredits" of a Codex
+    account/rateLimits/read result, as {"count", "expires"}, or None if
+    there are none. Ringside only displays these, so a summary it can't
+    read counts as no resets, and a reset whose expiry it can't read is
+    listed without one."""
+    if not isinstance(summary, dict):
+        return None
+    count = summary.get("availableCount")
+    if type(count) is not int or count <= 0:
+        return None
+    credits = summary.get("credits")
+    expires = sorted(int(credit["expiresAt"]) for credit in (credits if isinstance(credits, list) else [])
+                     if isinstance(credit, dict) and credit.get("status") == "available"
+                     and type(credit.get("expiresAt")) in (int, float) and math.isfinite(credit["expiresAt"]))
+    return {"count": count, "expires": expires[:count]}
 
 
 def cli_or_reason(name):
@@ -1031,8 +1066,9 @@ def claude_access_token(margin=CLAUDE_EXPIRY_MARGIN):
     return fresh["accessToken"]
 
 
-def parse_claude(usage):
-    """Reduce an /api/oauth/usage body to its weekly windows.
+def parse_claude(usage, now=None):
+    """Reduce an /api/oauth/usage body to its weekly windows, and its
+    banked resets as of now (epoch seconds, by default the clock's).
 
     The all-models window is the top-level seven_day entry. Model-specific
     weekly windows arrive in the limits list as weekly_scoped entries and join
@@ -1063,7 +1099,39 @@ def parse_claude(usage):
             reading["session"] = parse_session(usage)
         except ValueError:
             reading["sessionUnknown"] = True
+    banked = claude_banked_resets(usage.get("cedar_ember"), time.time() if now is None else now)
+    if banked:
+        reading["bankedResets"] = banked
     return reading
+
+
+def claude_banked_resets(block, now):
+    """Return the banked resets in a Claude usage reply's "cedar_ember"
+    block, as {"count", "expires"}, or None if it shows none.
+
+    A block that isn't eligible describes the request (for example, a
+    client Anthropic doesn't recognise), not the account, so it shows none.
+    A grant counts while it has started, isn't paused and hasn't expired.
+    Each reset it has left expires when the grant ends; a grant whose end
+    can't be read gives resets with no expiry. Ringside only displays these,
+    so anything else unexpected counts as no resets."""
+    if not isinstance(block, dict) or block.get("eligible") is not True:
+        return None
+    grants = block.get("grants")
+    count, expires = 0, []
+    for grant in grants if isinstance(grants, list) else []:
+        if not isinstance(grant, dict) or grant.get("paused") is True:
+            continue
+        left = grant.get("resets_left")
+        if type(left) is not int or left <= 0:
+            continue
+        starts, ends = epoch_seconds(grant.get("starts_at")), epoch_seconds(grant.get("ends_at"))
+        if starts is not None and starts > now or ends is not None and ends <= now:
+            continue
+        count += left
+        if ends is not None:
+            expires += [ends] * left
+    return {"count": count, "expires": sorted(expires)} if count else None
 
 
 def session_limited(usage):
@@ -1100,10 +1168,11 @@ def parse_session(usage):
 
 def claude_usage():
     token = claude_access_token()
-    usage = http_json(CLAUDE_USAGE_URL, {
+    usage = http_json(CLAUDE_USAGE_URL + CLAUDE_USAGE_QUERY, {
         "Authorization": f"Bearer {token}",
         "anthropic-beta": CLAUDE_BETA_HEADER,
         "Content-Type": "application/json",
+        "User-Agent": CLAUDE_CODE_AGENT,
     })
     context = CREDITS_CONTEXT.get()
     if context is not None:
@@ -1757,7 +1826,16 @@ def fresh(entry, now, name):
             and well_formed(entry.get("weekly")) and isinstance(entry.get("scoped", []), list)
             and all(entry.get(key) is None or well_formed(entry[key]) for key in ("session", "week"))
             and all(well_formed(entry.get(key)) for key in ALWAYS.get(name, ()))
-            and all(well_formed(w, scoped=True) for w in entry.get("scoped", [])))
+            and all(well_formed(w, scoped=True) for w in entry.get("scoped", []))
+            and ("bankedResets" not in entry or banked_resets_well_formed(entry["bankedResets"])))
+
+
+def banked_resets_well_formed(banked):
+    """Whether a cached "bankedResets" has the shape
+    claude_banked_resets() and codex_banked_resets() return."""
+    return (isinstance(banked, dict) and type(banked.get("count")) is int and banked["count"] > 0
+            and isinstance(banked.get("expires"), list) and len(banked["expires"]) <= banked["count"]
+            and all(type(epoch) is int for epoch in banked["expires"]))
 
 
 # Failures that depend on which program was run.

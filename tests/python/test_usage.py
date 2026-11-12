@@ -224,6 +224,49 @@ class CodexParsing(Isolated):
             for value in (report["weekly"], report["scoped"][0], report["session"]):
                 self.assertEqual((value["percent"], value["exhausted"]), (100, exhausted))
 
+    # The expiries of the available resets, soonest first. A reset that's
+    # redeemed, being redeemed or has no readable time adds none. The count
+    # comes from the reply, because its list may be cut short.
+    def test_banked_resets_are_counted_with_their_expiry(self):
+        result = fixture("codex_rate_limits.json")
+        result["rateLimitResetCredits"] = {"availableCount": 4, "credits": [
+            {"status": "available", "expiresAt": 1796163778},
+            {"status": "redeemed", "expiresAt": 1790000000},
+            {"status": "available", "expiresAt": 1795000000.5},
+            {"status": "available", "expiresAt": None},
+            {"status": "available", "expiresAt": "soon"},
+            {"status": "available", "expiresAt": json.loads("1e999")},
+            "credit"]}
+        self.assertEqual(usage.parse_codex(result)["bankedResets"],
+                         {"count": 4, "expires": [1795000000, 1796163778]})
+
+    def test_banked_resets_need_a_count(self):
+        for summary in ("absent", None, [], {}, {"availableCount": 0, "credits": []},
+                        {"availableCount": "2"}, {"availableCount": True}, {"availableCount": 2.0},
+                        {"availableCount": -1}):
+            with self.subTest(summary=summary):
+                result = fixture("codex_rate_limits.json")
+                if summary != "absent":
+                    result["rateLimitResetCredits"] = summary
+                report = usage.parse_codex(result)
+                self.assertNotIn("bankedResets", report)
+                self.assertEqual(report["weekly"], window(34, 1788926677))
+
+    def test_banked_resets_without_details_are_only_counted(self):
+        for credits in ("absent", None, {}, []):
+            with self.subTest(credits=credits):
+                summary = {"availableCount": 2}
+                if credits != "absent":
+                    summary["credits"] = credits
+                result = dict(fixture("codex_rate_limits.json"), rateLimitResetCredits=summary)
+                self.assertEqual(usage.parse_codex(result)["bankedResets"], {"count": 2, "expires": []})
+
+    def test_banked_resets_list_no_more_expiries_than_resets(self):
+        credits = [{"status": "available", "expiresAt": at} for at in (30, 10, 20)]
+        result = dict(fixture("codex_rate_limits.json"),
+                      rateLimitResetCredits={"availableCount": 2, "credits": credits})
+        self.assertEqual(usage.parse_codex(result)["bankedResets"], {"count": 2, "expires": [10, 20]})
+
     def test_window_length_is_the_picked_windows(self):
         result = fixture("codex_rate_limits.json")
         result["rateLimitsByLimitId"]["codex"]["primary"]["windowDurationMins"] = 1440
@@ -303,6 +346,48 @@ class ClaudeParsing(Isolated):
     def test_missing_weekly_is_an_error(self):
         with self.assertRaises(RuntimeError):
             usage.parse_claude({"five_hour": {"utilization": 1}})
+
+
+    # Asked as a Claude Code release, the reply includes the account's banked
+    # resets. A grant counts while it has started, isn't paused and hasn't
+    # expired, and each reset it has left expires when the grant ends.
+    def test_banked_resets_come_from_cedar_ember(self):
+        body = fixture("claude_usage.json")
+        body["cedar_ember"] = {"eligible": True, "ineligible_reason": None, "grants": [
+            {"resets_left": 1, "starts_at": "2026-09-22T16:00:00+00:00", "ends_at": "2026-10-22T16:00:00+00:00"},
+            {"resets_left": 2, "ends_at": None},
+            {"resets_left": 1, "ends_at": "soon"},
+            {"resets_left": 1, "paused": True, "ends_at": "2026-10-30T00:00:00Z"},
+            {"resets_left": 1, "starts_at": "2026-10-20T00:00:00Z"},
+            {"resets_left": 1, "ends_at": "2026-10-01T00:00:00Z"},
+            {"resets_left": 0}, {"resets_left": "1"}, {"resets_left": True}, "grant"]}
+        now = 1791000000  # 2026-10-03
+        self.assertEqual(usage.parse_claude(body, now)["bankedResets"], {"count": 4, "expires": [1792684800]})
+
+    # An ineligible block describes the request, not the account. It and
+    # anything unreadable show no resets, and the limits are still read.
+    def test_no_banked_resets_without_an_eligible_block(self):
+        for block in ("absent", None, [], {}, {"eligible": False, "ineligible_reason": "surface"},
+                      {"eligible": "true", "grants": [{"resets_left": 1}]}, {"eligible": True},
+                      {"eligible": True, "grants": {}}, {"eligible": True, "grants": []}):
+            with self.subTest(block=block):
+                body = fixture("claude_usage.json")
+                if block != "absent":
+                    body["cedar_ember"] = block
+                report = usage.parse_claude(body, 1791000000)
+                self.assertNotIn("bankedResets", report)
+                self.assertEqual(report["weekly"], window(62, 1788537600))
+
+    def test_usage_is_asked_for_with_banked_resets_as_claude_code(self):
+        http = mock.Mock(return_value=fixture("claude_usage.json"))
+        with mock.patch.object(usage, "claude_access_token", return_value="token"), \
+                mock.patch.object(usage, "http_json", http):
+            usage.claude_usage()
+        url, headers = http.call_args.args
+        self.assertEqual(url, "https://api.anthropic.com/api/oauth/usage?cedar_ember=1")
+        self.assertEqual(headers["User-Agent"], usage.CLAUDE_CODE_AGENT)
+        self.assertTrue(usage.CLAUDE_CODE_AGENT.startswith("claude-cli/2.1."))
+        self.assertEqual(headers["Authorization"], "Bearer token")
 
 
 class Conversions(Isolated):
@@ -840,6 +925,13 @@ class ReadingCache(Isolated):
         self.assertEqual(served, dict(self.good, weekly=dict(self.good["weekly"], history=[])))
         fetch.assert_not_called()
 
+    def test_cached_banked_resets_are_served_with_the_reading(self):
+        banked = {"count": 2, "expires": [1500, 2000]}
+        self.write_cache({"codex": dict(self.good, bankedResets=banked)})
+        fetch = mock.Mock()
+        self.assertEqual(self.collect(1000 + 299, codex=fetch)["codex"]["bankedResets"], banked)
+        fetch.assert_not_called()
+
     def test_stale_reading_is_polled_again(self):
         self.write_cache({"codex": self.good})
         fetch = mock.Mock(return_value=reading(2, 6))
@@ -1096,6 +1188,10 @@ class ReadingCache(Isolated):
                       {"status": "ok", "fetchedAt": 999, "weekly": dict(window, windowSeconds=float(WEEK))},
                       {"status": "ok", "fetchedAt": 999, "weekly": {"percent": 1, "resetsAt": 5}},
                       {"status": "ok", "fetchedAt": 999, "weekly": window, "scoped": [window]},
+                      {"status": "ok", "fetchedAt": 999, "weekly": window, "bankedResets": None},
+                      {"status": "ok", "fetchedAt": 999, "weekly": window, "bankedResets": {"count": 0, "expires": []}},
+                      {"status": "ok", "fetchedAt": 999, "weekly": window, "bankedResets": {"count": 1, "expires": [1, 2]}},
+                      {"status": "ok", "fetchedAt": 999, "weekly": window, "bankedResets": {"count": 2, "expires": ["soon"]}},
                       {"status": "rate_limited", "heldUntil": "later"},
                       {"status": "error", "heldUntil": 1100, "holdSeconds": 300}):
             with self.subTest(entry=entry):

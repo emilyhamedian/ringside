@@ -3533,6 +3533,95 @@ TestRoot {
             verify(reading.mapToItem(line, Qt.point(0, 0)).y >= caption.mapToItem(line, Qt.point(0, caption.height)).y, "under it");
         }
 
+        function resetsTile(popup) {
+            return root.find(popup, i => i.objectName === "resets");
+        }
+
+        // An account's banked resets get their own line under the pace line,
+        // laid out the same way and as tall. Each reset is a ticket with the
+        // time left until it expires, soonest first, in the neutral colour
+        // within three days. Past three, there are two tickets and a count of
+        // the rest; resets with no expiry are plain tickets. The expiries
+        // below are offsets from now. A long caption still leaves the two
+        // lines one above the other.
+        function test_bankedResets_data() {
+            const day = 86400;
+            return [
+                { tag: "none", slots: null },
+                { tag: "one", banked: { count: 1, expires: [19 * day + 3600] }, slots: [["19d", false]] },
+                { tag: "three, one expiring", banked: { count: 3, expires: [21 * day + 60, 2 * day + 60, 12 * day + 60] },
+                  slots: [["2d", true], ["12d", false], ["21d", false]] },
+                { tag: "five", banked: { count: 5, expires: [4, 9, 15, 20, 28].map(d => d * day + 60) },
+                  slots: [["4d", false], ["9d", false], ["+3", false]] },
+                { tag: "no expiries", banked: { count: 2, expires: [] }, slots: [["", false], ["", false]] },
+                { tag: "a wide pace", banked: { count: 1, expires: [19 * day + 3600] }, slots: [["19d", false]],
+                  scoped: [{ id: "codex_bengalfox", label: "GPT-5.3-Codex-Spark", percent: 90 }] }
+            ];
+        }
+
+        function test_bankedResets(data) {
+            const usage = monitor.usage;
+            const codex = Object.assign({}, usage.entries.codex);
+            if (data.banked) {
+                codex.bankedResets = { count: data.banked.count, expires: data.banked.expires.map(at => usage.createdAt + at) };
+            }
+            if (data.scoped) {
+                codex.scoped = data.scoped.map(s => Object.assign({ id: s.id, label: s.label },
+                                                                  usage.window(s.percent, codex.weekly.resetsAt - usage.createdAt,
+                                                                               [[1.8, 0], [0, s.percent]])));
+            }
+            usage.entries = Object.assign({}, usage.entries, { codex: codex });
+            const popup = load("codex");
+            const pace = paceTile(popup);
+            const tile = resetsTile(popup);
+            const graphTile = root.find(popup, i => i.caption === "This week");
+            verify(pace.visible, "the pace has its line");
+            compare(pace.width, graphTile.width, "the pace takes the whole width");
+            if (!data.slots) {
+                verify(!tile.visible);
+                return;
+            }
+            verify(tile.visible);
+            const tickets = root.find(tile, i => i.slots !== undefined);
+            compare(tickets.slots.map(slot => [slot.text, slot.soon]), data.slots.map(([text, soon]) => [root.localized(text), soon]));
+            const shown = root.texts(tile);
+            data.slots.filter(([text]) => text !== "").forEach(([text]) => verify(shown.includes(root.localized(text)), text));
+            if (data.scoped) {
+                verify(paceText(popup).startsWith("GPT-5.3-Codex-Spark "), paceText(popup));
+            }
+            // One above the other, equally wide, and equally tall unless one
+            // has stacked its reading under its caption.
+            compare(tile.width, graphTile.width);
+            verify(tile.y >= pace.y + pace.height, "under the pace");
+            compare(tile.x, pace.x);
+            if (!pace.stacked) {
+                compare(tile.height, pace.height);
+            }
+            // The tickets sit at the end of the row, centred vertically like
+            // the pace line's reading.
+            compare(tickets.mapToItem(tile, Qt.point(0, 0)).x + Math.ceil(tickets.implicitWidth), tile.width - tile.horizontalPadding);
+            fuzzyCompare(tickets.mapToItem(tile, Qt.point(0, 0)).y + tickets.height / 2, tile.height / 2, 1);
+        }
+
+        // A struck-out reading shows no tickets. When the pace has nothing to
+        // say, the tickets are the only line under the graph.
+        function test_bankedResetsAlone() {
+            const usage = monitor.usage;
+            const banked = { count: 1, expires: [usage.createdAt + 19 * usage.day] };
+            setClaude({ weekly: usage.window(5, 7 * usage.day - 3 * 3600, [[0.1, 2], [0, 5]]), scoped: [], bankedResets: banked });
+            const popup = load("claude");
+            verify(!paceTile(popup).visible, "a quiet first day says nothing of the pace");
+            const tile = resetsTile(popup);
+            verify(tile.visible);
+            compare(tile.width, root.find(popup, i => i.caption === "This week").width);
+            const graphTile = root.find(popup, i => i.caption === "This week");
+            verify(tile.y >= graphTile.y + graphTile.height, "straight under the graph");
+
+            failClaude(600);
+            tryCompare(ring(popup), "struck", 1, 3000);
+            verify(!tile.visible, "struck, nothing of the reading shows");
+        }
+
         // A run-out is said to ten minutes, but never at or after the reset
         // it comes before: one that would round up past the reset, or into
         // its last minute, rounds down.

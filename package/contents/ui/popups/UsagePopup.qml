@@ -15,8 +15,9 @@ import ".."
 // the limit the ring tracks, a week or (for Kimi and OpenCode Go) a month,
 // and the time until it resets. Below it are a bar for each model's own
 // limit and for each shorter limit the plan has (the five-hour limit, and a
-// weekly limit beside a monthly one), then a graph of the window so far,
-// and under the graph a line on where the current pace leads.
+// weekly limit beside a monthly one), then a graph of the window so far.
+// Under the graph are a line on where the current pace leads and, while the
+// account has any, a line of tickets for its banked resets.
 // A failed check is said under the header, with the last reading kept in
 // grey for as long as the panel keeps it; once the panel's ring is struck,
 // so is the header's, and the status under it is all the popup shows. A
@@ -452,6 +453,8 @@ PopupPage {
             reading: paceReading
             readingCap: Style.capHeight(bodyMetrics, bodyCap)
             keyed: popup.paceEvent?.p.state === "out" && week.projected !== ""
+            // As tall as the tickets' row, so the two lines match.
+            minimumRowHeight: resetTickets.ticketHeight
             keyColor: {
                 const tone = popup.tone(popup.paceEvent ? Format.level(popup.limits[popup.paceEvent.index].percent) : 0);
                 return Qt.alpha(tone, 0.6 * tone.a);
@@ -474,6 +477,24 @@ PopupPage {
                 id: bodyCap
                 font: Kirigami.Theme.defaultFont
                 text: "H"
+            }
+        }
+
+        // The banked resets, on their own line under the pace line and laid
+        // out the same way.
+        LineTile {
+            objectName: "resets"
+            visible: popup.entry?.bankedResets !== undefined && !popup.struck
+            caption: i18nc("@title:group resets the account has saved to use later", "Banked resets")
+            reading: resetTickets
+            readingCap: resetTickets.cap
+            minimumRowHeight: Math.ceil(paceReading.implicitHeight)
+
+            ResetTickets {
+                id: resetTickets
+                banked: popup.entry?.bankedResets ?? ({ count: 0, expires: [] })
+                texts: words
+                nowMs: popup.nowMs
             }
         }
     }
