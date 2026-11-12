@@ -92,10 +92,10 @@ has the limit but the reply can't be read. OpenCode Go's entry also carries
 entry carries "week" too on plans that have a weekly limit.
 
 Claude's and Codex's entries also carry "bankedResets" while the account
-has banked resets to use: {"count": <how many>, "expires": [<epoch seconds>,
-...]}, when each expires, soonest first, for those the reply details. It may
-detail fewer than the count, or none, and a reset that never expires has no
-time.
+has banked resets left to use: {"count": <how many>, "expires": [<epoch
+seconds>, ...]}. "expires" lists when each reset expires, soonest first,
+for the resets the reply gives details of. It can be shorter than the count
+or empty, and a reset that never expires has no entry in it.
 
 --program <provider>=<path> names the program to run for Claude, Codex or
 OpenCode, as the user chose it in Ringside's settings; ~ stands for the home
@@ -189,11 +189,12 @@ CLAUDE_TOKEN_URL = "https://platform.claude.com/v1/oauth/token"
 # Public client id of the Claude Code CLI; the refresh grant needs it.
 CLAUDE_CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
 CLAUDE_BETA_HEADER = "oauth-2025-04-20"
-# Asked with cedar_ember=1, Claude's usage reply also carries the account's
-# banked resets, in "cedar_ember". Anthropic fills that only for Claude Code
-# 2.1.280 or later, so the usage request names itself as a Claude Code
-# release; if the floor rises past it, the block reads as ineligible and
-# only the resets go unshown.
+# With cedar_ember=1 in the URL, Claude's usage reply also includes the
+# account's banked resets, in a "cedar_ember" block. Anthropic fills that
+# block only for Claude Code 2.1.280 or later, so the usage request
+# identifies itself as a Claude Code release. If Anthropic raises that
+# minimum past this version, the block comes back ineligible and only the
+# banked resets stop showing; the limits are unaffected.
 CLAUDE_USAGE_QUERY = "?cedar_ember=1"
 CLAUDE_CODE_AGENT = "claude-cli/2.1.321 (external, cli)"
 # Cloudflare in front of platform.claude.com rejects the stock urllib agent outright.
@@ -709,10 +710,11 @@ def parse_codex(result):
 
 
 def codex_banked_resets(summary):
-    """The banked resets in an account/rateLimits/read result's
-    "rateLimitResetCredits", as {"count", "expires"}, or None when there are
-    none. Only shown, never used, so a summary it can't read counts as none,
-    and a reset whose expiry it can't read has none."""
+    """Return the banked resets in the "rateLimitResetCredits" of a Codex
+    account/rateLimits/read result, as {"count", "expires"}, or None if
+    there are none. Ringside only displays these, so a summary it can't
+    read counts as no resets, and a reset whose expiry it can't read is
+    listed without one."""
     if not isinstance(summary, dict):
         return None
     count = summary.get("availableCount")
@@ -1104,13 +1106,15 @@ def parse_claude(usage, now=None):
 
 
 def claude_banked_resets(block, now):
-    """The banked resets in a Claude usage reply's "cedar_ember", as
-    {"count", "expires"}, or None when it shows none. A block that isn't
-    eligible says why the caller can't be told, not that the account has
-    none, and shows none. A grant counts while it has started, isn't paused
-    and hasn't expired, and each of its resets left expires when it does;
-    one whose end can't be read has no expiry. Only shown, never used, so
-    anything else unexpected counts as none."""
+    """Return the banked resets in a Claude usage reply's "cedar_ember"
+    block, as {"count", "expires"}, or None if it shows none.
+
+    A block that isn't eligible describes the request (for example, a
+    client Anthropic doesn't recognise), not the account, so it shows none.
+    A grant counts while it has started, isn't paused and hasn't expired.
+    Each reset it has left expires when the grant ends; a grant whose end
+    can't be read gives resets with no expiry. Ringside only displays these,
+    so anything else unexpected counts as no resets."""
     if not isinstance(block, dict) or block.get("eligible") is not True:
         return None
     grants = block.get("grants")
@@ -1827,8 +1831,8 @@ def fresh(entry, now, name):
 
 
 def banked_resets_well_formed(banked):
-    """Whether a cached "bankedResets" is one claude_banked_resets() or
-    codex_banked_resets() could give."""
+    """Whether a cached "bankedResets" has the shape
+    claude_banked_resets() and codex_banked_resets() return."""
     return (isinstance(banked, dict) and type(banked.get("count")) is int and banked["count"] > 0
             and isinstance(banked.get("expires"), list) and len(banked["expires"]) <= banked["count"]
             and all(type(epoch) is int for epoch in banked["expires"]))

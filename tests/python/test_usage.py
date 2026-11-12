@@ -224,9 +224,9 @@ class CodexParsing(Isolated):
             for value in (report["weekly"], report["scoped"][0], report["session"]):
                 self.assertEqual((value["percent"], value["exhausted"]), (100, exhausted))
 
-    # Each available reset's expiry, soonest first; one redeemed, being
-    # redeemed or without a readable time has none, and the count is the
-    # reply's, as its list may be cut short.
+    # The expiries of the available resets, soonest first. A reset that's
+    # redeemed, being redeemed or has no readable time adds none. The count
+    # comes from the reply, because its list may be cut short.
     def test_banked_resets_are_counted_with_their_expiry(self):
         result = fixture("codex_rate_limits.json")
         result["rateLimitResetCredits"] = {"availableCount": 4, "credits": [
@@ -348,9 +348,9 @@ class ClaudeParsing(Isolated):
             usage.parse_claude({"five_hour": {"utilization": 1}})
 
 
-    # Asked as a Claude Code release, the reply carries the account's banked
-    # resets: each grant's resets left while it has started, isn't paused
-    # and hasn't expired, each expiring when its grant ends.
+    # Asked as a Claude Code release, the reply includes the account's banked
+    # resets. A grant counts while it has started, isn't paused and hasn't
+    # expired, and each reset it has left expires when the grant ends.
     def test_banked_resets_come_from_cedar_ember(self):
         body = fixture("claude_usage.json")
         body["cedar_ember"] = {"eligible": True, "ineligible_reason": None, "grants": [
@@ -364,8 +364,8 @@ class ClaudeParsing(Isolated):
         now = 1791000000  # 2026-10-03
         self.assertEqual(usage.parse_claude(body, now)["bankedResets"], {"count": 4, "expires": [1792684800]})
 
-    # An ineligible block names what the caller is, not what the account
-    # has; it and anything unreadable show no resets, and the windows stand.
+    # An ineligible block describes the request, not the account. It and
+    # anything unreadable show no resets, and the limits are still read.
     def test_no_banked_resets_without_an_eligible_block(self):
         for block in ("absent", None, [], {}, {"eligible": False, "ineligible_reason": "surface"},
                       {"eligible": "true", "grants": [{"resets_left": 1}]}, {"eligible": True},

@@ -5,10 +5,11 @@ import QtQuick
 import QtQuick.Shapes
 import org.kde.kirigami as Kirigami
 
-// A ticket's outline: a card with rounded corners and a half-round bite out
-// of each short end, lined and faintly filled. An Item around the Shape, so
-// the size the Shape takes from its path never reaches a layout. The line
-// sits on pixel centres, so the straight edges stay sharp at 1x.
+// A ticket shape: a card with rounded corners and a half-circle notch in
+// each short end, outlined and faintly filled. The Shape sits inside an Item
+// so that the size the Shape computes from its path never reaches a layout,
+// which would otherwise loop. The outline sits on pixel centres, so its
+// straight edges stay sharp at 1x.
 Item {
     id: ticket
 
@@ -18,8 +19,8 @@ Item {
     property real corner: 3
     property real notch: 3
 
-    // The line's centre on each side: near the top and left, far right,
-    // low at the bottom.
+    // Where the outline's centre runs: `near` at the top and left edges,
+    // `far` at the right edge and `low` at the bottom edge.
     readonly property real near: lineWidth / 2
     readonly property real far: width - near
     readonly property real low: height - near
@@ -29,8 +30,8 @@ Item {
         return " A " + radius + " " + radius + " 0 0 " + sweep + " " + x + " " + y;
     }
 
-    // Clockwise from the top left: each corner's arc turns outward, each
-    // bite's inward.
+    // Drawn clockwise from the top left. Each corner's arc curves outward and
+    // each notch's arc curves inward.
     readonly property string outline: "M " + (near + corner) + " " + near
         + " H " + (far - corner) + arc(corner, 1, far, near + corner)
         + " V " + (middle - notch) + arc(notch, 0, far, middle + notch)

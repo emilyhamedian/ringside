@@ -3537,12 +3537,13 @@ TestRoot {
             return root.find(popup, i => i.objectName === "resets");
         }
 
-        // A Codex account's banked resets: a line under the pace's, laid out
-        // as it is and as tall, with a ticket for each reset and the time
-        // left until it expires on it, the soonest first and in the neutral
-        // colour within three days; past three, two and a count of the
-        // rest; with no expiry given, plain tickets. Expiries are offsets
-        // from now. A long caption keeps the two lines one over the other.
+        // An account's banked resets get their own line under the pace line,
+        // laid out the same way and as tall. Each reset is a ticket with the
+        // time left until it expires, soonest first, in the neutral colour
+        // within three days. Past three, there are two tickets and a count of
+        // the rest; resets with no expiry are plain tickets. The expiries
+        // below are offsets from now. A long caption still leaves the two
+        // lines one above the other.
         function test_bankedResets_data() {
             const day = 86400;
             return [
@@ -3588,21 +3589,22 @@ TestRoot {
             if (data.scoped) {
                 verify(paceText(popup).startsWith("GPT-5.3-Codex-Spark "), paceText(popup));
             }
-            // One over the other, as wide and, unless one stacks, as tall.
+            // One above the other, equally wide, and equally tall unless one
+            // has stacked its reading under its caption.
             compare(tile.width, graphTile.width);
             verify(tile.y >= pace.y + pace.height, "under the pace");
             compare(tile.x, pace.x);
             if (!pace.stacked) {
                 compare(tile.height, pace.height);
             }
-            // The tickets at the far end, centred on the row as the pace's
-            // reading is.
+            // The tickets sit at the end of the row, centred vertically like
+            // the pace line's reading.
             compare(tickets.mapToItem(tile, Qt.point(0, 0)).x + Math.ceil(tickets.implicitWidth), tile.width - tile.horizontalPadding);
             fuzzyCompare(tickets.mapToItem(tile, Qt.point(0, 0)).y + tickets.height / 2, tile.height / 2, 1);
         }
 
-        // A struck reading shows no tickets, and with a pace that has nothing
-        // to say they are the only line.
+        // A struck-out reading shows no tickets. When the pace has nothing to
+        // say, the tickets are the only line under the graph.
         function test_bankedResetsAlone() {
             const usage = monitor.usage;
             const banked = { count: 1, expires: [usage.createdAt + 19 * usage.day] };

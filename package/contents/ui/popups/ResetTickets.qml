@@ -7,12 +7,12 @@ import org.kde.kirigami as Kirigami
 import "../code/format.js" as Format
 import "../code/style.js" as Style
 
-// A Codex account's banked resets as tickets, one for each with the time
-// left until it expires printed on it, the soonest first. Past three, two
-// and a fainter ticket counting the rest. A reset that expires within three
-// days is set in the theme's neutral colour; one whose expiry the reply
-// didn't give is a plain ticket. Its baseline is the labels', for a
-// LineTile to centre it on.
+// A Claude or Codex account's banked resets, drawn as tickets: one for each
+// reset, with the time left until it expires printed on it, soonest first.
+// With more than three, it shows two tickets and a fainter one with the
+// number of the rest. A reset that expires within three days is drawn in
+// the theme's neutral colour, and one with no known expiry is a plain
+// ticket. Its baseline is the labels' baseline, so a LineTile can centre it.
 Item {
     id: tickets
 
@@ -21,7 +21,7 @@ Item {
     required property var texts
     required property real nowMs
 
-    // { text, soon, more } for each ticket drawn.
+    // One { text, soon, more } for each ticket drawn.
     readonly property var slots: {
         const count = banked.count;
         const expires = Array.from(banked.expires ?? []).sort((a, b) => a - b);
@@ -34,16 +34,16 @@ Item {
                                            soon: false, more: true }])
                          : shown;
     }
-    // When the first reset expires, for screen readers.
+    // When the first reset expires, for the screen reader description.
     readonly property real soonest: Math.min(...Array.from(banked.expires ?? []))
 
-    // In whole pixels, so the tickets' straight edges are sharp.
+    // Sizes are whole pixels, so the tickets' straight edges stay sharp.
     readonly property real cap: Style.capHeight(labelMetrics, labelCap)
     readonly property real ticketHeight: 2 * Math.round((cap + 3 * Kirigami.Units.smallSpacing) / 2)
     readonly property real bite: Math.round(ticketHeight * 0.15)
     readonly property real padding: bite + Kirigami.Units.smallSpacing
-    // One width for every ticket: the widest label's, and no squarer than
-    // a ticket is.
+    // Every ticket gets the same width: wide enough for the widest label,
+    // and at least 1.7 times the height, so it still looks like a ticket.
     readonly property real ticketWidth: Math.max(Math.round(ticketHeight * 1.7),
                                                  2 * padding + Math.ceil(Math.max(0, ...slots.map(slot => labelMetrics.advanceWidth(slot.text)))))
 

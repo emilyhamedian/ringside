@@ -453,7 +453,7 @@ PopupPage {
             reading: paceReading
             readingCap: Style.capHeight(bodyMetrics, bodyCap)
             keyed: popup.paceEvent?.p.state === "out" && week.projected !== ""
-            // As tall as the tickets' row, so the two match.
+            // As tall as the tickets' row, so the two lines match.
             minimumRowHeight: resetTickets.ticketHeight
             keyColor: {
                 const tone = popup.tone(popup.paceEvent ? Format.level(popup.limits[popup.paceEvent.index].percent) : 0);
@@ -480,8 +480,8 @@ PopupPage {
             }
         }
 
-        // The banked resets on a line of their own under the pace's, laid out
-        // as it is.
+        // The banked resets, on their own line under the pace line and laid
+        // out the same way.
         LineTile {
             objectName: "resets"
             visible: popup.entry?.bankedResets !== undefined && !popup.struck
