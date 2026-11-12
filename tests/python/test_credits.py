@@ -145,7 +145,8 @@ class Credits(Isolated):
             self.assertEqual(token.call_count, 2)
         credit_url = "https://api.anthropic.com/api/oauth/organizations/" + ORG + "/prepaid/credits"
         self.assertEqual([call.args[0] for call in get.call_args_list],
-                         [usage.CLAUDE_USAGE_URL, credit_url, usage.CLAUDE_USAGE_URL, credit_url])
+                         [usage.CLAUDE_USAGE_URL + usage.CLAUDE_USAGE_QUERY, credit_url,
+                      usage.CLAUDE_USAGE_URL + usage.CLAUDE_USAGE_QUERY, credit_url])
 
     def test_claude_balance_drop_is_cached_until_the_next_successful_observation(self):
         self.base()

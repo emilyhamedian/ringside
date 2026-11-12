@@ -348,6 +348,48 @@ class ClaudeParsing(Isolated):
             usage.parse_claude({"five_hour": {"utilization": 1}})
 
 
+    # Asked as a Claude Code release, the reply carries the account's banked
+    # resets: each grant's resets left while it has started, isn't paused
+    # and hasn't expired, each expiring when its grant ends.
+    def test_banked_resets_come_from_cedar_ember(self):
+        body = fixture("claude_usage.json")
+        body["cedar_ember"] = {"eligible": True, "ineligible_reason": None, "grants": [
+            {"resets_left": 1, "starts_at": "2026-09-22T16:00:00+00:00", "ends_at": "2026-10-22T16:00:00+00:00"},
+            {"resets_left": 2, "ends_at": None},
+            {"resets_left": 1, "ends_at": "soon"},
+            {"resets_left": 1, "paused": True, "ends_at": "2026-10-30T00:00:00Z"},
+            {"resets_left": 1, "starts_at": "2026-10-20T00:00:00Z"},
+            {"resets_left": 1, "ends_at": "2026-10-01T00:00:00Z"},
+            {"resets_left": 0}, {"resets_left": "1"}, {"resets_left": True}, "grant"]}
+        now = 1791000000  # 2026-10-03
+        self.assertEqual(usage.parse_claude(body, now)["bankedResets"], {"count": 4, "expires": [1792684800]})
+
+    # An ineligible block names what the caller is, not what the account
+    # has; it and anything unreadable show no resets, and the windows stand.
+    def test_no_banked_resets_without_an_eligible_block(self):
+        for block in ("absent", None, [], {}, {"eligible": False, "ineligible_reason": "surface"},
+                      {"eligible": "true", "grants": [{"resets_left": 1}]}, {"eligible": True},
+                      {"eligible": True, "grants": {}}, {"eligible": True, "grants": []}):
+            with self.subTest(block=block):
+                body = fixture("claude_usage.json")
+                if block != "absent":
+                    body["cedar_ember"] = block
+                report = usage.parse_claude(body, 1791000000)
+                self.assertNotIn("bankedResets", report)
+                self.assertEqual(report["weekly"], window(62, 1788537600))
+
+    def test_usage_is_asked_for_with_banked_resets_as_claude_code(self):
+        http = mock.Mock(return_value=fixture("claude_usage.json"))
+        with mock.patch.object(usage, "claude_access_token", return_value="token"), \
+                mock.patch.object(usage, "http_json", http):
+            usage.claude_usage()
+        url, headers = http.call_args.args
+        self.assertEqual(url, "https://api.anthropic.com/api/oauth/usage?cedar_ember=1")
+        self.assertEqual(headers["User-Agent"], usage.CLAUDE_CODE_AGENT)
+        self.assertTrue(usage.CLAUDE_CODE_AGENT.startswith("claude-cli/2.1."))
+        self.assertEqual(headers["Authorization"], "Bearer token")
+
+
 class Conversions(Isolated):
     # Half rounds up, as the widget's Math.round does. Anything else reads
     # as 0 for a scoped window, which is only shown; the parsers reject it

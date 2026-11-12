@@ -42,6 +42,10 @@ Nothing, until you turn on something that needs it.
   `api.anthropic.com`, and `platform.claude.com` to renew it. Each result,
   errors included, is reused for five minutes by every Ringside widget. If
   Anthropic asks Ringside to back off, it waits at least as long as asked.
+  The usage request names itself as a Claude Code release
+  (`claude-cli/2.1.321`) and asks for banked resets (`?cedar_ember=1`),
+  which Anthropic includes in the same reply only for Claude Code; every
+  other request names itself as Ringside.
 - **Codex** only talks to `codex app-server` on your computer, which reaches
   OpenAI with the Codex CLI's own login.
 - **Kimi** sends one Kimi Code credential, the first it finds, only to Kimi:
@@ -92,8 +96,8 @@ Nothing, until you turn on something that needs it.
 ## What stays on your computer
 
 - **Claude, Codex, Kimi and OpenCode Go readings** are kept in `~/.cache/ringside/`.
-  Codex's include how many banked resets the account has and when each
-  expires, from the same reply, but not which resets they are. The same
+  Claude's and Codex's include how many banked resets the account has and
+  when each expires, from the same reply, but not which resets they are. The same
   private cache keeps each balance, when it was read, when it may be checked
   again, and the identity needed to keep it with the right login. It does
   not keep credentials. It records whether the balance fell since the
