@@ -53,7 +53,7 @@ LineTile {
 
     visible: shown
     caption: label
-    reading: balance
+    reading: balanceReading
     readingCap: Style.capHeight(bodyMetrics, bodyCap)
     Accessible.role: Accessible.StaticText
     Accessible.name: i18nc("@info:accessible credit label, value and unit", "%1: %2 %3", label, value, unit)
@@ -79,7 +79,7 @@ LineTile {
     }
 
     Reading {
-        id: balance
+        id: balanceReading
         value: row.value
         unit: row.unit
         color: row.cached ? Style.dim(Kirigami.Theme.textColor) : Kirigami.Theme.textColor
