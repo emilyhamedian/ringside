@@ -2735,6 +2735,12 @@ TestRoot {
             // balance at the end, and the same height.
             compare(row.caption, row.label);
             compare(row.reading, reading);
+            // A screen reader hears the line's own name, label and balance
+            // together, and not the caption again.
+            const caption = root.find(row, i => i !== row && i.label !== undefined && i.detail !== undefined);
+            verify(caption.Accessible.ignored, "the caption isn't read a second time");
+            verify(!root.find(paceTile(popup), i => i.label !== undefined && i.detail !== undefined).Accessible.ignored,
+                   "the pace line, which has no name of its own, still reads its caption");
             const pace = paceTile(popup);
             if (pace.visible && !pace.stacked && !row.stacked) {
                 compare(row.height, pace.height);

@@ -53,6 +53,8 @@ LineTile {
 
     visible: shown
     caption: label
+    // The line's accessible name already says the label.
+    captionRead: false
     reading: balanceReading
     readingCap: Style.capHeight(bodyMetrics, bodyCap)
     Accessible.role: Accessible.StaticText
