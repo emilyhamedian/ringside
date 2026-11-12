@@ -364,6 +364,23 @@ class Credits(Isolated):
         self.assertEqual(result["fetchedAt"], 1001)
         self.assertEqual(usage.CACHE_FILE.read_bytes(), before)
 
+    # The balance is read again by the run five minutes after the last read's
+    # run began, even when that run's usage check is quicker than the last.
+    def test_balance_is_read_again_at_the_next_run(self):
+        elapsed = [0]
+        self.enterContext(mock.patch.object(usage.time, "monotonic", lambda: elapsed[0]))
+
+        def check(seconds):
+            def fetch():
+                elapsed[0] += seconds
+                return reading(2, 50000)
+            return fetch
+
+        with mock.patch.object(usage, "http_json", return_value={"amount": 100, "currency": "USD"}) as get:
+            self.assertEqual(self.collect(1000, fetch=check(8))["credits"]["retryAt"], 1300)
+            self.collect(1300, fetch=check(2))
+        self.assertEqual(get.call_count, 2)
+
     def test_busy_main_hides_balance_after_account_switch_or_missing_identity(self):
         self.base()
         with mock.patch.object(usage, "http_json", return_value={"amount": 100, "currency": "USD"}):

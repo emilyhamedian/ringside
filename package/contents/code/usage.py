@@ -1622,7 +1622,12 @@ def credits_spent(record, balance):
                 and previous["precision"] == balance["precision"] and balance["amount"] < previous["amount"])
 
 
-def collect_credits(cache, providers, now):
+def collect_credits(cache, providers, now, started):
+    """Update each eligible provider's balance and add it to its report.
+    now is when the run began, and started is the same moment by
+    time.monotonic(). The next read is due CREDITS_INTERVAL after now, so the
+    widget's next run reads it again. When a balance or a refusal actually
+    came is now plus the time since started."""
     context = CREDITS_CONTEXT.get()
     if context is None:
         return False
@@ -1696,7 +1701,6 @@ def collect_credits(cache, providers, now):
             elif now >= (record.get("retryAt") or 0):
                 # The deadline is persisted before the GET so interruption does
                 # not turn a restart into another attempt.
-                attempt_started = time.monotonic()
                 record["retryAt"] = now + CREDITS_INTERVAL
                 cache["_credits"] = records
                 write_private(CACHE_FILE, cache)
@@ -1714,9 +1718,9 @@ def collect_credits(cache, providers, now):
                     }, timeout=CREDITS_TIMEOUT, redirects=False, max_bytes=65536)
                     balance = parse_claude_credits(body)
                     record.update(status="ok", balance=balance, spent=credits_spent(record, balance),
-                                  fetchedAt=now + int(time.monotonic() - attempt_started), reason=None)
+                                  fetchedAt=now + int(time.monotonic() - started), reason=None)
                 except RateLimited as err:
-                    response_at = now + math.ceil(time.monotonic() - attempt_started)
+                    response_at = now + math.ceil(time.monotonic() - started)
                     cache["_anthropicHold"] = response_at + max(CREDITS_INTERVAL, err.retry_after)
                     record.update(status="error", retryAt=cache["_anthropicHold"], reason="rate-limited")
                 except SignedOut:
@@ -1725,7 +1729,7 @@ def collect_credits(cache, providers, now):
                     reason = getattr(err, "reason", "other")
                     record.update(status="error", reason=reason if reason in ("offline", "timeout", "server") else "other")
                     if getattr(err, "status", None) == 403:
-                        record["retryAt"] = now + math.ceil(time.monotonic() - attempt_started) + 3600
+                        record["retryAt"] = now + math.ceil(time.monotonic() - started) + 3600
                 if claude_credit_identity() != snapshot:
                     record = records[name] = {"status": "unavailable", "balance": None, "fetchedAt": None,
                                              "retryAt": record["retryAt"], "reason": "signed-out"}
@@ -1963,11 +1967,14 @@ def collect(fetchers, now=None, *, initial=(), credits=(), retrying=()):
 
     Every completed check's result is cached, so other runs never poll a
     provider within CACHE_TTL: a reading is served until it is that old, and a
-    failure or a sign-out is reported again as it was. A rate-limit reply
-    holds the provider back for as long as Retry-After asked, if that is
-    longer, and reports the seconds left. A hold with more left than its own
-    length means the clock stepped back; it is cut to that length so it
-    still ends on time. A reading taken after now means the same, and it
+    failure or a sign-out is reported again as it was. Both count from when
+    the run that checked began, not from when the provider answered, which
+    may be seconds later; the widget runs every CACHE_TTL or more, so its
+    next run finds every provider due again. A rate-limit reply holds the
+    provider back for as long as Retry-After asked, counted from the end of
+    the run, if that is longer, and reports the seconds left. A hold with
+    more left than its own length means the clock stepped back; it is cut to
+    that length so it still ends on time. A reading taken after now means the same, and it
     counts as taken now, so it is served for CACHE_TTL more rather than
     polled again at once. The cache is shared with runs that ask for other
     providers, so their entries stay as they were. The lock covers everything
@@ -2027,7 +2034,7 @@ def collect_locked(fetchers, now, *, initial=(), retrying=()):
             continue
         pending.append(name)
 
-    retry, first_at, last_at, fetched_at = {}, {}, {}, {}
+    retry, first_at, last_at = {}, {}, {}
 
     def check(name):
         first_at.setdefault(name, time.monotonic())
@@ -2035,7 +2042,6 @@ def collect_locked(fetchers, now, *, initial=(), retrying=()):
         again = report.pop("_retryable", False)
         polled[name] = report
         last_at[name] = time.monotonic()
-        fetched_at[name] = now + int(last_at[name] - started)
         context = CREDITS_CONTEXT.get()
         credit_records = cache.get("_credits")
         if name == "claude" and report["status"] == "rate_limited" and (
@@ -2064,20 +2070,22 @@ def collect_locked(fetchers, now, *, initial=(), retrying=()):
         entry = cache.get(name)
         ms = round((last_at[name] - first_at[name]) * 1000)
         if report["status"] == "ok":
-            report["fetchedAt"] = fetched_at[name]
+            report["fetchedAt"] = now
             cache[name] = providers[name] = report
         else:
-            cache[name] = hold(report, finished, PROGRAMS.get(name, ""))
-            providers[name] = replay(cache[name], cache[name]["holdSeconds"], finished)
+            # A rate limit is waited out from the end of the run, which is
+            # after the reply came. Anything else is checked again by the next
+            # run, CACHE_TTL after this one began.
+            since = finished if report["status"] == "rate_limited" else now
+            cache[name] = hold(report, since, PROGRAMS.get(name, ""))
+            providers[name] = replay(cache[name], cache[name]["heldUntil"] - finished, finished)
         note_check(name, report, entry, ms, cache[name])
-    credits_changed = collect_credits(cache, providers, finished)
+    credits_changed = collect_credits(cache, providers, now, started)
     history = read_history()
     if polled or stepped or credits_changed:
         write_private(CACHE_FILE, cache)
     if any(report["status"] == "ok" for report in polled.values()):
-        for name, report in polled.items():
-            if report["status"] == "ok":
-                history = record_history(history, {name: report}, fetched_at[name])
+        history = record_history(history, polled, now)
         write_private(HISTORY_FILE, history)
     return providers, history
 
