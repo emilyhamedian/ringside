@@ -486,6 +486,8 @@ PopupPage {
             objectName: "resets"
             visible: popup.entry?.bankedResets !== undefined && !popup.struck
             caption: i18nc("@title:group resets the account has saved to use later", "Banked resets")
+            // The tickets' accessible name already says "3 banked resets".
+            captionRead: false
             reading: resetTickets
             readingCap: resetTickets.cap
             minimumRowHeight: Math.ceil(paceReading.implicitHeight)
