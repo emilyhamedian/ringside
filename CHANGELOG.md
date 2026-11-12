@@ -15,6 +15,10 @@ follows [Semantic Versioning](https://semver.org/).
 - OpenCode Go item: your OpenCode Go monthly limit as a ring, with the same
   popup. It reads with OpenCode's sign-in to the OpenCode Console, never
   renewing it, and is off until you turn it on.
+- Usage popups show a bar for each shorter limit your plan has: the
+  five-hour limit, and the weekly limit on OpenCode Go and older Kimi plans.
+  While one of these windows is running, its bar shows when it resets.
+  Claude's popup no longer has an "All models" bar, which repeated the ring.
 - OpenCode Go popup offers an auto start switch for its five-hour session,
   which sends a one-word message through OpenCode when a session ends. It
   waits while Go's weekly or monthly limit is used up.

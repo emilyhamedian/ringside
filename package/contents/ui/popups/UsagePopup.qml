@@ -11,11 +11,13 @@ import "../code/providers.js" as Providers
 import "../code/style.js" as Style
 import ".."
 
-// Claude's or Codex's weekly limits, or a monthly one: the all-models
-// window in the header with the time left until it resets, a bar for it and
-// for each model's own limit with a sentence under one of them on where the
-// current pace leads, and the window so far as a graph. With one limit the
-// header's ring is its bar.
+// The popup for a Claude, Codex, Kimi or OpenCode Go item. The header shows
+// the limit the ring tracks, a week or (for Kimi and OpenCode Go) a month,
+// and the time until it resets. Below it are a bar for each model's own
+// limit and for each shorter limit the plan has (the five-hour limit, and a
+// weekly limit beside a monthly one), a sentence on where the current pace
+// leads, and a graph of the window so far. The pace sentence goes under the
+// bar of the limit it describes, or first when it describes the ring's.
 // A failed check is said under the header, with the last reading kept in
 // grey for as long as the panel keeps it; once the panel's ring is struck,
 // so is the header's, and the status under it is all the popup shows. A
@@ -47,6 +49,35 @@ PopupPage {
         ? [Object.assign({}, weekly, { id: "", label: i18nc("@label the weekly limit shared by every model", "All models") })]
             .concat(Array.from(entry.scoped ?? []))
         : []
+    // The plan's limits that are shorter than the ring's, shown as bars: the
+    // five-hour limit, and the weekly limit beside OpenCode Go's or an older
+    // Kimi plan's monthly one. A window whose reset has passed since the
+    // reading shows 0%. An idle five-hour window shows 0% and no reset time,
+    // because an idle account can report a reset one window after the
+    // request (see session_running() in usage.py).
+    readonly property var shorter: {
+        if (limits.length === 0) {
+            return [];
+        }
+        const rows = [];
+        const add = (window, label) => {
+            const reset = window ? window.resetsAt : NaN;
+            const ended = Format.usable(reset) && reset * 1000 <= nowMs;
+            const percent = window && !ended ? window.percent : 0;
+            const rolling = window && percent === 0 && Math.abs(reset - entry.fetchedAt - window.windowSeconds) <= 120;
+            rows.push({ id: "", label: label, percent: percent,
+                        resetsAt: Format.usable(reset) && !ended && !rolling ? reset : NaN });
+        };
+        // Claude reports null when no session is running. The key is missing
+        // when the plan has no five-hour limit, or the reply couldn't be read.
+        if (entry.session !== undefined) {
+            add(entry.session, i18nc("@label a limit on the usage in any five hours", "5-hour limit"));
+        }
+        if (entry.week) {
+            add(entry.week, i18nc("@label the weekly limit, under a monthly one", "Weekly limit"));
+        }
+        return rows;
+    }
     readonly property real pollAt: Pace.pollTime(entry, nowMs / 1000)
     // Each limit's projection, in the order of limits.
     readonly property var paces: limits.map(l => Pace.ofWindow(l, pollAt, nowMs / 1000))
@@ -236,11 +267,11 @@ PopupPage {
         nowMs: popup.nowMs
     }
 
-    // A bar per limit when there are several, with the pace sentence under
-    // the bar it is about; with one limit, the sentence alone.
+    // A bar for every limit except the ring's own. The pace sentence goes
+    // under the bar it describes, or first when it describes the ring's.
     ColumnLayout {
         id: barsColumn
-        visible: popup.weekly !== null && (popup.limits.length > 1 || popup.paceText !== "")
+        visible: popup.weekly !== null && (popup.limits.length + popup.shorter.length > 1 || popup.paceText !== "")
         Layout.fillWidth: true
         Layout.leftMargin: Style.contentEdge(Kirigami.Units.largeSpacing)
         Layout.rightMargin: Layout.leftMargin
@@ -251,27 +282,34 @@ PopupPage {
         Repeater {
             // Counted, as PopupHeader counts its parts, so a row keeps its
             // bar as the readings change and the bar can move to them.
-            model: popup.limits.length
+            model: popup.limits.length + popup.shorter.length
 
             delegate: ColumnLayout {
                 id: row
 
                 required property int index
-                readonly property var limit: popup.limits[index] ?? ({ id: "", label: "", percent: NaN, resetsAt: NaN })
+                // Whether this row is one of the shorter limits.
+                readonly property bool short: index >= popup.limits.length
+                // Every row has a bar except the ring's own limit.
+                readonly property bool barred: index > 0
+                readonly property var limit: (short ? popup.shorter[index - popup.limits.length] : popup.limits[index])
+                    ?? ({ id: "", label: "", percent: NaN, resetsAt: NaN })
                 readonly property real reading: Math.max(0, Math.min(100, limit.percent))
-                // A model's limit that resets apart from the week says when.
-                readonly property string resets: limit.id !== "" && popup.weekly
-                    && Math.abs(limit.resetsAt - popup.weekly.resetsAt) >= 60
+                // When the limit resets: for a shorter limit while it runs,
+                // and for a model's limit that resets apart from the week.
+                readonly property string resets: short
+                    ? (Format.usable(limit.resetsAt) ? words.countdown(limit.resetsAt, popup.nowMs) : "")
+                    : limit.id !== "" && popup.weekly && Math.abs(limit.resetsAt - popup.weekly.resetsAt) >= 60
                     ? words.countdown(limit.resetsAt, popup.nowMs) : ""
                 // The level of the bar as drawn, as RingGauge.drawnLevel has it.
                 readonly property int level: Format.level(Number.isFinite(reading) ? bar.shown + reading - Math.round(reading) : NaN)
 
-                // The bar and its percentage follow the reading as a ring
-                // does, and at once with one limit, which has no bar.
+                // The bar and its percentage move to a new reading as a ring
+                // does. The ring's own row has no bar, so it jumps at once.
                 Follower {
                     id: bar
                     target: Number.isFinite(row.reading) ? Math.round(row.reading) : 0
-                    settle: popup.limits.length > 1 && Style.animated(Kirigami.Units) ? Kirigami.Units.veryLongDuration : 0
+                    settle: row.barred && Style.animated(Kirigami.Units) ? Kirigami.Units.veryLongDuration : 0
                     // A quarter of a pixel of the bar.
                     precision: 25 / Math.max(1, track.width)
                 }
@@ -280,7 +318,7 @@ PopupPage {
                 spacing: Kirigami.Units.smallSpacing
 
                 ColumnLayout {
-                    visible: popup.limits.length > 1
+                    visible: row.barred
                     Layout.fillWidth: true
                     spacing: Kirigami.Units.smallSpacing
 

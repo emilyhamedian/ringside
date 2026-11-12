@@ -1444,7 +1444,8 @@ class Kimi(Isolated):
 
     def test_the_month_is_the_total_every_kimi_feature_draws_on(self):
         reading = usage.parse_kimi(self.REPLY)
-        self.assertEqual(reading, {"weekly": window(92, self.NOV_26, 31 * 86400), "scoped": []})
+        self.assertEqual(reading, {"weekly": window(92, self.NOV_26, 31 * 86400), "scoped": [],
+                                   "session": window(10, 1794434484, 5 * 3600)})
         text = dict(self.REPLY, usages={"limit_month_total": {"used_ratio": "0.5", "reset_time": "2026-11-26T00:00:00Z"}})
         self.assertEqual(usage.parse_kimi(text)["weekly"]["percent"], 50)
         for usages in ({}, {"limit_month_total": {"reset_time": "2026-11-26T00:00:00Z"}},
@@ -1453,6 +1454,18 @@ class Kimi(Isolated):
                        {"limit_month_total": {"used_ratio": 0.5, "reset_time": "soon"}}):
             with self.subTest(usages), self.assertRaises(RuntimeError):
                 usage.parse_kimi({"usages": usages})
+
+    # The five-hour limit, and the weekly limit on plans sold before Kimi
+    # Plus, are read when the reply has them. A missing or garbled one is
+    # left out.
+    def test_the_five_hours_and_an_older_plans_week_are_read_beside_the_month(self):
+        older = dict(self.REPLY, usages=dict(self.REPLY["usages"],
+                                             limit_7d={"used_ratio": "0.43", "reset_time": "2026-11-13T09:00:00Z"}))
+        self.assertEqual(usage.parse_kimi(older)["week"], window(43, 1794560400, 7 * 86400))
+        for limit_5h in (None, {"used_ratio": "lots", "reset_time": "2026-11-11T22:01:24Z"}, {"used_ratio": 0.1}):
+            with self.subTest(limit_5h):
+                garbled = dict(self.REPLY, usages=dict(self.REPLY["usages"], limit_5h=limit_5h))
+                self.assertEqual(set(usage.parse_kimi(garbled)), {"weekly", "scoped"})
 
     def test_a_month_starts_on_the_same_day_a_month_before_its_reset(self):
         at = lambda text: int(usage.datetime.fromisoformat(text).timestamp())

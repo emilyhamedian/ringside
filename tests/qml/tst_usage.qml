@@ -2832,6 +2832,57 @@ TestRoot {
             monitor.usage.entries = Object.assign({}, entries, { claude: Object.assign({}, entries.claude, changes) });
         }
 
+        // Under the models' bars there is a bar for each limit shorter than
+        // the ring's: the five-hour limit, and a weekly limit beside a monthly
+        // one. A five-hour window that isn't running shows 0% and no reset
+        // time. That covers Claude with no session, Codex or Go when idle
+        // (they report a reset one window after the reading), and a window
+        // that ended after the reading.
+        function test_shorterLimits_data() {
+            // A window from FakeUsage `u` that resets `left` seconds after it was made.
+            const at = (percent, left, seconds) => u => ({ percent: percent, resetsAt: u.createdAt + left, windowSeconds: seconds });
+            const month = u => Object.assign(u.window(55, 13 * u.day, []), { windowSeconds: 31 * u.day });
+            const hours = 5 * 3600;
+            const week = 7 * 86400;
+            return [
+                { tag: "Go", item: "opencode", entry: { weekly: month, session: at(12, 7200, hours), week: at(30, 4 * 86400, week) },
+                  bars: [["5-hour limit", 12, "2h 0m"], ["Weekly limit", 30, "4d 0h"]] },
+                { tag: "Go idle", item: "opencode", entry: { weekly: month, session: at(0, hours, hours), week: at(0, 4 * 86400, week) },
+                  bars: [["5-hour limit", 0, ""], ["Weekly limit", 0, "4d 0h"]] },
+                { tag: "Kimi", item: "kimi", entry: { weekly: month, session: at(3, 3 * 3600, hours) },
+                  bars: [["5-hour limit", 3, "3h 0m"]] },
+                { tag: "Claude without a session", item: "claude", entry: { session: u => null },
+                  bars: [["5-hour limit", 0, ""]], models: 2 },
+                { tag: "Claude's session ended since", item: "claude", entry: { session: at(40, -60, hours) },
+                  bars: [["5-hour limit", 0, ""]], models: 2 },
+                { tag: "Claude Ultra", item: "claude", entry: {}, bars: [], models: 2 },
+                { tag: "Claude garbled", item: "claude", entry: { sessionUnknown: u => true }, bars: [], models: 2 },
+                { tag: "Codex in use with no reset", item: "codex",
+                  entry: { session: u => ({ percent: 40, resetsAt: null, windowSeconds: hours }) },
+                  bars: [["5-hour limit", 40, ""]] },
+                { tag: "Codex five hours only", item: "codex",
+                  entry: { weekly: u => Object.assign(u.window(24, 3 * 3600, []), { windowSeconds: hours }) }, bars: [] }
+            ];
+        }
+        function test_shorterLimits(data) {
+            const u = monitor.usage;
+            const changes = {};
+            Object.keys(data.entry).forEach(key => changes[key] = data.entry[key](u));
+            u.entries = Object.assign({}, u.entries, {
+                [data.item]: Object.assign({ status: "ok", fetchedAt: u.createdAt, scoped: [] }, u.entries[data.item] ?? {}, changes) });
+            const popup = load(data.item);
+            const all = rows(popup);
+            compare(all.filter(r => !r.short).length, data.models ?? 1);
+            const shorter = all.filter(r => r.short);
+            compare(shorter.map(r => [r.limit.label, r.limit.percent, r.resets]),
+                    data.bars.map(([label, percent, resets]) => [label, percent, root.localized(resets)]));
+            shorter.forEach(r => {
+                verify(bars(r).visible, r.limit.label);
+                compare(bars(r).Accessible.name, r.limit.label);
+                verify(rowText(r, root.localized(r.limit.percent + "%")), r.limit.label);
+            });
+        }
+
         // Kimi's limit is a month, and its popup says so throughout.
         function test_kimisMonth() {
             const u = monitor.usage;
@@ -2931,10 +2982,11 @@ TestRoot {
         function test_innerLimit() {
             const popup = load("claude");
             const shown = root.texts(popup);
-            for (const text of ["Claude", "Weekly limits", "until reset", "All models", "Fable", root.localized("52%"), root.localized("78%"),
+            for (const text of ["Claude", "Weekly limits", "until reset", "Fable", root.localized("52%"), root.localized("78%"),
                                 "— All models", "- - Fable"]) {
                 verify(shown.includes(text), text + " in " + JSON.stringify(shown));
             }
+            verify(!shown.includes("All models"), "the header's ring is the shared limit's bar");
             verify(shown.some(t => /^THIS WEEK · resets .+ EDT$/.test(t)), JSON.stringify(shown));
             verify(!shown.some(t => t.startsWith("resets in")), "Fable resets with the week");
             verify(!shown.includes("System Monitor"), "the footer has the gear alone");
@@ -3290,15 +3342,19 @@ TestRoot {
                    "amber below 90 %, red from it, as drawn: " + JSON.stringify(seen));
         }
 
-        // Every model's limit gets a row, whichever the ring shows.
+        // Every model's limit gets a bar, whichever limit the ring shows. The
+        // shared limit has no bar, because the ring shows it.
         function test_severalLimits() {
             const usage = monitor.usage;
             setClaude({ scoped: [Object.assign({ id: "Fable", label: "Fable" }, usage.window(78, 2 * usage.day + 21 * 3600, [])),
                                  Object.assign({ id: "Sonnet", label: "Sonnet" }, usage.window(12, 4 * usage.day, []))] });
-            const shown = root.texts(load("claude"));
-            for (const text of ["All models", "Fable", "Sonnet", "78%", "12%", "resets in 4d 0h"].map(root.localized)) {
+            const popup = load("claude");
+            const shown = root.texts(popup);
+            for (const text of ["Fable", "Sonnet", "78%", "12%", "resets in 4d 0h"].map(root.localized)) {
                 verify(shown.includes(text), text + " in " + JSON.stringify(shown));
             }
+            verify(!shown.includes("All models"), JSON.stringify(shown));
+            compare(rows(popup).map(r => bars(r).visible), [false, true, true]);
             verify(!shown.some(t => t.startsWith("- - ")), "two limits and no choice: no inner ring");
         }
 
@@ -3422,7 +3478,14 @@ TestRoot {
             compare(text.text, expected);
             compare(String(text.color), String(data.ago === undefined ? Kirigami.Theme.textColor : Style.dim(Kirigami.Theme.textColor)));
             compare(text.textFormat, Text.PlainText);
-            if (all.length > 1) {
+            // The ring's limit has no bar, so its sentence comes first.
+            if (data.row === 0) {
+                verify(!bars(all[0]).visible);
+                if (all.length > 1) {
+                    verify(text.mapToItem(popup, Qt.point(0, text.height)).y <= bars(all[1]).mapToItem(popup, Qt.point(0, 0)).y,
+                           "above the models' bars");
+                }
+            } else {
                 const bar = bars(all[data.row]);
                 verify(bar.visible);
                 verify(text.mapToItem(popup, Qt.point(0, 0)).y >= bar.mapToItem(popup, Qt.point(0, bar.height)).y,
