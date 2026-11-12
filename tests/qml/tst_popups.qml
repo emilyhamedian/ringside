@@ -1781,11 +1781,12 @@ TestRoot {
 
         // A divider is faint, and a whole number of the screen's pixels
         // tall, one at 125 %, so wherever it lands it draws as many rows as
-        // the others.
+        // the others. The graphs' rules are as thin, and so is the fill of a
+        // CPU thread's bar at a few percent once it has grown from nothing.
         function test_dividers(data) {
             const popup = load(data.popup, data.monitor);
             const found = all(popup, i => i.visible && i.height > 0 && i.height <= 1 && i.radius !== undefined && i.width > 0
-                                          && !ancestor(i, a => a.limitY !== undefined));
+                                          && !ancestor(i, a => a.limitY !== undefined || a.maxColumns !== undefined));
             compare(found.length, 1);
             const divider = found[0];
             compare(String(divider.color), String(Qt.alpha(Kirigami.Theme.textColor, 0.08)));
