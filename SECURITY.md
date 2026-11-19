@@ -41,6 +41,9 @@ Nothing, until you turn on something that needs it.
 - **CLIProxyAPI** can read quotas for enabled Claude, Codex and Kimi items
   through a local hub. Ringside sends the management key only to the
   configured loopback address, with redirects and HTTP proxies disabled.
+  Ringside trusts the process listening on that port. If the hub rejects
+  the key during a quota check, Ringside waits at least an hour before
+  trying the same key again. Updating the key file clears the wait.
   The hub sends the selected account's credentials to its provider's quota
   endpoint. For Codex it also checks with `chatgpt.com` for expiry dates
   when the quota reply reports banked resets without dates. Ringside keeps

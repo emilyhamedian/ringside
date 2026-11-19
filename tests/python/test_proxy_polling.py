@@ -506,12 +506,12 @@ class ProxyPolling(Isolated):
         self.client.credentials.return_value = {}
         self.assertEqual(self.poll()["proxyStatus"], "no-accounts")
 
-    def test_auth_failure_latches_after_discovery_and_until_key_revision_changes(self):
+    def test_auth_failure_waits_unless_the_key_revision_changes(self):
         self.client.usage.side_effect = self.backend.ProxyError("management-auth")
         self.assertEqual(self.poll()["proxyStatus"], "unauthorized")
         self.client.usage.assert_called_once()
         self.client.affinity.assert_not_called()
-        self.now += 2 * usage.HOLD_MAX
+        self.now += usage.PROXY_AUTH_HOLD - 1
         self.assertEqual(self.poll()["proxyStatus"], "unauthorized")
         self.client.credentials.assert_called_once()
         self.client.usage.assert_called_once()
@@ -521,14 +521,18 @@ class ProxyPolling(Isolated):
         self.assertEqual(self.poll()["proxyStatus"], "connected")
         self.assertEqual(self.client.credentials.call_count, 2)
 
-    def test_discovery_management_auth_failure_does_not_reach_any_account(self):
+    def test_discovery_management_auth_retries_with_the_same_key_after_a_hold(self):
         self.client.credentials.side_effect = self.backend.ProxyError("management-auth")
         self.assertEqual(self.poll()["proxyStatus"], "unauthorized")
-        self.now += 2 * usage.HOLD_MAX
+        self.now += usage.PROXY_AUTH_HOLD - 1
         self.assertEqual(self.poll()["proxyStatus"], "unauthorized")
         self.client.credentials.assert_called_once()
         self.client.usage.assert_not_called()
         self.client.affinity.assert_not_called()
+        self.client.credentials.side_effect = None
+        self.now += 2
+        self.assertEqual(self.poll()["proxyStatus"], "connected")
+        self.assertEqual(self.client.credentials.call_count, 2)
 
     def test_direct_override_and_switch_only_never_resolve_the_hub(self):
         self.assertNotIn("source", self.poll("--direct-providers", "claude"))

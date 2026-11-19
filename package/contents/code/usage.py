@@ -234,6 +234,7 @@ PROXY_PROVIDERS = ("claude", "codex", "kimi")
 PROXY_URL = "http://127.0.0.1:8317"
 PROXY_TIMEOUT = 15
 PROXY_WORKERS = 4
+PROXY_AUTH_HOLD = 3600
 PROXY_MANAGEMENT_STOP = ("management-auth", "management-rate-limited")
 CREDITS_INTERVAL = CACHE_TTL
 CREDITS_TIMEOUT = 5
@@ -2328,7 +2329,10 @@ def proxy_roster(backend, members, region, previous, now, work):
 
 def record_proxy_failure(state, failure):
     if failure["reason"] == "management-auth" and not failure.get("optional"):
-        state["unauthorized"] = True
+        # A rejection can outlive the hub's restart or management-key change.
+        # Recheck slowly so a wrong key doesn't keep the local client blocked.
+        extra = max(0, PROXY_AUTH_HOLD - failure["delay"])
+        failure = dict(failure, retryAt=failure["retryAt"] + extra, delay=failure["delay"] + extra)
     state["discoveryError"] = failure
     return failure
 
@@ -2390,11 +2394,13 @@ def collect_proxy(options, now, started, eligible):
                 proxy_clock(record["credits"], "fetchedAt", now)
     proxy_clock(state, "discoveredAt", now)
     discovery = state.get("discoveryError")
+    if state.pop("unauthorized", False):
+        discovery = record_proxy_failure(state, discovery or proxy_failure("management-auth", now))
     deadline = started + PROXY_TIMEOUT
     work = []
     checked = False
-    if not state.get("unauthorized") and not proxy_wait(discovery, now):
-        due = not proxy_recent(state.get("discoveredAt"), now)
+    if not proxy_wait(discovery, now):
+        due = bool(discovery) or not proxy_recent(state.get("discoveredAt"), now)
         for slot in slots.values():
             records = rosters.get(slot, {}).get("members", {}).values()
             due |= any(proxy_member_due(record, now) for record in records)
@@ -2434,7 +2440,7 @@ def collect_proxy(options, now, started, eligible):
 
     management_hold = discovery and discovery["reason"] == "management-rate-limited"
     optional_auth = discovery and discovery.get("optional") and discovery["reason"] == "management-auth"
-    if state.get("unauthorized"):
+    if discovery and discovery["reason"] == "management-auth" and not optional_auth:
         reports, statuses = {}, dict.fromkeys(names, "unauthorized")
     elif discovery and not (management_hold or optional_auth) and discovery["reason"] not in ("server", "rate-limited"):
         status = "unsupported" if discovery["reason"] in ("configuration", "invalid-response") else "offline"

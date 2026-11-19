@@ -135,7 +135,8 @@ def check_status(status, retry_after, *, management):
     if 200 <= status < 300:
         return
     if status in (401, 403):
-        raise ProxyError("management-auth" if management else "upstream-auth")
+        raise ProxyError("management-auth" if management else "upstream-auth",
+                         retry_seconds(retry_after) if management and retry_after is not None else None)
     if status == 429:
         raise ProxyError("management-rate-limited" if management else "rate-limited", retry_seconds(retry_after))
     if status >= 500:
