@@ -30,6 +30,12 @@ function example(now, provider = "claude") {
         accounts: accounts,
         affinity: { enabled: true, ttlSeconds: 3600 }
     };
+    const history = [
+        [7, 29, 41], [6, 40, 56], [5, 52, 68], [4.15, 74, 90], [4.125, 31, 39],
+        [3.5, 39, 53], [2.82, 60, 77], [2.8, 20, 27], [2, 31, 36], [1, 46, 55], [0, 58.5, 79]
+    ];
+    entry.weekly.history = history.map(([days, used]) => [now - Math.round(days * day), used]);
+    entry.scoped[0].history = history.map(([days, used, fable]) => [now - Math.round(days * day), fable]);
     if (provider === "codex") {
         const monthly = { period: "month", percent: 24, windowSeconds: 30 * day, resetsAt: now + 9 * day };
         entry.otherPeriods = [average([monthly], 24)];

@@ -105,7 +105,8 @@ them across accounts. The pooled five-hour bar counts readable accounts
 without that cap as zero usage. The panel counts down to the next account
 reset for the outer ring's window. Each account section shows its own limits,
 reset times, banked resets and remaining credits when reported.
-The graph and pace line are available in the direct view.
+The hub graph shows the last seven days of pooled usage, including dips when
+individual accounts reset. The pace line is available in the direct view.
 
 If a check fails, the ring greys out, and is crossed out if it keeps failing;
 the popup says why. If a limit resets early, the popup tells you. Ringside

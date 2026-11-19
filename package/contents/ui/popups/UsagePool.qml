@@ -222,6 +222,23 @@ PlasmaComponents.ScrollView {
             }
         }
 
+        UsageGraph {
+            visible: window?.history?.length > 0
+            Layout.preferredWidth: 0
+            Layout.leftMargin: pool.edge
+            Layout.rightMargin: pool.edge
+            texts: pool.texts
+            window: pool.entry?.weekly ?? null
+            modelWindow: pool.innerLimit
+            rolling: true
+            nowMs: pool.nowMs
+            pollAt: {
+                const samples = window?.history ?? [];
+                return samples.length > 0 ? samples[samples.length - 1][0] : NaN;
+            }
+            failed: pool.stale || window?.incomplete === true
+        }
+
         Repeater {
             model: pool.accounts
 

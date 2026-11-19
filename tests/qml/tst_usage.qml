@@ -2786,7 +2786,7 @@ TestRoot {
         }
 
         function graph(popup) {
-            return root.find(popup, i => i.mainPoints !== undefined);
+            return root.find(popup, i => i.mainPoints !== undefined && i.rolling === popup.pooled);
         }
 
         function test_poolSnapshotMatchesPanelAndHonorsScopedChoice() {
@@ -2809,7 +2809,7 @@ TestRoot {
             compare(panelGauge.innerValue, gauge.innerValue);
             compare(popup.nextReset, zeroReset);
             compare(cell.lines.second, root.localized("1d"));
-            verify(graph(popup) && !graph(popup).visible);
+            verify(graph(popup) && graph(popup).visible);
             verify(!popup.starterShown);
             compare(root.all(popup, child => child.visible && child.text === "CLIProxyAPI").length, 1);
             verify(root.find(popup, child => child.visible && child.text === "Session affinity"));
@@ -2839,6 +2839,42 @@ TestRoot {
             usage.entries = { claude: lastKnown };
             verify(gauge.stale && panelGauge.stale, "a pool with only last known readings is grey in both views");
             compare(gauge.value, 58.5, "a stale pool keeps its reported percentage");
+        }
+
+        function test_poolGraphUsesTheLastSevenDaysAndTheSelectedModel() {
+            const usage = monitor.usage;
+            const entry = PoolStates.example(usage.createdAt);
+            usage.entries = { claude: entry };
+            const popup = load("claude");
+            popup.nowMs = usage.createdAt * 1000;
+            const body = findChild(popup, "usagePool");
+            const tile = root.find(body, i => i.graphReading !== undefined);
+            const plot = graph(popup);
+            verify(tile.visible && plot.visible);
+            compare(tile.caption, root.localized("Last 7 days"));
+            compare(tile.detail, "");
+            compare(plot.start, usage.createdAt - 7 * usage.day);
+            compare(plot.end, usage.createdAt);
+            compare(plot.mainSamples, entry.weekly.history);
+            compare(plot.secondAtMain[plot.secondAtMain.length - 1], 79);
+            verify(plot.mainSamples[4][1] < plot.mainSamples[3][1]);
+            const bar = root.find(body, i => i.objectName === "poolLimit" && i.label === "Fable");
+            const account = root.find(body, i => i.objectName === "pooledAccount");
+            tryVerify(() => bar.mapToItem(body, 0, bar.height).y < tile.mapToItem(body, 0, 0).y
+                            && tile.mapToItem(body, 0, tile.height).y < account.mapToItem(body, 0, 0).y);
+            verify(!paceTile(popup).visible);
+
+            usage.innerChoices = { claude: "none" };
+            compare(plot.secondPoints.length, 0);
+            const moved = Object.assign({}, entry.weekly, { resetsAt: usage.createdAt + 7 * usage.day });
+            usage.entries = { claude: Object.assign({}, entry, { weekly: moved }) };
+            popup.nowMs = usage.createdAt * 1000;
+            compare(plot.mainSamples, entry.weekly.history);
+            compare(plot.ghostOpacity, 0);
+
+            delete moved.history;
+            usage.entries = { claude: Object.assign({}, entry, { weekly: Object.assign({}, moved) }) };
+            verify(!tile.visible, "the graph needs at least one recorded pool reading");
         }
 
         function test_poolKeepsOtherPeriodsAndMissingRowsSeparate() {

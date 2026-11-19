@@ -259,7 +259,7 @@ PopupPage {
         visible: popup.pooled
         Layout.maximumHeight: Math.max(0, popup.room - header.implicitHeight - header.Layout.topMargin
             - header.Layout.bottomMargin - popup.footerHeight - Kirigami.Units.smallSpacing)
-        entry: popup.entry
+        entry: popup.pooled ? popup.entry : null
         innerLimit: popup.pooled ? popup.innerLimit : null
         texts: words
         nowMs: popup.nowMs
@@ -434,65 +434,21 @@ PopupPage {
         columns: 1
         rowSpacing: Kirigami.Units.largeSpacing
 
-        Tile {
-            caption: popup.monthly ? i18nc("@title:group the current monthly window", "This month")
-                                   : i18nc("@title:group the current weekly window", "This week")
-            // The rule's, so only while the graph draws one.
-            graphTop: week.placed ? words.percent(100) : ""
-            graphReading: week.reading
-            foot: popup.innerLimit !== null ? allModels : null
-            detail: {
-                const date = words.resetDate(popup.weekly);
-                return date ? i18nc("@title:group after THIS WEEK or THIS MONTH: when it starts over, e.g. · resets Sun 7:00 AM EDT",
-                                    "· resets %1", date) : "";
-            }
-
-            WeekGraph {
-                id: week
-                Layout.fillWidth: true
-                window: popup.weekly
-                secondWindow: popup.innerLimit
-                // The week's use at a poll, and the model's beside it, and when.
-                describe: i => {
-                    const used = words.percent(week.mainSamples[i][1]);
-                    const second = week.secondAtMain[i];
-                    const reading = popup.innerLimit !== null && Number.isFinite(second)
-                        ? i18nc("@info the week's use at a point on its graph, then a model limit's, e.g. 62%, Fable 30%",
-                                "%1, %2 %3", used, popup.innerLimit.label, words.percent(second))
-                        : used;
-                    return i18nc("@info a graph point's reading and when, e.g. 62% · Mon 2:14 PM", "%1 · %2",
-                                 reading, words.weekdayTime(week.mainSamples[i][0], popup.weekly, popup.nowMs));
-                }
-                nowMs: popup.nowMs
-                pollAt: popup.pollAt
-                failed: popup.greyShown
-                grey: popup.greyShown
-                // The run-out the pace line names, if the graph draws that
-                // limit: the week, or the model on the inner ring.
-                projected: {
-                    const e = popup.paceEvent;
-                    return !e ? "" : e.index === 0 ? "main"
-                         : popup.innerLimit !== null && popup.limits[e.index].id === popup.innerLimit.id ? "second" : "";
-                }
-            }
-
-            RowLayout {
-                visible: popup.innerLimit !== null
-                Layout.fillWidth: true
-                Layout.topMargin: Math.round(Kirigami.Units.smallSpacing / 2)
-                spacing: Math.round(Kirigami.Units.largeSpacing * 1.75)
-
-                Caption {
-                    id: allModels
-                    Layout.minimumWidth: implicitWidth
-                    text: i18nc("@label graph legend, the solid line", "— All models")
-                }
-
-                Caption {
-                    Layout.fillWidth: true
-                    text: popup.innerLimit ? i18nc("@label graph legend, the dashed line; %1 is a model", "- - %1",
-                                                   popup.innerLimit.label) : ""
-                }
+        UsageGraph {
+            id: week
+            texts: words
+            window: popup.weekly
+            modelWindow: popup.innerLimit
+            monthly: popup.monthly
+            nowMs: popup.nowMs
+            pollAt: popup.pollAt
+            failed: popup.greyShown
+            grey: popup.greyShown
+            // The run-out named by the pace line, if the graph draws its limit.
+            projected: {
+                const e = popup.paceEvent;
+                return !e ? "" : e.index === 0 ? "main"
+                     : popup.innerLimit !== null && popup.limits[e.index].id === popup.innerLimit.id ? "second" : "";
             }
         }
 

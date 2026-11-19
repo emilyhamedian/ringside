@@ -13,6 +13,7 @@ follows [Semantic Versioning](https://semver.org/).
 - Hub popups show each account's banked reset count and remaining credits.
 - Hub popups show pooled five-hour usage for multiple linked accounts when
   at least one reports a five-hour window.
+- Hub popups graph the last seven days of pooled usage.
 
 ### Changed
 
