@@ -14,6 +14,7 @@ import socket
 import stat
 import threading
 import time
+import uuid
 from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -24,16 +25,24 @@ from urllib.parse import urlsplit
 MANAGEMENT = "/v8/management"
 KEY_LIMIT = 4096
 RESPONSE_LIMIT = 1024 * 1024
+EXTRA_RESPONSE_LIMIT = 65536
 REQUEST_TIMEOUT = 8
 HOUR = 3600
 DAY = 24 * HOUR
 SESSION = 5 * HOUR
 WEEK = 7 * DAY
+TOKEN = "Bearer $TOKEN$"
+CLAUDE_OAUTH = "https://api.anthropic.com/api/oauth"
+CLAUDE_HEADERS = {"anthropic-beta": "oauth-2025-04-20", "Content-Type": "application/json",
+                  "User-Agent": "claude-cli/2.1.321 (external, cli)"}
+CODEX_WHAM = "https://chatgpt.com/backend-api/wham"
+CODEX_HEADERS = {"Content-Type": "application/json", "User-Agent": "codex-tui"}
 KIMI_REGIONS = {"kimi-ai": "global", "kimi": "china"}
 KIMI_HOSTS = {"global": "api.kimi.ai", "china": "api.kimi.com"}
 PROVIDERS = {"claude": "claude", "codex": "codex", "kimi": "kimi", "kimi-ai": "kimi"}
 MODEL_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}")
 ROUTING_ID = re.compile(r"[A-Za-z0-9_-]{1,128}")
+EMAIL = re.compile(r"[^\s@]+@[^\s@]+\.[^\s@]+")
 CREDENTIAL_ERRORS = {"auth credential not found for auth_index", "auth token not found",
                      "auth token refresh failed"}
 REASONS = {"configuration", "key-file", "management-auth", "upstream-auth", "rate-limited", "offline",
@@ -55,6 +64,7 @@ class Credential:
     account_id: str = field(default="", repr=False)
     region: str | None = None
     requires_sign_in: bool = False
+    revision: str = field(default="", repr=False)
 
 
 def loopback_address(url):
@@ -251,33 +261,26 @@ class Client:
                 account_id = ""
             portal = row.get("oauth_provider") or channel
             region = KIMI_REGIONS.get(portal) if provider == "kimi" and isinstance(portal, str) else None
-            fingerprint = self._fingerprint("credential", provider, index, account_id, region)
+            email = row.get("email")
+            email = email.strip().casefold() if isinstance(email, str) and len(email) <= 254 else ""
+            # A file can keep its index after a different account signs in.
+            # Use an available email only as input to the opaque account key.
+            identity = (email,) if EMAIL.fullmatch(email) else ()
+            fingerprint = self._fingerprint("credential", provider, index, account_id, region, *identity)
+            modified = row.get("modtime")
+            revision = (self._fingerprint("credential-revision", fingerprint, modified)
+                        if isinstance(modified, str) and 0 < len(modified) <= 64 else "")
             by_provider[provider][index] = Credential(provider, fingerprint, index, account_id, region,
-                                                       row.get("requires_sign_in") is True)
+                                                       row.get("requires_sign_in") is True, revision)
         return {provider: sorted(rows.values(), key=lambda row: row.fingerprint)
                 for provider, rows in by_provider.items()}
 
-    def usage(self, credential, now, *, claude_parser, kimi_parser, kimi_region="auto", deadline=None):
+    def _account_get(self, credential, url, headers, deadline, *, limit=RESPONSE_LIMIT):
         if credential.requires_sign_in:
             raise ProxyError("upstream-auth")
-        headers = {"Authorization": "Bearer $TOKEN$", "Accept": "application/json"}
-        if credential.provider == "claude":
-            url = "https://api.anthropic.com/api/oauth/usage"
-            headers.update({"anthropic-beta": "oauth-2025-04-20", "Content-Type": "application/json",
-                            "User-Agent": "claude-cli/2.1.321 (external, cli)"})
-        elif credential.provider == "codex":
-            url = "https://chatgpt.com/backend-api/wham/usage"
-            headers.update({"Content-Type": "application/json", "User-Agent": "codex-tui"})
-            if credential.account_id:
-                headers["Chatgpt-Account-Id"] = credential.account_id
-        elif credential.provider == "kimi":
-            region = credential.region if kimi_region == "auto" else kimi_region
-            if region not in KIMI_HOSTS:
-                raise ProxyError("unsupported-credential")
-            url = f"https://{KIMI_HOSTS[region]}/coding/v1/usages"
-        else:
-            raise ProxyError("unsupported-credential")
-
+        headers = {**headers, "Authorization": TOKEN, "Accept": "application/json"}
+        if credential.provider == "codex" and credential.account_id:
+            headers["Chatgpt-Account-Id"] = credential.account_id
         response = self._request("/requests/api-call", deadline=deadline, request={
             "auth_index": credential.index, "method": "GET", "url": url, "header": headers,
         })
@@ -285,20 +288,57 @@ class Client:
         if type(status) is not int or not 100 <= status <= 599:
             raise ProxyError("invalid-response")
         check_status(status, wrapped_retry_after(response.get("header")), management=False)
-        body = decode_json(response.get("body"))
+        raw = response.get("body")
+        if not isinstance(raw, str) or (limit < RESPONSE_LIMIT and len(raw.encode("utf-8", "surrogatepass")) > limit):
+            raise ProxyError("invalid-response")
+        body = decode_json(raw)
         if not isinstance(body, dict):
             raise ProxyError("invalid-response")
+        if credential.provider == "codex" and credential.account_id and (
+                body.get("account_id", body.get("accountId", credential.account_id)) != credential.account_id):
+            raise ProxyError("invalid-response")
+        return body
+
+    def usage(self, credential, now, *, claude_parser, kimi_parser, kimi_region="auto", deadline=None, extras=None):
+        if credential.requires_sign_in:
+            raise ProxyError("upstream-auth")
+        region = None
         if credential.provider == "claude":
+            body = self._account_get(credential, CLAUDE_OAUTH + "/usage?cedar_ember=1", CLAUDE_HEADERS, deadline)
             reading = parse_claude(body, claude_parser)
         elif credential.provider == "codex":
-            if credential.account_id and body.get("account_id", body.get("accountId", credential.account_id)) != credential.account_id:
-                raise ProxyError("invalid-response")
+            body = self._account_get(credential, CODEX_WHAM + "/usage", CODEX_HEADERS, deadline)
             reading = parse_codex(body, now)
-        else:
+        elif credential.provider == "kimi":
+            region = credential.region if kimi_region == "auto" else kimi_region
+            if region not in KIMI_HOSTS:
+                raise ProxyError("unsupported-credential")
+            body = self._account_get(credential, f"https://{KIMI_HOSTS[region]}/coding/v1/usages", {}, deadline)
             reading = parse_kimi(body, kimi_parser)
+        else:
+            raise ProxyError("unsupported-credential")
         if not any((reading.get("weekly"), reading.get("scoped"), reading.get("week"), "session" in reading)):
             raise ProxyError("invalid-response")
+        if extras is not None:
+            reading.update(extras(credential.provider, body, region, now))
         return reading
+
+    def claude_credits(self, credential, *, prepaid_request, deadline):
+        profile = self._account_get(credential, CLAUDE_OAUTH + "/profile", CLAUDE_HEADERS,
+                                    deadline, limit=EXTRA_RESPONSE_LIMIT)
+        raw_org = record(profile.get("organization")).get("uuid")
+        try:
+            org = uuid.UUID(raw_org)
+            if not org.int:
+                raise ValueError
+        except (TypeError, ValueError, AttributeError):
+            raise ProxyError("invalid-response") from None
+        url, headers = prepaid_request(str(org), TOKEN)
+        return self._account_get(credential, url, headers, deadline, limit=EXTRA_RESPONSE_LIMIT)
+
+    def codex_reset_details(self, credential, *, deadline):
+        return self._account_get(credential, CODEX_WHAM + "/rate-limit-reset-credits", CODEX_HEADERS,
+                                 deadline, limit=EXTRA_RESPONSE_LIMIT)
 
     def affinity(self, *, deadline=None):
         until = time.monotonic() + 1
@@ -587,6 +627,9 @@ def visible_account(account, now):
             result[slot] = [visible_window(candidate, now) for candidate in account.get(slot, [])]
     if account.get("sessionUnknown"):
         result["sessionUnknown"] = True
+    for slot in ("bankedResets", "credits"):
+        if slot in account:
+            result[slot] = account[slot]
     return result
 
 

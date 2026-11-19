@@ -42,6 +42,7 @@ Claude, Codex and Kimi. --proxy-auto also discovers the default address
 when its key file is absent. --direct-providers selects direct usage for
 individual providers. Hub entries carry source="cliproxyapi", anonymous
 accounts and comparable pooled windows, with separate cache and backoff.
+Banked resets and opted-in prepaid credits belong to individual accounts.
 An opted-in starter pauses while its provider uses the hub and resumes
 after a fresh direct usage read.
 
@@ -197,7 +198,8 @@ WEEK_SECONDS = WEEK_MINUTES * 60
 
 # The CLIs' own config homes, which move with CLAUDE_CONFIG_DIR and CODEX_HOME.
 CLAUDE_CREDENTIALS = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude") / ".credentials.json"
-CLAUDE_USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
+CLAUDE_OAUTH_URL = "https://api.anthropic.com/api/oauth"
+CLAUDE_USAGE_URL = CLAUDE_OAUTH_URL + "/usage"
 CLAUDE_TOKEN_URL = "https://platform.claude.com/v1/oauth/token"
 # Public client id of the Claude Code CLI; the refresh grant needs it.
 CLAUDE_CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
@@ -235,6 +237,8 @@ PROXY_WORKERS = 4
 PROXY_MANAGEMENT_STOP = ("management-auth", "management-rate-limited")
 CREDITS_INTERVAL = CACHE_TTL
 CREDITS_TIMEOUT = 5
+# A single grant can supply several tickets, without requiring one cached date for each.
+BANKED_EXPIRIES_MAX = 100
 # A collection shares the raw replies with credits without changing the weekly parsers.
 CREDITS_CONTEXT = contextvars.ContextVar("credits", default=None)
 INITIAL_GRACE = 30
@@ -731,19 +735,17 @@ def parse_codex(result):
 
 def codex_banked_resets(summary):
     """Return the banked resets in the "rateLimitResetCredits" of a Codex
-    account/rateLimits/read result, as {"count", "expires"}, or None if
-    there are none. Ringside only displays these, so a summary it can't
-    read counts as no resets, and a reset whose expiry it can't read is
-    listed without one."""
+    account/rateLimits/read result or the backend's rate_limit_reset_credits
+    summary, as {"count", "expires"}. Unreadable expiry dates are omitted."""
     if not isinstance(summary, dict):
         return None
-    count = summary.get("availableCount")
+    count = summary.get("available_count", summary.get("availableCount"))
     if type(count) is not int or count <= 0:
         return None
     credits = summary.get("credits")
-    expires = sorted(int(credit["expiresAt"]) for credit in (credits if isinstance(credits, list) else [])
+    expires = sorted(expiry for credit in (credits if isinstance(credits, list) else [])
                      if isinstance(credit, dict) and credit.get("status") == "available"
-                     and type(credit.get("expiresAt")) in (int, float) and math.isfinite(credit["expiresAt"]))
+                     and (expiry := banked_timestamp(credit.get("expires_at", credit.get("expiresAt")))) is not None)
     return {"count": count, "expires": expires[:count]}
 
 
@@ -1138,20 +1140,36 @@ def claude_banked_resets(block, now):
     if not isinstance(block, dict) or block.get("eligible") is not True:
         return None
     grants = block.get("grants")
-    count, expires = 0, []
+    count, dated = 0, []
     for grant in grants if isinstance(grants, list) else []:
         if not isinstance(grant, dict) or grant.get("paused") is True:
             continue
         left = grant.get("resets_left")
         if type(left) is not int or left <= 0:
             continue
-        starts, ends = epoch_seconds(grant.get("starts_at")), epoch_seconds(grant.get("ends_at"))
+        starts, ends = banked_timestamp(grant.get("starts_at")), banked_timestamp(grant.get("ends_at"))
         if starts is not None and starts > now or ends is not None and ends <= now:
             continue
         count += left
         if ends is not None:
-            expires += [ends] * left
-    return {"count": count, "expires": sorted(expires)} if count else None
+            dated.append((ends, left))
+    expires = []
+    for ends, left in sorted(dated):
+        expires.extend([ends] * min(left, BANKED_EXPIRIES_MAX - len(expires)))
+        if len(expires) == BANKED_EXPIRIES_MAX:
+            break
+    return {"count": count, "expires": expires} if count else None
+
+
+def banked_timestamp(value):
+    if type(value) in (int, float, str):
+        try:
+            stamp = epoch_seconds(value)
+        except (ValueError, OverflowError, OSError):
+            return None
+        if stamp is not None and 0 < stamp <= 253402300799:
+            return stamp
+    return None
 
 
 def session_limited(usage):
@@ -1530,6 +1548,14 @@ def parse_claude_credits(body):
     return {"amount": amount / (100 if precision else 1), "currency": currency, "precision": precision} if amount else None
 
 
+def claude_prepaid_request(org, authorization):
+    return CLAUDE_OAUTH_URL + "/organizations/" + org + "/prepaid/credits", {
+        "Authorization": authorization, "Content-Type": "application/json",
+        "anthropic-version": "2023-06-01", "anthropic-client-platform": "claude_code_cli",
+        "x-organization-uuid": org,
+    }
+
+
 def codex_credit_limit(raw):
     if not isinstance(raw, dict):
         return {}
@@ -1538,13 +1564,14 @@ def codex_credit_limit(raw):
     return limit if isinstance(limit, dict) else {}
 
 
-def parse_codex_credits(raw):
-    credits = codex_credit_limit(raw).get("credits")
+def parse_codex_credits(raw, *, backend=False):
+    credits = (raw if backend else codex_credit_limit(raw)).get("credits")
     if not isinstance(credits, dict):
         return "unavailable", None
-    if credits.get("hasCredits") is False:
+    enabled = credits.get("has_credits", credits.get("hasCredits"))
+    if enabled is False:
         return "disabled", None
-    if credits.get("hasCredits") is not True or type(credits.get("unlimited")) is not bool:
+    if enabled is not True or type(credits.get("unlimited")) is not bool:
         raise ValueError("invalid credits")
     if credits["unlimited"]:
         return "ok", None
@@ -1730,11 +1757,8 @@ def collect_credits(cache, providers, now, started):
                     token = observed.get("token") or oauth["accessToken"]
                     if token != oauth["accessToken"] or claude_credit_identity() != snapshot:
                         raise SignedOut()
-                    body = http_json("https://api.anthropic.com/api/oauth/organizations/" + snapshot[1] + "/prepaid/credits", {
-                        "Authorization": "Bearer " + token, "Content-Type": "application/json",
-                        "anthropic-version": "2023-06-01", "anthropic-client-platform": "claude_code_cli",
-                        "x-organization-uuid": snapshot[1],
-                    }, timeout=CREDITS_TIMEOUT, redirects=False, max_bytes=65536)
+                    body = http_json(*claude_prepaid_request(snapshot[1], "Bearer " + token),
+                                     timeout=CREDITS_TIMEOUT, redirects=False, max_bytes=65536)
                     balance = parse_claude_credits(body)
                     record.update(status="ok", balance=balance, spent=credits_spent(record, balance),
                                   fetchedAt=now + int(time.monotonic() - started), reason=None)
@@ -2046,10 +2070,57 @@ def proxy_clock(record, key, now):
         record[key] = now
 
 
-def proxy_read_members(backend, client, work, now, started, deadline, region):
+def proxy_reading_extras(name, body, region, now, eligible):
+    extras = {}
+    if name == "claude":
+        if banked := claude_banked_resets(body.get("cedar_ember"), now):
+            extras["bankedResets"] = banked
+        extra_usage = body.get("extra_usage")
+        if isinstance(extra_usage, dict) and type(enabled := extra_usage.get("is_enabled")) is bool:
+            extras["_creditsEnabled"] = enabled
+        return extras
+
+    if name == "codex":
+        summary = body.get("rate_limit_reset_credits", body.get("rateLimitResetCredits"))
+        if banked := codex_banked_resets(summary):
+            extras["bankedResets"] = banked
+        credits = body.get("credits")
+        if isinstance(credits, dict) and credits.get("has_credits", credits.get("hasCredits")) is False:
+            extras["_credit"] = "disabled", None
+    if name in eligible:
+        try:
+            extras["_credit"] = (parse_codex_credits(body, backend=True) if name == "codex"
+                                 else parse_kimi_credits(body, region))
+        except (ValueError, TypeError, OverflowError):
+            extras["_credit"] = "error", None
+    return extras
+
+
+def proxy_credit_reason(reason):
+    if reason in ("upstream-auth", "management-auth"):
+        return "signed-out"
+    if reason == "management-rate-limited":
+        return "rate-limited"
+    return reason if reason in ("offline", "timeout", "server", "rate-limited") else "other"
+
+
+def proxy_store_credit(record, status, balance, now, reason=None):
+    if status == "error":
+        previous = record.get("credits")
+        if reason != "signed-out" and isinstance(previous, dict):
+            balance, now = previous.get("balance"), previous.get("fetchedAt")
+        else:
+            now = None
+    record["credits"] = {"status": status, "balance": balance, "fetchedAt": now, "reason": reason}
+
+
+def proxy_read_members(backend, client, work, now, started, deadline, region, eligible):
     """Read a first account before fan-out to detect a rejected or limited
     management request. Every in-flight request shares the discovery deadline."""
     stop = threading.Event()
+
+    def extras(name, body, selected_region, observed):
+        return proxy_reading_extras(name, body, selected_region, observed, eligible)
 
     def read(item):
         credential, record = item
@@ -2059,7 +2130,7 @@ def proxy_read_members(backend, client, work, now, started, deadline, region):
             if time.monotonic() >= deadline:
                 raise backend.ProxyError("timeout")
             reading = client.usage(credential, now, claude_parser=parse_session, kimi_parser=parse_kimi,
-                                   kimi_region=region, deadline=deadline)
+                                   kimi_region=region, deadline=deadline, extras=extras)
         except backend.ProxyError as err:
             failure = proxy_failure(err.reason, now + math.ceil(time.monotonic() - started), err.retry_after)
             if err.reason in PROXY_MANAGEMENT_STOP:
@@ -2068,8 +2139,18 @@ def proxy_read_members(backend, client, work, now, started, deadline, region):
             if err.reason not in ("offline", "timeout", "server", "rate-limited"):
                 record.pop("reading", None)
                 record.pop("fetchedAt", None)
+                record.pop("credits", None)
             record["error"] = failure
             return None
+        if (enabled := reading.pop("_creditsEnabled", None)) is not None:
+            record["creditsEnabled"] = enabled
+            if not enabled:
+                proxy_store_credit(record, "disabled", None, now)
+            elif record.get("credits", {}).get("status") == "disabled":
+                record.pop("credits")
+        if credit := reading.pop("_credit", None):
+            status, balance = credit
+            proxy_store_credit(record, status, balance, now, "other" if status == "error" else None)
         record.update(reading=reading, fetchedAt=now)
         record.pop("error", None)
         return None
@@ -2096,15 +2177,69 @@ def proxy_read_members(backend, client, work, now, started, deadline, region):
     return management
 
 
-def proxy_report(backend, layout, now, affinity, failure=None):
+def proxy_read_extras(backend, client, work, now, started, deadline, eligible, persist):
+    """Optional GETs share one budget after the core usage and affinity reads."""
+    until = min(deadline, time.monotonic() + CREDITS_TIMEOUT)
+    for credential, record in sorted(work, key=lambda item: item[1].get("extrasAt", -1)):
+        if time.monotonic() >= until:
+            break
+        if (record.get("error") or record.get("fetchedAt") != now
+                or proxy_recent(record.get("extrasAt"), now)
+                or proxy_wait(record.get("extrasHold"), now)):
+            continue
+        reading = record["reading"]
+        banked = reading.get("bankedResets")
+        claude = (credential.provider == "claude" and "claude" in eligible
+                  and record.get("creditsEnabled") is not False)
+        codex = (credential.provider == "codex" and banked and len(banked["expires"]) < banked["count"])
+        if not (claude or codex):
+            continue
+        # Rotate accounts that missed the last budget ahead of those already checked.
+        # Save the attempt before the GET so an interrupted run still observes the interval.
+        record["extrasAt"] = now
+        persist()
+        account_deadline = min(until, time.monotonic() + CREDITS_TIMEOUT / 2)
+        try:
+            if claude:
+                reply = client.claude_credits(credential, prepaid_request=claude_prepaid_request,
+                                              deadline=account_deadline)
+                proxy_store_credit(record, "ok", parse_claude_credits(reply), now)
+            else:
+                reply = client.codex_reset_details(credential, deadline=account_deadline)
+                details = codex_banked_resets(reply)
+                if (details and details["count"] == banked["count"]
+                        and len(details["expires"]) > len(banked["expires"])):
+                    reading["bankedResets"] = details
+            record.pop("extrasHold", None)
+        except (backend.ProxyError, ValueError, TypeError, OverflowError) as err:
+            reason = getattr(err, "reason", "invalid-response")
+            retry_after = 3600 if reason == "upstream-auth" else getattr(err, "retry_after", None)
+            finished = now + math.ceil(time.monotonic() - started)
+            failure = proxy_failure(reason, finished, retry_after)
+            if claude:
+                proxy_store_credit(record, "error", None, now, proxy_credit_reason(reason))
+            if reason in PROXY_MANAGEMENT_STOP:
+                return dict(failure, optional=True)
+            if claude and reason == "rate-limited":
+                failure["holdsUsage"] = True
+            record["extrasHold"] = failure
+    return None
+
+
+def proxy_report(backend, layout, now, affinity, failure=None, *, show_credits=False):
     accounts, ages, errors = [], [], []
     management_hold = failure and failure["reason"] == "management-rate-limited"
+    optional_stop = failure and failure.get("optional")
     if management_hold:
         failure = dict(failure, reason="rate-limited")
     for record in layout["members"].values():
         reading, at = record.get("reading"), record.get("fetchedAt")
         error = record.get("error")
-        if failure and not (management_hold and proxy_recent(at, now)):
+        if not error and not proxy_recent(at, now):
+            extras = record.get("extrasHold")
+            if extras and extras.get("holdsUsage") and proxy_wait(extras, now):
+                error = extras
+        if failure and not ((management_hold or optional_stop) and proxy_recent(at, now)):
             error = error or failure
         if error:
             errors.append(error)
@@ -2113,6 +2248,17 @@ def proxy_report(backend, layout, now, affinity, failure=None):
             row = dict(reading, state="stale" if error or not proxy_recent(at, now) else "ok", fetchedAt=at)
             if error:
                 row["reason"] = error["reason"]
+            if banked_resets_well_formed(banked := row.pop("bankedResets", None)):
+                expires = [expiry for expiry in banked["expires"] if expiry > now]
+                count = banked["count"] - (len(banked["expires"]) - len(expires))
+                if count:
+                    row["bankedResets"] = {"count": count, "expires": expires}
+            credit = record.get("credits")
+            if show_credits and isinstance(credit, dict):
+                if credit.get("status") == "ok" and not (row["state"] == "ok" and proxy_recent(credit.get("fetchedAt"), now)):
+                    credit = dict(credit, status="error", reason=proxy_credit_reason(
+                        (error or record.get("extrasHold") or failure or {}).get("reason")))
+                row["credits"] = credits_report(credit)
             accounts.append(row)
         else:
             accounts.append({"state": "unavailable", "reason": error["reason"] if error else "timeout"})
@@ -2137,6 +2283,14 @@ def proxy_report(backend, layout, now, affinity, failure=None):
     return report
 
 
+def proxy_member_due(record, now):
+    extras = record.get("extrasHold")
+    if extras and extras.get("holdsUsage") and proxy_wait(extras, now):
+        return False
+    return not proxy_wait(record.get("error"), now) and (
+        record.get("error") or not proxy_recent(record.get("fetchedAt"), now))
+
+
 def proxy_roster(backend, members, region, previous, now, work):
     """Keep member holds and only readings belonging to this roster. A
     fresh reading of an unchanged member can still serve a new roster."""
@@ -2152,23 +2306,31 @@ def proxy_roster(backend, members, region, previous, now, work):
         elif record.get("requiresSignIn"):
             record = {}
         elif pool != previous.get("pool") and not proxy_recent(record.get("fetchedAt"), now):
-            record = {"error": record["error"]} if record.get("error") else {}
+            record = {key: record[key] for key in ("error", "extrasAt", "extrasHold") if key in record}
+        if member.revision != record.pop("revision", ""):
+            # A refreshed file can still represent the same account. Its old
+            # optional values require a fresh observation from that file.
+            record.pop("credits", None)
+            record.pop("creditsEnabled", None)
+            if isinstance(reading := record.get("reading"), dict):
+                reading.pop("bankedResets", None)
+        if member.revision:
+            record["revision"] = member.revision
         records[member.fingerprint] = record
-        if work is not None and not proxy_wait(record.get("error"), now) and (
-                record.get("error") or not proxy_recent(record.get("fetchedAt"), now)):
+        if work is not None and proxy_member_due(record, now):
             work.append((member, record))
     return {"pool": pool, "members": records,
             "regionNeeded": region == "auto" and any(member.region is None for member in members)}
 
 
 def record_proxy_failure(state, failure):
-    if failure["reason"] == "management-auth":
+    if failure["reason"] == "management-auth" and not failure.get("optional"):
         state["unauthorized"] = True
     state["discoveryError"] = failure
     return failure
 
 
-def collect_proxy(options, now, started):
+def collect_proxy(options, now, started, eligible):
     """Resolve Auto sources and keep the account cache independent of all
     direct usage, balances, reset history and starter planning."""
     names, url, key, region, auto_discovery = options
@@ -2196,6 +2358,19 @@ def collect_proxy(options, now, started):
     if not isinstance(rosters, dict):
         rosters = state["rosters"] = {}
     slots = {name: f"kimi:{region}" if name == "kimi" else name for name in names}
+
+    def save_state():
+        cache.pop(scope, None)
+        cache[scope] = state
+        write_proxy_cache(cache)
+
+    def persist_attempt():
+        # This write can be the last one if the process is interrupted.
+        pooled_starters = {name for name in STARTERS if slots.get(name) in rosters}
+        if paused := proxy_paused_starters(cache) | pooled_starters:
+            cache["_starterPaused"] = sorted(paused)
+        save_state()
+
     for slot, layout in list(rosters.items()):
         members = layout.get("members") if isinstance(layout, dict) else None
         if (not isinstance(members, dict) or not members or not isinstance(layout.get("pool"), str)
@@ -2205,6 +2380,11 @@ def collect_proxy(options, now, started):
             continue
         for record in members.values():
             proxy_clock(record, "fetchedAt", now)
+            proxy_clock(record, "extrasAt", now)
+            if type(record.get("extrasAt")) is not int:
+                record.pop("extrasAt", None)
+            if isinstance(record.get("credits"), dict):
+                proxy_clock(record["credits"], "fetchedAt", now)
     proxy_clock(state, "discoveredAt", now)
     discovery = state.get("discoveryError")
     deadline = started + PROXY_TIMEOUT
@@ -2214,8 +2394,7 @@ def collect_proxy(options, now, started):
         due = not proxy_recent(state.get("discoveredAt"), now)
         for slot in slots.values():
             records = rosters.get(slot, {}).get("members", {}).values()
-            due |= any(not proxy_recent(record.get("fetchedAt"), now) and not proxy_wait(record.get("error"), now)
-                       for record in records)
+            due |= any(proxy_member_due(record, now) for record in records)
         if due:
             try:
                 credentials = client.credentials(deadline=deadline)
@@ -2236,7 +2415,7 @@ def collect_proxy(options, now, started):
                                                          work if slots.get(name) == slot else None)
                         else:
                             rosters.pop(slot, None)
-                if failure := proxy_read_members(backend, client, work, now, started, deadline, region):
+                if failure := proxy_read_members(backend, client, work, now, started, deadline, region, eligible):
                     discovery = record_proxy_failure(state, failure)
                 elif time.monotonic() < deadline:
                     try:
@@ -2245,16 +2424,21 @@ def collect_proxy(options, now, started):
                         if err.reason in PROXY_MANAGEMENT_STOP:
                             discovery = record_proxy_failure(state, proxy_failure(
                                 err.reason, now + math.ceil(time.monotonic() - started), err.retry_after))
+                if not discovery:
+                    failure = proxy_read_extras(backend, client, work, now, started, deadline, eligible, persist_attempt)
+                    if failure:
+                        discovery = record_proxy_failure(state, failure)
 
     management_hold = discovery and discovery["reason"] == "management-rate-limited"
+    optional_auth = discovery and discovery.get("optional") and discovery["reason"] == "management-auth"
     if state.get("unauthorized"):
         reports, statuses = {}, dict.fromkeys(names, "unauthorized")
-    elif discovery and not management_hold and discovery["reason"] not in ("server", "rate-limited"):
+    elif discovery and not (management_hold or optional_auth) and discovery["reason"] not in ("server", "rate-limited"):
         status = "unsupported" if discovery["reason"] in ("configuration", "invalid-response") else "offline"
         reports, statuses = {}, dict.fromkeys(names, status)
     else:
         reports, statuses = {}, {}
-        unavailable_status = "rate-limited" if management_hold else "offline"
+        unavailable_status = "rate-limited" if management_hold else "unauthorized" if optional_auth else "offline"
         for name, slot in slots.items():
             layout = rosters.get(slot)
             if not layout:
@@ -2264,9 +2448,12 @@ def collect_proxy(options, now, started):
                    for record in layout["members"].values()):
                 statuses[name] = "region-needed" if layout.get("regionNeeded") else "unsupported"
                 continue
-            reports[name] = proxy_report(backend, layout, now, state.get("affinity"), discovery)
+            reports[name] = proxy_report(backend, layout, now, state.get("affinity"), discovery,
+                                         show_credits=name in eligible)
             if management_hold:
                 reports[name]["proxyStatus"] = "rate-limited"
+            elif optional_auth:
+                reports[name]["proxyStatus"] = "unauthorized"
             elif discovery:
                 reports[name]["proxyStatus"] = "offline"
             elif layout.get("regionNeeded"):
@@ -2291,9 +2478,7 @@ def collect_proxy(options, now, started):
         cache["_starterPaused"] = sorted(paused)
     cache[scope] = state
     if json.dumps(cache) != before:
-        cache.pop(scope)
-        cache[scope] = state
-        write_proxy_cache(cache)
+        save_state()
     return reports, statuses
 
 
@@ -2323,7 +2508,7 @@ def collect(fetchers, now=None, *, initial=(), credits=(), retrying=(), proxy=No
     with locked():
         now = int(time.time()) if now is None else now
         started = time.monotonic()
-        pooled, fallback = collect_proxy(proxy, now, started) if proxy else ({}, {})
+        pooled, fallback = collect_proxy(proxy, now, started, set(credits)) if proxy else ({}, {})
         if starters:
             run_starters((name for name in starters if name not in pooled), lock_held=True)
         direct = {name: fetch for name, fetch in fetchers.items() if name not in pooled}

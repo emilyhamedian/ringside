@@ -176,7 +176,7 @@ class ProxyClient(unittest.TestCase):
 
         claude_reading = self.usage(client, roster["claude"][0])
         claude_request = json.loads(server.requests[-1][3])
-        self.assertEqual(claude_request["url"], "https://api.anthropic.com/api/oauth/usage")
+        self.assertEqual(claude_request["url"], "https://api.anthropic.com/api/oauth/usage?cedar_ember=1")
         self.assertEqual(claude_request["header"]["anthropic-beta"], "oauth-2025-04-20")
 
         codex_reply = {"account_id": PRIVATE_ACCOUNT,
@@ -221,6 +221,14 @@ class ProxyClient(unittest.TestCase):
         report = json.dumps(proxy.aggregate([dict(claude_reading, state="ok")], NOW))
         for private in ("alpha", PRIVATE_MEMBER, PRIVATE_ACCOUNT, KEY, "_used"):
             self.assertNotIn(private, report)
+
+        rows["files"][0]["email"] = " " + PRIVATE_MEMBER.upper() + " "
+        self.assertEqual(client.credentials()["claude"][0].fingerprint, roster["claude"][0].fingerprint)
+        rows["files"][0]["email"] = "replacement@example.invalid"
+        replacement = client.credentials()["claude"][0]
+        self.assertEqual(replacement.index, roster["claude"][0].index)
+        self.assertNotEqual(replacement.fingerprint, roster["claude"][0].fingerprint)
+        self.assertNotIn("replacement", repr(replacement))
 
     def test_management_redirects_error_bodies_and_pinned_upstream_refusal(self):
         server, client = self.server(**{"/credentials": (302, b"", {"Location": "/redirect-target"})})

@@ -3,6 +3,7 @@
 
 import json
 import threading
+from datetime import datetime, timezone
 from unittest import mock
 
 from test_usage import Isolated, reading, usage
@@ -42,7 +43,7 @@ class ProxyPolling(Isolated):
         return self.run_main("--providers", "claude", "--proxy-url", usage.PROXY_URL, *argv)["providers"]["claude"]
 
     def test_pool_cache_uses_distinct_storage_and_no_direct_credit_or_history(self):
-        result = self.poll("--credits-providers", "claude")
+        result = self.poll()
         self.assertEqual((result["source"], result["proxyStatus"], result["fetchedAt"]), ("cliproxyapi", "connected", NOW))
         self.assertEqual(result["weekly"]["percent"], 50)
         self.assertEqual(result["affinity"], {"enabled": True, "ttlSeconds": 900})
@@ -88,6 +89,240 @@ class ProxyPolling(Isolated):
         for private in ("fixture-management-secret", routing_id, email, str(key)):
             self.assertNotIn(private, report_and_cache)
         self.direct.assert_not_called()
+
+    def test_real_client_scopes_tickets_and_balances_to_each_selected_account(self):
+        key = self.tmp / "management.key"
+        key.write_text("fixture-management-secret\n")
+        key.chmod(0o600)
+        self.factory.side_effect = self.real_client
+        org = "aaaa0000-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+        profiles = {"fixture-claude-a": org, "fixture-claude-b": "fixture-invalid-org"}
+        codex = {"fixture-codex-a": "fixture-workspace-a", "fixture-codex-b": "fixture-workspace-b"}
+        rows = [{"provider": "claude", "auth_index": index, "modtime": "2026-09-09T00:00:00Z"} for index in profiles]
+        rows += [{"provider": "codex", "auth_index": index, "id_token": {"chatgpt_account_id": workspace}}
+                 for index, workspace in codex.items()]
+        rows += [{"provider": channel, "auth_index": "fixture-" + channel} for channel in ("kimi", "kimi-ai")]
+        requests = []
+        expires = NOW + 100
+        remote_expiry = datetime.fromtimestamp(expires, timezone.utc).isoformat()
+
+        def request(host, port, path, *, request=None, **kwargs):
+            if path.endswith("/credentials"):
+                return {"files": rows}
+            if path.endswith("/session-affinity"):
+                return False
+            self.assertTrue(path.endswith("/requests/api-call"))
+            index, url, headers = (request[key] for key in ("auth_index", "url", "header"))
+            requests.append((index, url, kwargs["deadline"]))
+            self.assertEqual((request["method"], headers["Authorization"]), ("GET", "Bearer $TOKEN$"))
+            if index in profiles:
+                if url.endswith("/usage?cedar_ember=1"):
+                    self.assertEqual(headers["User-Agent"], usage.CLAUDE_CODE_AGENT)
+                    body = {
+                        "seven_day": {"utilization": 25 if index.endswith("-a") else 35, "resets_at": NOW + 3600},
+                        "five_hour": None, "extra_usage": {"is_enabled": True, "used_credits": 90000},
+                        "cedar_ember": {"eligible": True, "grants": [
+                            {"resets_left": 1, "ends_at": expires},
+                            {"resets_left": 2, "ends_at": None},
+                        ]} if index.endswith("-a") else {"eligible": True, "grants": [{"resets_left": False}]},
+                    }
+                elif url.endswith("/profile"):
+                    self.assertEqual(headers["anthropic-beta"], usage.CLAUDE_BETA_HEADER)
+                    body = {"organization": {"uuid": profiles[index]}, "account": {"email": "fixture-person@example.invalid"}}
+                else:
+                    self.assertEqual((index, url), ("fixture-claude-a", usage.CLAUDE_OAUTH_URL + f"/organizations/{org}/prepaid/credits"))
+                    self.assertEqual(headers["x-organization-uuid"], org)
+                    self.assertEqual(headers["anthropic-client-platform"], "claude_code_cli")
+                    body = {"amount": 1234, "currency": "USD"}
+            elif index in codex:
+                self.assertEqual(headers["Chatgpt-Account-Id"], codex[index])
+                if url.endswith("/rate-limit-reset-credits"):
+                    self.assertEqual(index, "fixture-codex-a")
+                    body = {"available_count": 2, "credits": [
+                        {"status": "available", "expires_at": remote_expiry}, {"status": "redeemed", "expires_at": expires},
+                    ]}
+                else:
+                    self.assertTrue(url.endswith("/wham/usage"))
+                    first = index.endswith("-a")
+                    body = {
+                        "account_id": codex[index], "rate_limit": {"primary_window": {
+                            "used_percent": 40 if first else 50, "limit_window_seconds": 604800, "reset_at": NOW + 3600,
+                        }},
+                        "rate_limit_reset_credits": {"available_count": 2} if first else {
+                            "available_count": 1, "credits": [{"status": "available", "expires_at": expires}],
+                        },
+                        "credits": {"has_credits": True, "unlimited": False, "balance": "12.50" if first else {}},
+                    }
+            else:
+                region_host = "api.kimi.ai" if index.endswith("-ai") else "api.kimi.com"
+                self.assertEqual(url, f"https://{region_host}/coding/v1/usages")
+                body = {
+                    "usages": {"limit_month_total": {"used_ratio": .35 if index.endswith("-ai") else .45,
+                                                    "reset_time": "2027-02-01T00:00:00Z"}},
+                    "boosterWallet": {"balance": {"type": "BOOSTER", "amount": 900000000, "amountLeft": 765000000}},
+                }
+            return {"status_code": 200, "body": json.dumps(body)}
+
+        self.enterContext(mock.patch.object(self.backend, "request_json", side_effect=request))
+        for name in ("codex", "kimi"):
+            self.enterContext(mock.patch.object(usage, name + "_usage", side_effect=AssertionError("unexpected Direct check")))
+
+        def poll(credits):
+            args = ("--credits-providers", "claude,codex,kimi") if credits else ()
+            return self.run_main("--providers", "claude,codex,kimi", "--proxy-url", usage.PROXY_URL,
+                                 "--proxy-key-file", str(key), *args)["providers"]
+
+        result = poll(True)
+        for provider in result.values():
+            self.assertNotIn("bankedResets", provider)
+            self.assertNotIn("credits", provider)
+        claude, codex_result, kimi = (
+            {row["weekly"]["percent"]: row for row in result[name]["accounts"]} for name in ("claude", "codex", "kimi"))
+        self.assertEqual(claude[25]["credits"]["balance"], {"amount": 12.34, "currency": "USD", "precision": 2})
+        self.assertEqual(claude[25]["bankedResets"], {"count": 3, "expires": [expires]})
+        self.assertNotIn("bankedResets", claude[35])
+        self.assertEqual(claude[35]["credits"]["status"], "error")
+        self.assertEqual(codex_result[40]["bankedResets"], {"count": 2, "expires": [expires]})
+        self.assertEqual(codex_result[40]["credits"]["balance"], {"amount": 12.5, "currency": "", "precision": 2})
+        self.assertEqual(codex_result[50]["bankedResets"], {"count": 1, "expires": [expires]})
+        self.assertEqual(codex_result[50]["credits"]["status"], "error")
+        self.assertEqual([(kimi[n]["credits"]["balance"]["currency"], kimi[n]["credits"]["balance"]["amount"])
+                          for n in (35, 45)], [("USD", 7.65), ("CNY", 7.65)])
+        self.assertTrue(all("/usages" in url or "/usage" in url for _, url, _ in requests[:6]))
+        self.assertEqual(len(requests), 10)
+        self.assertTrue(all(request[2] <= requests[0][2] for request in requests))
+        self.assertEqual(len({request[2] for request in requests[:6]}), 1)
+        self.now = expires
+        cached = poll(False)
+        self.assertTrue(all("credits" not in row for report in cached.values() for row in report["accounts"]))
+        kept = {row["weekly"]["percent"]: row for row in cached["claude"]["accounts"]}
+        self.assertEqual(kept[25]["bankedResets"], {"count": 2, "expires": []})
+        self.assertEqual(len(requests), 10)
+        serialized = json.dumps(result) + (usage.CACHE_DIR / "usage-proxy.json").read_text()
+        for private in (org, "fixture-invalid-org", *profiles, *codex, *codex.values(), "fixture-person", "fixture-management-secret",
+                        "2026-09-09T00:00:00Z"):
+            self.assertNotIn(private, serialized)
+        self.direct.assert_not_called()
+        self.assertFalse(usage.CACHE_FILE.exists())
+
+    def test_claude_disabled_credits_remain_off_until_usage_enables_them(self):
+        enabled = False
+
+        def reading_with_credits(credential, now, *, extras, **kwargs):
+            return dict(self.pooled(25), **extras("claude", {"extra_usage": {"is_enabled": enabled}}, None, now))
+
+        self.client.usage.side_effect = reading_with_credits
+        self.client.claude_credits.return_value = {"amount": 100, "currency": "USD"}
+        self.poll()
+        self.now += usage.CACHE_TTL
+        result = self.poll("--credits-providers", "claude")
+        self.assertEqual([row["credits"]["status"] for row in result["accounts"]], ["disabled", "disabled"])
+        self.client.claude_credits.assert_not_called()
+        enabled = True
+        self.now += usage.CACHE_TTL
+        result = self.poll("--credits-providers", "claude")
+        self.assertEqual([row["credits"]["status"] for row in result["accounts"]], ["ok", "ok"])
+        self.assertEqual(self.client.claude_credits.call_count, 2)
+
+    def test_optional_management_refusal_stops_collection_after_preserving_core_usage(self):
+        for reason in ("management-rate-limited", "management-auth"):
+            with self.subTest(reason=reason):
+                self.client.configuration_fingerprint = reason
+                self.client.credentials.reset_mock()
+                self.client.usage.reset_mock()
+                self.client.claude_credits.reset_mock()
+                self.client.claude_credits.side_effect = self.backend.ProxyError(reason, retry_after=900)
+                shown_status = "rate-limited" if reason == "management-rate-limited" else "unauthorized"
+                for _ in range(2):
+                    result = self.poll("--credits-providers", "claude")
+                    self.assertEqual((result["proxyStatus"], result["weekly"]["percent"], result["stale"]),
+                                     (shown_status, 50, False))
+                    self.assertEqual([row["state"] for row in result["accounts"]], ["ok", "ok"])
+                self.client.credentials.assert_called_once()
+                self.assertEqual(self.client.usage.call_count, 2)
+                self.client.claude_credits.assert_called_once()
+                self.direct.assert_not_called()
+                self.now += usage.CACHE_TTL
+
+    def test_optional_management_auth_hold_allows_core_to_revalidate(self):
+        self.client.claude_credits.side_effect = self.backend.ProxyError("management-auth")
+        response = self.poll("--credits-providers", "claude")
+        self.assertEqual(response["proxyStatus"], "unauthorized")
+        self.now += usage.CACHE_TTL - 1
+        self.assertEqual(self.poll("--credits-providers", "claude")["proxyStatus"], "unauthorized")
+        self.client.credentials.assert_called_once()
+        self.client.claude_credits.side_effect = None
+        self.client.claude_credits.return_value = {"amount": 500, "currency": "EUR"}
+        self.now += 2
+        report = self.poll("--credits-providers", "claude")
+        self.assertEqual((report["proxyStatus"], report["fetchedAt"]), ("connected", self.now))
+        self.assertEqual(self.client.credentials.call_count, 2)
+        self.assertEqual([row["credits"]["status"] for row in report["accounts"]], ["ok", "ok"])
+        self.direct.assert_not_called()
+
+    def test_budget_rotates_optional_checks_and_persists_attempt_before_request(self):
+        clock = [100.]
+        self.enterContext(mock.patch.object(usage.time, "monotonic", side_effect=lambda: clock[0]))
+        members = [self.credential(key) for key in ("a", "b", "c", "d")]
+        self.client.credentials.return_value = {"claude": members}
+        attempts = []
+
+        def slow_credit_check(credential, *, deadline, **kwargs):
+            cache = usage.read_proxy_cache()
+            state = next(value for value in cache.values() if isinstance(value, dict))
+            cached = state["rosters"]["claude"]["members"][credential.fingerprint]
+            self.assertEqual(cached["extrasAt"], self.now)
+            self.assertIn("claude", cache["_starterPaused"])
+            attempts.append(credential.index)
+            clock[0] = deadline
+            return {"amount": 100, "currency": "EUR"}
+
+        self.client.claude_credits.side_effect = slow_credit_check
+        first = self.poll("--credits-providers", "claude")
+        self.assertEqual([row["state"] for row in first["accounts"]], ["ok"] * 4)
+        self.assertEqual(attempts, ["a", "b"])
+        self.now += usage.CACHE_TTL
+        self.poll("--credits-providers", "claude")
+        self.assertEqual(attempts, ["a", "b", "c", "d"])
+
+    def test_optional_upstream_rate_limit_keeps_cached_credit_and_guards_only_that_member(self):
+        self.client.claude_credits.return_value = {"amount": 1234, "currency": "EUR"}
+        self.poll("--credits-providers", "claude")
+        self.now += usage.CACHE_TTL
+
+        def check(credential, **kwargs):
+            if credential == self.credential_a:
+                raise self.backend.ProxyError("rate-limited", retry_after=900)
+            return {"amount": 500, "currency": "EUR"}
+
+        self.client.claude_credits.side_effect = check
+        result = self.poll("--credits-providers", "claude")
+        first, second = result["accounts"]
+        self.assertEqual(first["state"], "ok")
+        self.assertEqual((first["credits"]["status"], first["credits"]["reason"], first["credits"]["fetchedAt"]),
+                         ("error", "rate-limited", NOW))
+        self.assertEqual(first["credits"]["balance"]["amount"], 12.34)
+        self.assertEqual(second["credits"]["balance"]["amount"], 5)
+        self.client.usage.reset_mock()
+        self.client.claude_credits.reset_mock()
+        self.now += usage.CACHE_TTL
+        self.poll("--credits-providers", "claude", "--retry-providers", "claude")
+        self.assertEqual([call.args[0] for call in self.client.usage.call_args_list], [self.credential_b])
+        self.assertEqual([call.args[0] for call in self.client.claude_credits.call_args_list], [self.credential_b])
+
+    def test_codex_detail_rate_limit_keeps_count_and_allows_core_reads(self):
+        codex = self.backend.Credential("codex", "fingerprint-codex", "codex")
+        self.client.credentials.return_value = {"codex": [codex]}
+        self.client.usage.side_effect = lambda *a, **kw: dict(self.pooled(50), bankedResets={"count": 1, "expires": []})
+        self.client.codex_reset_details.side_effect = self.backend.ProxyError("rate-limited", retry_after=900)
+
+        for _ in range(2):
+            result = self.run_main("--providers", "codex", "--proxy-url", usage.PROXY_URL)["providers"]["codex"]
+            self.assertEqual((result["status"], result["fetchedAt"]), ("ok", self.now))
+            self.assertEqual(result["accounts"][0]["bankedResets"], {"count": 1, "expires": []})
+            self.now += usage.CACHE_TTL
+        self.assertEqual(self.client.usage.call_count, 2)
+        self.client.codex_reset_details.assert_called_once()
 
     def test_one_upstream_rate_limit_keeps_same_roster_reading_and_original_age(self):
         self.poll()
