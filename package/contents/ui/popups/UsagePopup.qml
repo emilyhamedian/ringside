@@ -6,6 +6,7 @@ import QtQuick
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
 import "../code/format.js" as Format
+import "../code/limits.js" as Limits
 import "../code/pace.js" as Pace
 import "../code/providers.js" as Providers
 import "../code/style.js" as Style
@@ -34,6 +35,8 @@ PopupPage {
     readonly property var usage: monitor.usage
     readonly property var entry: usage.entry(item)
     readonly property var weekly: entry && entry.weekly ? entry.weekly : null
+    readonly property bool pooled: Limits.pooled(entry)
+    readonly property real nextReset: pooled ? Limits.nextReset(weekly, nowMs) : weekly?.resetsAt ?? NaN
     // Kimi's and OpenCode Go's limits span a month; the words for them say
     // so, before a first reading too.
     readonly property bool monthly: words.monthly(weekly) || Providers.FACTS[item].monthly === true
@@ -42,10 +45,10 @@ PopupPage {
     // (see UsageData.struck()), and then nothing of it is shown.
     readonly property bool failed: entry !== null && entry.lastError !== undefined
     readonly property bool struck: usage.struck(item, nowMs)
-    readonly property bool greyShown: failed && !struck
+    readonly property bool greyShown: failed && !struck || Limits.allStale(entry)
     readonly property bool loading: usage.loading(item)
     // All models first, then every model's own limit, whichever the ring shows.
-    readonly property var limits: weekly && !struck
+    readonly property var limits: weekly && !struck && !pooled
         ? [Object.assign({}, weekly, { id: "", label: i18nc("@label the weekly limit shared by every model", "All models") })]
             .concat(Array.from(entry.scoped ?? []))
         : []
@@ -160,17 +163,52 @@ PopupPage {
     }
 
     systemMonitorShown: false
-    // A plan with nothing to start, as Claude's without a five-hour limit,
-    // keeps no footer.
-    readonly property bool starterShown: usage.starterEnabled(item) && usage.startable(item).length > 0
-    footerLeadingShown: starterShown
-    footerLeading: StarterSwitch {
-        visible: popup.starterShown
-        item: popup.item
-        usage: popup.usage
-        nowMs: popup.nowMs
-        texts: words
-    }
+    readonly property bool starterShown: !pooled && !usage.starterPaused(item)
+        && usage.starterEnabled(item) && usage.startable(item).length > 0
+    readonly property var affinity: pooled ? entry?.affinity : null
+    readonly property bool affinityShown: typeof affinity?.enabled === "boolean"
+    footerLeadingShown: starterShown || affinityShown
+    footerLeading: [
+        StarterSwitch {
+            visible: popup.starterShown
+            item: popup.item
+            usage: popup.usage
+            nowMs: popup.nowMs
+            texts: words
+        },
+        RowLayout {
+            visible: popup.affinityShown
+            Layout.fillWidth: true
+            Layout.preferredWidth: 0
+            Layout.topMargin: Kirigami.Units.smallSpacing
+            Layout.bottomMargin: Layout.topMargin
+            spacing: Kirigami.Units.largeSpacing
+
+            Text {
+                wrapMode: Text.Wrap
+                textFormat: Text.PlainText
+                text: i18nc("@label CLIProxyAPI routing setting", "Session affinity")
+                color: Style.dim(Kirigami.Theme.textColor)
+            }
+
+            Text {
+                Layout.fillWidth: true
+                wrapMode: Text.Wrap
+                textFormat: Text.PlainText
+                text: {
+                    const affinity = popup.affinity;
+                    if (affinity?.enabled === true) {
+                        const ttl = affinity.ttlSeconds;
+                        const duration = Number.isFinite(ttl) && ttl > 0
+                            ? words.duration(popup.nowMs / 1000 + ttl, popup.nowMs) : "";
+                        return duration || i18nc("@info:status session affinity", "On");
+                    }
+                    return affinity?.enabled === false ? i18nc("@info:status session affinity", "Off") : "";
+                }
+                color: Kirigami.Theme.textColor
+            }
+        }
+    ]
 
     Words {
         id: words
@@ -186,7 +224,8 @@ PopupPage {
 
     PopupHeader {
         id: header
-        ringValue: popup.limits.length > 0 ? popup.weekly.percent : NaN
+        ringValue: !popup.struck ? popup.weekly?.percent ?? NaN : NaN
+        ringInner: popup.pooled && !popup.struck ? popup.innerLimit : null
         ringCancelled: popup.struck
         ringStale: popup.greyShown
         ringLoading: popup.loading
@@ -195,21 +234,36 @@ PopupPage {
         // many there are isn't known until the first check is done.
         subtitle: popup.loading
             ? i18nc("@info under Claude, Codex, Kimi or OpenCode Go: the first check of the limits since Ringside started is running", "Checking your usage…")
+            : popup.pooled ? words.poolWords.sourceName
             : popup.monthly
             ? i18ncp("@info under Kimi or OpenCode Go: what the popup shows", "Monthly limit", "Monthly limits",
                      Math.max(1, popup.limits.length, popup.entry && popup.entry.scoped ? popup.entry.scoped.length + 1 : 0))
             : i18ncp("@info under Claude or Codex: what the popup shows", "Weekly limit", "Weekly limits",
                      Math.max(1, popup.limits.length, popup.entry && popup.entry.scoped ? popup.entry.scoped.length + 1 : 0))
-        parts: popup.limits.length > 0 ? words.countdownParts(popup.weekly.resetsAt, popup.nowMs) : []
+        parts: popup.weekly && !popup.struck ? words.countdownParts(popup.nextReset, popup.nowMs) : []
         // With no reading shown, a failed check says so under the header,
         // and a lone dash here would only look unfinished.
         value: popup.weekly && !header.partsShown && !popup.failed ? "–" : ""
         // Plain whatever the reading: the ring and bars carry the level.
-        caption: header.partsShown ? i18nc("@info:label under the time left, e.g. 2d 21h until reset", "until reset") : ""
+        caption: header.partsShown ? (popup.pooled ? words.poolWords.resetCaption(popup.weekly)
+            : i18nc("@info:label under the time left, e.g. 2d 21h until reset", "until reset")) : ""
         accessibleValue: header.partsShown
-            ? i18nc("@info:accessible the time left until the weekly or monthly reset, e.g. 5 days 18 hours until reset", "%1 until reset",
-                    words.duration(popup.weekly.resetsAt, popup.nowMs))
+            ? (popup.pooled ? i18nc("@info:accessible time and pooled reset caption", "%1 · %2",
+                                    words.duration(popup.nextReset, popup.nowMs), header.caption)
+               : i18nc("@info:accessible the time left until the weekly or monthly reset, e.g. 5 days 18 hours until reset", "%1 until reset",
+                        words.duration(popup.nextReset, popup.nowMs)))
             : ""
+    }
+
+    UsagePool {
+        visible: popup.pooled
+        Layout.maximumHeight: Math.max(0, popup.room - header.implicitHeight - header.Layout.topMargin
+            - header.Layout.bottomMargin - popup.footerHeight - Kirigami.Units.smallSpacing)
+        entry: popup.pooled ? popup.entry : null
+        innerLimit: popup.pooled ? popup.innerLimit : null
+        texts: words
+        nowMs: popup.nowMs
+        showCredits: popup.usage.showCredits
     }
 
     // Shown only beside a check that worked, so never with CheckStatus.
@@ -219,7 +273,7 @@ PopupPage {
         Layout.rightMargin: Layout.leftMargin
         Layout.topMargin: Kirigami.Units.largeSpacing
         Layout.bottomMargin: Math.round(Kirigami.Units.largeSpacing * 1.25)
-        window: popup.loading ? null : popup.usage.earlyReset(popup.item, popup.nowMs)
+        window: popup.loading || popup.pooled ? null : popup.usage.earlyReset(popup.item, popup.nowMs)
         texts: words
         nowMs: popup.nowMs
     }
@@ -233,7 +287,7 @@ PopupPage {
         visible: text !== ""
         text: {
             const e = popup.entry;
-            if (popup.loading) {
+            if (popup.loading || popup.pooled) {
                 return "";
             }
             if (!e || e.status === "signed_out") {
@@ -250,7 +304,7 @@ PopupPage {
 
     // Set off from the header by about what sets it off from the bars.
     CheckStatus {
-        visible: popup.failed
+        visible: popup.failed && !popup.pooled
         Layout.fillWidth: true
         Layout.leftMargin: Style.contentEdge(Kirigami.Units.largeSpacing)
         Layout.rightMargin: Layout.leftMargin
@@ -284,11 +338,11 @@ PopupPage {
                 id: row
 
                 required property int index
-                // Whether this row is one of the shorter limits.
-                readonly property bool short: index >= popup.limits.length
                 // Every row has a bar except the ring's own limit.
                 readonly property bool barred: index > 0
-                readonly property var limit: (short ? popup.shorter[index - popup.limits.length] : popup.limits[index])
+                // Put the shorter windows before the model-specific bars.
+                readonly property bool short: barred && index <= popup.shorter.length
+                readonly property var limit: (short ? popup.shorter[index - 1] : popup.limits[Math.max(0, index - popup.shorter.length)])
                     ?? ({ id: "", label: "", percent: NaN, resetsAt: NaN })
                 readonly property real reading: Math.max(0, Math.min(100, limit.percent))
                 // When the limit resets: for a shorter limit while it runs,
@@ -380,65 +434,21 @@ PopupPage {
         columns: 1
         rowSpacing: Kirigami.Units.largeSpacing
 
-        Tile {
-            caption: popup.monthly ? i18nc("@title:group the current monthly window", "This month")
-                                   : i18nc("@title:group the current weekly window", "This week")
-            // The rule's, so only while the graph draws one.
-            graphTop: week.placed ? words.percent(100) : ""
-            graphReading: week.reading
-            foot: popup.innerLimit !== null ? allModels : null
-            detail: {
-                const date = words.resetDate(popup.weekly);
-                return date ? i18nc("@title:group after THIS WEEK or THIS MONTH: when it starts over, e.g. · resets Sun 7:00 AM EDT",
-                                    "· resets %1", date) : "";
-            }
-
-            WeekGraph {
-                id: week
-                Layout.fillWidth: true
-                window: popup.weekly
-                secondWindow: popup.innerLimit
-                // The week's use at a poll, and the model's beside it, and when.
-                describe: i => {
-                    const used = words.percent(week.mainSamples[i][1]);
-                    const second = week.secondAtMain[i];
-                    const reading = popup.innerLimit !== null && Number.isFinite(second)
-                        ? i18nc("@info the week's use at a point on its graph, then a model limit's, e.g. 62%, Fable 30%",
-                                "%1, %2 %3", used, popup.innerLimit.label, words.percent(second))
-                        : used;
-                    return i18nc("@info a graph point's reading and when, e.g. 62% · Mon 2:14 PM", "%1 · %2",
-                                 reading, words.weekdayTime(week.mainSamples[i][0], popup.weekly, popup.nowMs));
-                }
-                nowMs: popup.nowMs
-                pollAt: popup.pollAt
-                failed: popup.greyShown
-                grey: popup.greyShown
-                // The run-out the pace line names, if the graph draws that
-                // limit: the week, or the model on the inner ring.
-                projected: {
-                    const e = popup.paceEvent;
-                    return !e ? "" : e.index === 0 ? "main"
-                         : popup.innerLimit !== null && popup.limits[e.index].id === popup.innerLimit.id ? "second" : "";
-                }
-            }
-
-            RowLayout {
-                visible: popup.innerLimit !== null
-                Layout.fillWidth: true
-                Layout.topMargin: Math.round(Kirigami.Units.smallSpacing / 2)
-                spacing: Math.round(Kirigami.Units.largeSpacing * 1.75)
-
-                Caption {
-                    id: allModels
-                    Layout.minimumWidth: implicitWidth
-                    text: i18nc("@label graph legend, the solid line", "— All models")
-                }
-
-                Caption {
-                    Layout.fillWidth: true
-                    text: popup.innerLimit ? i18nc("@label graph legend, the dashed line; %1 is a model", "- - %1",
-                                                   popup.innerLimit.label) : ""
-                }
+        UsageGraph {
+            id: week
+            texts: words
+            window: popup.weekly
+            modelWindow: popup.innerLimit
+            monthly: popup.monthly
+            nowMs: popup.nowMs
+            pollAt: popup.pollAt
+            failed: popup.greyShown
+            grey: popup.greyShown
+            // The run-out named by the pace line, if the graph draws its limit.
+            projected: {
+                const e = popup.paceEvent;
+                return !e ? "" : e.index === 0 ? "main"
+                     : popup.innerLimit !== null && popup.limits[e.index].id === popup.innerLimit.id ? "second" : "";
             }
         }
 
@@ -482,22 +492,12 @@ PopupPage {
 
         // The banked resets, on their own line under the pace line and laid
         // out the same way.
-        LineTile {
-            objectName: "resets"
-            visible: popup.entry?.bankedResets !== undefined && !popup.struck
-            caption: i18nc("@title:group resets the account has saved to use later", "Banked resets")
-            // The tickets' accessible name already says "3 banked resets".
-            captionRead: false
-            reading: resetTickets
-            readingCap: resetTickets.cap
+        BankedResets {
+            id: resetTickets
+            banked: popup.struck ? null : popup.entry?.bankedResets ?? null
+            texts: words
+            nowMs: popup.nowMs
             minimumRowHeight: Math.ceil(paceReading.implicitHeight)
-
-            ResetTickets {
-                id: resetTickets
-                banked: popup.entry?.bankedResets ?? ({ count: 0, expires: [] })
-                texts: words
-                nowMs: popup.nowMs
-            }
         }
     }
 
@@ -508,7 +508,7 @@ PopupPage {
         Layout.leftMargin: Style.contentEdge(Kirigami.Units.largeSpacing)
         Layout.rightMargin: Layout.leftMargin
         Layout.bottomMargin: Math.round(Kirigami.Units.largeSpacing * 1.5)
-        credit: popup.usage.credit(popup.item)
+        credit: popup.pooled ? null : popup.usage.credit(popup.item)
         minimumRowHeight: resetTickets.ticketHeight
     }
 }

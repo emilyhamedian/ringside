@@ -44,6 +44,8 @@ Item {
     // Shown in the middle of a single ring large enough to read it.
     property string text: ""
     property real textScale: 0.33
+    property bool showInnerText: false
+    property string innerDescription: ""
     // Breathes, as a Claude or Codex ring does close to its limit: the arcs
     // dim to half and back every two seconds, easing in and out. A breath
     // under way when the pulse stops finishes; at Instant there is none.
@@ -369,8 +371,12 @@ Item {
     }
 
     function stopResets() {
-        outer.stopReset();
-        innerArc.stopReset();
+        if (outer.animating) {
+            outer.stopReset();
+        }
+        if (innerArc.animating) {
+            innerArc.stopReset();
+        }
     }
 
     // Each arc follows the whole percent its reading prints, so a reading
@@ -417,7 +423,9 @@ Item {
     implicitHeight: implicitWidth
 
     Accessible.role: Accessible.ProgressBar
-    Accessible.description: hasValue ? i18nc("@info a percentage", "%1%", Format.percent(value))
+    Accessible.description: hasValue ? (innerDescription
+        ? i18nc("@info:accessible outer usage percentage followed by a model's reading", "%1%, %2", Format.percent(value), innerDescription)
+        : i18nc("@info a percentage", "%1%", Format.percent(value)))
                           : loading ? i18nc("@info:status waiting for a first reading", "checking")
                                     : i18nc("@info:status no reading", "unavailable")
 
@@ -588,7 +596,7 @@ Item {
             id: percent
             x: (parent.width - width) / 2
             y: parent.height / 2 + gauge.figureHeight / 2 - baselineOffset
-            visible: gauge.text !== "" && !gauge.inner && gauge.width >= 24
+            visible: gauge.text !== "" && (!gauge.inner || gauge.showInnerText) && gauge.width >= 24
             text: gauge.text
             // A grey reading's number in the theme's dim text colour, which
             // keeps text legible, rather than the arc's fainter grey.

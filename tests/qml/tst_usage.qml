@@ -16,6 +16,7 @@ import "../../package/contents/ui/code/shell.js" as Shell
 import "../../package/contents/ui/code/style.js" as Style
 import "starterstates.js" as StarterStates
 import "journal.js" as Journal
+import "poolstates.js" as PoolStates
 
 // The Claude and Codex items. UsageData runs the stub scenarios in data/
 // (fake-usage-*.py) in place of usage.py, so no credentials are read and no
@@ -615,7 +616,7 @@ TestRoot {
             make("ok", []);
             const initial = usage.helperCommand(["claude", "codex"], "", ["claude", "codex"]);
             compare(initial, "python3 -B " + Shell.quoted(usage.helperPath)
-                             + " --initial-providers claude,codex --credits-providers claude,codex --providers claude,codex");
+                             + " --proxy-auto --initial-providers claude,codex --credits-providers claude,codex --providers claude,codex");
             compare(usage.polledIds(initial), ["claude", "codex"]);
             compare(usage.startedIds(initial), []);
             compare(usage.starterSet(initial), null);
@@ -667,7 +668,7 @@ TestRoot {
             verify(!usage.loading("claude") && usage.loading("codex"));
             tryCompare(runs, "count", 1, 1000);
             const initial = "python3 -B " + Shell.quoted(usage.helperPath)
-                            + " --initial-providers codex --credits-providers claude,codex --providers claude,codex";
+                            + " --proxy-auto --initial-providers codex --credits-providers claude,codex --providers claude,codex";
             compare(runs.signalArguments[0][0], initial);
             usage.refresh();
             compare(runs.count, 1);
@@ -1159,9 +1160,95 @@ TestRoot {
             usage.helperPath = "/nonexistent/it's/usage.py";
             compare(usage.command, "");
             usage.providers = ["codex", "cpu", "claude", "bogus"];
-            compare(usage.command, "python3 -B '/nonexistent/it'\\''s/usage.py' --credits-providers claude,codex --providers claude,codex");
+            compare(usage.command, "python3 -B '/nonexistent/it'\\''s/usage.py' --proxy-auto --credits-providers claude,codex --providers claude,codex");
             // python3 can't open it; the helper failure says so.
             tryVerify(() => usage.helperError.startsWith("The usage helper exited with code 2"), 10000, usage.helperError);
+        }
+
+        function test_poolChangesClearOldReadingsWithoutResetOrStart() {
+            start("ok", ["claude", "codex"]);
+            const now = usage.nowSeconds();
+            const pooled = PoolStates.example(now);
+            pooled.starter = { enabled: true, on: ["session"], state: "waiting", next: now, windows: ["session"] };
+            const resets = spy("resetsDetected");
+            usage.merge({ providers: { claude: pooled } });
+            compare(usage.entry("claude").weekly.percent, 58.5);
+            compare(usage.starter("claude").next, null);
+            verify(!starterTick().running);
+            verify(!usage.draining("claude", "weekly", now * 1000));
+            compare(usage.earlyReset("claude", now * 1000), null);
+
+            const replacement = { source: "cliproxyapi", pool: "replacement", status: "error", accounts: [{ state: "unavailable" }] };
+            usage.merge({ providers: { claude: replacement } });
+            compare(usage.entry("claude").weekly, undefined, "roster failure cannot retain the previous pool");
+            compare(resets.count, 0);
+
+            config.proxyUrl = "http://127.0.0.1:8320";
+            config.proxyKeyFile = "/tmp/a hub key";
+            config.proxyKimiRegion = "china";
+            config.claudeUsageSource = "direct";
+            compare(usage.entry("claude"), null, "a choice clears the last account source before the helper answers");
+            verify(!usage.starterPaused("claude"), "the previous pool no longer supplies the starter");
+            const command = usage.helperCommand(["codex", "claude"], " --start");
+            verify(command.includes(" --proxy-auto --proxy-url 'http://127.0.0.1:8320'"));
+            verify(command.includes(" --proxy-key-file '/tmp/a hub key' --direct-providers claude --proxy-kimi-region 'china'"));
+            compare(usage.startedIds(command), ["codex", "claude"]);
+            tryVerify(() => usage.entry("claude")?.weekly?.percent === 52);
+        }
+
+        function test_proxyConfigurationDiscardsInflightPoolReport() {
+            make("proxy-route", []);
+            const runs = commands();
+            usage.providers = ["claude"];
+            tryCompare(runs, "count", 1);
+            config.claudeUsageSource = "direct";
+            tryVerify(() => usage.entry("claude")?.weekly?.percent === 23);
+            tryCompare(usage, "checking", false);
+            compare(runs.count, 2);
+            compare(usage.entry("claude").status, "ok");
+            compare(usage.entry("claude").source, undefined);
+            compare(usage.entry("claude").weekly.percent, 23);
+        }
+
+        function test_poolRouteKeepsQueuedStarterOff() {
+            start("starter-slow-set");
+            const run = commands();
+            usage.setStarter("codex", "week", true);
+            usage.setStarter("claude", "session", false);
+            compare(usage.starterWanted.claude, "");
+            compare(ran(run, " --starter-set claude=off"), []);
+            config.proxyUrl = "http://127.0.0.1:8320";
+
+            tryVerify(() => usage.entry("claude")?.source === "cliproxyapi");
+            tryVerify(() => ran(run, " --starter-switch-only --starter-set claude=off").length === 1);
+            tryVerify(() => usage.starterWanted.claude === undefined && runner().connectedSources.length === 0);
+            verify(!usage.starterOn("claude", "session"));
+            verify(usage.starterPaused("claude"));
+            compare(usage.entry("claude").source, "cliproxyapi", "a switch-only report keeps pooled usage intact");
+        }
+
+        function test_poolRouteQueuesStarterReductionUntilDirect() {
+            start("starter-slow-set");
+            const run = commands();
+            usage.starters = Object.assign({}, usage.starters, { codex: {
+                enabled: true, on: ["session", "week"], windows: ["session", "week"],
+                state: "waiting", next: usage.nowSeconds()
+            } });
+            usage.setStarter("claude", "session", false);
+            usage.setStarter("codex", "week", false);
+            config.proxyUrl = "http://127.0.0.1:8320";
+            tryVerify(() => usage.entry("codex")?.source === "cliproxyapi" && runner().connectedSources.length === 0);
+            compare(usage.starterWanted.codex, "session");
+            compare(ran(run, " --starter-set codex=session"), []);
+            compare(ran(run, " --start"), []);
+
+            config.codexUsageSource = "direct";
+            tryVerify(() => ran(run, " --starter-set codex=session").length === 1);
+            compare(ran(run, " --start"), []);
+            tryVerify(() => usage.starterWanted.codex === undefined && runner().connectedSources.length === 0);
+            const order = run.signalArguments.map(args => args[0]);
+            verify(order.findIndex(command => command.endsWith(" --starter-set codex=session"))
+                < order.findIndex(command => command.endsWith(" --providers codex --start")));
         }
 
         // Paths a shell would take apart or run: spaces, both quotes, $,
@@ -1187,17 +1274,17 @@ TestRoot {
             usage.helperPath = "/x/usage.py";
             config.codexProgram = "~/bin/codex";
             usage.providers = ["claude", "codex"];
-            compare(usage.command, "python3 -B '/x/usage.py' --program 'codex=~/bin/codex' --credits-providers claude,codex --providers claude,codex");
+            compare(usage.command, "python3 -B '/x/usage.py' --program 'codex=~/bin/codex' --proxy-auto --credits-providers claude,codex --providers claude,codex");
             config.claudeProgram = "/opt/it's/claude";
             compare(usage.helperCommand(["claude"], " --start"),
-                    "python3 -B '/x/usage.py' --program 'claude=/opt/it'\\''s/claude' --providers claude --start");
+                    "python3 -B '/x/usage.py' --program 'claude=/opt/it'\\''s/claude' --proxy-auto --providers claude --start");
             compare(usage.helperCommand(usage.ids, " --starter-set codex=week"),
                     "python3 -B '/x/usage.py' --program 'claude=/opt/it'\\''s/claude' --program 'codex=~/bin/codex'"
-                    + " --providers claude,codex --starter-set codex=week");
+                    + " --proxy-auto --providers claude,codex --starter-set codex=week");
             // Only the providers a run is for.
-            compare(usage.helperCommand(["codex"], ""), "python3 -B '/x/usage.py' --program 'codex=~/bin/codex' --credits-providers codex --providers codex");
+            compare(usage.helperCommand(["codex"], ""), "python3 -B '/x/usage.py' --program 'codex=~/bin/codex' --proxy-auto --credits-providers codex --providers codex");
             config.codexProgram = "";
-            compare(usage.helperCommand(["codex"], ""), "python3 -B '/x/usage.py' --credits-providers codex --providers codex");
+            compare(usage.helperCommand(["codex"], ""), "python3 -B '/x/usage.py' --proxy-auto --credits-providers codex --providers codex");
         }
 
         // Each path reaches the helper exactly as chosen, through whatever
@@ -1217,7 +1304,7 @@ TestRoot {
             }
             compare(runs.count, nastyPaths.length, "one check per change, none waiting for the timer");
             compare(runs.signalArguments.map(a => a[0]), nastyPaths.map(path => "python3 -B " + Shell.quoted(usage.helperPath)
-                + " --program '" + ("codex=" + path).replace(/'/g, "'\\''") + "' --credits-providers claude,codex --providers claude,codex"));
+                + " --program '" + ("codex=" + path).replace(/'/g, "'\\''") + "' --proxy-auto --credits-providers claude,codex --providers claude,codex"));
             // A starter run passes them too, and is still read as one.
             const polled = spy("statusesChanged");
             config.claudeProgram = nastyPaths[5];
@@ -1302,7 +1389,7 @@ TestRoot {
             verify(usage.starterEnabled("claude"), "Claude's setting is independent");
             compare(usage.starterWanted, {}, "the provider off doesn't queue another write");
             const off = " --starter-set codex=off";
-            compare(ran(run, off), [usage.helperCommand(["codex"], off)],
+            compare(ran(run, off), [usage.helperCommand(["codex"], " --starter-switch-only" + off)],
                     "one run turns off Codex, hidden in this widget, without touching Claude");
             verify(starterTick().running, "Claude's starter timer is untouched");
             starterTick().triggered();
@@ -2699,7 +2786,184 @@ TestRoot {
         }
 
         function graph(popup) {
-            return root.find(popup, i => i.mainPoints !== undefined);
+            return root.find(popup, i => i.mainPoints !== undefined && i.rolling === popup.pooled);
+        }
+
+        function test_poolSnapshotMatchesPanelAndHonorsScopedChoice() {
+            const usage = monitor.usage;
+            const entry = PoolStates.example(usage.createdAt);
+            const expired = usage.createdAt - 60;
+            const zeroReset = usage.createdAt + 26 * 3600;
+            entry.weekly.resetTimes.unshift(expired, zeroReset);
+            entry.accounts[1].weekly.percent = 100;
+            entry.accounts.push({ state: "ok", weekly: { percent: 0, period: "week", resetsAt: zeroReset }, scoped: [] });
+            entry.scoped.push({ id: "Sonnet", label: "Sonnet", percent: 41, accountAverage: true, resetTimes: [zeroReset] });
+            usage.entries = { claude: entry };
+            const popup = load("claude");
+            const cell = cellComponent.createObject(loaders[0], { monitor: monitor });
+            const gauge = findChild(popup, "gauge");
+            const panelGauge = findChild(cell, "gauge");
+            compare(gauge.value, 58.5);
+            compare(panelGauge.value, gauge.value);
+            compare(gauge.innerValue, 79);
+            compare(panelGauge.innerValue, gauge.innerValue);
+            compare(popup.nextReset, zeroReset);
+            compare(cell.lines.second, root.localized("1d"));
+            verify(graph(popup) && graph(popup).visible);
+            verify(!popup.starterShown);
+            compare(root.all(popup, child => child.visible && child.text === "CLIProxyAPI").length, 1);
+            verify(root.find(popup, child => child.visible && child.text === "Session affinity"));
+            const accounts = root.all(popup, child => child.objectName === "pooledAccount");
+            compare(accounts.map(child => child.name), [1, 2, 3].map(index => "Account " + Format.whole(index)));
+            verify(!findChild(popup, "poolAccountReady"));
+            verify(!root.find(popup, child => child.visible && ["Session limit reached", "Limit reached"].includes(child.text)));
+            const pooledModel = label => root.find(popup, child => child.objectName === "poolLimit" && child.label === label);
+            compare(pooledModel("Fable").resetText, "");
+            verify(header(popup).partsShown);
+            const pooledSession = pooledModel(root.localized("5-hour session"));
+            compare(pooledSession.window.percent, 50);
+            compare(pooledSession.resetText, "");
+            tryVerify(() => pooledSession.y < pooledModel("Fable").y);
+            const session = root.find(accounts[0], child => child.objectName === "poolLimit" && child.label === root.localized("5-hour session"));
+            verify(session.resetText !== "");
+            verify(root.find(session, child => child.visible && child.text === "· " + session.resetText));
+            verify(!root.find(pooledSession, child => child.visible && child.text?.startsWith("·")));
+            verify(!root.find(accounts[1], child => child.objectName === "poolLimit" && child.label === root.localized("5-hour session")));
+            const accountModel = root.find(accounts[0], child => child.objectName === "poolLimit" && child.label === "Weekly · Fable");
+            verify(accountModel.resetText !== "");
+            usage.innerChoices = { claude: "Sonnet" };
+            compare(gauge.innerValue, 41);
+            compare(panelGauge.innerValue, 41);
+            compare(pooledModel("Sonnet").resetText, "");
+            usage.innerChoices = { claude: "none" };
+            verify(!gauge.inner && !panelGauge.inner);
+            const lastKnown = Object.assign({}, entry, { accounts: entry.accounts.map(account => Object.assign({}, account, { state: "stale" })) });
+            usage.entries = { claude: lastKnown };
+            verify(gauge.stale && panelGauge.stale, "a pool with only last known readings is grey in both views");
+            compare(gauge.value, 58.5, "a stale pool keeps its reported percentage");
+        }
+
+        function test_poolGraphUsesTheLastSevenDaysAndTheSelectedModel() {
+            const usage = monitor.usage;
+            const entry = PoolStates.example(usage.createdAt);
+            usage.entries = { claude: entry };
+            const popup = load("claude");
+            popup.nowMs = usage.createdAt * 1000;
+            const body = findChild(popup, "usagePool");
+            const tile = root.find(body, i => i.graphReading !== undefined);
+            const plot = graph(popup);
+            verify(tile.visible && plot.visible);
+            compare(tile.caption, root.localized("Last 7 days"));
+            compare(tile.detail, "");
+            compare(plot.start, usage.createdAt - 7 * usage.day);
+            compare(plot.end, usage.createdAt);
+            compare(plot.mainSamples, entry.weekly.history);
+            compare(plot.secondAtMain[plot.secondAtMain.length - 1], 79);
+            verify(plot.mainSamples[4][1] < plot.mainSamples[3][1]);
+            const bar = root.find(body, i => i.objectName === "poolLimit" && i.label === "Fable");
+            const account = root.find(body, i => i.objectName === "pooledAccount");
+            tryVerify(() => bar.mapToItem(body, 0, bar.height).y < tile.mapToItem(body, 0, 0).y
+                            && tile.mapToItem(body, 0, tile.height).y < account.mapToItem(body, 0, 0).y);
+            verify(!paceTile(popup).visible);
+
+            usage.innerChoices = { claude: "none" };
+            compare(plot.secondPoints.length, 0);
+            const moved = Object.assign({}, entry.weekly, { resetsAt: usage.createdAt + 7 * usage.day });
+            usage.entries = { claude: Object.assign({}, entry, { weekly: moved }) };
+            popup.nowMs = usage.createdAt * 1000;
+            compare(plot.mainSamples, entry.weekly.history);
+            compare(plot.ghostOpacity, 0);
+
+            delete moved.history;
+            usage.entries = { claude: Object.assign({}, entry, { weekly: Object.assign({}, moved) }) };
+            verify(!tile.visible, "the graph needs at least one recorded pool reading");
+        }
+
+        function test_poolKeepsOtherPeriodsAndMissingRowsSeparate() {
+            const usage = monitor.usage;
+            const entry = PoolStates.example(usage.createdAt, "codex");
+            entry.accounts[0].state = "stale";
+            entry.accounts[0].reason = "rate-limited";
+            entry.accounts[1].sessionUnknown = true;
+            entry.accounts.push({ state: "unavailable", reason: "timeout" });
+            entry.partial = true;
+            entry.weekly.incomplete = true;
+            entry.session = Object.assign({}, entry.accounts[0].session, { incomplete: true });
+            entry.week = Object.assign({}, entry.weekly);
+            usage.entries = { codex: entry };
+            const popup = load("codex", true);
+            popup.room = 320;
+            const body = findChild(popup, "usagePool");
+            tryVerify(() => body.contentHeight > body.height);
+            verify(root.find(body, child => child.visible && child.text === "Some readings are incomplete."));
+            verify(root.find(body, child => child.visible && child.text === "Last known reading · Rate limited"));
+            verify(root.find(body, child => child.visible && child.text === "Unavailable · Check timed out"));
+            const months = root.all(body, child => child.objectName === "poolLimit" && child.label === "Monthly");
+            compare(months.length, 2);
+            verify(months.every(month => month.resetText !== ""));
+            const sessions = root.all(body, child => child.objectName === "poolLimit" && child.label === root.localized("5-hour session"));
+            compare(sessions.length, 3);
+            compare(sessions[0].resetText, "");
+            compare(sessions[0].window.percent, 100);
+            compare(sessions[2].usageText, "unavailable", "a reported but unreadable session remains visible");
+            tryVerify(() => sessions[0].y < months[0].y);
+            const account = root.all(body, child => child.objectName === "pooledAccount")[1];
+            const week = root.find(account, child => child.objectName === "poolLimit" && child.label === "Weekly · All models");
+            tryVerify(() => sessions[2].y < week.y && week.y < months[1].y);
+            const unavailable = root.all(body, child => child.objectName === "pooledAccount")[2];
+            verify(!root.find(unavailable, child => child.objectName === "poolLimit"));
+        }
+
+        function test_poolShowsWhyAllReadingsFailed() {
+            monitor.usage.entries = { claude: { source: "cliproxyapi", proxyStatus: "connected", status: "error",
+                reason: "proxy-read", lastError: "helper diagnostic",
+                accounts: [{ state: "unavailable", reason: "upstream-auth" }] } };
+            const popup = load("claude");
+            const body = findChild(popup, "usagePool");
+            verify(root.find(body, child => child.visible && child.text === "The hub can't read these accounts' usage."));
+            verify(root.find(body, child => child.visible && child.text === "Unavailable · Sign in again in CLIProxyAPI"));
+            verify(!root.find(body, child => child.visible && child.text === "helper diagnostic"));
+        }
+
+        function test_poolShowsBalancesUnderTheirOwnAccount() {
+            const usage = monitor.usage;
+            const entry = PoolStates.example(usage.createdAt);
+            const balance = { amount: 10.5, currency: "EUR", precision: 2 };
+            entry.accounts[1].credits = { status: "error", balance: balance, fetchedAt: usage.createdAt - 3600, reason: "offline" };
+            entry.accounts.push({ state: "ok", credits: { status: "ok", balance: { amount: 0, currency: "USD", precision: 2 },
+                                                        fetchedAt: usage.createdAt } });
+            usage.entries = { claude: entry };
+            usage.credits = { claude: { status: "ok", balance: balance, fetchedAt: usage.createdAt } };
+            const popup = load("claude", true);
+            const accounts = root.all(popup, child => child.objectName === "pooledAccount");
+            const tickets = accounts.map(account => findChild(account, "resets"));
+            const credits = accounts.map(account => root.find(account, child => child.credit !== undefined));
+            compare(tickets.map(row => row.visible), [true, false, false]);
+            compare(credits.map(row => row.visible), [true, true, false]);
+            compare(root.all(popup, child => child.visible && child.credit !== undefined).length, 2);
+            verify(tickets[0].plain && !tickets[0].stacked);
+            compare(tickets[0].color, Qt.rgba(0, 0, 0, 0));
+            compare(tickets[0].reading.value, root.localized("2"));
+            compare(tickets[0].expiryDetail.split("\n").length, 2);
+            verify(credits[0].y >= tickets[0].y + tickets[0].height);
+            verify(credits[0].plain && !credits[0].stacked);
+            compare(credits[0].height, Math.ceil(credits[0].reading.implicitHeight));
+            compare(credits[0].color, Qt.rgba(0, 0, 0, 0));
+            compare(root.find(credits[0], child => child.label === credits[0].label && child !== credits[0]).text, "Credits remaining");
+            compare(credits[0].value, root.localized("18.42"));
+            compare(credits[0].unit, "USD");
+            compare(credits[1].label, "Credits remaining (cached)");
+            verify(credits[1].Accessible.description.includes("could not be reached"));
+            usage.showCredits = false;
+            tryVerify(() => credits.every(row => !row.visible));
+            verify(tickets[0].visible);
+            usage.showCredits = true;
+            tryVerify(() => credits[0].visible && credits[1].visible);
+            const expiries = entry.accounts[0].bankedResets.expires;
+            popup.nowMs = (expiries[0] + 1) * 1000;
+            compare(tickets[0].reading.value, root.localized("1"));
+            popup.nowMs = (expiries[1] + 1) * 1000;
+            verify(!tickets[0].visible && credits[0].visible, "expired tickets disappear before the next helper report");
         }
 
         function test_creditRow_data() {
@@ -2720,9 +2984,10 @@ TestRoot {
             const popup = load(data.item, data.mirrored);
             const row = root.find(popup, i => i.credit !== undefined);
             verify(row.visible);
+            verify(!row.plain);
             compare(row.value, root.localized(data.value));
             compare(row.unit, data.currency || "credits");
-            compare(row.label, data.status === "ok" ? "Credits remaining" : "Credits remaining · cached");
+            compare(row.label, data.status === "ok" ? "Credits remaining" : "Credits remaining (cached)");
             const when = new Date(at * 1000).toLocaleString(Qt.locale(), Locale.ShortFormat);
             verify(row.detail.includes(when));
             compare(row.Accessible.description, row.detail);
@@ -2856,7 +3121,7 @@ TestRoot {
             monitor.usage.entries = Object.assign({}, entries, { claude: Object.assign({}, entries.claude, changes) });
         }
 
-        // Under the models' bars there is a bar for each limit shorter than
+        // Before the models' bars there is a bar for each limit shorter than
         // the ring's: the five-hour limit, and a weekly limit beside a monthly
         // one. A five-hour window that isn't running shows 0% and no reset
         // time. That covers Claude with no session, Codex or Go when idle
@@ -2898,6 +3163,9 @@ TestRoot {
             const all = rows(popup);
             compare(all.filter(r => !r.short).length, data.models ?? 1);
             const shorter = all.filter(r => r.short);
+            compare(all.slice(1).map(r => r.short), [
+                ...data.bars.map(() => true), ...Array((data.models ?? 1) - 1).fill(false)
+            ]);
             compare(shorter.map(r => [r.limit.label, r.limit.percent, r.resets]),
                     data.bars.map(([label, percent, resets]) => [label, percent, root.localized(resets)]));
             shorter.forEach(r => {

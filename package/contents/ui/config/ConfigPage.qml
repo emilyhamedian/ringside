@@ -84,6 +84,18 @@ KCM.SimpleKCM {
     property bool cfg_opencodeSessionStarterDefault
     property string cfg_codexMark
     property string cfg_codexMarkDefault
+    property string cfg_proxyUrl
+    property string cfg_proxyUrlDefault
+    property string cfg_proxyKeyFile
+    property string cfg_proxyKeyFileDefault
+    property string cfg_proxyKimiRegion: "auto"
+    property string cfg_proxyKimiRegionDefault
+    property string cfg_claudeUsageSource: "auto"
+    property string cfg_claudeUsageSourceDefault
+    property string cfg_codexUsageSource: "auto"
+    property string cfg_codexUsageSourceDefault
+    property string cfg_kimiUsageSource: "auto"
+    property string cfg_kimiUsageSourceDefault
     property string cfg_claudeProgram
     property string cfg_claudeProgramDefault
     property string cfg_codexProgram

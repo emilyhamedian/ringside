@@ -9,8 +9,10 @@ import QtQuick.Dialogs
 import QtCore
 import org.kde.kirigami as Kirigami
 import "../code/items.js" as Items
+import "../code/limits.js" as Limits
 import "../code/shell.js" as Shell
 import "../code/style.js" as Style
+import ".."
 
 // The settings for the Claude, Codex and OpenCode Go items. Switching the
 // items on and ordering them stays on Panel Items.
@@ -60,6 +62,8 @@ ConfigPage {
     readonly property var claudeWindows: startable("claude")
     readonly property var codexWindows: startable("codex")
     readonly property var opencodeWindows: startable("opencode")
+    readonly property bool claudeStarterAvailable: !Limits.pooled(usageStatus.claude)
+    readonly property bool codexStarterAvailable: !Limits.pooled(usageStatus.codex)
 
     // A provider's setting, named for what its plan can start.
     function starterText(windows) {
@@ -78,9 +82,30 @@ ConfigPage {
         return !p || p.path !== "" && p.problem === "";
     }
     readonly property bool codexOn: enabledItems.includes("codex")
-    readonly property bool codexRuns: runs("codex")
+    readonly property bool codexRuns: Limits.pooled(usageStatus.codex) || runs("codex")
 
     readonly property bool opencodeOn: enabledItems.includes("opencode")
+    readonly property bool kimiOn: enabledItems.includes("kimi")
+    readonly property bool hubChanged: !!live && (cfg_proxyUrl !== live.proxyUrl || cfg_proxyKeyFile !== live.proxyKeyFile)
+    readonly property var sourceChoices: [
+        { text: i18nc("@item:inlistbox usage source", "Automatic"), value: "auto" },
+        { text: i18nc("@item:inlistbox usage source", "Direct"), value: "direct" }
+    ]
+
+    function hubStatus(id) {
+        const setting = id + "UsageSource";
+        if (hubChanged || page["cfg_" + setting] === "direct"
+            || live && page["cfg_" + setting] !== live[setting]
+            || id === "kimi" && live && cfg_proxyKimiRegion !== live.proxyKimiRegion) {
+            return "";
+        }
+        const provider = usageStatus[id];
+        return poolWords.sourceStatus(provider?.proxyStatus, provider?.accounts);
+    }
+
+    PoolWords {
+        id: poolWords
+    }
 
     // A Program line shows only where it has something to say: a path the
     // user chose, or a program that is needed and missing. Codex is needed
@@ -111,6 +136,21 @@ ConfigPage {
 
     // Under each inner ring picker.
     readonly property string automaticLine: i18nc("@info", "Automatic shows the per-model limit when your plan has just one. With more than one, pick it here.")
+
+    component SourcePicker: Picker {
+        required property string provider
+
+        Kirigami.FormData.label: i18nc("@label:listbox how Ringside reads usage", "Usage source:")
+        Accessible.name: i18nc("@label:listbox provider's usage source", "%1 usage source", provider)
+        choices: page.sourceChoices
+    }
+
+    component SourceNote: Note {
+        required property string providerId
+
+        visible: text !== ""
+        text: page.enabledItems.includes(providerId) ? page.hubStatus(providerId) : ""
+    }
 
     // Automatic, none, then each limit reported for this provider so far. A
     // limit that was picked but is no longer reported still shows, as "…
@@ -259,7 +299,42 @@ ConfigPage {
         }
 
         Note {
-            text: i18nc("@info", "Applies to all enabled providers. Balances are checked even when hidden: Claude makes an extra read from Anthropic alongside its usage check, at most once every 5 minutes. Codex and Kimi use their existing usage checks.")
+            text: i18nc("@info", "Ringside checks balances even when hidden. Claude's balance needs an extra check with Anthropic.")
+        }
+
+        Item {
+            Kirigami.FormData.isSection: true
+            Kirigami.FormData.label: i18nc("@title:group shared CLIProxyAPI settings", "CLIProxyAPI")
+        }
+
+        QQC2.TextField {
+            Kirigami.FormData.label: i18nc("@label:textbox CLIProxyAPI", "Hub URL:")
+            Accessible.name: i18nc("@label:textbox CLIProxyAPI", "Hub URL")
+            Layout.fillWidth: true
+            LayoutMirroring.enabled: false
+            horizontalAlignment: TextInput.AlignLeft
+            inputMethodHints: Qt.ImhUrlCharactersOnly | Qt.ImhNoPredictiveText
+            placeholderText: "http://127.0.0.1:8317"
+            text: page.cfg_proxyUrl
+            onTextEdited: page.cfg_proxyUrl = text.trim()
+        }
+
+        QQC2.TextField {
+            Kirigami.FormData.label: i18nc("@label:textbox CLIProxyAPI", "Management key file:")
+            Accessible.name: i18nc("@label:textbox CLIProxyAPI", "Management key file")
+            Layout.fillWidth: true
+            LayoutMirroring.enabled: false
+            horizontalAlignment: TextInput.AlignLeft
+            inputMethodHints: Qt.ImhNoPredictiveText
+            placeholderText: page.shortPath(Shell.path(StandardPaths.writableLocation(StandardPaths.ConfigLocation))
+                                            + "/cliproxyapi/management.key")
+            text: page.cfg_proxyKeyFile
+            onTextEdited: page.cfg_proxyKeyFile = text.trim()
+        }
+
+        Note {
+            text: i18nc("@info under the CLIProxyAPI settings",
+                        "Automatic tries the hub first. Direct uses your own login. The key file must be readable only by you.")
         }
 
         // Each provider's section shows only while it has something to set.
@@ -270,10 +345,21 @@ ConfigPage {
             visible: page.claudeOn || page.claudeHasLimits || page.claudeProgramShown
         }
 
+        SourcePicker {
+            visible: page.claudeOn
+            provider: i18nc("@title", "Claude")
+            current: page.cfg_claudeUsageSource
+            onPicked: value => page.cfg_claudeUsageSource = value
+        }
+
+        SourceNote {
+            providerId: "claude"
+        }
+
         // Claude only ever starts a session, so a plan without a five-hour
         // limit has nothing to offer.
         QQC2.CheckBox {
-            visible: claudeHeading.visible && page.claudeWindows.length > 0
+            visible: claudeHeading.visible && page.claudeStarterAvailable && page.claudeWindows.length > 0
             text: page.starterText(page.claudeWindows)
             Accessible.name: i18nc("@option:check %1 is the check box's text, such as Auto start session", "Claude: %1", text)
             Accessible.description: i18nc("@info", "When a session ends, Ringside sends Claude a one-word message to start the next one. Turn this off to hide the popup switch.")
@@ -285,7 +371,7 @@ ConfigPage {
         }
 
         Note {
-            visible: claudeHeading.visible && page.claudeWindows.length === 0
+            visible: claudeHeading.visible && page.claudeStarterAvailable && page.claudeWindows.length === 0
             text: i18nc("@info under the Claude heading, for a plan with no five-hour limit",
                         "Your plan has no five-hour limit, and its week resets on a set schedule, so there's nothing to start.")
         }
@@ -301,7 +387,9 @@ ConfigPage {
 
         Note {
             visible: page.claudeHasLimits
-            text: page.automaticLine
+            text: Limits.pooled(page.usageStatus.claude)
+                ? i18nc("@info Claude inner ring", "Automatic shows Fable if the hub reports it, or the only model limit.")
+                : page.automaticLine
         }
 
         ProgramField {
@@ -324,11 +412,22 @@ ConfigPage {
             id: openaiHeading
             Kirigami.FormData.isSection: true
             Kirigami.FormData.label: i18nc("@title:group settings for the OpenAI item, whose limits are read through Codex", "OpenAI")
-            visible: page.codexShown && page.codexRuns || page.codexProgramShown
+            visible: page.codexOn || page.codexShown && page.codexRuns || page.codexProgramShown
+        }
+
+        SourcePicker {
+            visible: page.codexOn
+            provider: i18nc("@title", "OpenAI")
+            current: page.cfg_codexUsageSource
+            onPicked: value => page.cfg_codexUsageSource = value
+        }
+
+        SourceNote {
+            providerId: "codex"
         }
 
         QQC2.CheckBox {
-            visible: openaiHeading.visible && page.codexWindows.length > 0
+            visible: openaiHeading.visible && page.codexStarterAvailable && page.codexWindows.length > 0
             text: page.starterText(page.codexWindows)
             Accessible.name: i18nc("@option:check %1 is the check box's text, such as Auto start week", "OpenAI: %1", text)
             Accessible.description: page.codexWindows.length > 1
@@ -389,6 +488,37 @@ ConfigPage {
 
         ProgramNote {
             program: codexProgram
+        }
+
+        Item {
+            Kirigami.FormData.isSection: true
+            Kirigami.FormData.label: i18nc("@title:group settings for the Kimi item", "Kimi")
+            visible: page.kimiOn
+        }
+
+        SourcePicker {
+            visible: page.kimiOn
+            provider: i18nc("@title", "Kimi")
+            current: page.cfg_kimiUsageSource
+            onPicked: value => page.cfg_kimiUsageSource = value
+        }
+
+        SourceNote {
+            providerId: "kimi"
+        }
+
+        Picker {
+            visible: page.kimiOn && page.cfg_kimiUsageSource !== "direct"
+                && (page.cfg_proxyKimiRegion !== "auto" || page.usageStatus.kimi?.proxyStatus === "region-needed")
+            Kirigami.FormData.label: i18nc("@label:listbox imported Kimi credential region", "Kimi region:")
+            Accessible.name: i18nc("@label:listbox imported Kimi credential region", "Kimi region")
+            current: page.cfg_proxyKimiRegion
+            choices: [
+                { text: i18nc("@item:inlistbox automatic region selection", "Automatic"), value: "auto" },
+                { text: i18nc("@item:inlistbox Kimi region", "Global"), value: "global" },
+                { text: i18nc("@item:inlistbox Kimi region", "China"), value: "china" }
+            ]
+            onPicked: value => page.cfg_proxyKimiRegion = value
         }
 
         Item {

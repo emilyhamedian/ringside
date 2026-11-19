@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-HELPER = ROOT / "package" / "contents" / "code" / "usage.py"
+HELPERS = sorted((ROOT / "package" / "contents" / "code").glob("usage*.py"))
 
 
 def fstring_problems(source):
@@ -49,13 +49,17 @@ class Python311(unittest.TestCase):
     for, whichever Python runs these tests."""
 
     def test_grammar(self):
-        ast.parse(HELPER.read_text(encoding="utf-8"), feature_version=(3, 11))
+        for helper in HELPERS:
+            with self.subTest(helper=helper.name):
+                ast.parse(helper.read_text(encoding="utf-8"), feature_version=(3, 11))
 
     # The grammar check takes 3.12's f-strings for 3.11's, as both parse to
     # the same tree; their tokens tell them apart.
     @unittest.skipUnless(hasattr(tokenize, "FSTRING_START"), "needs the f-string tokens of Python 3.12")
     def test_fstrings(self):
-        self.assertEqual(fstring_problems(HELPER.read_text(encoding="utf-8")), [])
+        for helper in HELPERS:
+            with self.subTest(helper=helper.name):
+                self.assertEqual(fstring_problems(helper.read_text(encoding="utf-8")), [])
 
     @unittest.skipUnless(hasattr(tokenize, "FSTRING_START"), "needs the f-string tokens of Python 3.12")
     def test_fstring_check_tells(self):

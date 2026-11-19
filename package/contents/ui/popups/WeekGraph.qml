@@ -10,8 +10,8 @@ import "../code/pace.js" as Pace
 import "../code/reset.js" as Reset
 import "../code/style.js" as Style
 
-// A weekly limit's use through its window: time from the window's start to
-// its reset across, 0 to 100 % up, between a faint floor and the 100 % rule
+// Usage through a quota window, or over the last seven days for a pool.
+// The vertical scale is 0 to 100 %, between a faint floor and the 100 % rule
 // the system graphs share (LimitRule), with a tick on the floor at each
 // midnight and an edge at the reset. The main series is filled; a second
 // one, the model limit on the inner ring, is dashed, as in Graph. The line
@@ -42,6 +42,8 @@ Item {
     property var window: null
     // Another window, drawn dashed on this window's time axis.
     property var secondWindow: null
+    // A pool's accounts can reset at different times.
+    property bool rolling: false
     property real nowMs: Date.now()
     // When the readings were last fetched, in epoch seconds.
     property real pollAt: NaN
@@ -61,8 +63,8 @@ Item {
     property int duration: Style.animated(Kirigami.Units) ? Kirigami.Units.longDuration : 0
 
     // The time axis, in epoch seconds.
-    readonly property real end: window && Number.isFinite(window.resetsAt) ? window.resetsAt : NaN
-    readonly property real start: window ? end - window.windowSeconds : NaN
+    readonly property real end: rolling ? nowMs / 1000 : window && Number.isFinite(window.resetsAt) ? window.resetsAt : NaN
+    readonly property real start: rolling ? end - 7 * 86400 : window ? end - window.windowSeconds : NaN
     readonly property bool placed: end > start
 
     readonly property real plotHeight: Math.round(Kirigami.Units.gridUnit * 3.2)
@@ -74,8 +76,7 @@ Item {
     readonly property var mainSamples: placed && window && window.history
         ? Array.from(window.history).filter(p => p[0] >= start && p[0] <= end) : []
     // The second series' reading at each of those polls: its latest at or
-    // before it, NaN before its first. The two are polled together, so
-    // this is the same moment's.
+    // before it. A pooled series can end earlier if some readings are missing.
     readonly property var secondAtMain: {
         const history = placed && secondWindow && secondWindow.history ? Array.from(secondWindow.history) : [];
         let k = -1;
@@ -83,7 +84,7 @@ Item {
             while (k + 1 < history.length && history[k + 1][0] <= s[0]) {
                 ++k;
             }
-            return k >= 0 ? history[k][1] : NaN;
+            return k >= 0 && (!rolling || s[0] <= history[history.length - 1][0]) ? history[k][1] : NaN;
         });
     }
     // Writes the reading at a poll's index, for `reading`.
@@ -92,7 +93,8 @@ Item {
     // When that limit runs out, in epoch seconds, while the pace says it
     // will before the reset, as the popup's pace line reads it; NaN
     // otherwise.
-    readonly property real runOutAt: projected === "main" ? runOut(mainPoints, window)
+    readonly property real runOutAt: rolling ? NaN
+                                   : projected === "main" ? runOut(mainPoints, window)
                                    : projected === "second" ? runOut(secondPoints, secondWindow)
                                    : NaN
 
@@ -156,7 +158,7 @@ Item {
             return !was && !source ? "same" : "other";
         }
         const history = Array.from(source.history ?? []);
-        const kept = Math.abs(source.resetsAt - was.resetsAt) <= Reset.MOVED_BY
+        const kept = (rolling || Math.abs(source.resetsAt - was.resetsAt) <= Reset.MOVED_BY)
             && was.history.every((p, i) => i < history.length && p[0] === history[i][0] && p[1] === history[i][1]);
         return !kept ? "other" : history.length === was.history.length ? "same"
              : history.length === was.history.length + 1 ? "grew" : "other";
@@ -170,7 +172,8 @@ Item {
     function poll() {
         const main = change(seenMain, window);
         const second = change(seenSecond, secondWindow);
-        if (duration > 0 && seenMain && window && window.resetsAt > seenMain.resetsAt + Reset.MOVED_BY && seenMain.history.length > 0) {
+        if (!rolling && duration > 0 && seenMain && window
+            && window.resetsAt > seenMain.resetsAt + Reset.MOVED_BY && seenMain.history.length > 0) {
             const end = seenMain.resetsAt;
             const begin = end - seenMain.windowSeconds;
             ghostMain = pointsOn(seenMain.history, begin, end);
@@ -335,7 +338,7 @@ Item {
     // helper gives one that system time doesn't keep, else system time.
     function midnights() {
         const found = [];
-        const zone = window.clockZone;
+        const zone = window?.clockZone;
         if (zone && zone.offset !== -new Date(end * 1000).getTimezoneOffset() * 60) {
             for (let t = (Math.floor((start + zone.offset) / 86400) + 1) * 86400 - zone.offset; t < end; t += 86400) {
                 found.push(t);

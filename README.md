@@ -68,7 +68,8 @@ Then add **Ringside** to a panel like any other widget.
 
 ![The Claude popup: the weekly limit, the Fable limit in amber, a graph of this week's usage with a dashed amber line at the time the Fable limit runs out, and a line under it saying when that is](docs/usage.png)
 
-Turn them on in *Configure Ringside… → Panel Items*. Each needs:
+Turn them on in *Configure Ringside… → Panel Items*. Direct checks use
+these logins.
 
 - **Claude:** [Claude Code](https://docs.claude.com/en/docs/claude-code),
   signed in with a subscription.
@@ -81,36 +82,42 @@ Turn them on in *Configure Ringside… → Panel Items*. Each needs:
   OpenCode signed in to the OpenCode Console
   (`opencode auth login opencode`).
 
+**CLIProxyAPI.** Claude, Codex and Kimi pool usage through a local
+CLIProxyAPI v8 hub and use the logins above when it's unavailable. Keep the
+management key in `~/.config/cliproxyapi/management.key`, readable only by
+you. The default address is `http://127.0.0.1:8317`. Change either under
+*AI Providers*, or choose *Direct* to use your own login.
+
 Each ring shows how much of your limit you've used and how long until it
-resets: weekly for Claude and Codex, monthly for Kimi and OpenCode Go. If your
-plan also has a per-model limit, it shows as an inner ring. Click the ring to
-see a graph of the current week or month, whether you're on pace to run
-out, and a bar for each shorter limit on your plan, such as the five-hour
-limit.
+resets. If your plan also has a per-model limit, it shows as an inner ring.
+Click the ring for a graph and shorter limits such as the five-hour limit.
+Direct checks show whether you're on pace to run out. With a hub, the ring
+averages the accounts' usage percentages and counts down to the next
+account's reset. The graph shows the last seven days.
 
-If a check fails, the ring greys out, and is crossed out if it keeps failing;
-the popup says why. If a limit resets early, the popup tells you. Ringside
-keeps Claude Code signed in, but never renews Kimi Code's or OpenCode's
-sign-in. If one of those expires, open that app and Ringside picks it up
-within five minutes. If Plasma can't find `claude` or `codex`, tell it where
-they are under *AI Providers*.
+If a check fails, the popup says why. With direct checks, the ring greys out
+and is crossed out if checks keep failing. The popup also tells you if a
+limit resets early. Ringside keeps Claude Code signed in. If your Kimi Code
+or OpenCode sign-in expires, open that app and Ringside picks it up within
+five minutes. If Plasma can't find `claude` or `codex`, tell it where they are
+under *AI Providers*.
 
-**Credits.** For Claude, Codex and Kimi, the popup shows your remaining
-credits under the graph. For Kimi, that's your Extra Usage balance. When
-you've used up a limit and are spending credits, the ring turns blue. *Show
-remaining credits* under *AI Providers* hides them.
+**Credits.** The popup shows remaining credits for Claude, Codex and Kimi,
+including Kimi's Extra Usage balance. With direct checks, the ring turns
+blue while you spend credits beyond a limit. *Show remaining credits*
+under *AI Providers* hides them.
 
-**Banked resets.** If your Claude or Codex account has banked resets, the
-popup shows a ticket for each one, with how long until it expires. A reset
-with three days or less left turns amber. Ringside only shows them; use them
-in Claude's or Codex's own settings.
+**Banked resets.** The popup shows a ticket for each banked reset on Claude
+and Codex, or a count through the hub. A ticket turns amber with three days
+or less left. Use the resets in Claude's or Codex's own settings.
 
 **Auto start.** Ringside can start your next five-hour session on Claude,
 Codex or OpenCode Go, or your next Codex week, as soon as the last one ends,
 so the clock is already running when you're back. Turn it on with the switch
 at the bottom of the popup. Each start sends a one-word message, which counts
 toward your limits. Kimi's five-hour windows follow each other on a fixed
-schedule, so there's nothing to start.
+schedule, so there's nothing to start. Auto start pauses while a
+provider's readings come through the hub.
 
 ## Privacy
 
@@ -126,6 +133,8 @@ feature that needs it:
   sign-in or key to Kimi (`api.kimi.ai`, or `api.kimi.com` in China).
 - If you want your **OpenCode Go** limits, Ringside has to send OpenCode's
   sign-in to OpenCode (`opencode.ai`).
+- With **CLIProxyAPI**, Ringside sends the management key only to the hub
+  on your computer. The hub asks each provider for limits and credits.
 - If you want your **public address** in the network popup, Ringside has to
   fetch it from [ipify.org](https://www.ipify.org), Mullvad (which can also
   tell you your city) or a service you choose. It asks only while the popup

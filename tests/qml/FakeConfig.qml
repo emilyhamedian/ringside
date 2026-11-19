@@ -37,6 +37,12 @@ QtObject {
     property bool codexSessionStarter: true
     property bool opencodeSessionStarter: true
     property string codexMark: "codex"
+    property string proxyUrl: ""
+    property string proxyKeyFile: ""
+    property string proxyKimiRegion: "auto"
+    property string claudeUsageSource: "auto"
+    property string codexUsageSource: "auto"
+    property string kimiUsageSource: "auto"
     property string claudeProgram: ""
     property string codexProgram: ""
     property string opencodeProgram: ""

@@ -8,6 +8,7 @@ import org.kde.kirigami as Kirigami
 import "../../package/contents/ui"
 import "../../package/contents/ui/popups"
 import "starterstates.js" as StarterStates
+import "poolstates.js" as PoolStates
 
 // A section of Gallery.qml: Claude and Codex in the panel beside two system
 // items, loading, failed and signed out among them, then their popups in
@@ -36,6 +37,28 @@ ColumnLayout {
     }
 
     spacing: 2 * Kirigami.Units.gridUnit
+
+    FakeMonitor {
+        id: poolMonitor
+        usage: FakeUsage {
+            id: pooled
+            entries: ({ claude: PoolStates.example(pooled.createdAt), codex: PoolStates.example(pooled.createdAt, "codex") })
+        }
+    }
+
+    RowLayout {
+        spacing: 2 * Kirigami.Units.gridUnit
+
+        GalleryFrame {
+            label: "Claude · CLIProxyAPI"
+            UsagePopup { monitor: poolMonitor; item: "claude" }
+        }
+
+        GalleryFrame {
+            label: "Codex · CLIProxyAPI with mixed periods"
+            UsagePopup { monitor: poolMonitor; item: "codex" }
+        }
+    }
 
     FakeMonitor {
         id: creditsMonitor

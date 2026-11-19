@@ -143,7 +143,7 @@ QtObject {
 
     function inner(id) {
         const e = entry(id);
-        return e ? Limits.pick(e.scoped, innerChoices[id] ?? "") : null;
+        return e ? Limits.pick(e.scoped, innerChoices[id] ?? "", id === "claude" && Limits.pooled(e)) : null;
     }
 
     // As UsageData's.
@@ -198,6 +198,10 @@ QtObject {
 
     function starterEnabled(id) {
         return starterOptions[id] === true;
+    }
+
+    function starterPaused(id) {
+        return Limits.pooled(entry(id)) || starter(id)?.reason === "proxy-source";
     }
 
     function setStarter(id, window, on) {

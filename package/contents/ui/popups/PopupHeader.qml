@@ -17,6 +17,7 @@ RowLayout {
 
     property bool ringShown: true
     property real ringValue: NaN
+    property var ringInner: null
     // See RingGauge: no reading to show, or the last one kept in grey.
     property bool ringCancelled: false
     property bool ringStale: false
@@ -96,6 +97,12 @@ RowLayout {
         Layout.preferredHeight: header.ringSize
         strokeWidth: 4
         value: header.ringValue
+        inner: header.ringInner !== null
+        innerValue: header.ringInner?.percent ?? NaN
+        innerDescription: header.ringInner
+            ? i18nc("@info:accessible model and its usage percentage", "%1 %2%",
+                    header.ringInner.label, Format.percent(header.ringInner.percent)) : ""
+        showInnerText: inner
         cancelled: header.ringCancelled
         stale: header.ringStale
         loading: header.ringLoading
@@ -103,7 +110,7 @@ RowLayout {
         // Counts with the arc, as the screen reader's value doesn't.
         text: header.ringCancelled || header.ringLoading ? "" : Number.isFinite(header.ringValue) ? i18nc("@info a percentage", "%1%", Format.percent(ring.drawnValue)) : "–"
         // "100%" needs a little more room than "62%".
-        textScale: text.length > 3 ? 0.25 : 0.29
+        textScale: inner ? (text.length > 3 ? 0.18 : 0.22) : (text.length > 3 ? 0.25 : 0.29)
     }
 
     Item {

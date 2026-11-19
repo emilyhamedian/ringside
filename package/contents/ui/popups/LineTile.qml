@@ -17,6 +17,7 @@ Rectangle {
 
     property string caption: ""
     property Item reading: null
+    property bool plain: false
     // The height of the reading's digits, used to centre them.
     property real readingCap: 0
     // The row's minimum height, so that tiles stacked one above another can
@@ -34,16 +35,17 @@ Rectangle {
     property bool captionRead: true
     default property alias content: holder.data
 
-    readonly property real horizontalPadding: Math.round(Kirigami.Units.largeSpacing * 1.5)
-    readonly property real verticalPadding: Kirigami.Units.largeSpacing
+    readonly property real horizontalPadding: plain ? 0 : Math.round(Kirigami.Units.largeSpacing * 1.5)
+    readonly property real verticalPadding: plain ? 0 : Kirigami.Units.largeSpacing
     // The gap between the caption and the reading.
-    readonly property real gap: Kirigami.Units.largeSpacing * 2
+    readonly property real gap: plain ? Kirigami.Units.smallSpacing : Kirigami.Units.largeSpacing * 2
     readonly property real keyWidth: keyed ? 2 + Kirigami.Units.smallSpacing + 2 : 0
     readonly property real rowHeight: Math.max(minimumRowHeight, reading ? Math.ceil(reading.implicitHeight) : 0)
     readonly property real readingWidth: reading ? Math.ceil(reading.implicitWidth) : 0
     // Worked out from the text widths and the tile's width only, never from
     // positions, so laying out the row can't change it.
-    readonly property bool stacked: keyWidth + Math.ceil(captionRoom.advanceWidth) + gap + readingWidth > width - 2 * horizontalPadding
+    readonly property bool stacked: !plain
+        && keyWidth + Math.ceil(captionRoom.advanceWidth) + gap + readingWidth > width - 2 * horizontalPadding
     readonly property real captionGap: Math.round(Kirigami.Units.smallSpacing / 2)
     // The reading's y within its row, which centres its digits vertically.
     readonly property real readingY: reading ? Math.round(rowHeight / 2 - (reading.baselineOffset - readingCap / 2)) : 0
@@ -61,7 +63,7 @@ Rectangle {
     implicitWidth: 2 * horizontalPadding + keyWidth + Math.ceil(captionRoom.advanceWidth) + gap + readingWidth
     implicitHeight: 2 * verticalPadding + rowTop + rowHeight
     radius: Kirigami.Units.smallSpacing
-    color: Qt.alpha(Kirigami.Theme.textColor, 0.05)
+    color: plain ? "transparent" : Qt.alpha(Kirigami.Theme.textColor, 0.05)
 
     TextMetrics {
         id: captionRoom
@@ -79,12 +81,14 @@ Rectangle {
 
         Caption {
             id: captionText
-            readonly property real room: holder.width - (tile.stacked ? 0 : tile.gap + tile.keyWidth + tile.readingWidth)
+            readonly property real room: Math.max(0, holder.width - (tile.stacked ? 0 : tile.gap + tile.keyWidth + tile.readingWidth))
             x: tile.near(0, room)
             // On the reading's baseline, or above the reading when stacked.
             y: tile.stacked || !tile.reading ? 0 : tile.readingY + tile.reading.baselineOffset - baselineOffset
             width: room
             label: tile.caption
+            uppercase: !tile.plain
+            font.pointSize: tile.plain ? Kirigami.Theme.defaultFont.pointSize : Kirigami.Theme.smallFont.pointSize
             Accessible.ignored: !tile.captionRead
         }
 

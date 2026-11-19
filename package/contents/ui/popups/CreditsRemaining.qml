@@ -28,7 +28,7 @@ LineTile {
         : formatted.value
     readonly property string unit: shown ? balance.currency || i18nc("@label credit balance unit", "credits") : ""
     readonly property string label: cached
-        ? i18nc("@label the last known credit balance after a failed check", "Credits remaining · cached")
+        ? i18nc("@label the last known credit balance after a failed check", "Credits remaining (cached)")
         : i18nc("@label", "Credits remaining")
     readonly property string detail: {
         if (!shown) {

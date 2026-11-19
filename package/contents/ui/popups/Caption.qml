@@ -10,8 +10,9 @@ import "../code/style.js" as Style
 Text {
     property string label: ""
     property string detail: ""
+    property bool uppercase: true
 
-    text: [label.toLocaleUpperCase(), detail].filter(s => s !== "").join(" ")
+    text: [uppercase ? label.toLocaleUpperCase() : label, detail].filter(s => s !== "").join(" ")
     color: Style.dim(Kirigami.Theme.textColor)
     font.pointSize: Kirigami.Theme.smallFont.pointSize
     textFormat: Text.PlainText

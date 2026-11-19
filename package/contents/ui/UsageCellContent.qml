@@ -3,6 +3,7 @@
 
 import QtQuick
 import org.kde.kirigami as Kirigami
+import "code/limits.js" as Limits
 import "code/style.js" as Style
 
 // A Claude or Codex item in the panel: the weekly limit as a ring with the
@@ -37,12 +38,14 @@ Item {
     readonly property var entry: usage.entry(item)
     readonly property var weekly: entry && entry.weekly ? entry.weekly : null
     readonly property var innerLimit: usage.inner(item)
+    readonly property bool pooled: Limits.pooled(entry)
     readonly property bool creditUsed: usage.creditUsed(item, nowMs)
     // Credit use stays blue even with a different accent hue; the theme
     // supplies its saturation and lightness.
     readonly property color creditColor: Qt.hsla(210 / 360, Kirigami.Theme.linkColor.hslSaturation,
                                                Kirigami.Theme.linkColor.hslLightness, Kirigami.Theme.linkColor.a)
     onCreditUsedChanged: gauge.stopResets()
+    onPooledChanged: gauge.stopResets()
     // Stepped by the minute timer below, for the countdown, and with each
     // report, so a ring is struck by the check that finds its reading too old.
     property real nowMs: Date.now()
@@ -54,7 +57,7 @@ Item {
             arrival.restart();
         }
     }
-    readonly property bool staleShown: failed && !usage.struck(item, nowMs)
+    readonly property bool staleShown: failed && !usage.struck(item, nowMs) || Limits.allStale(usage.entry(item))
     // Dashes while the ring is struck, coming and going with its stroke.
     readonly property var lines: words.readout(item, nowMs, gauge.dashed)
 
@@ -85,7 +88,7 @@ Item {
         target: content.usage
 
         function onResetsDetected(events) {
-            if (content.creditUsed) {
+            if (content.creditUsed || content.pooled) {
                 return;
             }
             const limit = content.innerLimit;

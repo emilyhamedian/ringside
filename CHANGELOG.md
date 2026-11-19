@@ -6,6 +6,16 @@ follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Claude, Codex and Kimi show pooled usage, the next account reset and
+  seven days of history through a local CLIProxyAPI hub.
+
+### Changed
+
+- Usage popups list the five-hour, weekly and monthly bars before model
+  limits.
+
 ## [0.5.0] - 2026-11-12
 
 ### Added
