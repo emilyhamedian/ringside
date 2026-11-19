@@ -309,6 +309,11 @@ class ProxyWindows(unittest.TestCase):
         reading = proxy.parse_claude(raw, usage.parse_session)
         self.assertTrue(reading["sessionUnknown"])
         self.assertEqual(reading["scoped"], [])
+        for limits in ([{}], [{"kind": "weekly"}, None]):
+            with self.subTest(limits=limits):
+                reading = proxy.parse_claude(dict(raw, limits=limits), usage.parse_session)
+                self.assertTrue(reading["sessionUnknown"])
+        self.assertTrue(proxy.parse_claude(dict(raw, five_hour=claude_window(-1)), usage.parse_session)["sessionUnknown"])
         raw["iguana_necktie"] = claude_window(55)
         self.assertEqual(proxy.parse_claude(raw, usage.parse_session)["scoped"][0]["id"], "Fable")
         raw["seven_day"] = claude_window(None)
@@ -322,6 +327,8 @@ class ProxyWindows(unittest.TestCase):
         self.assertEqual(reading["weekly"]["windowSeconds"], 31 * proxy.DAY)
         self.assertTrue(reading["sessionUnknown"])
         self.assertNotIn("week", reading)
+        raw["usages"]["limit_5h"] = kimi_window(-.1)
+        self.assertTrue(proxy.parse_kimi(raw, usage.parse_kimi)["sessionUnknown"])
         self.assertEqual(proxy.parse_kimi({"usages": {"limit_7d": kimi_window(.4)}}, usage.parse_kimi)["week"]["percent"],
                          40)
 
@@ -380,7 +387,77 @@ class ProxyWindows(unittest.TestCase):
         result = proxy.aggregate([reading(100, proxy.WEEK), reading(0, proxy.DAY * 30), reading(50, proxy.SESSION)], NOW)
         self.assertEqual(result["weekly"]["percent"], 100)
         self.assertNotIn("incomplete", result["weekly"])
-        self.assertEqual([(w["period"], w["percent"]) for w in result["otherPeriods"]], [("month", 0), ("session", 50)])
+        self.assertEqual([(w["period"], w["percent"]) for w in result["otherPeriods"]], [("month", 0)])
+        self.assertEqual(result["session"]["percent"], 17)
+
+    def test_confirmed_absent_sessions_count_without_showing_account_windows(self):
+        claude = {"seven_day": claude_window(), "limits": [{"kind": "weekly"}]}
+        codex = {"primary_window": codex_window(20)}
+        codex_with_session = dict(codex, secondary_window=codex_window(100, length=proxy.SESSION))
+        kimi = {"limit_month_total": kimi_window(.3), "limit_7d": kimi_window(.4)}
+        pairs = {
+            "claude": (proxy.parse_claude(dict(claude, five_hour=claude_window(100)), usage.parse_session),
+                       proxy.parse_claude(claude, usage.parse_session)),
+            "codex": (proxy.parse_codex({"rate_limit": codex_with_session}, NOW),
+                      proxy.parse_codex({"rate_limit": codex}, NOW)),
+            "kimi": (proxy.parse_kimi({"usages": dict(kimi, limit_5h=kimi_window(1))}, usage.parse_kimi),
+                     proxy.parse_kimi({"usages": kimi}, usage.parse_kimi)),
+        }
+        for provider, (running, absent) in pairs.items():
+            with self.subTest(provider=provider):
+                result = proxy.aggregate([dict(running, state="ok"), dict(absent, state="ok")], NOW)
+                session = result["session"]
+                self.assertEqual(session["percent"], 50)
+                self.assertFalse(session["exhausted"])
+                self.assertTrue(session["accountAverage"])
+                self.assertNotIn("incomplete", session)
+                self.assertEqual(session["resetTimes"], [NOW + 1000])
+                self.assertNotIn("session", result["accounts"][1])
+                self.assertNotIn("sessionUnknown", result["accounts"][1])
+                self.assertNotIn("_sessionAbsent", result["accounts"][1])
+                self.assertNotIn("session", proxy.aggregate([dict(absent, state="ok")], NOW))
+                if provider == "kimi":
+                    self.assertEqual(result["week"]["percent"], 40)
+
+    def test_codex_short_primary_and_separate_sessions_share_one_average(self):
+        short = codex_window(100, length=proxy.SESSION, reset=NOW + 3000)
+        separate = codex_window(50, length=proxy.SESSION)
+        short_only = dict(proxy.parse_codex({"rate_limit": {"primary_window": short}}, NOW), state="ok")
+        both = dict(proxy.parse_codex({"rate_limit": {"primary_window": codex_window(40),
+                                                       "secondary_window": separate}}, NOW), state="ok")
+        result = proxy.aggregate([short_only, both], NOW)
+        self.assertEqual(result["weekly"]["percent"], 40)
+        self.assertEqual(result["session"]["percent"], 75)
+        self.assertEqual(result["session"]["resetTimes"], [NOW + 1000, NOW + 3000])
+        self.assertEqual(result["otherPeriods"], [])
+
+        only = proxy.aggregate([short_only], NOW)
+        self.assertEqual(only["weekly"], only["session"])
+        self.assertEqual(only["weekly"]["percent"], 100)
+        self.assertEqual(only["otherPeriods"], [])
+
+    def test_unreadable_or_stale_missing_sessions_do_not_count_as_zero(self):
+        short = codex_window(100, length=proxy.SESSION)
+        weekly = codex_window(40)
+        running = dict(proxy.parse_codex({"rate_limit": {"primary_window": short}}, NOW), state="ok")
+        no_session = proxy.parse_codex({"rate_limit": {"primary_window": weekly}}, NOW)
+        ambiguous = proxy.parse_codex({"rate_limit": {"primary_window": weekly,
+                                                       "secondary_window": {"used_percent": 10}}}, NOW)
+        self.assertTrue(ambiguous["sessionUnknown"])
+        old_cache = {"weekly": no_session["weekly"], "state": "ok"}
+        for missing in (dict(ambiguous, state="ok"), dict(no_session, state="stale"),
+                        {"session": None, "state": "stale"}, {"state": "unavailable"}, old_cache):
+            with self.subTest(missing=missing):
+                result = proxy.aggregate([running, missing], NOW)
+                self.assertEqual(result["session"]["percent"], 100)
+                self.assertTrue(result["session"]["incomplete"])
+                self.assertNotIn("accountAverage", result["session"])
+                self.assertNotIn("session", proxy.aggregate([missing], NOW))
+
+        stale_known = dict(running, state="stale")
+        result = proxy.aggregate([stale_known, dict(no_session, state="ok")], NOW)
+        self.assertEqual(result["session"]["percent"], 50)
+        self.assertTrue(result["session"]["incomplete"])
 
     def test_session_averages_idle_but_flags_unknown(self):
         base = {"seven_day": claude_window(), "limits": [{"kind": "session"}]}

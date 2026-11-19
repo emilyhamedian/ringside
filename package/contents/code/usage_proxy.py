@@ -432,14 +432,21 @@ def parse_claude(body, session_parser):
     if weekly := window(all_models.get("utilization"), all_models.get("resets_at"), WEEK, "week"):
         reading["weekly"] = weekly
     limits = sequence(body.get("limits"))
-    if not limits or body.get("five_hour") is not None or any(record(row).get("kind") == "session" for row in limits):
+    kinds = [record(row).get("kind") for row in limits]
+    if (kinds and all(isinstance(kind, str) and kind for kind in kinds)
+            and "session" not in kinds and body.get("five_hour") is None):
+        reading["_sessionAbsent"] = True
+    else:
         try:
             session = session_parser(body)
             if session is None:
                 reading["session"] = None
             else:
                 five_hour = body["five_hour"]
-                reading["session"] = window(five_hour["utilization"], session["resetsAt"], SESSION, "session")
+                candidate = window(five_hour["utilization"], session["resetsAt"], SESSION, "session")
+                if candidate is None:
+                    raise ValueError("unreadable session usage")
+                reading["session"] = candidate
         except (KeyError, ValueError, TypeError, OverflowError, OSError):
             reading["sessionUnknown"] = True
 
@@ -500,12 +507,16 @@ def codex_windows(block, now, unknown=None):
     block = record(block)
     windows = []
     for snake, camel in (("primary_window", "primaryWindow"), ("secondary_window", "secondaryWindow")):
-        candidate = record(block.get(snake, block.get(camel)))
-        if not candidate:
+        candidate = block.get(snake, block.get(camel))
+        if candidate is None:
             continue
+        candidate = record(candidate)
         raw_length = candidate.get("limit_window_seconds", candidate.get("limitWindowSeconds"))
         length = number(raw_length)
         if length is None or not length.is_integer() or not 0 < length <= 366 * DAY:
+            if unknown is not None:
+                # Without a length this window could be the five-hour limit.
+                unknown.append(None)
             continue
         length = int(length)
         reset = reset_time(candidate.get("reset_at", candidate.get("resetAt")))
@@ -531,11 +542,15 @@ def parse_codex(body, now):
     windows = codex_windows(rate_limit, now, unknown)
     reading = {"scoped": []}
     known = {window_key(window) for window in windows}
-    unknown = [window for window in unknown if window_key(window) not in known]
+    ambiguous = None in unknown or not windows
+    unknown = [window for window in unknown if window is not None and window_key(window) not in known]
     if unknown:
         reading["_unknownPeriods"] = unknown
-        if any(window["period"] == "session" for window in unknown):
+    if ("session", 0) not in known:
+        if ambiguous or any(window["period"] == "session" for window in unknown):
             reading["sessionUnknown"] = True
+        else:
+            reading["_sessionAbsent"] = True
     if windows:
         reading["weekly"] = windows[0]
         for candidate in windows[1:]:
@@ -579,8 +594,11 @@ def parse_kimi(body, kimi_parser):
             candidate = window(ratio * 100, reset, seconds, period)
             if candidate:
                 reading[slot] = candidate
-        elif slot == "session" and key in usages:
+    if "session" not in reading:
+        if "limit_5h" in usages or not (reading.get("weekly") or reading.get("week")):
             reading["sessionUnknown"] = True
+        else:
+            reading["_sessionAbsent"] = True
     return reading
 
 
@@ -637,17 +655,32 @@ def aggregate(accounts, now):
     """Average only comparable percentages with the same provider, scope and period."""
     primary = {}
     scoped = {}
+    sessions = []
+    zero_sessions = 0
+    idle_session = False
+    unknown_session = False
+    short_primary = False
     for account in accounts:
         account_windows = account.get("otherPeriods", [])
-        if account.get("weekly"):
-            account_windows = [account["weekly"], *account_windows]
+        if weekly := account.get("weekly"):
+            account_windows = [weekly, *account_windows]
+            short_primary = short_primary or weekly["period"] == "session"
+        session = account.get("session")
         for candidate in account_windows:
-            primary.setdefault(window_key(candidate), []).append(candidate)
+            if candidate["period"] == "session":
+                session = session or candidate
+            else:
+                primary.setdefault(window_key(candidate), []).append(candidate)
+        if session:
+            sessions.append(session)
+        elif (account["state"] == "ok" and not account.get("sessionUnknown")
+              and ("session" in account or account.get("_sessionAbsent"))):
+            zero_sessions += 1
+            idle_session = idle_session or "session" in account
+        else:
+            unknown_session = True
         for candidate in account.get("scoped", []):
             scoped.setdefault((candidate["id"], window_key(candidate)), []).append(candidate)
-    session_key = ("session", 0)
-    if session_key in primary:
-        primary[session_key].extend(account["session"] for account in accounts if account.get("session"))
     missing = any(account["state"] != "ok" for account in accounts)
     missing_primary = missing or any(not account.get("weekly") for account in accounts)
     periods = sorted(primary.values(), key=lambda group: primary_order(group[0]), reverse=True)
@@ -661,16 +694,15 @@ def aggregate(accounts, now):
               "accounts": [visible_account(account, now) for account in accounts]}
     if pooled_periods:
         result["weekly"] = pooled_periods[0]
-    for slot in ("session", "week"):
-        group = primary[session_key] if slot == "session" and session_key in primary else [
-            account[slot] for account in accounts if account.get(slot)]
-        idle = sum(slot in account and account[slot] is None for account in accounts)
-        unknown = slot == "session" and any(account.get("sessionUnknown") for account in accounts)
-        if group:
-            result[slot] = pooled_window(group, now, incomplete=missing or unknown, idle=idle)
-        elif slot == "session":
-            if missing or unknown:
-                result["sessionUnknown"] = True
-            elif idle:
-                result["session"] = None
+    if sessions:
+        result["session"] = pooled_window(sessions, now, incomplete=missing or unknown_session, idle=zero_sessions)
+        if short_primary:
+            result.setdefault("weekly", result["session"])
+    elif unknown_session:
+        result["sessionUnknown"] = True
+    elif idle_session:
+        result["session"] = None
+    if weeks := [account["week"] for account in accounts if account.get("week")]:
+        idle = sum("week" in account and account["week"] is None for account in accounts)
+        result["week"] = pooled_window(weeks, now, incomplete=missing, idle=idle)
     return result
