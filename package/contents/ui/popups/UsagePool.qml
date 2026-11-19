@@ -227,6 +227,8 @@ PlasmaComponents.ScrollView {
             Layout.preferredWidth: 0
             Layout.leftMargin: pool.edge
             Layout.rightMargin: pool.edge
+            Layout.topMargin: Math.round(Kirigami.Units.smallSpacing / 2)
+            Layout.bottomMargin: Layout.topMargin
             texts: pool.texts
             window: pool.entry?.weekly ?? null
             modelWindow: pool.innerLimit
