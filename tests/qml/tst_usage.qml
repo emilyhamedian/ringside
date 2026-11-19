@@ -2882,6 +2882,10 @@ TestRoot {
             compare(root.all(popup, child => child.visible && child.credit !== undefined).length, 2);
             compare(tickets[0].reading.slots.map(slot => slot.text), [root.localized("2d"), root.localized("12d")]);
             verify(credits[0].y >= tickets[0].y + tickets[0].height);
+            verify(credits[0].plain && !credits[0].stacked);
+            compare(credits[0].height, Math.ceil(credits[0].reading.implicitHeight));
+            compare(credits[0].color, Qt.rgba(0, 0, 0, 0));
+            compare(root.find(credits[0], child => child.label === credits[0].label && child !== credits[0]).text, "Credits remaining");
             compare(credits[0].value, root.localized("18.42"));
             compare(credits[0].unit, "USD");
             compare(credits[1].label, "Credits remaining · cached");
@@ -2916,6 +2920,7 @@ TestRoot {
             const popup = load(data.item, data.mirrored);
             const row = root.find(popup, i => i.credit !== undefined);
             verify(row.visible);
+            verify(!row.plain);
             compare(row.value, root.localized(data.value));
             compare(row.unit, data.currency || "credits");
             compare(row.label, data.status === "ok" ? "Credits remaining" : "Credits remaining · cached");

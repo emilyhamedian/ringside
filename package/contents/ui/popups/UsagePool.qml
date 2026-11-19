@@ -277,7 +277,6 @@ PlasmaComponents.ScrollView {
                 }
 
                 BankedResets {
-                    id: resetTickets
                     banked: account.modelData.bankedResets ?? null
                     texts: pool.texts
                     nowMs: pool.nowMs
@@ -285,7 +284,7 @@ PlasmaComponents.ScrollView {
 
                 CreditsRemaining {
                     credit: pool.showCredits ? account.modelData.credits ?? null : null
-                    minimumRowHeight: resetTickets.ticketHeight
+                    plain: true
                 }
             }
         }
