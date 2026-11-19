@@ -651,16 +651,22 @@ def visible_account(account, now):
     return result
 
 
-def aggregate(accounts, now):
+def aggregate(accounts, now, *, contributors=None):
     """Average only comparable percentages with the same provider, scope and period."""
+    def summarize(rows, *, incomplete=False, idle=()):
+        window = pooled_window([candidate for _, candidate in rows], now, incomplete=incomplete, idle=len(idle))
+        if contributors is not None:
+            contributors[id(window)] = [index for index, _ in rows] + list(idle)
+        return window
+
     primary = {}
     scoped = {}
     sessions = []
-    zero_sessions = 0
+    zero_sessions = []
     idle_session = False
     unknown_session = False
     short_primary = False
-    for account in accounts:
+    for index, account in enumerate(accounts):
         account_windows = account.get("otherPeriods", [])
         if weekly := account.get("weekly"):
             account_windows = [weekly, *account_windows]
@@ -670,32 +676,31 @@ def aggregate(accounts, now):
             if candidate["period"] == "session":
                 session = session or candidate
             else:
-                primary.setdefault(window_key(candidate), []).append(candidate)
+                primary.setdefault(window_key(candidate), []).append((index, candidate))
         if session:
-            sessions.append(session)
+            sessions.append((index, session))
         elif (account["state"] == "ok" and not account.get("sessionUnknown")
               and ("session" in account or account.get("_sessionAbsent"))):
-            zero_sessions += 1
+            zero_sessions.append(index)
             idle_session = idle_session or "session" in account
         else:
             unknown_session = True
         for candidate in account.get("scoped", []):
-            scoped.setdefault((candidate["id"], window_key(candidate)), []).append(candidate)
+            scoped.setdefault((candidate["id"], window_key(candidate)), []).append((index, candidate))
     missing = any(account["state"] != "ok" for account in accounts)
     missing_primary = missing or any(not account.get("weekly") for account in accounts)
-    periods = sorted(primary.values(), key=lambda group: primary_order(group[0]), reverse=True)
+    periods = sorted(primary, key=lambda key: primary_order(primary[key][0][1]), reverse=True)
     unknown_periods = {window_key(window) for account in accounts for window in account.get("_unknownPeriods", [])}
-    pooled_periods = [pooled_window(group, now, incomplete=missing_primary or window_key(group[0]) in unknown_periods)
-                      for group in periods]
+    pooled_periods = [summarize(primary[key], incomplete=missing_primary or key in unknown_periods) for key in periods]
     unknown_scopes = {scope for account in accounts for scope in account.get("_unknownScoped", [])}
-    result = {"scoped": [pooled_window(group, now, incomplete=missing or key[0] in unknown_scopes)
+    result = {"scoped": [summarize(group, incomplete=missing or key[0] in unknown_scopes)
                         for key, group in sorted(scoped.items())],
               "otherPeriods": pooled_periods[1:],
               "accounts": [visible_account(account, now) for account in accounts]}
     if pooled_periods:
         result["weekly"] = pooled_periods[0]
     if sessions:
-        result["session"] = pooled_window(sessions, now, incomplete=missing or unknown_session, idle=zero_sessions)
+        result["session"] = summarize(sessions, incomplete=missing or unknown_session, idle=zero_sessions)
         if short_primary:
             result.setdefault("weekly", result["session"])
     elif unknown_session:

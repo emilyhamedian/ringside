@@ -42,13 +42,14 @@ class ProxyPolling(Isolated):
     def poll(self, *argv):
         return self.run_main("--providers", "claude", "--proxy-url", usage.PROXY_URL, *argv)["providers"]["claude"]
 
-    def test_pool_cache_uses_distinct_storage_and_no_direct_credit_or_history(self):
+    def test_pool_cache_keeps_its_own_history_and_no_direct_credit(self):
         result = self.poll()
         self.assertEqual((result["source"], result["proxyStatus"], result["fetchedAt"]), ("cliproxyapi", "connected", NOW))
         self.assertEqual(result["weekly"]["percent"], 50)
         self.assertEqual(result["affinity"], {"enabled": True, "ttlSeconds": 900})
         self.assertNotIn("credits", result)
-        self.assertNotIn("history", result["weekly"])
+        self.assertEqual(result["weekly"]["history"], [[NOW, 50]])
+        self.assertNotIn("history", result["accounts"][0]["weekly"])
         self.assertFalse(usage.CACHE_FILE.exists())
         self.assertFalse(usage.HISTORY_FILE.exists())
         self.direct.assert_not_called()
@@ -59,6 +60,48 @@ class ProxyPolling(Isolated):
         stored = (usage.CACHE_DIR / "usage-proxy.json").read_text()
         self.assertNotIn('"index"', stored)
         self.assertNotIn("resetTimes", stored)
+
+    def test_pool_history_keeps_drops_from_staggered_resets_and_ages_out(self):
+        first_reset, second_reset = NOW + usage.CACHE_TTL, NOW + 2 * usage.CACHE_TTL
+
+        def reply(credential, now, **kwargs):
+            first = credential == self.credential_a
+            reset = first_reset if first else second_reset
+            used = (80 if first else 70) if now < reset else 0
+            reset += usage.WEEK_SECONDS if now >= reset else 0
+            weekly = self.backend.window(used, reset, usage.WEEK_SECONDS, "week")
+            fable = self.backend.window(100 if used else 0, reset, usage.WEEK_SECONDS, "week")
+            return {"weekly": weekly, "scoped": [dict(fable, id="Fable", label="Fable")]}
+
+        self.client.usage.side_effect = reply
+        self.poll()
+        self.now = first_reset
+        self.poll()
+        self.now = second_reset
+        result = self.poll()
+        self.assertEqual(result["weekly"]["history"], [[NOW, 75], [first_reset, 35], [second_reset, 0]])
+        self.assertEqual(result["scoped"][0]["history"], [[NOW, 100], [first_reset, 50], [second_reset, 0]])
+        self.assertEqual(result["weekly"]["resetsAt"], first_reset + usage.WEEK_SECONDS)
+        self.assertNotIn("earlyReset", result["weekly"])
+        self.now = second_reset + usage.WEEK_SECONDS + 1
+        self.assertEqual(self.poll()["weekly"]["history"], [[self.now, 0]])
+
+    def test_pool_history_restarts_a_model_when_its_contributors_change(self):
+        advertise = self.credential_a
+
+        def reply(credential, now, **kwargs):
+            entry = self.pooled(50)
+            if credential == advertise:
+                entry["scoped"] = [dict(entry["weekly"], id="Fable", label="Fable")]
+            return entry
+
+        self.client.usage.side_effect = reply
+        self.assertEqual(self.poll()["scoped"][0]["history"], [[NOW, 50]])
+        self.now += usage.CACHE_TTL
+        advertise = self.credential_b
+        result = self.poll()
+        self.assertEqual(result["scoped"][0]["history"], [[self.now, 50]])
+        self.assertEqual(result["weekly"]["history"], [[NOW, 50], [self.now, 50]])
 
     def test_actual_hub_client_and_engine_do_not_report_routing_details(self):
         key = self.tmp / "management.key"
@@ -337,6 +380,7 @@ class ProxyPolling(Isolated):
         result = self.poll()
         self.assertEqual(result["weekly"]["percent"], 60)
         self.assertTrue(result["weekly"]["incomplete"])
+        self.assertEqual(result["weekly"]["history"], [[NOW, 50]])
         self.assertEqual(result["fetchedAt"], NOW)
         self.assertTrue(result["stale"])
         self.assertEqual([(row["state"], row["fetchedAt"]) for row in result["accounts"]],
@@ -405,6 +449,10 @@ class ProxyPolling(Isolated):
         self.assertNotIn("weekly", result)
         self.assertNotIn("fetchedAt", result)
         self.assertEqual([row["state"] for row in result["accounts"]], ["unavailable", "unavailable"])
+        self.now += 2 * usage.CACHE_TTL
+        self.client.usage.side_effect = None
+        self.client.usage.return_value = self.pooled(25)
+        self.assertEqual(self.poll()["weekly"]["history"], [[self.now, 25]])
         self.direct.assert_not_called()
 
     def test_revoked_credential_cannot_contribute_old_usage(self):

@@ -119,7 +119,8 @@ Nothing, until you turn on something that needs it.
   value; a new zero or disabled result clears it. Hiding the rows keeps the
   cache available for when they are shown again or another widget uses it.
   Hub readings have their own cache with anonymous account identifiers,
-  banked reset expiries and each account's remaining balance.
+  banked reset expiries, each account's remaining balance and up to seven
+  days of pooled usage samples from the existing quota checks.
 - **Graph history** stays in memory, unless you turn on *Keep the last hour
   and day across restarts* under General. Then each widget saves the
   average and peak of every graph for each 30-second and 10-minute step,

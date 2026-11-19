@@ -2262,7 +2262,8 @@ def proxy_report(backend, layout, now, affinity, failure=None, *, show_credits=F
             accounts.append(row)
         else:
             accounts.append({"state": "unavailable", "reason": error["reason"] if error else "timeout"})
-    report = backend.aggregate(accounts, now)
+    contributors = {}
+    report = backend.aggregate(accounts, now, contributors=contributors)
     report.update(source="cliproxyapi", pool=layout["pool"], proxyStatus="connected")
     if isinstance(affinity, dict):
         report["affinity"] = affinity
@@ -2280,6 +2281,7 @@ def proxy_report(backend, layout, now, affinity, failure=None, *, show_credits=F
             report["retryAfter"] = retry_at - now
     if management_hold:
         report.setdefault("retryAt", failure["retryAt"])
+    record_pool_history(backend, layout, report, contributors, now)
     return report
 
 
@@ -2320,6 +2322,7 @@ def proxy_roster(backend, members, region, previous, now, work):
         if work is not None and proxy_member_due(record, now):
             work.append((member, record))
     return {"pool": pool, "members": records,
+            "history": previous.get("history") if pool == previous.get("pool") else {},
             "regionNeeded": region == "auto" and any(member.region is None for member in members)}
 
 
@@ -2637,6 +2640,48 @@ def points(series):
             if isinstance(point, list) and len(point) == 2 and all(type(v) is int for v in point)]
 
 
+def append_history_point(series, at, percent):
+    # Keep the ends of a flat stretch without saving each poll in between.
+    point = [at, percent]
+    if len(series) >= 2 and series[-2][1] == series[-1][1] == percent:
+        series[-1] = point
+    else:
+        series.append(point)
+
+
+def record_pool_history(backend, layout, report, contributors, now):
+    """Keep seven days of comparable snapshots for the current pool."""
+    history = {}
+    stored = layout.get("history")
+    if isinstance(stored, dict):
+        for key, saved in stored.items():
+            if isinstance(saved, dict):
+                series = [point for point in points(saved.get("points")) if now - WEEK_SECONDS <= point[0] <= now]
+                if series:
+                    history[key] = {"members": saved.get("members"), "points": series[-HISTORY_POINTS:]}
+    members = list(layout["members"])
+    windows = [report.get("weekly"), *report["otherPeriods"], *report["scoped"]]
+    for window in windows:
+        indexes = contributors.get(id(window))
+        if not indexes:
+            continue
+        key = json.dumps([window.get("id"), *backend.window_key(window)])
+        previous = history.get(key, {})
+        series = previous.get("points", [])
+        if not window.get("incomplete"):
+            identities = sorted({members[index] for index in indexes})
+            if identities != previous.get("members"):
+                series = []
+            # The same poll can be served to several widget instances.
+            at = max(report["accounts"][index]["fetchedAt"] for index in indexes)
+            if not series or at > series[-1][0]:
+                append_history_point(series, at, window["percent"])
+            series = series[-HISTORY_POINTS:]
+            history[key] = {"members": identities, "points": series}
+        window["history"] = series
+    layout["history"] = history
+
+
 def reset_record(record):
     """A stored window's reset record as track_reset() makes one, or None
     for none or anything malformed."""
@@ -2701,10 +2746,7 @@ def extend_series(series, window, now):
     percent = window["percent"]
     if kept and kept[-1][1] - percent >= HISTORY_CLEARED:
         kept = []
-    if len(kept) >= 2 and kept[-2][1] == kept[-1][1] == percent:
-        kept[-1] = [now, percent]
-    else:
-        kept.append([now, percent])
+    append_history_point(kept, now, percent)
     return kept[-HISTORY_POINTS * math.ceil(max(WEEK_SECONDS, window["windowSeconds"]) / WEEK_SECONDS):]
 
 
