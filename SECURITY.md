@@ -46,7 +46,9 @@ Nothing, until you turn on something that needs it.
   trying the same key again. Updating the key file clears the wait.
   The hub sends the selected account's credentials to its provider's quota
   endpoint. For Codex it also checks with `chatgpt.com` for expiry dates
-  when the quota reply reports banked resets without dates. Ringside keeps
+  when the quota reply reports banked resets without dates. If that check
+  returns an incomplete list, Ringside waits an hour or until the reported
+  resets change before checking the dates again. Ringside keeps
   the key-file path in its settings and reads the key from that private
   file. It never downloads the hub's credential files or logs management
   keys or account identities.
@@ -78,6 +80,8 @@ Nothing, until you turn on something that needs it.
   holds both Claude reads back, honoring any longer wait Anthropic requests.
   For each eligible hub account, Claude reads its profile from
   `api.anthropic.com` to find which organization's prepaid balance to check.
+  Ringside reuses the organization ID while the hub reports the same
+  credential revision.
   Codex's and Kimi's credits come from their usage responses.
   These are read-only checks. *Show remaining credits* is on by default
   and controls whether the rows appear. Hiding them does not stop balance
@@ -121,9 +125,10 @@ Nothing, until you turn on something that needs it.
   indication. Failed balance reads preserve the last successful
   value; a new zero or disabled result clears it. Hiding the rows keeps the
   cache available for when they are shown again or another widget uses it.
-  Hub readings have their own cache with anonymous account identifiers,
-  banked reset expiries, each account's remaining balance and up to seven
-  days of pooled usage samples from the existing quota checks.
+  Hub readings have their own private cache with hashed account identifiers,
+  Claude organization IDs for balance checks, banked reset expiries, each
+  account's remaining balance and up to seven days of pooled usage samples
+  from the existing quota checks.
 - **Graph history** stays in memory, unless you turn on *Keep the last hour
   and day across restarts* under General. Then each widget saves the
   average and peak of every graph for each 30-second and 10-minute step,

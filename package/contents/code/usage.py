@@ -238,6 +238,7 @@ PROXY_AUTH_HOLD = 3600
 PROXY_MANAGEMENT_STOP = ("management-auth", "management-rate-limited")
 CREDITS_INTERVAL = CACHE_TTL
 CREDITS_TIMEOUT = 5
+CODEX_RESET_DETAILS_HOLD = 3600
 # A single grant can supply several tickets, without requiring one cached date for each.
 BANKED_EXPIRIES_MAX = 100
 # A collection shares the raw replies with credits without changing the weekly parsers.
@@ -2141,17 +2142,28 @@ def proxy_read_members(backend, client, work, now, started, deadline, region, el
                 record.pop("reading", None)
                 record.pop("fetchedAt", None)
                 record.pop("credits", None)
+                record.pop("creditOrganization", None)
             record["error"] = failure
             return None
         if (enabled := reading.pop("_creditsEnabled", None)) is not None:
             record["creditsEnabled"] = enabled
             if not enabled:
                 proxy_store_credit(record, "disabled", None, now)
+                record.pop("creditOrganization", None)
             elif record.get("credits", {}).get("status") == "disabled":
                 record.pop("credits")
         if credit := reading.pop("_credit", None):
             status, balance = credit
             proxy_store_credit(record, status, balance, now, "other" if status == "error" else None)
+        if credential.provider == "codex":
+            previous = record.get("reading")
+            previous = previous.get("bankedResets") if isinstance(previous, dict) else None
+            banked = reading.get("bankedResets")
+            if (banked and not banked["expires"] and banked_resets_well_formed(previous)
+                    and banked["count"] == previous["count"] and all(at > now for at in previous["expires"])):
+                reading["bankedResets"] = banked = previous
+            if (banked != previous and record.get("extrasHold", {}).get("reason") == "reset-details-incomplete"):
+                record.pop("extrasHold")
         record.update(reading=reading, fetchedAt=now)
         record.pop("error", None)
         return None
@@ -2202,7 +2214,12 @@ def proxy_read_extras(backend, client, work, now, started, deadline, eligible, p
         account_deadline = min(until, time.monotonic() + CREDITS_TIMEOUT / 2)
         try:
             if claude:
-                reply = client.claude_credits(credential, prepaid_request=claude_prepaid_request,
+                org = record.get("creditOrganization")
+                if org is None:
+                    org = client.claude_organization(credential, deadline=account_deadline)
+                    if credential.revision:
+                        record["creditOrganization"] = org
+                reply = client.claude_credits(credential, org=org, prepaid_request=claude_prepaid_request,
                                               deadline=account_deadline)
                 proxy_store_credit(record, "ok", parse_claude_credits(reply), now)
             else:
@@ -2210,7 +2227,11 @@ def proxy_read_extras(backend, client, work, now, started, deadline, eligible, p
                 details = codex_banked_resets(reply)
                 if (details and details["count"] == banked["count"]
                         and len(details["expires"]) > len(banked["expires"])):
-                    reading["bankedResets"] = details
+                    reading["bankedResets"] = banked = details
+                if len(banked["expires"]) < banked["count"]:
+                    finished = now + math.ceil(time.monotonic() - started)
+                    record["extrasHold"] = proxy_failure("reset-details-incomplete", finished, CODEX_RESET_DETAILS_HOLD)
+                    continue
             record.pop("extrasHold", None)
         except (backend.ProxyError, ValueError, TypeError, OverflowError) as err:
             reason = getattr(err, "reason", "invalid-response")
@@ -2218,6 +2239,8 @@ def proxy_read_extras(backend, client, work, now, started, deadline, eligible, p
             finished = now + math.ceil(time.monotonic() - started)
             failure = proxy_failure(reason, finished, retry_after)
             if claude:
+                if reason in ("upstream-auth", "invalid-response"):
+                    record.pop("creditOrganization", None)
                 proxy_store_credit(record, "error", None, now, proxy_credit_reason(reason))
             if reason in PROXY_MANAGEMENT_STOP:
                 return dict(failure, optional=True)
@@ -2315,6 +2338,9 @@ def proxy_roster(backend, members, region, previous, now, work):
             # optional values require a fresh observation from that file.
             record.pop("credits", None)
             record.pop("creditsEnabled", None)
+            record.pop("creditOrganization", None)
+            if record.get("extrasHold", {}).get("reason") == "reset-details-incomplete":
+                record.pop("extrasHold")
             if isinstance(reading := record.get("reading"), dict):
                 reading.pop("bankedResets", None)
         if member.revision:

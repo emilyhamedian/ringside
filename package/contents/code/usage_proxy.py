@@ -111,6 +111,16 @@ def file_revision(info):
     return info.st_dev, info.st_ino, info.st_mtime_ns, info.st_ctime_ns, info.st_size
 
 
+def organization_id(value):
+    try:
+        org = uuid.UUID(value)
+        if org.int:
+            return str(org)
+    except (TypeError, ValueError, AttributeError):
+        pass
+    raise ProxyError("invalid-response")
+
+
 def decode_json(raw):
     try:
         return json.loads(raw)
@@ -324,17 +334,13 @@ class Client:
             reading.update(extras(credential.provider, body, region, now))
         return reading
 
-    def claude_credits(self, credential, *, prepaid_request, deadline):
+    def claude_organization(self, credential, *, deadline):
         profile = self._account_get(credential, CLAUDE_OAUTH + "/profile", CLAUDE_HEADERS,
                                     deadline, limit=EXTRA_RESPONSE_LIMIT)
-        raw_org = record(profile.get("organization")).get("uuid")
-        try:
-            org = uuid.UUID(raw_org)
-            if not org.int:
-                raise ValueError
-        except (TypeError, ValueError, AttributeError):
-            raise ProxyError("invalid-response") from None
-        url, headers = prepaid_request(str(org), TOKEN)
+        return organization_id(record(profile.get("organization")).get("uuid"))
+
+    def claude_credits(self, credential, *, org, prepaid_request, deadline):
+        url, headers = prepaid_request(organization_id(org), TOKEN)
         return self._account_get(credential, url, headers, deadline, limit=EXTRA_RESPONSE_LIMIT)
 
     def codex_reset_details(self, credential, *, deadline):

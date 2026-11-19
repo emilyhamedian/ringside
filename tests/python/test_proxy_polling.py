@@ -242,12 +242,24 @@ class ProxyPolling(Isolated):
         kept = {row["weekly"]["percent"]: row for row in cached["claude"]["accounts"]}
         self.assertEqual(kept[25]["bankedResets"], {"count": 2, "expires": []})
         self.assertEqual(len(requests), 10)
-        serialized = json.dumps(result) + (usage.CACHE_DIR / "usage-proxy.json").read_text()
-        for private in (org, "fixture-invalid-org", *profiles, *codex, *codex.values(), "fixture-person", "fixture-management-secret",
+        stored = (usage.CACHE_DIR / "usage-proxy.json").read_text()
+        self.assertIn(org, stored)
+        self.assertNotIn(org, json.dumps(result))
+        serialized = json.dumps(result) + stored
+        for private in ("fixture-invalid-org", *profiles, *codex, *codex.values(), "fixture-person", "fixture-management-secret",
                         "2026-09-09T00:00:00Z"):
             self.assertNotIn(private, serialized)
         self.direct.assert_not_called()
         self.assertFalse(usage.CACHE_FILE.exists())
+
+        self.now = NOW + usage.CACHE_TTL + 2
+        poll(True)
+        a_profiles = lambda: sum(index == "fixture-claude-a" and url.endswith("/profile") for index, url, _ in requests)
+        self.assertEqual(a_profiles(), 1)
+        rows[0]["modtime"] = "2026-09-09T00:05:00Z"
+        self.now += usage.CACHE_TTL + 2
+        poll(True)
+        self.assertEqual(a_profiles(), 2)
 
     def test_claude_disabled_credits_remain_off_until_usage_enables_them(self):
         enabled = False
@@ -367,6 +379,30 @@ class ProxyPolling(Isolated):
             self.now += usage.CACHE_TTL
         self.assertEqual(self.client.usage.call_count, 2)
         self.client.codex_reset_details.assert_called_once()
+
+    def test_codex_does_not_refetch_missing_expiries_on_every_usage_read(self):
+        codex = self.backend.Credential("codex", "fingerprint-codex", "codex")
+        self.client.credentials.return_value = {"codex": [codex]}
+        count = 2
+        expires = NOW + 3 * 3600
+        self.client.usage.side_effect = lambda *a, **kw: dict(self.pooled(50), bankedResets={"count": count, "expires": []})
+        self.client.codex_reset_details.return_value = {"available_count": count, "credits": [
+            {"status": "available", "expires_at": expires},
+        ]}
+
+        def poll():
+            return self.run_main("--providers", "codex", "--proxy-url", usage.PROXY_URL)["providers"]["codex"]
+
+        self.assertEqual(poll()["accounts"][0]["bankedResets"], {"count": 2, "expires": [expires]})
+        self.now += usage.CACHE_TTL
+        self.assertEqual(poll()["accounts"][0]["bankedResets"], {"count": 2, "expires": [expires]})
+        self.client.codex_reset_details.assert_called_once()
+        self.assertEqual(self.client.usage.call_count, 2)
+        count = 1
+        self.client.codex_reset_details.return_value["available_count"] = count
+        self.now += usage.CACHE_TTL
+        self.assertEqual(poll()["accounts"][0]["bankedResets"], {"count": 1, "expires": [expires]})
+        self.assertEqual(self.client.codex_reset_details.call_count, 2)
 
     def test_one_upstream_rate_limit_keeps_same_roster_reading_and_original_age(self):
         self.poll()
