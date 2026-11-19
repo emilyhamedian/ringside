@@ -263,6 +263,7 @@ PopupPage {
         innerLimit: popup.pooled ? popup.innerLimit : null
         texts: words
         nowMs: popup.nowMs
+        showCredits: popup.usage.showCredits
     }
 
     // Shown only beside a check that worked, so never with CheckStatus.
@@ -535,22 +536,12 @@ PopupPage {
 
         // The banked resets, on their own line under the pace line and laid
         // out the same way.
-        LineTile {
-            objectName: "resets"
-            visible: popup.entry?.bankedResets !== undefined && !popup.struck
-            caption: i18nc("@title:group resets the account has saved to use later", "Banked resets")
-            // The tickets' accessible name already says "3 banked resets".
-            captionRead: false
-            reading: resetTickets
-            readingCap: resetTickets.cap
+        BankedResets {
+            id: resetTickets
+            banked: popup.struck ? null : popup.entry?.bankedResets ?? null
+            texts: words
+            nowMs: popup.nowMs
             minimumRowHeight: Math.ceil(paceReading.implicitHeight)
-
-            ResetTickets {
-                id: resetTickets
-                banked: popup.entry?.bankedResets ?? ({ count: 0, expires: [] })
-                texts: words
-                nowMs: popup.nowMs
-            }
         }
     }
 

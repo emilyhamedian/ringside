@@ -54,6 +54,7 @@ Item {
     property var entries: ({})
     // Credit reports stay independent of the weekly reading kept on failure.
     property var credits: ({})
+    readonly property bool showCredits: config.showCredits === true
     // Per id, what the last check that reported on it found draining since
     // the check before (see code/drain.js).
     property var drains: ({})
@@ -196,7 +197,7 @@ Item {
     }
 
     function credit(id) {
-        return config.showCredits === true && ids.includes(id) && !Limits.pooled(entry(id)) ? credits[id] ?? null : null;
+        return showCredits && ids.includes(id) && !Limits.pooled(entry(id)) ? credits[id] ?? null : null;
     }
 
     function creditUsed(id, nowMs) {

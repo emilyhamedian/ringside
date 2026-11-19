@@ -20,6 +20,7 @@ PlasmaComponents.ScrollView {
     required property var innerLimit
     required property Words texts
     required property real nowMs
+    required property bool showCredits
 
     readonly property real edge: Style.contentEdge(Kirigami.Units.largeSpacing)
     readonly property var accounts: Array.from(entry?.accounts ?? [])
@@ -195,8 +196,7 @@ PlasmaComponents.ScrollView {
                 visible: pool.innerLimit !== null
                 label: pool.innerLimit?.label ?? ""
                 window: pool.innerLimit ?? ({ percent: 0 })
-                reset: Limits.nextReset(pool.innerLimit, pool.nowMs)
-                resetCaption: pool.innerLimit?.id === "Fable" ? "" : pool.texts.poolWords.resetCaption(pool.innerLimit)
+                reset: NaN
                 stale: pool.stale
             }
 
@@ -247,7 +247,6 @@ PlasmaComponents.ScrollView {
                     }
 
                     Detail {
-                        id: accountStatus
                         visible: text !== ""
                         horizontalAlignment: Text.AlignRight
                         text: {
@@ -258,39 +257,7 @@ PlasmaComponents.ScrollView {
                             if (reading.state === "stale" || pool.entry.lastError !== undefined) {
                                 return i18nc("@info:status usage of a pooled account", "Last known reading");
                             }
-                            if (reading.session?.percent >= 100 && reading.session.resetsAt > pool.nowMs / 1000) {
-                                return i18nc("@info:status a pooled account waiting for its session to reset", "Session limit reached");
-                            }
-                            if (reading.weekly?.percent >= 100 && reading.weekly.resetsAt > pool.nowMs / 1000) {
-                                return i18nc("@info:status a pooled account waiting for its main limit to reset", "Limit reached");
-                            }
                             return "";
-                        }
-                    }
-
-                    Item {
-                        visible: ready.visible
-                        Layout.fillWidth: true
-                    }
-
-                    Rectangle {
-                        id: ready
-                        objectName: "poolAccountReady"
-                        visible: accountStatus.text === ""
-                        implicitWidth: Kirigami.Units.iconSizes.small
-                        implicitHeight: implicitWidth
-                        radius: width / 2
-                        color: "transparent"
-                        border.color: Kirigami.Theme.positiveTextColor
-                        Accessible.role: Accessible.StaticText
-                        Accessible.name: i18nc("@info:status usage of a pooled account", "Ready")
-
-                        Text {
-                            anchors.centerIn: parent
-                            text: "✓"
-                            color: ready.border.color
-                            font.pixelSize: Math.round(ready.implicitWidth * 0.75)
-                            Accessible.ignored: true
                         }
                     }
                 }
@@ -307,6 +274,18 @@ PlasmaComponents.ScrollView {
                         stale: account.modelData.state === "stale" || pool.entry.lastError !== undefined
                         Accessible.name: i18nc("@info:accessible account name and window", "%1, %2", account.name, label)
                     }
+                }
+
+                BankedResets {
+                    id: resetTickets
+                    banked: account.modelData.bankedResets ?? null
+                    texts: pool.texts
+                    nowMs: pool.nowMs
+                }
+
+                CreditsRemaining {
+                    credit: pool.showCredits ? account.modelData.credits ?? null : null
+                    minimumRowHeight: resetTickets.ticketHeight
                 }
             }
         }

@@ -13,7 +13,9 @@ function example(now, provider = "claude") {
     const second = 4 * day + 5 * 3600 + 60;
     const accounts = [
         { state: "ok", weekly: weekly(82, first), scoped: [fable(100, first)],
-          session: { period: "session", percent: 100, windowSeconds: 18000, resetsAt: now + 47 * 60 } },
+          session: { period: "session", percent: 100, windowSeconds: 18000, resetsAt: now + 47 * 60 },
+          bankedResets: { count: 2, expires: [now + 2 * day + 60, now + 12 * day + 60] },
+          credits: { status: "ok", balance: { amount: 18.42, currency: "USD", precision: 2 }, fetchedAt: now } },
         { state: "ok", weekly: weekly(35, second), scoped: [fable(58, second)] }
     ];
     const entry = {
@@ -34,6 +36,7 @@ function example(now, provider = "claude") {
         for (const account of accounts) {
             account.scoped = [];
         }
+        accounts[0].credits.balance = { amount: 1250.5, currency: "", precision: 2 };
         accounts[1].otherPeriods = [monthly];
     }
     return entry;

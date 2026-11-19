@@ -2795,8 +2795,9 @@ TestRoot {
             const expired = usage.createdAt - 60;
             const zeroReset = usage.createdAt + 26 * 3600;
             entry.weekly.resetTimes.unshift(expired, zeroReset);
+            entry.accounts[1].weekly.percent = 100;
             entry.accounts.push({ state: "ok", weekly: { percent: 0, period: "week", resetsAt: zeroReset }, scoped: [] });
-            entry.scoped.push({ id: "Sonnet", label: "Sonnet", percent: 41, accountAverage: true, resetTimes: [] });
+            entry.scoped.push({ id: "Sonnet", label: "Sonnet", percent: 41, accountAverage: true, resetTimes: [zeroReset] });
             usage.entries = { claude: entry };
             const popup = load("claude");
             const cell = cellComponent.createObject(loaders[0], { monitor: monitor });
@@ -2812,16 +2813,21 @@ TestRoot {
             verify(!popup.starterShown);
             compare(root.all(popup, child => child.visible && child.text === "CLIProxyAPI").length, 1);
             verify(root.find(popup, child => child.visible && child.text === "Session affinity"));
-            compare(root.all(popup, child => child.visible && child.objectName === "poolAccountReady").length, 2);
-            const fable = root.find(popup, child => child.objectName === "poolLimit" && child.label === "Fable");
-            compare(fable.resetCaption, "");
-            verify(fable.resetText !== "");
-            compare(root.all(popup, child => child.objectName === "pooledAccount").map(child => child.name),
-                    [1, 2, 3].map(index => "Account " + Format.whole(index)));
-            verify(root.find(popup, child => child.objectName === "poolLimit" && child.label === root.localized("5-hour session")));
+            const accounts = root.all(popup, child => child.objectName === "pooledAccount");
+            compare(accounts.map(child => child.name), [1, 2, 3].map(index => "Account " + Format.whole(index)));
+            verify(!findChild(popup, "poolAccountReady"));
+            verify(!root.find(popup, child => child.visible && ["Session limit reached", "Limit reached"].includes(child.text)));
+            const pooledModel = label => root.find(popup, child => child.objectName === "poolLimit" && child.label === label);
+            compare(pooledModel("Fable").resetText, "");
+            verify(header(popup).partsShown);
+            const session = root.find(accounts[0], child => child.objectName === "poolLimit" && child.label === root.localized("5-hour session"));
+            verify(session.resetText !== "");
+            const accountModel = root.find(accounts[0], child => child.objectName === "poolLimit" && child.label === "Weekly · Fable");
+            verify(accountModel.resetText !== "");
             usage.innerChoices = { claude: "Sonnet" };
             compare(gauge.innerValue, 41);
             compare(panelGauge.innerValue, 41);
+            compare(pooledModel("Sonnet").resetText, "");
             usage.innerChoices = { claude: "none" };
             verify(!gauge.inner && !panelGauge.inner);
             const lastKnown = Object.assign({}, entry, { accounts: entry.accounts.map(account => Object.assign({}, account, { state: "stale" })) });
@@ -2848,12 +2854,48 @@ TestRoot {
             verify(root.find(body, child => child.visible && child.text === "Some readings are incomplete."));
             verify(root.find(body, child => child.visible && child.text === "Last known reading"));
             verify(root.find(body, child => child.visible && child.text === "Unavailable"));
-            compare(root.all(body, child => child.objectName === "poolLimit" && child.label === "Monthly").length, 2);
+            const months = root.all(body, child => child.objectName === "poolLimit" && child.label === "Monthly");
+            compare(months.length, 2);
+            verify(months.every(month => month.resetText !== ""));
             const sessions = root.all(body, child => child.objectName === "poolLimit" && child.label === root.localized("5-hour session"));
             compare(sessions.length, 3);
             compare(sessions[2].usageText, "unavailable", "a reported but unreadable session remains visible");
             const unavailable = root.all(body, child => child.objectName === "pooledAccount")[2];
             verify(!root.find(unavailable, child => child.objectName === "poolLimit"));
+        }
+
+        function test_poolShowsBalancesUnderTheirOwnAccount() {
+            const usage = monitor.usage;
+            const entry = PoolStates.example(usage.createdAt);
+            const balance = { amount: 10.5, currency: "EUR", precision: 2 };
+            entry.accounts[1].credits = { status: "error", balance: balance, fetchedAt: usage.createdAt - 3600, reason: "offline" };
+            entry.accounts.push({ state: "ok", credits: { status: "ok", balance: { amount: 0, currency: "USD", precision: 2 },
+                                                        fetchedAt: usage.createdAt } });
+            usage.entries = { claude: entry };
+            usage.credits = { claude: { status: "ok", balance: balance, fetchedAt: usage.createdAt } };
+            const popup = load("claude", true);
+            const accounts = root.all(popup, child => child.objectName === "pooledAccount");
+            const tickets = accounts.map(account => findChild(account, "resets"));
+            const credits = accounts.map(account => root.find(account, child => child.credit !== undefined));
+            compare(tickets.map(row => row.visible), [true, false, false]);
+            compare(credits.map(row => row.visible), [true, true, false]);
+            compare(root.all(popup, child => child.visible && child.credit !== undefined).length, 2);
+            compare(tickets[0].reading.slots.map(slot => slot.text), [root.localized("2d"), root.localized("12d")]);
+            verify(credits[0].y >= tickets[0].y + tickets[0].height);
+            compare(credits[0].value, root.localized("18.42"));
+            compare(credits[0].unit, "USD");
+            compare(credits[1].label, "Credits remaining · cached");
+            verify(credits[1].Accessible.description.includes("could not be reached"));
+            usage.showCredits = false;
+            tryVerify(() => credits.every(row => !row.visible));
+            verify(tickets[0].visible);
+            usage.showCredits = true;
+            tryVerify(() => credits[0].visible && credits[1].visible);
+            const expiries = entry.accounts[0].bankedResets.expires;
+            popup.nowMs = (expiries[0] + 1) * 1000;
+            compare(tickets[0].reading.slots.length, 1);
+            popup.nowMs = (expiries[1] + 1) * 1000;
+            verify(!tickets[0].visible && credits[0].visible, "expired tickets disappear before the next helper report");
         }
 
         function test_creditRow_data() {

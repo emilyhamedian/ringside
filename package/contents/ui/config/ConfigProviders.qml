@@ -299,7 +299,7 @@ ConfigPage {
         }
 
         Note {
-            text: i18nc("@info", "Balances for direct logins are checked even when hidden. Claude makes an extra read from Anthropic alongside its usage check, at most once every 5 minutes. Codex and Kimi use their existing usage checks.")
+            text: i18nc("@info", "Balances for direct logins and hub accounts are checked even when hidden. Claude checks its Anthropic balance at most once every 5 minutes per account. For hub accounts, it first checks the profile to see whether prepaid credits are enabled. Codex and Kimi use their existing usage checks.")
         }
 
         Item {

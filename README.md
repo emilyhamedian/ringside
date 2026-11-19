@@ -100,9 +100,9 @@ plan, such as the five-hour limit.
 In the hub view, the ring and popup show usage across accounts for the same
 quota window. When the provider gives only percentages, Ringside averages
 them across accounts. The panel counts down to the next account reset
-for the outer ring's window. The popup lists each account's limits and reset
-times. The graph, pace, credits and banked resets are available in the
-direct view.
+for the outer ring's window. Each account section shows its own limits,
+reset times, banked reset tickets and remaining credits when reported.
+The graph and pace line are available in the direct view.
 
 If a check fails, the ring greys out, and is crossed out if it keeps failing;
 the popup says why. If a limit resets early, the popup tells you. Ringside
@@ -111,10 +111,11 @@ sign-in. If one of those expires, open that app and Ringside picks it up
 within five minutes. If Plasma can't find `claude` or `codex`, tell it where
 they are under *AI Providers*.
 
-**Credits.** For Claude, Codex and Kimi, the popup shows your remaining
-credits under the graph. For Kimi, that's your Extra Usage balance. When
-you've used up a limit and are spending credits, the ring turns blue. *Show
-remaining credits* under *AI Providers* hides them.
+**Credits.** For Claude, Codex and Kimi, the popup shows remaining credits
+under the graph in the direct view and under each account in the hub view.
+For Kimi, that's your Extra Usage balance. In the direct view, the ring turns
+blue when you've used up a limit and are spending credits. *Show remaining
+credits* under *AI Providers* hides the balances.
 
 **Banked resets.** If your Claude or Codex account has banked resets, the
 popup shows a ticket for each one, with how long until it expires. A reset
