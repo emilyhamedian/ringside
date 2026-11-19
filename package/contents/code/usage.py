@@ -212,6 +212,8 @@ CLAUDE_BETA_HEADER = "oauth-2025-04-20"
 # banked resets stop showing; the limits are unaffected.
 CLAUDE_USAGE_QUERY = "?cedar_ember=1"
 CLAUDE_CODE_AGENT = "claude-cli/2.1.321 (external, cli)"
+CLAUDE_READ_HEADERS = {"anthropic-beta": CLAUDE_BETA_HEADER, "Content-Type": "application/json",
+                       "User-Agent": CLAUDE_CODE_AGENT}
 # Cloudflare in front of platform.claude.com rejects the stock urllib agent outright.
 USER_AGENT = f"ringside/{VERSION}"
 # Seconds before expiry to refresh the access token.
@@ -1209,10 +1211,8 @@ def parse_session(usage):
 def claude_usage():
     token = claude_access_token()
     usage = http_json(CLAUDE_USAGE_URL + CLAUDE_USAGE_QUERY, {
+        **CLAUDE_READ_HEADERS,
         "Authorization": f"Bearer {token}",
-        "anthropic-beta": CLAUDE_BETA_HEADER,
-        "Content-Type": "application/json",
-        "User-Agent": CLAUDE_CODE_AGENT,
     })
     context = CREDITS_CONTEXT.get()
     if context is not None:
@@ -1227,6 +1227,7 @@ def claude_usage():
 # limits, so Ringside asks with whichever credential it finds first.
 KIMI_HOSTS = {"global": "api.kimi.ai", "china": "api.kimi.com"}
 KIMI_USAGE_PATH = "/coding/v1/usages"
+KIMI_USAGE_URLS = {region: f"https://{host}{KIMI_USAGE_PATH}" for region, host in KIMI_HOSTS.items()}
 # Where Kimi Code's CLI and VS Code extension keep their settings and
 # sign-in, and the base URLs that mean a Kimi Code subscription. A Moonshot
 # Platform key, for any other base URL, is pay-as-you-go and never sent.
@@ -1404,7 +1405,7 @@ def kimi_usage():
     for index, (source, region, token) in enumerate(found):
         event("debug", "kimi", "credential", source=source)
         try:
-            body = http_json(f"https://{KIMI_HOSTS[region]}{KIMI_USAGE_PATH}",
+            body = http_json(KIMI_USAGE_URLS[region],
                              {"Authorization": f"Bearer {token}", "Accept": "application/json"})
         except SignedOut:
             if index + 1 < len(found):
@@ -2030,6 +2031,12 @@ def proxy_backend():
     return sys.modules[name]
 
 
+def proxy_client(url, key):
+    return proxy_backend().Client(url, key, claude_usage_url=CLAUDE_USAGE_URL + CLAUDE_USAGE_QUERY,
+                                  claude_profile_url=CLAUDE_OAUTH_URL + "/profile", claude_headers=CLAUDE_READ_HEADERS,
+                                  kimi_usage_urls=KIMI_USAGE_URLS)
+
+
 def read_proxy_cache():
     try:
         cache = read_json(CACHE_DIR / "usage-proxy.json")
@@ -2373,7 +2380,7 @@ def collect_proxy(options, now, started, eligible):
     scope = hashlib.sha256(os.fsencode(url) + b"\0" + os.fsencode(key)).hexdigest()
     previous = cache.get(scope) if isinstance(cache.get(scope), dict) else {}
     try:
-        client = backend.Client(url, key)
+        client = proxy_client(url, key)
     except backend.ProxyError as err:
         status = "key-needed" if err.reason == "key-file" else "configuration"
         if status == "key-needed" and auto_discovery and not Path(key).exists():

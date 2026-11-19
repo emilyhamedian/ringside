@@ -85,7 +85,7 @@ class ProxyClient(unittest.TestCase):
         self.key_file.write_text(KEY + "\n")
 
     def client(self, url="http://localhost:8317"):
-        return proxy.Client(url, self.key_file)
+        return usage.proxy_client(url, self.key_file)
 
     def server(self, **replies):
         server = SimpleNamespace(server_port=8317, requests=[], replies={

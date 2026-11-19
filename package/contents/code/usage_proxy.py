@@ -32,13 +32,9 @@ DAY = 24 * HOUR
 SESSION = 5 * HOUR
 WEEK = 7 * DAY
 TOKEN = "Bearer $TOKEN$"
-CLAUDE_OAUTH = "https://api.anthropic.com/api/oauth"
-CLAUDE_HEADERS = {"anthropic-beta": "oauth-2025-04-20", "Content-Type": "application/json",
-                  "User-Agent": "claude-cli/2.1.321 (external, cli)"}
 CODEX_WHAM = "https://chatgpt.com/backend-api/wham"
 CODEX_HEADERS = {"Content-Type": "application/json", "User-Agent": "codex-tui"}
 KIMI_REGIONS = {"kimi-ai": "global", "kimi": "china"}
-KIMI_HOSTS = {"global": "api.kimi.ai", "china": "api.kimi.com"}
 PROVIDERS = {"claude": "claude", "codex": "codex", "kimi": "kimi", "kimi-ai": "kimi"}
 MODEL_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}")
 ROUTING_ID = re.compile(r"[A-Za-z0-9_-]{1,128}")
@@ -235,9 +231,13 @@ def discover(url, *, deadline=None):
 
 
 class Client:
-    def __init__(self, url, key_file):
+    def __init__(self, url, key_file, *, claude_usage_url, claude_profile_url, claude_headers, kimi_usage_urls):
         self._host, self._port = loopback_address(url)
         self._key, revision = read_key(key_file)
+        self._claude_usage_url = claude_usage_url
+        self._claude_profile_url = claude_profile_url
+        self._claude_headers = claude_headers
+        self._kimi_usage_urls = kimi_usage_urls
         self.configuration_fingerprint = self._fingerprint("configuration", revision)
 
     def _fingerprint(self, *parts):
@@ -315,16 +315,16 @@ class Client:
             raise ProxyError("upstream-auth")
         region = None
         if credential.provider == "claude":
-            body = self._account_get(credential, CLAUDE_OAUTH + "/usage?cedar_ember=1", CLAUDE_HEADERS, deadline)
+            body = self._account_get(credential, self._claude_usage_url, self._claude_headers, deadline)
             reading = parse_claude(body, claude_parser)
         elif credential.provider == "codex":
             body = self._account_get(credential, CODEX_WHAM + "/usage", CODEX_HEADERS, deadline)
             reading = parse_codex(body, now)
         elif credential.provider == "kimi":
             region = credential.region if kimi_region == "auto" else kimi_region
-            if region not in KIMI_HOSTS:
+            if region not in self._kimi_usage_urls:
                 raise ProxyError("unsupported-credential")
-            body = self._account_get(credential, f"https://{KIMI_HOSTS[region]}/coding/v1/usages", {}, deadline)
+            body = self._account_get(credential, self._kimi_usage_urls[region], {}, deadline)
             reading = parse_kimi(body, kimi_parser)
         else:
             raise ProxyError("unsupported-credential")
@@ -335,7 +335,7 @@ class Client:
         return reading
 
     def claude_organization(self, credential, *, deadline):
-        profile = self._account_get(credential, CLAUDE_OAUTH + "/profile", CLAUDE_HEADERS,
+        profile = self._account_get(credential, self._claude_profile_url, self._claude_headers,
                                     deadline, limit=EXTRA_RESPONSE_LIMIT)
         return organization_id(record(profile.get("organization")).get("uuid"))
 
