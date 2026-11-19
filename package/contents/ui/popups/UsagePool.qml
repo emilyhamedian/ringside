@@ -193,8 +193,7 @@ PlasmaComponents.ScrollView {
 
             Detail {
                 visible: text !== ""
-                text: pool.entry?.proxyStatus !== "connected" ? pool.texts.poolWords.sourceStatus(pool.entry?.proxyStatus)
-                                                              : pool.entry?.lastError ?? ""
+                text: pool.texts.poolWords.failure(pool.entry)
             }
         }
 
@@ -283,13 +282,12 @@ PlasmaComponents.ScrollView {
                         horizontalAlignment: Text.AlignRight
                         text: {
                             const reading = account.modelData;
-                            if (reading.state === "unavailable") {
-                                return i18nc("@info:status usage of a pooled account", "Unavailable");
-                            }
-                            if (reading.state === "stale" || pool.entry.lastError !== undefined) {
-                                return i18nc("@info:status usage of a pooled account", "Last known reading");
-                            }
-                            return "";
+                            const state = reading.state === "unavailable"
+                                ? i18nc("@info:status usage of a pooled account", "Unavailable")
+                                : reading.state === "stale" || pool.entry.lastError !== undefined
+                                ? i18nc("@info:status usage of a pooled account", "Last known reading") : "";
+                            const problem = pool.texts.poolWords.accountProblem(reading.reason);
+                            return state && problem ? i18nc("@info:status account reading and issue", "%1 · %2", state, problem) : state;
                         }
                     }
                 }
@@ -303,7 +301,7 @@ PlasmaComponents.ScrollView {
                         label: modelData.label
                         window: modelData.window
                         reset: window.resetsAt ?? NaN
-                        stale: account.modelData.state === "stale" || pool.entry.lastError !== undefined
+                        stale: window.incomplete === true || account.modelData.state === "stale" || pool.entry.lastError !== undefined
                         Accessible.name: i18nc("@info:accessible account name and window", "%1, %2", account.name, label)
                     }
                 }

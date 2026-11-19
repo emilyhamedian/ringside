@@ -68,7 +68,8 @@ class ProxyPolling(Isolated):
             first = credential == self.credential_a
             reset = first_reset if first else second_reset
             used = (80 if first else 70) if now < reset else 0
-            reset += usage.WEEK_SECONDS if now >= reset else 0
+            if now >= reset:
+                reset += ((now - reset) // usage.WEEK_SECONDS + 1) * usage.WEEK_SECONDS
             weekly = self.backend.window(used, reset, usage.WEEK_SECONDS, "week")
             fable = self.backend.window(100 if used else 0, reset, usage.WEEK_SECONDS, "week")
             return {"weekly": weekly, "scoped": [dict(fable, id="Fable", label="Fable")]}
@@ -390,6 +391,29 @@ class ProxyPolling(Isolated):
         self.poll("--retry-providers", "claude")
         self.assertEqual([call.args[0] for call in self.client.usage.call_args_list], [self.credential_a])
         self.direct.assert_not_called()
+
+    def test_pool_uses_zero_for_a_cached_window_that_already_reset(self):
+        reset = NOW + usage.CACHE_TTL
+        b = self.credential_b
+
+        def reply(credential, now, **kwargs):
+            if credential == b and now >= reset:
+                raise self.backend.ProxyError("timeout")
+            entry = self.pooled(95 if credential == b else 10)
+            if credential == b:
+                entry["weekly"]["resetsAt"] = reset
+            return entry
+
+        self.client.usage.side_effect = reply
+        self.assertEqual(self.poll()["weekly"]["percent"], 53)
+        self.now = reset
+        result = self.poll()
+        self.assertEqual(result["weekly"]["percent"], 5)
+        self.assertTrue(result["weekly"]["incomplete"])
+        self.assertEqual(result["weekly"]["history"], [[NOW, 53]])
+        self.assertEqual(result["accounts"][1]["weekly"]["percent"], 0)
+        self.assertIsNone(result["accounts"][1]["weekly"]["resetsAt"])
+        self.assertTrue(result["accounts"][1]["weekly"]["incomplete"])
 
     def test_management_rate_limit_stops_the_round_and_holds_other_providers(self):
         codex = self.backend.Credential("codex", "fingerprint-codex", "codex")

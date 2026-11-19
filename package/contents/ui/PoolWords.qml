@@ -35,6 +35,41 @@ QtObject {
         }
     }
 
+    function failure(entry) {
+        const source = entry?.proxyStatus;
+        if (source && source !== "connected") {
+            return sourceStatus(source);
+        }
+        if (entry?.lastError !== undefined) {
+            return entry.lastError;
+        }
+        if (entry?.status === "rate_limited") {
+            return i18nc("@info CLIProxyAPI usage snapshot", "The provider asked Ringside to wait before checking again.");
+        }
+        return entry?.status === "error" ? sourceStatus("unsupported") : "";
+    }
+
+    function accountProblem(reason) {
+        switch (reason) {
+        case "upstream-auth":
+            return i18nc("@info:status usage of a pooled account", "Sign in again in CLIProxyAPI");
+        case "rate-limited":
+            return i18nc("@info:status usage of a pooled account", "Rate limited");
+        case "offline":
+            return i18nc("@info:status usage of a pooled account", "Could not connect");
+        case "timeout":
+            return i18nc("@info:status usage of a pooled account", "Check timed out");
+        case "server":
+            return i18nc("@info:status usage of a pooled account", "Provider unavailable");
+        case "invalid-response":
+            return i18nc("@info:status usage of a pooled account", "Unreadable quota response");
+        case "unsupported-credential":
+            return i18nc("@info:status usage of a pooled account", "Unsupported sign-in");
+        default:
+            return "";
+        }
+    }
+
     function resetCaption(window) {
         if (window?.incomplete) {
             return i18nc("@info:label under a countdown for an incomplete pool", "next known reset");

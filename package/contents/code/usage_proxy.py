@@ -602,12 +602,19 @@ def parse_kimi(body, kimi_parser):
     return reading
 
 
+def window_ended(candidate, now):
+    reset = candidate["resetsAt"]
+    return reset is not None and reset <= now
+
+
 def visible_window(candidate, now):
     result = {key: candidate[key] for key in ("percent", "exhausted", "resetsAt", "windowSeconds", "period", "id", "label")
               if key in candidate}
     reset = candidate["resetsAt"]
     result["resetTimes"] = [reset] if reset is not None and reset > now else []
     result["resetsAt"] = result["resetTimes"][0] if result["resetTimes"] else None
+    if window_ended(candidate, now):
+        result.update(percent=0, exhausted=False, incomplete=True)
     return result
 
 
@@ -615,7 +622,8 @@ def pooled_window(candidates, now, *, incomplete=False, idle=0):
     resets = sorted({w["resetsAt"] for w in candidates if w["resetsAt"] is not None and w["resetsAt"] > now})
     count = len(candidates) + idle
     result = visible_window(candidates[0], now)
-    used = math.fsum(w["_used"] for w in candidates) / count
+    current = [w for w in candidates if not window_ended(w, now)]
+    used = math.fsum(w["_used"] for w in current) / count
     result.update(percent=percent(used), exhausted=used >= 100, resetTimes=resets,
                   resetsAt=resets[0] if resets else None)
     # A calendar-month length comes from the account whose reset is shown.
@@ -624,7 +632,7 @@ def pooled_window(candidates, now, *, incomplete=False, idle=0):
                                        if candidate["resetsAt"] == resets[0])
     if count > 1:
         result["accountAverage"] = True
-    if incomplete:
+    if incomplete or len(current) != len(candidates):
         result["incomplete"] = True
     return result
 

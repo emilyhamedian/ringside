@@ -2883,8 +2883,9 @@ TestRoot {
             const usage = monitor.usage;
             const entry = PoolStates.example(usage.createdAt, "codex");
             entry.accounts[0].state = "stale";
+            entry.accounts[0].reason = "rate-limited";
             entry.accounts[1].sessionUnknown = true;
-            entry.accounts.push({ state: "unavailable" });
+            entry.accounts.push({ state: "unavailable", reason: "timeout" });
             entry.partial = true;
             entry.weekly.incomplete = true;
             entry.session = Object.assign({}, entry.accounts[0].session, { incomplete: true });
@@ -2895,8 +2896,8 @@ TestRoot {
             const body = findChild(popup, "usagePool");
             tryVerify(() => body.contentHeight > body.height);
             verify(root.find(body, child => child.visible && child.text === "Some readings are incomplete."));
-            verify(root.find(body, child => child.visible && child.text === "Last known reading"));
-            verify(root.find(body, child => child.visible && child.text === "Unavailable"));
+            verify(root.find(body, child => child.visible && child.text === "Last known reading · Rate limited"));
+            verify(root.find(body, child => child.visible && child.text === "Unavailable · Check timed out"));
             const months = root.all(body, child => child.objectName === "poolLimit" && child.label === "Monthly");
             compare(months.length, 2);
             verify(months.every(month => month.resetText !== ""));
@@ -2911,6 +2912,15 @@ TestRoot {
             tryVerify(() => sessions[2].y < week.y && week.y < months[1].y);
             const unavailable = root.all(body, child => child.objectName === "pooledAccount")[2];
             verify(!root.find(unavailable, child => child.objectName === "poolLimit"));
+        }
+
+        function test_poolShowsWhyAllReadingsFailed() {
+            monitor.usage.entries = { claude: { source: "cliproxyapi", proxyStatus: "connected", status: "error",
+                accounts: [{ state: "unavailable", reason: "upstream-auth" }] } };
+            const popup = load("claude");
+            const body = findChild(popup, "usagePool");
+            verify(root.find(body, child => child.visible && child.text === "The hub could not read usage for these accounts."));
+            verify(root.find(body, child => child.visible && child.text === "Unavailable · Sign in again in CLIProxyAPI"));
         }
 
         function test_poolShowsBalancesUnderTheirOwnAccount() {

@@ -366,10 +366,10 @@ class ProxyWindows(unittest.TestCase):
         def reading(used, reset):
             return dict(proxy.parse_claude({"seven_day": claude_window(used, reset)}, usage.parse_session), state="ok",
                         fetchedAt=NOW - 10)
-        accounts = [reading(33.49, NOW + 1000), reading(33.49, NOW + 3000), reading(34.49, NOW - 500),
+        accounts = [reading(33.74, NOW + 1000), reading(33.74, NOW + 3000), reading(34.49, NOW - 500),
                     {"state": "unavailable"}]
         result = proxy.aggregate(accounts, NOW)
-        self.assertEqual(result["weekly"]["percent"], 34)
+        self.assertEqual(result["weekly"]["percent"], 22)
         self.assertEqual(result["weekly"]["resetTimes"], [NOW + 1000, NOW + 3000])
         self.assertEqual(result["weekly"]["resetsAt"], NOW + 1000)
         self.assertTrue(result["weekly"]["accountAverage"])

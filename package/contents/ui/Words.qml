@@ -211,15 +211,17 @@ QtObject {
             const main = entry.weekly;
             const extra = usage.inner(item);
             const left = duration(Limits.nextReset(main, nowMs), nowMs);
+            const failure = poolWords.failure(entry);
             return [
                 poolWords.sourceName,
                 main?.accountAverage === true ? i18nc("@info:tooltip percentage of usage averaged across accounts", "Account average: %1 used",
                                                        percentText(main.percent))
-                    : main ? i18nc("@info:tooltip", "%1 used", percentText(main.percent)) : poolWords.sourceStatus(entry.proxyStatus),
+                    : main ? i18nc("@info:tooltip", "%1 used", percentText(main.percent)) : failure || poolWords.sourceStatus(entry.proxyStatus),
                 extra ? i18nc("@info:tooltip model and used percentage", "%1 %2", extra.label, percentText(extra.percent)) : "",
                 left ? (main.incomplete ? i18nc("@info:tooltip time left", "Next known reset in %1", left)
                                         : i18nc("@info:tooltip time left", "Next reset in %1", left)) : "",
                 poolWords.quality(entry),
+                main ? failure : "",
                 poolWords.incomplete(entry) ? i18nc("@info:tooltip", "Some readings are incomplete.") : ""
             ].filter(Boolean).join("\n");
         }

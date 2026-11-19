@@ -19,6 +19,10 @@ follows [Semantic Versioning](https://semver.org/).
 
 - Usage popups list five-hour, weekly and monthly bars before model limits.
 
+### Fixed
+
+- Pooled usage excludes pre-reset usage and explains why hub readings failed.
+
 ## [0.5.0] - 2026-11-12
 
 ### Added
