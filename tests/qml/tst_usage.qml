@@ -2823,6 +2823,7 @@ TestRoot {
             const pooledSession = pooledModel(root.localized("5-hour session"));
             compare(pooledSession.window.percent, 50);
             compare(pooledSession.resetText, "");
+            tryVerify(() => pooledSession.y < pooledModel("Fable").y);
             const session = root.find(accounts[0], child => child.objectName === "poolLimit" && child.label === root.localized("5-hour session"));
             verify(session.resetText !== "");
             verify(!root.find(accounts[1], child => child.objectName === "poolLimit" && child.label === root.localized("5-hour session")));
@@ -2866,6 +2867,10 @@ TestRoot {
             compare(sessions[0].resetText, "");
             compare(sessions[0].window.percent, 100);
             compare(sessions[2].usageText, "unavailable", "a reported but unreadable session remains visible");
+            tryVerify(() => sessions[0].y < months[0].y);
+            const account = root.all(body, child => child.objectName === "pooledAccount")[1];
+            const week = root.find(account, child => child.objectName === "poolLimit" && child.label === "Weekly · All models");
+            tryVerify(() => sessions[2].y < week.y && week.y < months[1].y);
             const unavailable = root.all(body, child => child.objectName === "pooledAccount")[2];
             verify(!root.find(unavailable, child => child.objectName === "poolLimit"));
         }
@@ -3066,7 +3071,7 @@ TestRoot {
             monitor.usage.entries = Object.assign({}, entries, { claude: Object.assign({}, entries.claude, changes) });
         }
 
-        // Under the models' bars there is a bar for each limit shorter than
+        // Before the models' bars there is a bar for each limit shorter than
         // the ring's: the five-hour limit, and a weekly limit beside a monthly
         // one. A five-hour window that isn't running shows 0% and no reset
         // time. That covers Claude with no session, Codex or Go when idle
@@ -3108,6 +3113,9 @@ TestRoot {
             const all = rows(popup);
             compare(all.filter(r => !r.short).length, data.models ?? 1);
             const shorter = all.filter(r => r.short);
+            compare(all.slice(1).map(r => r.short), [
+                ...data.bars.map(() => true), ...Array((data.models ?? 1) - 1).fill(false)
+            ]);
             compare(shorter.map(r => [r.limit.label, r.limit.percent, r.resets]),
                     data.bars.map(([label, percent, resets]) => [label, percent, root.localized(resets)]));
             shorter.forEach(r => {

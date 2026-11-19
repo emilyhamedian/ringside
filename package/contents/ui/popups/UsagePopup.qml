@@ -338,11 +338,11 @@ PopupPage {
                 id: row
 
                 required property int index
-                // Whether this row is one of the shorter limits.
-                readonly property bool short: index >= popup.limits.length
                 // Every row has a bar except the ring's own limit.
                 readonly property bool barred: index > 0
-                readonly property var limit: (short ? popup.shorter[index - popup.limits.length] : popup.limits[index])
+                // Put the shorter windows before the model-specific bars.
+                readonly property bool short: barred && index <= popup.shorter.length
+                readonly property var limit: (short ? popup.shorter[index - 1] : popup.limits[Math.max(0, index - popup.shorter.length)])
                     ?? ({ id: "", label: "", percent: NaN, resetsAt: NaN })
                 readonly property real reading: Math.max(0, Math.min(100, limit.percent))
                 // When the limit resets: for a shorter limit while it runs,

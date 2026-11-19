@@ -14,6 +14,10 @@ follows [Semantic Versioning](https://semver.org/).
 - Hub popups show pooled five-hour usage for multiple linked accounts when
   at least one reports a five-hour window.
 
+### Changed
+
+- Usage popups list five-hour, weekly and monthly bars before model limits.
+
 ## [0.5.0] - 2026-11-12
 
 ### Added

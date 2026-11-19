@@ -96,6 +96,8 @@ resets. If your plan also has a per-model limit, it shows as an inner ring.
 In the direct view, click the ring to see a graph of the current quota period,
 whether you're on pace to run out, and a bar for each shorter limit on your
 plan, such as the five-hour limit.
+Limit bars show the five-hour, weekly and monthly windows in that order,
+followed by model-specific limits, when available.
 
 In the hub view, the ring and popup show usage across accounts for the same
 quota window. When the provider gives only percentages, Ringside averages

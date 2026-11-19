@@ -24,6 +24,7 @@ PlasmaComponents.ScrollView {
 
     readonly property real edge: Style.contentEdge(Kirigami.Units.largeSpacing)
     readonly property var accounts: Array.from(entry?.accounts ?? [])
+    readonly property var periodOrder: ({ session: 0, week: 1, month: 2 })
     readonly property var otherPeriods: {
         const periods = Array.from(entry?.otherPeriods ?? []);
         for (const window of [entry?.session, entry?.week]) {
@@ -33,7 +34,7 @@ PlasmaComponents.ScrollView {
                 periods.push(window);
             }
         }
-        return periods;
+        return periods.sort((a, b) => periodRank(a) - periodRank(b));
     }
     readonly property bool stale: entry?.lastError !== undefined || Limits.allStale(entry)
 
@@ -43,6 +44,10 @@ PlasmaComponents.ScrollView {
     contentWidth: availableWidth
     contentHeight: snapshot.implicitHeight
     T.ScrollBar.horizontal.policy: T.ScrollBar.AlwaysOff
+
+    function periodRank(window) {
+        return periodOrder[window.period] ?? 3;
+    }
 
     function periodLabel(window) {
         switch (window.period) {
@@ -74,6 +79,7 @@ PlasmaComponents.ScrollView {
         for (const other of account.otherPeriods ?? []) {
             rows.push({ label: periodLabel(other), window: other });
         }
+        rows.sort((a, b) => periodRank(a.window) - periodRank(b.window));
         for (const scoped of account.scoped ?? []) {
             rows.push({ label: i18nc("@label:group a period and a model", "%1 · %2", periodLabel(scoped), scoped.label), window: scoped });
         }
@@ -193,14 +199,6 @@ PlasmaComponents.ScrollView {
             Layout.rightMargin: pool.edge
             spacing: Kirigami.Units.largeSpacing
 
-            LimitRow {
-                visible: pool.innerLimit !== null
-                label: pool.innerLimit?.label ?? ""
-                window: pool.innerLimit ?? ({ percent: 0 })
-                reset: NaN
-                stale: pool.stale
-            }
-
             Repeater {
                 model: pool.otherPeriods
 
@@ -213,6 +211,14 @@ PlasmaComponents.ScrollView {
                     resetCaption: pool.texts.poolWords.resetCaption(modelData)
                     stale: pool.stale
                 }
+            }
+
+            LimitRow {
+                visible: pool.innerLimit !== null
+                label: pool.innerLimit?.label ?? ""
+                window: pool.innerLimit ?? ({ percent: 0 })
+                reset: NaN
+                stale: pool.stale
             }
         }
 
