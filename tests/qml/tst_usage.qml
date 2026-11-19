@@ -2809,7 +2809,13 @@ TestRoot {
             compare(popup.nextReset, zeroReset);
             compare(cell.lines.second, root.localized("1d"));
             verify(graph(popup) && !graph(popup).visible);
-            verify(root.find(popup, child => child.visible && child.text === "Auto start paused for CLIProxyAPI."));
+            verify(!popup.starterShown);
+            compare(root.all(popup, child => child.visible && child.text === "CLIProxyAPI").length, 1);
+            verify(root.find(popup, child => child.visible && child.text === "Session affinity"));
+            compare(root.all(popup, child => child.visible && child.objectName === "poolAccountReady").length, 2);
+            const fable = root.find(popup, child => child.objectName === "poolLimit" && child.label === "Fable");
+            compare(fable.resetCaption, "");
+            verify(fable.resetText !== "");
             compare(root.all(popup, child => child.objectName === "pooledAccount").map(child => child.name),
                     [1, 2, 3].map(index => "Account " + Format.whole(index)));
             verify(root.find(popup, child => child.objectName === "poolLimit" && child.label === root.localized("5-hour session")));

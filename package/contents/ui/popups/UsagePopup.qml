@@ -163,52 +163,49 @@ PopupPage {
     }
 
     systemMonitorShown: false
-    // A plan with nothing to start, as Claude's without a five-hour limit,
-    // keeps no footer.
-    readonly property bool starterShown: usage.starterEnabled(item) && usage.startable(item).length > 0
-    readonly property bool starterPaused: usage.starterEnabled(item) && usage.starterPaused(item)
-    footerLeadingShown: pooled || starterShown || starterPaused
+    readonly property bool starterShown: !pooled && !usage.starterPaused(item)
+        && usage.starterEnabled(item) && usage.startable(item).length > 0
+    readonly property var affinity: pooled ? entry?.affinity : null
+    readonly property bool affinityShown: typeof affinity?.enabled === "boolean"
+    footerLeadingShown: starterShown || affinityShown
     footerLeading: [
         StarterSwitch {
-            visible: popup.starterShown && !popup.starterPaused && !popup.pooled
+            visible: popup.starterShown
             item: popup.item
             usage: popup.usage
             nowMs: popup.nowMs
             texts: words
         },
-        ColumnLayout {
-            visible: popup.pooled || popup.starterPaused
+        RowLayout {
+            visible: popup.affinityShown
             Layout.fillWidth: true
             Layout.preferredWidth: 0
             Layout.topMargin: Kirigami.Units.smallSpacing
             Layout.bottomMargin: Layout.topMargin
-            spacing: Kirigami.Units.smallSpacing
+            spacing: Kirigami.Units.largeSpacing
 
             Text {
-                visible: popup.pooled
+                wrapMode: Text.Wrap
+                textFormat: Text.PlainText
+                text: i18nc("@label CLIProxyAPI routing setting", "Session affinity")
+                color: Style.dim(Kirigami.Theme.textColor)
+            }
+
+            Text {
                 Layout.fillWidth: true
                 wrapMode: Text.Wrap
                 textFormat: Text.PlainText
                 text: {
-                    const affinity = popup.entry?.affinity;
-                    const duration = affinity?.enabled && Number.isFinite(affinity.ttlSeconds) && affinity.ttlSeconds > 0
-                        ? words.duration(popup.nowMs / 1000 + affinity.ttlSeconds, popup.nowMs) : "";
-                    const detail = affinity?.enabled === true
-                        ? (duration ? i18nc("@info CLIProxyAPI routing advice", "Session affinity on · %1", duration)
-                                    : i18nc("@info CLIProxyAPI routing advice", "Session affinity on"))
-                        : affinity?.enabled === false ? i18nc("@info CLIProxyAPI routing advice", "Session affinity off") : "";
-                    return words.joined([i18nc("@label usage source", "CLIProxyAPI"), detail]);
+                    const affinity = popup.affinity;
+                    if (affinity?.enabled === true) {
+                        const ttl = affinity.ttlSeconds;
+                        const duration = Number.isFinite(ttl) && ttl > 0
+                            ? words.duration(popup.nowMs / 1000 + ttl, popup.nowMs) : "";
+                        return duration || i18nc("@info:status session affinity", "On");
+                    }
+                    return affinity?.enabled === false ? i18nc("@info:status session affinity", "Off") : "";
                 }
                 color: Kirigami.Theme.textColor
-            }
-
-            Text {
-                visible: popup.starterPaused
-                Layout.fillWidth: true
-                wrapMode: Text.Wrap
-                textFormat: Text.PlainText
-                text: words.poolWords.paused()
-                color: Style.dim(Kirigami.Theme.textColor)
             }
         }
     ]
@@ -237,7 +234,7 @@ PopupPage {
         // many there are isn't known until the first check is done.
         subtitle: popup.loading
             ? i18nc("@info under Claude, Codex, Kimi or OpenCode Go: the first check of the limits since Ringside started is running", "Checking your usage…")
-            : popup.pooled ? words.poolWords.average(popup.weekly?.period)
+            : popup.pooled ? words.poolWords.sourceName
             : popup.monthly
             ? i18ncp("@info under Kimi or OpenCode Go: what the popup shows", "Monthly limit", "Monthly limits",
                      Math.max(1, popup.limits.length, popup.entry && popup.entry.scoped ? popup.entry.scoped.length + 1 : 0))
@@ -266,19 +263,6 @@ PopupPage {
         innerLimit: popup.pooled ? popup.innerLimit : null
         texts: words
         nowMs: popup.nowMs
-    }
-
-    Text {
-        Layout.fillWidth: true
-        Layout.leftMargin: Style.contentEdge(Kirigami.Units.largeSpacing)
-        Layout.rightMargin: Layout.leftMargin
-        Layout.bottomMargin: Kirigami.Units.largeSpacing
-        visible: text !== ""
-        text: popup.pooled ? "" : words.poolWords.directStatus(popup.entry)
-        color: Style.dim(Kirigami.Theme.textColor)
-        wrapMode: Text.Wrap
-        textFormat: Text.PlainText
-        horizontalAlignment: Text.AlignLeft
     }
 
     // Shown only beside a check that worked, so never with CheckStatus.

@@ -1532,6 +1532,9 @@ TestRoot {
             page.cfg_hiddenItems = [];
             verify(!page.cfg_claudeSessionStarter && !page.cfg_codexSessionStarter && !page.cfg_opencodeSessionStarter,
                    "turning items on again keeps each opt-out");
+            page.usageStatus = { claude: { source: "cliproxyapi", starterPaused: true }, codex: { starterPaused: true } };
+            verify(!claude.visible && codex.visible && opencode.visible,
+                   "hide the hub switch and keep direct opt-out available while a fresh reading is pending");
             page.cfg_itemOrder = ["claude", "codex"];
             verify(!opencode.visible, "OpenCode Go's setting shows only while its item is on");
         }

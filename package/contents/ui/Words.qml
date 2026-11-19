@@ -212,7 +212,7 @@ QtObject {
             const extra = usage.inner(item);
             const left = duration(Limits.nextReset(main, nowMs), nowMs);
             return [
-                main ? poolWords.average(main.period) : i18nc("@info:tooltip", "CLIProxyAPI pooled usage"),
+                poolWords.sourceName,
                 main?.accountAverage === true ? i18nc("@info:tooltip percentage of usage averaged across accounts", "Account average: %1 used",
                                                        percentText(main.percent))
                     : main ? i18nc("@info:tooltip", "%1 used", percentText(main.percent)) : poolWords.sourceStatus(entry.proxyStatus),
@@ -243,9 +243,7 @@ QtObject {
         if (usage.creditUsed(item, nowMs)) {
             text += "\n" + i18nc("@info:tooltip a credit balance fell between the two most recent checks", "Credits used since the previous check.");
         }
-        const direct = poolWords.directStatus(entry);
-        const status = entry.lastError === undefined ? text : failedText(item, entry, text, nowMs);
-        return direct ? status + "\n" + direct : status;
+        return entry.lastError === undefined ? text : failedText(item, entry, text, nowMs);
     }
 
     // A failed check in words, a sentence a line: when it failed and why;
@@ -487,7 +485,7 @@ QtObject {
     function starterStatus(item, starter, nowMs) {
         const s = starter ?? { state: "off" };
         if (s.reason === "proxy-source") {
-            return poolWords.paused();
+            return "";
         }
         const claude = item === "claude";
         // OpenCode Go has only a session to start, so its sentences are its own.

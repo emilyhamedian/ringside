@@ -33,8 +33,6 @@ PlasmaComponents.ScrollView {
         }
         return periods;
     }
-    readonly property bool accountAverage: entry?.weekly?.accountAverage === true || innerLimit?.accountAverage === true
-        || otherPeriods.some(window => window.accountAverage === true)
     readonly property bool stale: entry?.lastError !== undefined || Limits.allStale(entry)
 
     Layout.fillWidth: true
@@ -170,11 +168,6 @@ PlasmaComponents.ScrollView {
             spacing: Kirigami.Units.smallSpacing
 
             Detail {
-                visible: pool.accountAverage
-                text: i18nc("@info meaning of percentages in a pooled usage snapshot", "Percentages are averaged across accounts.")
-            }
-
-            Detail {
                 visible: text !== ""
                 text: pool.texts.poolWords.quality(pool.entry)
             }
@@ -203,7 +196,7 @@ PlasmaComponents.ScrollView {
                 label: pool.innerLimit?.label ?? ""
                 window: pool.innerLimit ?? ({ percent: 0 })
                 reset: Limits.nextReset(pool.innerLimit, pool.nowMs)
-                resetCaption: pool.texts.poolWords.resetCaption(pool.innerLimit)
+                resetCaption: pool.innerLimit?.id === "Fable" ? "" : pool.texts.poolWords.resetCaption(pool.innerLimit)
                 stale: pool.stale
             }
 
@@ -254,6 +247,8 @@ PlasmaComponents.ScrollView {
                     }
 
                     Detail {
+                        id: accountStatus
+                        visible: text !== ""
                         horizontalAlignment: Text.AlignRight
                         text: {
                             const reading = account.modelData;
@@ -269,7 +264,33 @@ PlasmaComponents.ScrollView {
                             if (reading.weekly?.percent >= 100 && reading.weekly.resetsAt > pool.nowMs / 1000) {
                                 return i18nc("@info:status a pooled account waiting for its main limit to reset", "Limit reached");
                             }
-                            return i18nc("@info:status usage of a pooled account", "Ready");
+                            return "";
+                        }
+                    }
+
+                    Item {
+                        visible: ready.visible
+                        Layout.fillWidth: true
+                    }
+
+                    Rectangle {
+                        id: ready
+                        objectName: "poolAccountReady"
+                        visible: accountStatus.text === ""
+                        implicitWidth: Kirigami.Units.iconSizes.small
+                        implicitHeight: implicitWidth
+                        radius: width / 2
+                        color: "transparent"
+                        border.color: Kirigami.Theme.positiveTextColor
+                        Accessible.role: Accessible.StaticText
+                        Accessible.name: i18nc("@info:status usage of a pooled account", "Ready")
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: "✓"
+                            color: ready.border.color
+                            font.pixelSize: Math.round(ready.implicitWidth * 0.75)
+                            Accessible.ignored: true
                         }
                     }
                 }

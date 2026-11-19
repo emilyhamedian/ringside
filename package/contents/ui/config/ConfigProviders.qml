@@ -62,6 +62,8 @@ ConfigPage {
     readonly property var claudeWindows: startable("claude")
     readonly property var codexWindows: startable("codex")
     readonly property var opencodeWindows: startable("opencode")
+    readonly property bool claudeStarterAvailable: !Limits.pooled(usageStatus.claude)
+    readonly property bool codexStarterAvailable: !Limits.pooled(usageStatus.codex)
 
     // A provider's setting, named for what its plan can start.
     function starterText(windows) {
@@ -354,15 +356,10 @@ ConfigPage {
             providerId: "claude"
         }
 
-        Note {
-            visible: page.claudeOn && page.cfg_claudeSessionStarter && page.usageStatus.claude?.starterPaused === true
-            text: poolWords.paused()
-        }
-
         // Claude only ever starts a session, so a plan without a five-hour
         // limit has nothing to offer.
         QQC2.CheckBox {
-            visible: claudeHeading.visible && page.claudeWindows.length > 0
+            visible: claudeHeading.visible && page.claudeStarterAvailable && page.claudeWindows.length > 0
             text: page.starterText(page.claudeWindows)
             Accessible.name: i18nc("@option:check %1 is the check box's text, such as Auto start session", "Claude: %1", text)
             Accessible.description: i18nc("@info", "When a session ends, Ringside sends Claude a one-word message to start the next one. Turn this off to hide the popup switch.")
@@ -374,7 +371,7 @@ ConfigPage {
         }
 
         Note {
-            visible: claudeHeading.visible && page.claudeWindows.length === 0
+            visible: claudeHeading.visible && page.claudeStarterAvailable && page.claudeWindows.length === 0
             text: i18nc("@info under the Claude heading, for a plan with no five-hour limit",
                         "Your plan has no five-hour limit, and its week resets on a set schedule, so there's nothing to start.")
         }
@@ -429,13 +426,8 @@ ConfigPage {
             providerId: "codex"
         }
 
-        Note {
-            visible: page.codexOn && page.cfg_codexSessionStarter && page.usageStatus.codex?.starterPaused === true
-            text: poolWords.paused()
-        }
-
         QQC2.CheckBox {
-            visible: openaiHeading.visible && page.codexWindows.length > 0
+            visible: openaiHeading.visible && page.codexStarterAvailable && page.codexWindows.length > 0
             text: page.starterText(page.codexWindows)
             Accessible.name: i18nc("@option:check %1 is the check box's text, such as Auto start week", "OpenAI: %1", text)
             Accessible.description: page.codexWindows.length > 1

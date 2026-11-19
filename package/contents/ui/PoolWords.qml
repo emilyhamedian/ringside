@@ -5,6 +5,8 @@ import QtQuick
 import "code/format.js" as Format
 
 QtObject {
+    readonly property string sourceName: i18nc("@info usage source under a provider name", "CLIProxyAPI")
+
     function sourceStatus(status, count) {
         switch (status) {
         case "connected":
@@ -33,25 +35,6 @@ QtObject {
         }
     }
 
-    function average(period) {
-        switch (period) {
-        case "week":
-            return i18nc("@info pooled weekly usage below a provider name", "Pooled weekly limits");
-        case "month":
-            return i18nc("@info pooled monthly usage below a provider name", "Pooled monthly limits");
-        case "session":
-            return i18nc("@info pooled session usage below a provider name", "Pooled session limits");
-        default:
-            return i18nc("@info pooled usage below a provider name", "Pooled limits");
-        }
-    }
-
-    function directStatus(entry) {
-        const status = sourceStatus(entry?.proxyStatus);
-        return status ? i18nc("@info usage has fallen back to a direct login, %1 is the hub connection status",
-                             "Using direct login. %1", status) : "";
-    }
-
     function resetCaption(window) {
         if (window?.incomplete) {
             return i18nc("@info:label under a countdown for an incomplete pool", "next known reset");
@@ -77,9 +60,5 @@ QtObject {
         return !!(entry?.partial || entry?.weekly?.incomplete || entry?.scoped?.some(window => window.incomplete)
             || otherPeriods.some(window => window.incomplete)
             || entry?.accounts?.some(account => account.state === "unavailable"));
-    }
-
-    function paused() {
-        return i18nc("@info CLIProxyAPI automatic session or week starter", "Auto start paused for CLIProxyAPI.");
     }
 }

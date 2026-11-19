@@ -98,8 +98,8 @@ whether you're on pace to run out, and a bar for each shorter limit on your
 plan, such as the five-hour limit.
 
 In the hub view, the ring and popup show usage across accounts for the same
-quota window. When the provider gives only percentages, the popup labels the
-result as an account average. The panel counts down to the next account reset
+quota window. When the provider gives only percentages, Ringside averages
+them across accounts. The panel counts down to the next account reset
 for the outer ring's window. The popup lists each account's limits and reset
 times. The graph, pace, credits and banked resets are available in the
 direct view.
