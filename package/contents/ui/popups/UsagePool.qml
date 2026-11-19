@@ -27,7 +27,8 @@ PlasmaComponents.ScrollView {
     readonly property var otherPeriods: {
         const periods = Array.from(entry?.otherPeriods ?? []);
         for (const window of [entry?.session, entry?.week]) {
-            if (window?.accountAverage === true && window.period !== entry?.weekly?.period
+            if ((window?.accountAverage === true || window?.period === "session" && accounts.length > 1)
+                && window.period !== entry?.weekly?.period
                 && !periods.some(other => other.period === window.period)) {
                 periods.push(window);
             }
@@ -208,7 +209,7 @@ PlasmaComponents.ScrollView {
 
                     label: pool.periodLabel(modelData)
                     window: modelData
-                    reset: Limits.nextReset(modelData, pool.nowMs)
+                    reset: modelData.period === "session" ? NaN : Limits.nextReset(modelData, pool.nowMs)
                     resetCaption: pool.texts.poolWords.resetCaption(modelData)
                     stale: pool.stale
                 }
@@ -277,6 +278,7 @@ PlasmaComponents.ScrollView {
                 }
 
                 BankedResets {
+                    plain: true
                     banked: account.modelData.bankedResets ?? null
                     texts: pool.texts
                     nowMs: pool.nowMs

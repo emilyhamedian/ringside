@@ -25,6 +25,7 @@ function example(now, provider = "claude") {
         proxyStatus: "connected",
         fetchedAt: now,
         weekly: average(accounts.map(account => account.weekly), 58.5),
+        session: average([accounts[0].session], 50),
         scoped: [average(accounts.map(account => account.scoped[0]), 79)],
         accounts: accounts,
         affinity: { enabled: true, ttlSeconds: 3600 }

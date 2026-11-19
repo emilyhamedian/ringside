@@ -10,8 +10,9 @@ follows [Semantic Versioning](https://semver.org/).
 
 - Claude, Codex and Kimi rings show pooled usage and the next account reset
   when a local CLIProxyAPI hub is available.
-- Hub popups show banked reset tickets and remaining credits under the
-  account that owns them.
+- Hub popups show each account's banked reset count and remaining credits.
+- Hub popups show pooled five-hour usage for multiple linked accounts when
+  at least one reports a five-hour window.
 
 ## [0.5.0] - 2026-11-12
 

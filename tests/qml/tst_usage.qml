@@ -2820,8 +2820,12 @@ TestRoot {
             const pooledModel = label => root.find(popup, child => child.objectName === "poolLimit" && child.label === label);
             compare(pooledModel("Fable").resetText, "");
             verify(header(popup).partsShown);
+            const pooledSession = pooledModel(root.localized("5-hour session"));
+            compare(pooledSession.window.percent, 50);
+            compare(pooledSession.resetText, "");
             const session = root.find(accounts[0], child => child.objectName === "poolLimit" && child.label === root.localized("5-hour session"));
             verify(session.resetText !== "");
+            verify(!root.find(accounts[1], child => child.objectName === "poolLimit" && child.label === root.localized("5-hour session")));
             const accountModel = root.find(accounts[0], child => child.objectName === "poolLimit" && child.label === "Weekly · Fable");
             verify(accountModel.resetText !== "");
             usage.innerChoices = { claude: "Sonnet" };
@@ -2844,7 +2848,7 @@ TestRoot {
             entry.accounts.push({ state: "unavailable" });
             entry.partial = true;
             entry.weekly.incomplete = true;
-            entry.session = Object.assign({}, entry.accounts[0].session, { accountAverage: true, incomplete: true });
+            entry.session = Object.assign({}, entry.accounts[0].session, { incomplete: true });
             entry.week = Object.assign({}, entry.weekly);
             usage.entries = { codex: entry };
             const popup = load("codex", true);
@@ -2859,6 +2863,8 @@ TestRoot {
             verify(months.every(month => month.resetText !== ""));
             const sessions = root.all(body, child => child.objectName === "poolLimit" && child.label === root.localized("5-hour session"));
             compare(sessions.length, 3);
+            compare(sessions[0].resetText, "");
+            compare(sessions[0].window.percent, 100);
             compare(sessions[2].usageText, "unavailable", "a reported but unreadable session remains visible");
             const unavailable = root.all(body, child => child.objectName === "pooledAccount")[2];
             verify(!root.find(unavailable, child => child.objectName === "poolLimit"));
@@ -2880,7 +2886,10 @@ TestRoot {
             compare(tickets.map(row => row.visible), [true, false, false]);
             compare(credits.map(row => row.visible), [true, true, false]);
             compare(root.all(popup, child => child.visible && child.credit !== undefined).length, 2);
-            compare(tickets[0].reading.slots.map(slot => slot.text), [root.localized("2d"), root.localized("12d")]);
+            verify(tickets[0].plain && !tickets[0].stacked);
+            compare(tickets[0].color, Qt.rgba(0, 0, 0, 0));
+            compare(tickets[0].reading.value, root.localized("2"));
+            compare(tickets[0].expiryDetail.split("\n").length, 2);
             verify(credits[0].y >= tickets[0].y + tickets[0].height);
             verify(credits[0].plain && !credits[0].stacked);
             compare(credits[0].height, Math.ceil(credits[0].reading.implicitHeight));
@@ -2897,7 +2906,7 @@ TestRoot {
             tryVerify(() => credits[0].visible && credits[1].visible);
             const expiries = entry.accounts[0].bankedResets.expires;
             popup.nowMs = (expiries[0] + 1) * 1000;
-            compare(tickets[0].reading.slots.length, 1);
+            compare(tickets[0].reading.value, root.localized("1"));
             popup.nowMs = (expiries[1] + 1) * 1000;
             verify(!tickets[0].visible && credits[0].visible, "expired tickets disappear before the next helper report");
         }

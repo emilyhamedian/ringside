@@ -99,9 +99,10 @@ plan, such as the five-hour limit.
 
 In the hub view, the ring and popup show usage across accounts for the same
 quota window. When the provider gives only percentages, Ringside averages
-them across accounts. The panel counts down to the next account reset
-for the outer ring's window. Each account section shows its own limits,
-reset times, banked reset tickets and remaining credits when reported.
+them across accounts. The pooled five-hour bar counts readable accounts
+without that cap as zero usage. The panel counts down to the next account
+reset for the outer ring's window. Each account section shows its own limits,
+reset times, banked resets and remaining credits when reported.
 The graph and pace line are available in the direct view.
 
 If a check fails, the ring greys out, and is crossed out if it keeps failing;
@@ -117,10 +118,10 @@ For Kimi, that's your Extra Usage balance. In the direct view, the ring turns
 blue when you've used up a limit and are spending credits. *Show remaining
 credits* under *AI Providers* hides the balances.
 
-**Banked resets.** If your Claude or Codex account has banked resets, the
-popup shows a ticket for each one, with how long until it expires. A reset
-with three days or less left turns amber. Ringside only shows them; use them
-in Claude's or Codex's own settings.
+**Banked resets.** Claude and Codex can show saved resets and when they
+expire. In the direct popup, an expiry ticket turns amber with three days
+or less left. In the hub popup, each account's count has an expiry tooltip.
+Use banked resets in Claude's or Codex's own settings.
 
 **Auto start.** Ringside can start your next five-hour session on Claude,
 Codex or OpenCode Go, or your next Codex week, as soon as the last one ends,
