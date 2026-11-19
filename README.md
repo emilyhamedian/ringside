@@ -68,7 +68,8 @@ Then add **Ringside** to a panel like any other widget.
 
 ![The Claude popup: the weekly limit, the Fable limit in amber, a graph of this week's usage with a dashed amber line at the time the Fable limit runs out, and a line under it saying when that is](docs/usage.png)
 
-Turn them on in *Configure Ringside… → Panel Items*. Each needs:
+Turn them on in *Configure Ringside… → Panel Items*. For direct polling,
+you need:
 
 - **Claude:** [Claude Code](https://docs.claude.com/en/docs/claude-code),
   signed in with a subscription.
@@ -81,12 +82,27 @@ Turn them on in *Configure Ringside… → Panel Items*. Each needs:
   OpenCode signed in to the OpenCode Console
   (`opencode auth login opencode`).
 
+**CLIProxyAPI.** Claude, Codex and Kimi default to *Auto* under *AI Providers*.
+Ringside uses a reachable local CLIProxyAPI v8 hub with linked accounts for
+that provider and falls back to the provider login above when the hub is
+unavailable. Point *Management key file* at a file containing the hub's
+management key, readable only by you. The default address is
+`http://127.0.0.1:8317`. Ringside also looks for the key in
+`~/.config/cliproxyapi/management.key`. Choose *Direct* for any provider to
+use its local login. OpenCode Go uses its local login.
+
 Each ring shows how much of your limit you've used and how long until it
-resets: weekly for Claude and Codex, monthly for Kimi and OpenCode Go. If your
-plan also has a per-model limit, it shows as an inner ring. Click the ring to
-see a graph of the current week or month, whether you're on pace to run
-out, and a bar for each shorter limit on your plan, such as the five-hour
-limit.
+resets. If your plan also has a per-model limit, it shows as an inner ring.
+In the direct view, click the ring to see a graph of the current quota period,
+whether you're on pace to run out, and a bar for each shorter limit on your
+plan, such as the five-hour limit.
+
+In the hub view, the ring and popup show usage across accounts for the same
+quota window. When the provider gives only percentages, the popup labels the
+result as an account average. The panel counts down to the next account reset
+for the outer ring's window. The popup lists each account's limits and reset
+times. The graph, pace, credits and banked resets are available in the
+direct view.
 
 If a check fails, the ring greys out, and is crossed out if it keeps failing;
 the popup says why. If a limit resets early, the popup tells you. Ringside
@@ -111,6 +127,8 @@ so the clock is already running when you're back. Turn it on with the switch
 at the bottom of the popup. Each start sends a one-word message, which counts
 toward your limits. Kimi's five-hour windows follow each other on a fixed
 schedule, so there's nothing to start.
+Auto Start pauses while the hub supplies that provider's readings and
+resumes after a fresh direct reading.
 
 ## Privacy
 

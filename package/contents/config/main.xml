@@ -128,6 +128,27 @@
       <label>The logo in the Codex ring: codex, or openai for the OpenAI logo</label>
       <default>codex</default>
     </entry>
+    <entry name="proxyUrl" type="String">
+      <label>CLIProxyAPI management server base URL</label>
+      <default></default>
+    </entry>
+    <entry name="proxyKeyFile" type="String">
+      <label>Path to the CLIProxyAPI management key file</label>
+      <default></default>
+    </entry>
+    <entry name="proxyKimiRegion" type="String">
+      <label>Region for imported Kimi coding credentials without a known region: auto, global or china</label>
+      <default>auto</default>
+    </entry>
+    <entry name="claudeUsageSource" type="String">
+      <default>auto</default>
+    </entry>
+    <entry name="codexUsageSource" type="String">
+      <default>auto</default>
+    </entry>
+    <entry name="kimiUsageSource" type="String">
+      <default>auto</default>
+    </entry>
     <entry name="claudeProgram" type="String">
       <label>Where the claude program is, for the session starter, as shown with ~; empty finds it automatically</label>
       <default></default>

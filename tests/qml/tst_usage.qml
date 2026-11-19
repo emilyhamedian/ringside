@@ -16,6 +16,7 @@ import "../../package/contents/ui/code/shell.js" as Shell
 import "../../package/contents/ui/code/style.js" as Style
 import "starterstates.js" as StarterStates
 import "journal.js" as Journal
+import "poolstates.js" as PoolStates
 
 // The Claude and Codex items. UsageData runs the stub scenarios in data/
 // (fake-usage-*.py) in place of usage.py, so no credentials are read and no
@@ -615,7 +616,7 @@ TestRoot {
             make("ok", []);
             const initial = usage.helperCommand(["claude", "codex"], "", ["claude", "codex"]);
             compare(initial, "python3 -B " + Shell.quoted(usage.helperPath)
-                             + " --initial-providers claude,codex --credits-providers claude,codex --providers claude,codex");
+                             + " --proxy-auto --initial-providers claude,codex --credits-providers claude,codex --providers claude,codex");
             compare(usage.polledIds(initial), ["claude", "codex"]);
             compare(usage.startedIds(initial), []);
             compare(usage.starterSet(initial), null);
@@ -667,7 +668,7 @@ TestRoot {
             verify(!usage.loading("claude") && usage.loading("codex"));
             tryCompare(runs, "count", 1, 1000);
             const initial = "python3 -B " + Shell.quoted(usage.helperPath)
-                            + " --initial-providers codex --credits-providers claude,codex --providers claude,codex";
+                            + " --proxy-auto --initial-providers codex --credits-providers claude,codex --providers claude,codex";
             compare(runs.signalArguments[0][0], initial);
             usage.refresh();
             compare(runs.count, 1);
@@ -1159,9 +1160,95 @@ TestRoot {
             usage.helperPath = "/nonexistent/it's/usage.py";
             compare(usage.command, "");
             usage.providers = ["codex", "cpu", "claude", "bogus"];
-            compare(usage.command, "python3 -B '/nonexistent/it'\\''s/usage.py' --credits-providers claude,codex --providers claude,codex");
+            compare(usage.command, "python3 -B '/nonexistent/it'\\''s/usage.py' --proxy-auto --credits-providers claude,codex --providers claude,codex");
             // python3 can't open it; the helper failure says so.
             tryVerify(() => usage.helperError.startsWith("The usage helper exited with code 2"), 10000, usage.helperError);
+        }
+
+        function test_poolChangesClearOldReadingsWithoutResetOrStart() {
+            start("ok", ["claude", "codex"]);
+            const now = usage.nowSeconds();
+            const pooled = PoolStates.example(now);
+            pooled.starter = { enabled: true, on: ["session"], state: "waiting", next: now, windows: ["session"] };
+            const resets = spy("resetsDetected");
+            usage.merge({ providers: { claude: pooled } });
+            compare(usage.entry("claude").weekly.percent, 58.5);
+            compare(usage.starter("claude").next, null);
+            verify(!starterTick().running);
+            verify(!usage.draining("claude", "weekly", now * 1000));
+            compare(usage.earlyReset("claude", now * 1000), null);
+
+            const replacement = { source: "cliproxyapi", pool: "replacement", status: "error", accounts: [{ state: "unavailable" }] };
+            usage.merge({ providers: { claude: replacement } });
+            compare(usage.entry("claude").weekly, undefined, "roster failure cannot retain the previous pool");
+            compare(resets.count, 0);
+
+            config.proxyUrl = "http://127.0.0.1:8320";
+            config.proxyKeyFile = "/tmp/a hub key";
+            config.proxyKimiRegion = "china";
+            config.claudeUsageSource = "direct";
+            compare(usage.entry("claude"), null, "a choice clears the last account source before the helper answers");
+            verify(!usage.starterPaused("claude"), "the previous pool no longer supplies the starter");
+            const command = usage.helperCommand(["codex", "claude"], " --start");
+            verify(command.includes(" --proxy-auto --proxy-url 'http://127.0.0.1:8320'"));
+            verify(command.includes(" --proxy-key-file '/tmp/a hub key' --direct-providers claude --proxy-kimi-region 'china'"));
+            compare(usage.startedIds(command), ["codex", "claude"]);
+            tryVerify(() => usage.entry("claude")?.weekly?.percent === 52);
+        }
+
+        function test_proxyConfigurationDiscardsInflightPoolReport() {
+            make("proxy-route", []);
+            const runs = commands();
+            usage.providers = ["claude"];
+            tryCompare(runs, "count", 1);
+            config.claudeUsageSource = "direct";
+            tryVerify(() => usage.entry("claude")?.weekly?.percent === 23);
+            tryCompare(usage, "checking", false);
+            compare(runs.count, 2);
+            compare(usage.entry("claude").status, "ok");
+            compare(usage.entry("claude").source, undefined);
+            compare(usage.entry("claude").weekly.percent, 23);
+        }
+
+        function test_poolRouteKeepsQueuedStarterOff() {
+            start("starter-slow-set");
+            const run = commands();
+            usage.setStarter("codex", "week", true);
+            usage.setStarter("claude", "session", false);
+            compare(usage.starterWanted.claude, "");
+            compare(ran(run, " --starter-set claude=off"), []);
+            config.proxyUrl = "http://127.0.0.1:8320";
+
+            tryVerify(() => usage.entry("claude")?.source === "cliproxyapi");
+            tryVerify(() => ran(run, " --starter-switch-only --starter-set claude=off").length === 1);
+            tryVerify(() => usage.starterWanted.claude === undefined && runner().connectedSources.length === 0);
+            verify(!usage.starterOn("claude", "session"));
+            verify(usage.starterPaused("claude"));
+            compare(usage.entry("claude").source, "cliproxyapi", "a switch-only report keeps pooled usage intact");
+        }
+
+        function test_poolRouteQueuesStarterReductionUntilDirect() {
+            start("starter-slow-set");
+            const run = commands();
+            usage.starters = Object.assign({}, usage.starters, { codex: {
+                enabled: true, on: ["session", "week"], windows: ["session", "week"],
+                state: "waiting", next: usage.nowSeconds()
+            } });
+            usage.setStarter("claude", "session", false);
+            usage.setStarter("codex", "week", false);
+            config.proxyUrl = "http://127.0.0.1:8320";
+            tryVerify(() => usage.entry("codex")?.source === "cliproxyapi" && runner().connectedSources.length === 0);
+            compare(usage.starterWanted.codex, "session");
+            compare(ran(run, " --starter-set codex=session"), []);
+            compare(ran(run, " --start"), []);
+
+            config.codexUsageSource = "direct";
+            tryVerify(() => ran(run, " --starter-set codex=session").length === 1);
+            compare(ran(run, " --start"), []);
+            tryVerify(() => usage.starterWanted.codex === undefined && runner().connectedSources.length === 0);
+            const order = run.signalArguments.map(args => args[0]);
+            verify(order.findIndex(command => command.endsWith(" --starter-set codex=session"))
+                < order.findIndex(command => command.endsWith(" --providers codex --start")));
         }
 
         // Paths a shell would take apart or run: spaces, both quotes, $,
@@ -1187,17 +1274,17 @@ TestRoot {
             usage.helperPath = "/x/usage.py";
             config.codexProgram = "~/bin/codex";
             usage.providers = ["claude", "codex"];
-            compare(usage.command, "python3 -B '/x/usage.py' --program 'codex=~/bin/codex' --credits-providers claude,codex --providers claude,codex");
+            compare(usage.command, "python3 -B '/x/usage.py' --program 'codex=~/bin/codex' --proxy-auto --credits-providers claude,codex --providers claude,codex");
             config.claudeProgram = "/opt/it's/claude";
             compare(usage.helperCommand(["claude"], " --start"),
-                    "python3 -B '/x/usage.py' --program 'claude=/opt/it'\\''s/claude' --providers claude --start");
+                    "python3 -B '/x/usage.py' --program 'claude=/opt/it'\\''s/claude' --proxy-auto --providers claude --start");
             compare(usage.helperCommand(usage.ids, " --starter-set codex=week"),
                     "python3 -B '/x/usage.py' --program 'claude=/opt/it'\\''s/claude' --program 'codex=~/bin/codex'"
-                    + " --providers claude,codex --starter-set codex=week");
+                    + " --proxy-auto --providers claude,codex --starter-set codex=week");
             // Only the providers a run is for.
-            compare(usage.helperCommand(["codex"], ""), "python3 -B '/x/usage.py' --program 'codex=~/bin/codex' --credits-providers codex --providers codex");
+            compare(usage.helperCommand(["codex"], ""), "python3 -B '/x/usage.py' --program 'codex=~/bin/codex' --proxy-auto --credits-providers codex --providers codex");
             config.codexProgram = "";
-            compare(usage.helperCommand(["codex"], ""), "python3 -B '/x/usage.py' --credits-providers codex --providers codex");
+            compare(usage.helperCommand(["codex"], ""), "python3 -B '/x/usage.py' --proxy-auto --credits-providers codex --providers codex");
         }
 
         // Each path reaches the helper exactly as chosen, through whatever
@@ -1217,7 +1304,7 @@ TestRoot {
             }
             compare(runs.count, nastyPaths.length, "one check per change, none waiting for the timer");
             compare(runs.signalArguments.map(a => a[0]), nastyPaths.map(path => "python3 -B " + Shell.quoted(usage.helperPath)
-                + " --program '" + ("codex=" + path).replace(/'/g, "'\\''") + "' --credits-providers claude,codex --providers claude,codex"));
+                + " --program '" + ("codex=" + path).replace(/'/g, "'\\''") + "' --proxy-auto --credits-providers claude,codex --providers claude,codex"));
             // A starter run passes them too, and is still read as one.
             const polled = spy("statusesChanged");
             config.claudeProgram = nastyPaths[5];
@@ -1302,7 +1389,7 @@ TestRoot {
             verify(usage.starterEnabled("claude"), "Claude's setting is independent");
             compare(usage.starterWanted, {}, "the provider off doesn't queue another write");
             const off = " --starter-set codex=off";
-            compare(ran(run, off), [usage.helperCommand(["codex"], off)],
+            compare(ran(run, off), [usage.helperCommand(["codex"], " --starter-switch-only" + off)],
                     "one run turns off Codex, hidden in this widget, without touching Claude");
             verify(starterTick().running, "Claude's starter timer is untouched");
             starterTick().triggered();
@@ -2700,6 +2787,67 @@ TestRoot {
 
         function graph(popup) {
             return root.find(popup, i => i.mainPoints !== undefined);
+        }
+
+        function test_poolSnapshotMatchesPanelAndHonorsScopedChoice() {
+            const usage = monitor.usage;
+            const entry = PoolStates.example(usage.createdAt);
+            const expired = usage.createdAt - 60;
+            const zeroReset = usage.createdAt + 26 * 3600;
+            entry.weekly.resetTimes.unshift(expired, zeroReset);
+            entry.accounts.push({ state: "ok", weekly: { percent: 0, period: "week", resetsAt: zeroReset }, scoped: [] });
+            entry.scoped.push({ id: "Sonnet", label: "Sonnet", percent: 41, accountAverage: true, resetTimes: [] });
+            usage.entries = { claude: entry };
+            const popup = load("claude");
+            const cell = cellComponent.createObject(loaders[0], { monitor: monitor });
+            const gauge = findChild(popup, "gauge");
+            const panelGauge = findChild(cell, "gauge");
+            compare(gauge.value, 58.5);
+            compare(panelGauge.value, gauge.value);
+            compare(gauge.innerValue, 79);
+            compare(panelGauge.innerValue, gauge.innerValue);
+            compare(popup.nextReset, zeroReset);
+            compare(cell.lines.second, root.localized("1d"));
+            verify(graph(popup) && !graph(popup).visible);
+            verify(root.find(popup, child => child.visible && child.text === "Auto start paused for CLIProxyAPI."));
+            compare(root.all(popup, child => child.objectName === "pooledAccount").map(child => child.name),
+                    [1, 2, 3].map(index => "Account " + Format.whole(index)));
+            verify(root.find(popup, child => child.objectName === "poolLimit" && child.label === root.localized("5-hour session")));
+            usage.innerChoices = { claude: "Sonnet" };
+            compare(gauge.innerValue, 41);
+            compare(panelGauge.innerValue, 41);
+            usage.innerChoices = { claude: "none" };
+            verify(!gauge.inner && !panelGauge.inner);
+            const lastKnown = Object.assign({}, entry, { accounts: entry.accounts.map(account => Object.assign({}, account, { state: "stale" })) });
+            usage.entries = { claude: lastKnown };
+            verify(gauge.stale && panelGauge.stale, "a pool with only last known readings is grey in both views");
+            compare(gauge.value, 58.5, "a stale pool keeps its reported percentage");
+        }
+
+        function test_poolKeepsOtherPeriodsAndMissingRowsSeparate() {
+            const usage = monitor.usage;
+            const entry = PoolStates.example(usage.createdAt, "codex");
+            entry.accounts[0].state = "stale";
+            entry.accounts[1].sessionUnknown = true;
+            entry.accounts.push({ state: "unavailable" });
+            entry.partial = true;
+            entry.weekly.incomplete = true;
+            entry.session = Object.assign({}, entry.accounts[0].session, { accountAverage: true, incomplete: true });
+            entry.week = Object.assign({}, entry.weekly);
+            usage.entries = { codex: entry };
+            const popup = load("codex", true);
+            popup.room = 320;
+            const body = findChild(popup, "usagePool");
+            tryVerify(() => body.contentHeight > body.height);
+            verify(root.find(body, child => child.visible && child.text === "Some readings are incomplete."));
+            verify(root.find(body, child => child.visible && child.text === "Last known reading"));
+            verify(root.find(body, child => child.visible && child.text === "Unavailable"));
+            compare(root.all(body, child => child.objectName === "poolLimit" && child.label === "Monthly").length, 2);
+            const sessions = root.all(body, child => child.objectName === "poolLimit" && child.label === root.localized("5-hour session"));
+            compare(sessions.length, 3);
+            compare(sessions[2].usageText, "unavailable", "a reported but unreadable session remains visible");
+            const unavailable = root.all(body, child => child.objectName === "pooledAccount")[2];
+            verify(!root.find(unavailable, child => child.objectName === "poolLimit"));
         }
 
         function test_creditRow_data() {

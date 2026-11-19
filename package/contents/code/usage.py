@@ -36,6 +36,15 @@ apply. --retry-providers names those whose failed connection the user asked
 to try again once the internet was seen to answer: their five-minute hold
 after an "offline" or "timeout" failure is skipped for this run. A reading
 still stands for five minutes, and a wait a provider asked for still holds.
+
+--proxy-url and --proxy-key-file configure a loopback CLIProxyAPI hub for
+Claude, Codex and Kimi. --proxy-auto also discovers the default address
+when its key file is absent. --direct-providers selects direct usage for
+individual providers. Hub entries carry source="cliproxyapi", anonymous
+accounts and comparable pooled windows, with separate cache and backoff.
+An opted-in starter pauses while its provider uses the hub and resumes
+after a fresh direct usage read.
+
 A window is {"percent": 0-100, "resetsAt": <epoch seconds>,
 "windowSeconds": <its length>, "history": [[<epoch seconds>, <percent>], ...]}.
 "weekly" is the all-models window, a week for Claude and Codex (five hours
@@ -140,11 +149,13 @@ time, makes it due at once (see replan_starters()).
 
 import argparse
 import calendar
+import concurrent.futures
 import contextlib
 import contextvars
 import errno
 import fcntl
 import hashlib
+import importlib.util
 import json
 import math
 import os
@@ -162,6 +173,7 @@ except ImportError:  # A Python built without it reads OpenCode 1's keys alone.
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import tomllib
 import urllib.error
@@ -216,6 +228,11 @@ CACHE_FILE = CACHE_DIR / "usage.json"
 HISTORY_FILE = CACHE_DIR / "usage-history.json"
 LOCK_FILE = CACHE_DIR / "usage.lock"
 CACHE_TTL = 5 * 60
+PROXY_PROVIDERS = ("claude", "codex", "kimi")
+PROXY_URL = "http://127.0.0.1:8317"
+PROXY_TIMEOUT = 15
+PROXY_WORKERS = 4
+PROXY_MANAGEMENT_STOP = ("management-auth", "management-rate-limited")
 CREDITS_INTERVAL = CACHE_TTL
 CREDITS_TIMEOUT = 5
 # A collection shares the raw replies with credits without changing the weekly parsers.
@@ -379,6 +396,8 @@ MESSAGES = {
     "failed": "{name}: check failed after {ms} ms: {why}",
     "failed-again": "{name}: check failed again after {ms} ms: {why}",
     "recovered": "{name}: checked in {ms} ms, working again after: {why}",
+    "proxy-source": "{name}: CLIProxyAPI is {status}",
+    "proxy-pool": "{name}: CLIProxyAPI usage is {status}",
     "wait-over": "{name}: the wait {who} asked for is over",
     "busy": "{name}: no check: another usage check held the lock for over {wait} s",
     "cli": "{name}: asking {cli} app-server",
@@ -1961,7 +1980,324 @@ def replay(entry, wait, now):
     return {"status": "error", "message": entry["message"], **failure}
 
 
-def collect(fetchers, now=None, *, initial=(), credits=(), retrying=()):
+def proxy_options(args):
+    names = set(args.providers).intersection(PROXY_PROVIDERS).difference(args.direct_providers)
+    if not names:
+        return None
+    config = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
+    key = args.proxy_key_file or str(config / "cliproxyapi" / "management.key")
+    auto_discovery = args.proxy_auto and not (args.proxy_url or args.proxy_key_file)
+    if not (args.proxy_url or args.proxy_key_file or Path(key).exists() or auto_discovery):
+        return None
+    return names, args.proxy_url or PROXY_URL, key, args.proxy_kimi_region, auto_discovery
+
+
+def proxy_backend():
+    # usage.py also runs by path, including callers that load it with their
+    # own import spec. Resolve the installed sibling independently of sys.path.
+    name = "ringside_usage_proxy"
+    if name not in sys.modules:
+        spec = importlib.util.spec_from_file_location(name, Path(__file__).with_name("usage_proxy.py"))
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[name] = module
+        spec.loader.exec_module(module)
+    return sys.modules[name]
+
+
+def read_proxy_cache():
+    try:
+        cache = read_json(CACHE_DIR / "usage-proxy.json")
+    except (OSError, ValueError):
+        return {}
+    return cache if isinstance(cache, dict) else {}
+
+
+def write_proxy_cache(cache):
+    scopes = [(key, state) for key, state in cache.items() if key != "_starterPaused"]
+    result = dict(scopes[-8:])
+    if paused := proxy_paused_starters(cache):
+        result["_starterPaused"] = sorted(paused)
+    write_private(CACHE_DIR / "usage-proxy.json", result)
+
+
+def proxy_paused_starters(cache):
+    names = cache.get("_starterPaused")
+    return {name for name in STARTERS if isinstance(names, list) and name in names}
+
+
+def proxy_failure(reason, finished, retry_after=None):
+    delay = min(max(CACHE_TTL, retry_after or 0), HOLD_MAX)
+    return {"reason": reason, "retryAt": finished + delay, "delay": delay}
+
+
+def proxy_wait(error, now):
+    if not isinstance(error, dict) or any(type(error.get(key)) is not int for key in ("retryAt", "delay")):
+        return 0
+    error["retryAt"] = min(error["retryAt"], now + error["delay"])
+    return max(0, error["retryAt"] - now)
+
+
+def proxy_recent(at, now):
+    return type(at) is int and 0 <= now - at < CACHE_TTL
+
+
+def proxy_clock(record, key, now):
+    if type(record.get(key)) is int and record[key] > now:
+        record[key] = now
+
+
+def proxy_read_members(backend, client, work, now, started, deadline, region):
+    """Read a first account before fan-out to detect a rejected or limited
+    management request. Every in-flight request shares the discovery deadline."""
+    stop = threading.Event()
+
+    def read(item):
+        credential, record = item
+        if stop.is_set():
+            return None
+        try:
+            if time.monotonic() >= deadline:
+                raise backend.ProxyError("timeout")
+            reading = client.usage(credential, now, claude_parser=parse_session, kimi_parser=parse_kimi,
+                                   kimi_region=region, deadline=deadline)
+        except backend.ProxyError as err:
+            failure = proxy_failure(err.reason, now + math.ceil(time.monotonic() - started), err.retry_after)
+            if err.reason in PROXY_MANAGEMENT_STOP:
+                stop.set()
+                return failure
+            if err.reason not in ("offline", "timeout", "server", "rate-limited"):
+                record.pop("reading", None)
+                record.pop("fetchedAt", None)
+            record["error"] = failure
+            return None
+        record.update(reading=reading, fetchedAt=now)
+        record.pop("error", None)
+        return None
+
+    if not work:
+        return None
+    todo = iter(work)
+    management = read(next(todo))
+    if management or len(work) == 1:
+        return management
+    with concurrent.futures.ThreadPoolExecutor(max_workers=PROXY_WORKERS) as executor:
+        pending = {executor.submit(read, item) for _ in range(PROXY_WORKERS) if (item := next(todo, None))}
+        while pending:
+            done, pending = concurrent.futures.wait(pending, return_when=concurrent.futures.FIRST_COMPLETED)
+            for future in done:
+                failure = future.result()
+                if failure and (not management or failure["reason"] == "management-auth" or
+                                management["reason"] != "management-auth" and failure["retryAt"] > management["retryAt"]):
+                    management = failure
+            if not stop.is_set():
+                for _ in done:
+                    if item := next(todo, None):
+                        pending.add(executor.submit(read, item))
+    return management
+
+
+def proxy_report(backend, layout, now, affinity, failure=None):
+    accounts, ages, errors = [], [], []
+    management_hold = failure and failure["reason"] == "management-rate-limited"
+    if management_hold:
+        failure = dict(failure, reason="rate-limited")
+    for record in layout["members"].values():
+        reading, at = record.get("reading"), record.get("fetchedAt")
+        error = record.get("error")
+        if failure and not (management_hold and proxy_recent(at, now)):
+            error = error or failure
+        if error:
+            errors.append(error)
+        if isinstance(reading, dict) and type(at) is int:
+            ages.append(at)
+            row = dict(reading, state="stale" if error or not proxy_recent(at, now) else "ok", fetchedAt=at)
+            if error:
+                row["reason"] = error["reason"]
+            accounts.append(row)
+        else:
+            accounts.append({"state": "unavailable", "reason": error["reason"] if error else "timeout"})
+    report = backend.aggregate(accounts, now)
+    report.update(source="cliproxyapi", pool=layout["pool"], proxyStatus="connected")
+    if isinstance(affinity, dict):
+        report["affinity"] = affinity
+    if "weekly" in report and ages:
+        report.update(status="ok", fetchedAt=min(ages), stale=any(account["state"] != "ok" for account in accounts))
+    else:
+        retry_at = min((error["retryAt"] for error in errors if error.get("retryAt", 0) > now), default=now + CACHE_TTL)
+        limited = management_hold or bool(errors) and all(error["reason"] == "rate-limited" for error in errors)
+        if management_hold:
+            retry_at = max(retry_at, failure["retryAt"])
+        report.update(status="rate_limited" if limited else "error", retryAt=retry_at,
+                      reason="rate-limited" if limited else "proxy-read", host="",
+                      message="CLIProxyAPI could not read the account limits")
+        if limited:
+            report["retryAfter"] = retry_at - now
+    if management_hold:
+        report.setdefault("retryAt", failure["retryAt"])
+    return report
+
+
+def proxy_roster(backend, members, region, previous, now, work):
+    """Keep member holds and only readings belonging to this roster. A
+    fresh reading of an unchanged member can still serve a new roster."""
+    pool = backend.pool_fingerprint(members)
+    if region:
+        pool = hashlib.sha256(f"{pool}:{region}".encode()).hexdigest()
+    prior = previous.get("members", {})
+    records = {}
+    for member in members:
+        record = prior.get(member.fingerprint, {})
+        if member.requires_sign_in:
+            record = {"requiresSignIn": True, "error": proxy_failure("upstream-auth", now)}
+        elif record.get("requiresSignIn"):
+            record = {}
+        elif pool != previous.get("pool") and not proxy_recent(record.get("fetchedAt"), now):
+            record = {"error": record["error"]} if record.get("error") else {}
+        records[member.fingerprint] = record
+        if work is not None and not proxy_wait(record.get("error"), now) and (
+                record.get("error") or not proxy_recent(record.get("fetchedAt"), now)):
+            work.append((member, record))
+    return {"pool": pool, "members": records,
+            "regionNeeded": region == "auto" and any(member.region is None for member in members)}
+
+
+def record_proxy_failure(state, failure):
+    if failure["reason"] == "management-auth":
+        state["unauthorized"] = True
+    state["discoveryError"] = failure
+    return failure
+
+
+def collect_proxy(options, now, started):
+    """Resolve Auto sources and keep the account cache independent of all
+    direct usage, balances, reset history and starter planning."""
+    names, url, key, region, auto_discovery = options
+    backend = proxy_backend()
+    cache = read_proxy_cache()
+    before = json.dumps(cache)
+    scope = hashlib.sha256(os.fsencode(url) + b"\0" + os.fsencode(key)).hexdigest()
+    previous = cache.get(scope) if isinstance(cache.get(scope), dict) else {}
+    try:
+        client = backend.Client(url, key)
+    except backend.ProxyError as err:
+        status = "key-needed" if err.reason == "key-file" else "configuration"
+        if status == "key-needed" and auto_discovery and not Path(key).exists():
+            if not proxy_recent(previous.get("keylessAt"), now):
+                previous.update(keylessAt=now, keylessFound=backend.discover(url, deadline=started + PROXY_TIMEOUT))
+                cache.pop(scope, None)
+                cache[scope] = previous
+                write_proxy_cache(cache)
+            if previous.get("keylessFound") is not True:
+                return {}, {}
+        return {}, dict.fromkeys(names, status)
+    state = previous if previous.get("revision") == client.configuration_fingerprint else {}
+    state["revision"] = client.configuration_fingerprint
+    rosters = state.setdefault("rosters", {})
+    if not isinstance(rosters, dict):
+        rosters = state["rosters"] = {}
+    slots = {name: f"kimi:{region}" if name == "kimi" else name for name in names}
+    for slot, layout in list(rosters.items()):
+        members = layout.get("members") if isinstance(layout, dict) else None
+        if (not isinstance(members, dict) or not members or not isinstance(layout.get("pool"), str)
+                or not all(isinstance(record, dict) for record in members.values())):
+            del rosters[slot]
+            state.pop("discoveredAt", None)
+            continue
+        for record in members.values():
+            proxy_clock(record, "fetchedAt", now)
+    proxy_clock(state, "discoveredAt", now)
+    discovery = state.get("discoveryError")
+    deadline = started + PROXY_TIMEOUT
+    work = []
+    checked = False
+    if not state.get("unauthorized") and not proxy_wait(discovery, now):
+        due = not proxy_recent(state.get("discoveredAt"), now)
+        for slot in slots.values():
+            records = rosters.get(slot, {}).get("members", {}).values()
+            due |= any(not proxy_recent(record.get("fetchedAt"), now) and not proxy_wait(record.get("error"), now)
+                       for record in records)
+        if due:
+            try:
+                credentials = client.credentials(deadline=deadline)
+            except backend.ProxyError as err:
+                discovery = record_proxy_failure(state, proxy_failure(
+                    err.reason, now + math.ceil(time.monotonic() - started), err.retry_after))
+            else:
+                checked = True
+                state["discoveredAt"] = now
+                state.pop("discoveryError", None)
+                discovery = None
+                for name in PROXY_PROVIDERS:
+                    members = credentials.get(name) or []
+                    for selected_region in ("auto", "global", "china") if name == "kimi" else (None,):
+                        slot = f"kimi:{selected_region}" if selected_region else name
+                        if members:
+                            rosters[slot] = proxy_roster(backend, members, selected_region, rosters.get(slot, {}), now,
+                                                         work if slots.get(name) == slot else None)
+                        else:
+                            rosters.pop(slot, None)
+                if failure := proxy_read_members(backend, client, work, now, started, deadline, region):
+                    discovery = record_proxy_failure(state, failure)
+                elif time.monotonic() < deadline:
+                    try:
+                        state["affinity"] = client.affinity(deadline=deadline)
+                    except backend.ProxyError as err:
+                        if err.reason in PROXY_MANAGEMENT_STOP:
+                            discovery = record_proxy_failure(state, proxy_failure(
+                                err.reason, now + math.ceil(time.monotonic() - started), err.retry_after))
+
+    management_hold = discovery and discovery["reason"] == "management-rate-limited"
+    if state.get("unauthorized"):
+        reports, statuses = {}, dict.fromkeys(names, "unauthorized")
+    elif discovery and not management_hold and discovery["reason"] not in ("server", "rate-limited"):
+        status = "unsupported" if discovery["reason"] in ("configuration", "invalid-response") else "offline"
+        reports, statuses = {}, dict.fromkeys(names, status)
+    else:
+        reports, statuses = {}, {}
+        unavailable_status = "rate-limited" if management_hold else "offline"
+        for name, slot in slots.items():
+            layout = rosters.get(slot)
+            if not layout:
+                statuses[name] = unavailable_status if discovery else "no-accounts"
+                continue
+            if all(record.get("error", {}).get("reason") == "unsupported-credential"
+                   for record in layout["members"].values()):
+                statuses[name] = "region-needed" if layout.get("regionNeeded") else "unsupported"
+                continue
+            reports[name] = proxy_report(backend, layout, now, state.get("affinity"), discovery)
+            if management_hold:
+                reports[name]["proxyStatus"] = "rate-limited"
+            elif discovery:
+                reports[name]["proxyStatus"] = "offline"
+            elif layout.get("regionNeeded"):
+                reports[name]["proxyStatus"] = "region-needed"
+    selected = dict(statuses, **{name: report["proxyStatus"] for name, report in reports.items()})
+    last_status = previous.get("status", {}) if isinstance(previous.get("status"), dict) else {}
+    last_pools = previous.get("poolStatus", {}) if isinstance(previous.get("poolStatus"), dict) else {}
+    for name, status in selected.items():
+        if status != last_status.get(name):
+            event("info", name, "proxy-source", status=status)
+    for name, report in reports.items():
+        status = "incomplete" if report.get("stale") else "current" if report["status"] == "ok" else "unavailable"
+        if status != last_pools.get(name) or checked:
+            event("warning" if status != "current" and status != last_pools.get(name) else "debug",
+                  name, "proxy-pool", status=status)
+        last_pools[name] = status
+    state["status"] = dict(last_status, **selected)
+    state["poolStatus"] = last_pools
+    # A hub report must establish the preflight guard before the starter
+    # state is written, which can fail independently of the usage cache.
+    if paused := proxy_paused_starters(cache) | (reports.keys() & STARTERS):
+        cache["_starterPaused"] = sorted(paused)
+    cache[scope] = state
+    if json.dumps(cache) != before:
+        cache.pop(scope)
+        cache[scope] = state
+        write_proxy_cache(cache)
+    return reports, statuses
+
+
+def collect(fetchers, now=None, *, initial=(), credits=(), retrying=(), proxy=None, starters=()):
     """Poll each provider unless its last poll is recent enough to report
     again.
 
@@ -1987,18 +2323,31 @@ def collect(fetchers, now=None, *, initial=(), credits=(), retrying=()):
     with locked():
         now = int(time.time()) if now is None else now
         started = time.monotonic()
+        pooled, fallback = collect_proxy(proxy, now, started) if proxy else ({}, {})
+        if starters:
+            run_starters((name for name in starters if name not in pooled), lock_held=True)
+        direct = {name: fetch for name, fetch in fetchers.items() if name not in pooled}
+        direct_now = now + int(time.monotonic() - started) if proxy else now
         context_token = CREDITS_CONTEXT.set({"eligible": set(credits), "observed": {}})
+        rechecked = set()
         try:
-            providers, history = collect_locked(fetchers, now, initial=initial, retrying=retrying)
+            if direct:
+                providers, history = collect_locked(direct, direct_now, initial=initial, retrying=retrying,
+                                                    rechecked=rechecked)
+            else:
+                providers, history = {}, {}
         finally:
             CREDITS_CONTEXT.reset(context_token)
         finished = now + int(time.monotonic() - started)
-        replan_starters(providers, finished)
+        for name, status in fallback.items():
+            providers[name] = dict(providers[name], proxyStatus=status)
+        providers.update(pooled)
+        replan_starters(providers, finished, rechecked=rechecked)
     attach_history(providers, history, finished)
     return providers
 
 
-def collect_locked(fetchers, now, *, initial=(), retrying=()):
+def collect_locked(fetchers, now, *, initial=(), retrying=(), rechecked=None):
     """collect's work, for a caller already holding the lock: the entries
     and the history, which isn't attached yet."""
     cache = read_cache()
@@ -2072,6 +2421,8 @@ def collect_locked(fetchers, now, *, initial=(), retrying=()):
         if report["status"] == "ok":
             report["fetchedAt"] = now
             cache[name] = providers[name] = report
+            if rechecked is not None:
+                rechecked.add(name)
         else:
             # A rate limit is waited out from the end of the run, which is
             # after the reply came. Anything else is checked again by the next
@@ -2285,7 +2636,7 @@ def waiting(ids, message, *, credits=()):
 
 def attach_history(providers, history, now):
     for name, entry in providers.items():
-        if entry.get("status") != "ok":
+        if entry.get("status") != "ok" or entry.get("source") == "cliproxyapi":
             continue
         series = history.get(name) or {"weekly": [], "scoped": {}, "resets": {"weekly": None, "scoped": {}}}
         attach(entry["weekly"], series["weekly"], series["resets"]["weekly"], now)
@@ -2379,6 +2730,8 @@ def record_from(raw):
             record[key] = raw[key]
     if type(raw.get("period")) is int and raw["period"] > 0:
         record["period"] = raw["period"]
+    if raw.get("proxyPaused") is True:
+        record["proxyPaused"] = True
     if raw.get("reason") in REASONS:
         record["reason"] = raw["reason"]
     state = raw.get("state")
@@ -2971,29 +3324,48 @@ def run_starter(name):
     minute; the sender reads it again just before the message goes out, and
     sends only while every window the step began with is still on."""
     with locked():
-        on = read_switches()[name]
-        if not on:
-            return
-        states = read_starter_states()
-        record = states.setdefault(name, blank_record())
-
-        def persist():
-            private_state_dir()
-            write_private(STARTER_STATE, states)
-
-        sender = senders()[name]
-        Starter(name, record,
-                read=lambda not_before: starter_read(name, int(time.time()), not_before),
-                check=lambda: installed(name),
-                send=lambda binary: sender(binary, lambda: set(on) <= set(read_switches()[name])),
-                aim=lambda reading: [window for window in startable(name, reading) if window in on],
-                persist=persist, clock=lambda: int(time.time())).step()
-        if record["next"] is not None:
-            event("debug", name, "starter-next", state=record["state"],
-                  at=time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(record["next"])))
+        run_starter_locked(name)
 
 
-def replan_starters(providers, now):
+def run_starter_locked(name):
+    on = read_switches()[name]
+    if not on:
+        return
+    states = read_starter_states()
+    record = states.setdefault(name, blank_record())
+    if record.get("proxyPaused") or name in proxy_paused_starters(read_proxy_cache()):
+        return
+
+    def persist():
+        private_state_dir()
+        write_private(STARTER_STATE, states)
+
+    sender = senders()[name]
+    Starter(name, record,
+            read=lambda not_before: starter_read(name, int(time.time()), not_before),
+            check=lambda: installed(name),
+            send=lambda binary: sender(binary, lambda: set(on) <= set(read_switches()[name])),
+            aim=lambda reading: [window for window in startable(name, reading) if window in on],
+            persist=persist, clock=lambda: int(time.time())).step()
+    if record["next"] is not None:
+        event("debug", name, "starter-next", state=record["state"],
+              at=time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(record["next"])))
+
+
+def run_starters(names, *, lock_held=False):
+    for name in names:
+        # A state that can't be written stops the starter, never the report.
+        try:
+            if lock_held:
+                run_starter_locked(name)
+            else:
+                run_starter(name)
+        except (Busy, OSError) as err:
+            print(err, file=sys.stderr)
+            event("warning", name, "starter-stopped", why=os_why(err))
+
+
+def replan_starters(providers, now, *, rechecked=()):
     """Makes a starter due at once when a reading shows that what it waits
     for came early: the window it waits out has ended, or its reset moved by
     more than RESET_MOVED, or the limit it holds for is no longer
@@ -3004,19 +3376,49 @@ def replan_starters(providers, now):
     usage.lock; a state that can't be written is left for --start to report.
     """
     switches = read_switches()
-    if not any(switches.values()):
+    pooled = {name for name in STARTERS if providers.get(name, {}).get("source") == "cliproxyapi"}
+    if not pooled and not rechecked and not any(switches.values()):
         return
     states = read_starter_states()
-    due = [name for name, entry in providers.items()
-           if switches.get(name) and name in states and entry.get("status") == "ok"
-           and overtaken(name, states[name], entry, now, switches[name])]
-    for name in due:
-        states[name]["next"] = now
-        event("info", name, "starter-overtaken")
-    if due:
-        with contextlib.suppress(OSError):
+    proxy_cache = read_proxy_cache()
+    proxy_paused = proxy_paused_starters(proxy_cache)
+    changed = False
+    for name in pooled:
+        state = states.setdefault(name, blank_record())
+        if not state.get("proxyPaused"):
+            state["proxyPaused"] = True
+            changed = True
+    for name in (proxy_paused & set(rechecked)) - pooled:
+        states.setdefault(name, blank_record())
+    verified = set()
+    for name, state in states.items():
+        if name not in providers or name in pooled:
+            continue
+        if state.get("proxyPaused") or name in proxy_paused:
+            # A cached Direct reading can predate the source switch. Keep
+            # previous send confirmations and backoff until Direct is read.
+            if name not in rechecked:
+                continue
+            state.pop("proxyPaused", None)
+            if state["state"] in ("waiting", "started", "weekly"):
+                state["next"] = now
+            verified.add(name)
+            changed = True
+        elif switches[name] and providers[name].get("status") == "ok" and (
+                overtaken(name, state, providers[name], now, switches[name])):
+            state["next"] = now
+            event("info", name, "starter-overtaken")
+            changed = True
+    if changed:
+        try:
             private_state_dir()
             write_private(STARTER_STATE, states)
+        except OSError:
+            return
+    if verified & proxy_paused:
+        proxy_cache["_starterPaused"] = sorted(proxy_paused - verified)
+        with contextlib.suppress(OSError):
+            write_proxy_cache(proxy_cache)
 
 
 def overtaken(name, record, reading, now, on):
@@ -3042,14 +3444,15 @@ def overtaken(name, record, reading, now, on):
 STARTER_OFF = {"enabled": False, "state": "off", "at": None, "next": None, "reason": None}
 
 
-def starter_report(name, switches, states, now, reading=None):
+def starter_report(name, switches, states, now, reading=None, *, proxy_paused=False):
     """What the report says of a provider's starter: the windows switched
     on, those the plan lets it start, and the one it works toward, which its
     status names. Without a reading to tell the plan by, the windows switched
     on count, and the last window it worked toward is named."""
     record = states.get(name) or blank_record()
     on = switches.get(name, [])
-    windows = startable(name, reading) if reading is not None and reading.get("status") == "ok" else None
+    pooled = reading is not None and reading.get("source") == "cliproxyapi"
+    windows = startable(name, reading) if reading is not None and reading.get("status") == "ok" and not pooled else None
     aimed = [window for window in on if windows is None or window in windows]
     if windows is not None:
         window = "session" if "session" in (aimed or windows or OFFERED[name]) else "week"
@@ -3057,6 +3460,9 @@ def starter_report(name, switches, states, now, reading=None):
         window = "session" if record["period"] == SESSION_SECONDS else "week"
     else:
         window = WINDOWS[name]
+    if on and (pooled or proxy_paused or record.get("proxyPaused")):
+        return {"enabled": True, "on": on, "windows": windows, "state": "paused", "at": None,
+                "next": None, "reason": "proxy-source", "window": window}
     if not aimed:
         return dict(STARTER_OFF, on=on, windows=windows, window=window)
     # Should the clock have stepped back, the starter is due, so a --start
@@ -3073,9 +3479,10 @@ def starter_report(name, switches, states, now, reading=None):
 
 def attach_starters(providers, now):
     switches, states = read_switches(), read_starter_states()
+    paused = proxy_paused_starters(read_proxy_cache())
     for name, entry in providers.items():
         if name in STARTERS:
-            entry["starter"] = starter_report(name, switches, states, now, entry)
+            entry["starter"] = starter_report(name, switches, states, now, entry, proxy_paused=name in paused)
 
 
 # --- clock zone ------------------------------------------------------------
@@ -3196,11 +3603,20 @@ def arguments(argv):
                         help="providers awaiting their first report; briefly retry connection failures")
     parser.add_argument("--retry-providers", type=provider_list, default=[],
                         help="providers to check again now after a connection failure, skipping its hold")
+    parser.add_argument("--proxy-url", default="", help="loopback CLIProxyAPI server URL")
+    parser.add_argument("--proxy-key-file", default="", help="private file containing the CLIProxyAPI management key")
+    parser.add_argument("--proxy-auto", action="store_true", help="discover the default CLIProxyAPI server without a key")
+    parser.add_argument("--direct-providers", type=provider_list, default=[],
+                        help="providers whose usage is always read directly")
+    parser.add_argument("--proxy-kimi-region", choices=("auto", "global", "china"), default="auto",
+                        help="region of CLIProxyAPI Kimi credentials (default: auto)")
     parser.add_argument("--start", action="store_true",
                         help="run the session starter of each listed provider that is switched on and due")
     parser.add_argument("--starter-set", type=switch, action="append", default=[], metavar="PROVIDER=on|off|WINDOWS",
                         help="switch a provider's session starter on for this user for every window, none, or "
                              "the comma-separated windows named (session, week)")
+    parser.add_argument("--starter-switch-only", action="store_true",
+                        help="apply --starter-set without reading usage")
     parser.add_argument("--program", type=chosen_program, action="append", default=[], metavar="PROVIDER=PATH",
                         help="run the program at PATH for a provider rather than finding it; ~ is the home folder")
     args = parser.parse_args(argv)
@@ -3212,6 +3628,8 @@ def arguments(argv):
         parser.error("--retry-providers must be a subset of --providers")
     if (args.initial_providers or args.retry_providers) and (args.start or args.starter_set):
         parser.error("--initial-providers and --retry-providers are only for usage checks")
+    if args.starter_switch_only and (not args.starter_set or args.start or any(on for _, on in args.starter_set)):
+        parser.error("--starter-switch-only requires --starter-set with every switch off")
     return args
 
 
@@ -3229,26 +3647,28 @@ def main(argv=None):
             print(err, file=sys.stderr)
             for name in dict(args.starter_set):
                 event("warning", name, "starter-switch-failed", why=os_why(err))
-    if args.start:
-        for name in (name for name in ids if name in STARTERS):
-            # A state that can't be written stops the starter, never the
-            # report; the widget shows the reason under the switch.
-            try:
-                run_starter(name)
-            except (Busy, OSError) as err:
-                print(err, file=sys.stderr)
-                event("warning", name, "starter-stopped", why=os_why(err))
-    sources = fetchers()
-    credited = [name for name in args.credits_providers if name in CREDITED]
-    try:
-        providers = collect({name: sources[name] for name in ids}, initial=args.initial_providers,
-                            credits=credited, retrying=args.retry_providers)
-    except Busy as err:
-        providers = waiting(ids, str(err), credits=credited)
+    if args.starter_switch_only:
+        providers = {name: {} for name, _ in args.starter_set}
+    else:
+        proxy = proxy_options(args)
+        starters = [name for name in ids if args.start and name in STARTERS]
+        if not proxy:
+            run_starters(starters)
+        sources = fetchers()
+        credited = [name for name in args.credits_providers if name in CREDITED]
+        try:
+            providers = collect({name: sources[name] for name in ids}, initial=args.initial_providers,
+                                credits=credited, retrying=args.retry_providers, proxy=proxy,
+                                starters=starters if proxy else ())
+        except Busy as err:
+            undecided = proxy[0] if proxy else ()
+            providers = waiting([name for name in ids if name not in undecided], str(err), credits=credited)
+            for name in undecided:
+                event("warning", name, "busy", wait=LOCK_WAIT)
     report = {"fetchedAt": int(time.time()), "providers": providers, "events": EVENTS}
     attach_starters(providers, report["fetchedAt"])
     for name, entry in providers.items():
-        if name in CLIS:
+        if name in CLIS and not args.starter_switch_only:
             entry["program"] = program(name)
     # Read on every run, cached or not, so a change of clock zone shows by the
     # next poll; the cache itself never holds it.

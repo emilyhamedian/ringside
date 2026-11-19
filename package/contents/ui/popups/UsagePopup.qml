@@ -6,6 +6,7 @@ import QtQuick
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
 import "../code/format.js" as Format
+import "../code/limits.js" as Limits
 import "../code/pace.js" as Pace
 import "../code/providers.js" as Providers
 import "../code/style.js" as Style
@@ -34,6 +35,8 @@ PopupPage {
     readonly property var usage: monitor.usage
     readonly property var entry: usage.entry(item)
     readonly property var weekly: entry && entry.weekly ? entry.weekly : null
+    readonly property bool pooled: Limits.pooled(entry)
+    readonly property real nextReset: pooled ? Limits.nextReset(weekly, nowMs) : weekly?.resetsAt ?? NaN
     // Kimi's and OpenCode Go's limits span a month; the words for them say
     // so, before a first reading too.
     readonly property bool monthly: words.monthly(weekly) || Providers.FACTS[item].monthly === true
@@ -42,10 +45,10 @@ PopupPage {
     // (see UsageData.struck()), and then nothing of it is shown.
     readonly property bool failed: entry !== null && entry.lastError !== undefined
     readonly property bool struck: usage.struck(item, nowMs)
-    readonly property bool greyShown: failed && !struck
+    readonly property bool greyShown: failed && !struck || Limits.allStale(entry)
     readonly property bool loading: usage.loading(item)
     // All models first, then every model's own limit, whichever the ring shows.
-    readonly property var limits: weekly && !struck
+    readonly property var limits: weekly && !struck && !pooled
         ? [Object.assign({}, weekly, { id: "", label: i18nc("@label the weekly limit shared by every model", "All models") })]
             .concat(Array.from(entry.scoped ?? []))
         : []
@@ -163,14 +166,52 @@ PopupPage {
     // A plan with nothing to start, as Claude's without a five-hour limit,
     // keeps no footer.
     readonly property bool starterShown: usage.starterEnabled(item) && usage.startable(item).length > 0
-    footerLeadingShown: starterShown
-    footerLeading: StarterSwitch {
-        visible: popup.starterShown
-        item: popup.item
-        usage: popup.usage
-        nowMs: popup.nowMs
-        texts: words
-    }
+    readonly property bool starterPaused: usage.starterEnabled(item) && usage.starterPaused(item)
+    footerLeadingShown: pooled || starterShown || starterPaused
+    footerLeading: [
+        StarterSwitch {
+            visible: popup.starterShown && !popup.starterPaused && !popup.pooled
+            item: popup.item
+            usage: popup.usage
+            nowMs: popup.nowMs
+            texts: words
+        },
+        ColumnLayout {
+            visible: popup.pooled || popup.starterPaused
+            Layout.fillWidth: true
+            Layout.preferredWidth: 0
+            Layout.topMargin: Kirigami.Units.smallSpacing
+            Layout.bottomMargin: Layout.topMargin
+            spacing: Kirigami.Units.smallSpacing
+
+            Text {
+                visible: popup.pooled
+                Layout.fillWidth: true
+                wrapMode: Text.Wrap
+                textFormat: Text.PlainText
+                text: {
+                    const affinity = popup.entry?.affinity;
+                    const duration = affinity?.enabled && Number.isFinite(affinity.ttlSeconds) && affinity.ttlSeconds > 0
+                        ? words.duration(popup.nowMs / 1000 + affinity.ttlSeconds, popup.nowMs) : "";
+                    const detail = affinity?.enabled === true
+                        ? (duration ? i18nc("@info CLIProxyAPI routing advice", "Session affinity on · %1", duration)
+                                    : i18nc("@info CLIProxyAPI routing advice", "Session affinity on"))
+                        : affinity?.enabled === false ? i18nc("@info CLIProxyAPI routing advice", "Session affinity off") : "";
+                    return words.joined([i18nc("@label usage source", "CLIProxyAPI"), detail]);
+                }
+                color: Kirigami.Theme.textColor
+            }
+
+            Text {
+                visible: popup.starterPaused
+                Layout.fillWidth: true
+                wrapMode: Text.Wrap
+                textFormat: Text.PlainText
+                text: words.poolWords.paused()
+                color: Style.dim(Kirigami.Theme.textColor)
+            }
+        }
+    ]
 
     Words {
         id: words
@@ -186,7 +227,8 @@ PopupPage {
 
     PopupHeader {
         id: header
-        ringValue: popup.limits.length > 0 ? popup.weekly.percent : NaN
+        ringValue: !popup.struck ? popup.weekly?.percent ?? NaN : NaN
+        ringInner: popup.pooled && !popup.struck ? popup.innerLimit : null
         ringCancelled: popup.struck
         ringStale: popup.greyShown
         ringLoading: popup.loading
@@ -195,21 +237,48 @@ PopupPage {
         // many there are isn't known until the first check is done.
         subtitle: popup.loading
             ? i18nc("@info under Claude, Codex, Kimi or OpenCode Go: the first check of the limits since Ringside started is running", "Checking your usage…")
+            : popup.pooled ? words.poolWords.average(popup.weekly?.period)
             : popup.monthly
             ? i18ncp("@info under Kimi or OpenCode Go: what the popup shows", "Monthly limit", "Monthly limits",
                      Math.max(1, popup.limits.length, popup.entry && popup.entry.scoped ? popup.entry.scoped.length + 1 : 0))
             : i18ncp("@info under Claude or Codex: what the popup shows", "Weekly limit", "Weekly limits",
                      Math.max(1, popup.limits.length, popup.entry && popup.entry.scoped ? popup.entry.scoped.length + 1 : 0))
-        parts: popup.limits.length > 0 ? words.countdownParts(popup.weekly.resetsAt, popup.nowMs) : []
+        parts: popup.weekly && !popup.struck ? words.countdownParts(popup.nextReset, popup.nowMs) : []
         // With no reading shown, a failed check says so under the header,
         // and a lone dash here would only look unfinished.
         value: popup.weekly && !header.partsShown && !popup.failed ? "–" : ""
         // Plain whatever the reading: the ring and bars carry the level.
-        caption: header.partsShown ? i18nc("@info:label under the time left, e.g. 2d 21h until reset", "until reset") : ""
+        caption: header.partsShown ? (popup.pooled ? words.poolWords.resetCaption(popup.weekly)
+            : i18nc("@info:label under the time left, e.g. 2d 21h until reset", "until reset")) : ""
         accessibleValue: header.partsShown
-            ? i18nc("@info:accessible the time left until the weekly or monthly reset, e.g. 5 days 18 hours until reset", "%1 until reset",
-                    words.duration(popup.weekly.resetsAt, popup.nowMs))
+            ? (popup.pooled ? i18nc("@info:accessible time and pooled reset caption", "%1 · %2",
+                                    words.duration(popup.nextReset, popup.nowMs), header.caption)
+               : i18nc("@info:accessible the time left until the weekly or monthly reset, e.g. 5 days 18 hours until reset", "%1 until reset",
+                        words.duration(popup.nextReset, popup.nowMs)))
             : ""
+    }
+
+    UsagePool {
+        visible: popup.pooled
+        Layout.maximumHeight: Math.max(0, popup.room - header.implicitHeight - header.Layout.topMargin
+            - header.Layout.bottomMargin - popup.footerHeight - Kirigami.Units.smallSpacing)
+        entry: popup.entry
+        innerLimit: popup.pooled ? popup.innerLimit : null
+        texts: words
+        nowMs: popup.nowMs
+    }
+
+    Text {
+        Layout.fillWidth: true
+        Layout.leftMargin: Style.contentEdge(Kirigami.Units.largeSpacing)
+        Layout.rightMargin: Layout.leftMargin
+        Layout.bottomMargin: Kirigami.Units.largeSpacing
+        visible: text !== ""
+        text: popup.pooled ? "" : words.poolWords.directStatus(popup.entry)
+        color: Style.dim(Kirigami.Theme.textColor)
+        wrapMode: Text.Wrap
+        textFormat: Text.PlainText
+        horizontalAlignment: Text.AlignLeft
     }
 
     // Shown only beside a check that worked, so never with CheckStatus.
@@ -219,7 +288,7 @@ PopupPage {
         Layout.rightMargin: Layout.leftMargin
         Layout.topMargin: Kirigami.Units.largeSpacing
         Layout.bottomMargin: Math.round(Kirigami.Units.largeSpacing * 1.25)
-        window: popup.loading ? null : popup.usage.earlyReset(popup.item, popup.nowMs)
+        window: popup.loading || popup.pooled ? null : popup.usage.earlyReset(popup.item, popup.nowMs)
         texts: words
         nowMs: popup.nowMs
     }
@@ -233,7 +302,7 @@ PopupPage {
         visible: text !== ""
         text: {
             const e = popup.entry;
-            if (popup.loading) {
+            if (popup.loading || popup.pooled) {
                 return "";
             }
             if (!e || e.status === "signed_out") {
@@ -250,7 +319,7 @@ PopupPage {
 
     // Set off from the header by about what sets it off from the bars.
     CheckStatus {
-        visible: popup.failed
+        visible: popup.failed && !popup.pooled
         Layout.fillWidth: true
         Layout.leftMargin: Style.contentEdge(Kirigami.Units.largeSpacing)
         Layout.rightMargin: Layout.leftMargin
@@ -508,7 +577,7 @@ PopupPage {
         Layout.leftMargin: Style.contentEdge(Kirigami.Units.largeSpacing)
         Layout.rightMargin: Layout.leftMargin
         Layout.bottomMargin: Math.round(Kirigami.Units.largeSpacing * 1.5)
-        credit: popup.usage.credit(popup.item)
+        credit: popup.pooled ? null : popup.usage.credit(popup.item)
         minimumRowHeight: resetTickets.ticketHeight
     }
 }

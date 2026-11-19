@@ -83,6 +83,16 @@ Item {
     // finds them. Every run passes them, so choosing one checks it at once.
     readonly property var programs: ({ claude: String(config.claudeProgram ?? ""), codex: String(config.codexProgram ?? ""),
                                        opencode: String(config.opencodeProgram ?? "") })
+    readonly property var proxySettings: ({
+        url: String(config.proxyUrl ?? "").trim(),
+        keyFile: String(config.proxyKeyFile ?? "").trim(),
+        kimiRegion: String(config.proxyKimiRegion || "auto"),
+        direct: Limits.POOL_PROVIDERS.filter(id => config[id + "UsageSource"] === "direct")
+    })
+    property int routeRevision: 0
+    property var runRevisions: ({})
+    property var lastProxySettings: null
+    property bool waitingForOldPoll: false
     readonly property var innerChoices: ({ claude: config.claudeInnerLimit, codex: config.codexInnerLimit })
     // The last poll's status per id, as the settings page reads it.
     property var statuses: ({})
@@ -178,19 +188,28 @@ Item {
         return entries[id] ?? null;
     }
 
+    function starterPaused(id) {
+        const e = entry(id);
+        return Limits.pooled(e) || starters[id]?.reason === "proxy-source"
+            || (!e && Limits.POOL_PROVIDERS.includes(id) && !proxySettings.direct.includes(id)
+                && (proxySettings.url !== "" || proxySettings.keyFile !== ""));
+    }
+
     function credit(id) {
-        return config.showCredits === true && ids.includes(id) ? credits[id] ?? null : null;
+        return config.showCredits === true && ids.includes(id) && !Limits.pooled(entry(id)) ? credits[id] ?? null : null;
     }
 
     function creditUsed(id, nowMs) {
-        return ids.includes(id) && Credits.used(entry(id), credits[id], refreshMinutes, nowMs);
+        const e = entry(id);
+        return ids.includes(id) && !Limits.pooled(e) && Credits.used(e, credits[id], refreshMinutes, nowMs);
     }
 
     // Whether the weekly percentage ("weekly") or the credit balance
     // ("credit") drained between the last two checks, which is when the ring
     // pulses. A failed check shows nothing draining.
     function draining(id, kind, nowMs) {
-        return ids.includes(id) && !degraded(id) && Drain.active(drains[id], kind, refreshMinutes, nowMs / 1000);
+        return ids.includes(id) && !Limits.pooled(entry(id)) && !degraded(id)
+            && Drain.active(drains[id], kind, refreshMinutes, nowMs / 1000);
     }
 
     // The time in whole epoch seconds, as the helper gives its times.
@@ -220,14 +239,25 @@ Item {
     // --providers, so the patterns that read a run's ids and mode from its
     // end stay fixed.
     function helperCommand(providerIds, args, initialIds = [], retriedIds = []) {
+        const proxy = proxySettings;
         return providerIds.length > 0
             ? "python3 -B " + Shell.quoted(helperPath)
               + providerIds.filter(id => programs[id]).map(id => " --program " + Shell.quoted(id + "=" + programs[id]))
                            .join("")
+              + (providerIds.some(id => Limits.POOL_PROVIDERS.includes(id) && !proxy.direct.includes(id)) ? " --proxy-auto" : "")
+              + (proxy.url ? " --proxy-url " + Shell.quoted(proxy.url) : "")
+              + (proxy.keyFile ? " --proxy-key-file " + Shell.quoted(proxy.keyFile) : "")
+              + (proxy.direct.length ? " --direct-providers " + proxy.direct.join(",") : "")
+              + (proxy.kimiRegion !== "auto" ? " --proxy-kimi-region " + Shell.quoted(proxy.kimiRegion) : "")
               + (args === "" && initialIds.length > 0 ? " --initial-providers " + initialIds.join(",") : "")
               + (args === "" && retriedIds.length > 0 ? " --retry-providers " + retriedIds.join(",") : "")
               + (args === "" ? " --credits-providers " + providerIds.join(",") : "")
               + " --providers " + providerIds.join(",") + args : "";
+    }
+
+    function launch(source) {
+        runRevisions = Object.assign({}, runRevisions, { [source]: routeRevision });
+        runner.connectSource(source);
     }
 
     // As reported; after a switch change the helper couldn't write, "failed"
@@ -236,6 +266,9 @@ Item {
     // next at the retry.
     function starter(id) {
         const s = starters[id] ?? null;
+        if (starterPaused(id)) {
+            return Object.assign({}, s, { state: "paused", reason: "proxy-source", next: null });
+        }
         const w = switchFailures[id];
         const f = startFailures[id];
         return s && w && onText(s) !== w.on ? Object.assign({}, s, { state: "failed", reason: "switch", error: w.error })
@@ -260,7 +293,7 @@ Item {
     // with the next change.
     function setStarter(id, window, on) {
         const can = startable(id);
-        if (!ids.includes(id) || on && (!starterEnabled(id) || !can.includes(window))) {
+        if (!ids.includes(id) || starterPaused(id) || on && (!starterEnabled(id) || !can.includes(window))) {
             return;
         }
         const set = windowOrder.filter(w => can.includes(w) && (w === window ? on : starterOn(id, w))).join(",");
@@ -296,9 +329,10 @@ Item {
         }
         starterDisablePending = Object.assign({}, starterDisablePending, { [id]: false });
         starterDisableRunning = Object.assign({}, starterDisableRunning, { [id]: true });
-        const source = helperCommand([id], " --starter-set " + id + "=off");
+        const switchOnly = !ids.includes(id) || starterPaused(id);
+        const source = helperCommand([id], (switchOnly ? " --starter-switch-only" : "") + " --starter-set " + id + "=off");
         starterDisableRuns = Object.assign({}, starterDisableRuns, { [source]: id });
-        runner.connectSource(source);
+        launch(source);
     }
 
     function starterDisableRun(source) {
@@ -322,8 +356,12 @@ Item {
     // One --starter-set at a time, so a quick on and off land in order. An
     // off or retry for one provider never blocks an opt-in for the other.
     function writeStarter() {
-        const id = Object.keys(starterWanted).find(id => starterEnabled(id)
-            && starterDisablePending[id] !== true && starterDisableRunning[id] !== true);
+        const id = Object.keys(starterWanted).find(id => {
+            const e = entry(id);
+            const directReady = !starterPaused(id) && (routeRevision === 0 || e?.status === "ok" && e.lastError === undefined);
+            return starterEnabled(id) && (starterWanted[id] === "" || directReady)
+                && starterDisablePending[id] !== true && starterDisableRunning[id] !== true;
+        });
         if (id === undefined) {
             Items.USAGE.forEach(id => {
                 if (starterDisablePending[id] === true) {
@@ -333,9 +371,11 @@ Item {
             return;
         }
         if (!runner.connectedSources.some(s => starterSet(s) !== null)) {
-            const source = helperCommand(ids, " --starter-set " + id + "=" + (starterWanted[id] || "off"));
+            const switchOnly = starterWanted[id] === "" && (!entry(id) || starterPaused(id));
+            const args = (switchOnly ? " --starter-switch-only" : "") + " --starter-set " + id + "=" + (starterWanted[id] || "off");
+            const source = helperCommand(switchOnly ? [id] : ids, args);
             starterWrites = Object.assign({}, starterWrites, { [source]: starterWantedGeneration[id] });
-            runner.connectSource(source);
+            launch(source);
         }
     }
 
@@ -353,10 +393,11 @@ Item {
         // nothing either, until it is turned again.
         const due = ids.filter(id => {
             const s = starter(id);
-            return starterEnabled(id) && starterWindows(id).length > 0 && s?.reason !== "switch" && Number.isFinite(s?.next) && s.next <= now;
+            return starterEnabled(id) && !starterPaused(id) && starterWanted[id] === undefined && starterWindows(id).length > 0
+                && s?.reason !== "switch" && Number.isFinite(s?.next) && s.next <= now;
         });
         if (due.length > 0 && !busy) {
-            runner.connectSource(helperCommand(due, " --start"));
+            launch(helperCommand(due, " --start"));
         }
     }
 
@@ -399,7 +440,9 @@ Item {
             return false;
         }
         try {
-            return JSON.parse(config.usageStatus || "{}")[id]?.status !== "signed_out";
+            return !proxySettings.direct.includes(id) && Limits.POOL_PROVIDERS.includes(id)
+                && (proxySettings.url !== "" || proxySettings.keyFile !== "")
+                || JSON.parse(config.usageStatus || "{}")[id]?.status !== "signed_out";
         } catch (err) {
             return true;
         }
@@ -421,13 +464,15 @@ Item {
     function struck(id, nowMs) {
         const e = entry(id);
         const now = nowMs / 1000;
-        return degraded(id) && !(e.weekly && e.weekly.resetsAt > now && now - e.fetchedAt < 2 * refreshMinutes * 60);
+        const reset = Limits.pooled(e) ? Limits.nextReset(e.weekly, nowMs) : e?.weekly?.resetsAt;
+        return degraded(id) && !(reset > now && now - e.fetchedAt < 2 * refreshMinutes * 60);
     }
 
     // The window whose early reset the popup tells of (see code/reset.js),
     // beside a reading from a check that worked, or null.
     function earlyReset(id, nowMs) {
-        return degraded(id) ? null : Reset.notice(entry(id), seenResets()[id] ?? 0, nowMs / 1000);
+        const e = entry(id);
+        return degraded(id) || Limits.pooled(e) ? null : Reset.notice(e, seenResets()[id] ?? 0, nowMs / 1000);
     }
 
     function seenResets() {
@@ -448,7 +493,7 @@ Item {
     // The limit drawn inside the weekly ring, or null.
     function inner(id) {
         const e = entry(id);
-        return e ? Limits.pick(e.scoped, config[id + "InnerLimit"]) : null;
+        return e ? Limits.pick(e.scoped, config[id + "InnerLimit"], id === "claude" && Limits.pooled(e)) : null;
     }
 
     function refresh() {
@@ -456,12 +501,46 @@ Item {
         // command binding, so its report doesn't trigger another check.
         const source = helperCommand(ids, "", ids.filter(id => !answered.includes(id)),
                                      ids.filter(id => retryIds.includes(id)));
-        retryIds = [];
-        if (source !== "" && !runner.connectedSources.includes(source)) {
+        if (source === "") {
+            return;
+        }
+        if (runner.connectedSources.includes(source)) {
+            waitingForOldPoll = runRevisions[source] !== routeRevision;
+        } else {
+            retryIds = [];
+            waitingForOldPoll = false;
             // Set first: a source the engine still holds answers at once.
             checking = true;
-            runner.connectSource(source);
+            launch(source);
         }
+    }
+
+    function updateRoutes() {
+        const before = lastProxySettings;
+        const after = proxySettings;
+        lastProxySettings = after;
+        if (before === null) {
+            return;
+        }
+        const changed = Limits.POOL_PROVIDERS.filter(id => {
+            const wasDirect = before.direct.includes(id);
+            const isDirect = after.direct.includes(id);
+            return wasDirect !== isDirect || !isDirect && (before.url !== after.url || before.keyFile !== after.keyFile
+                || id === "kimi" && before.kimiRegion !== after.kimiRegion);
+        });
+        if (changed.length === 0) {
+            return;
+        }
+        ++routeRevision;
+        for (const name of ["entries", "credits", "drains", "starters", "startFailures", "statuses"]) {
+            const kept = Object.assign({}, usage[name]);
+            changed.forEach(id => { delete kept[id]; });
+            usage[name] = kept;
+        }
+        answered = answered.filter(id => !changed.includes(id));
+        writeStatus();
+        Qt.callLater(refresh);
+        Qt.callLater(writeStarter);
     }
 
     // When the timer next runs the helper for a provider whose check
@@ -552,7 +631,22 @@ Item {
         for (const id of ids) {
             const was = entries[id];
             const next = report.providers[id];
-            if (next && next.credits !== undefined) {
+            // A helper waiting on another check learned nothing about the
+            // current pool or whether the provider should fall back.
+            if (Limits.pooled(was) && next?.reason === "busy") {
+                merged[id] = Object.assign({}, was, { lastError: next.message ?? next.status,
+                    lastErrorAt: at, reason: "busy", retryAt: next.retryAt ?? at });
+                if (statuses[id]) {
+                    latest[id] = statuses[id];
+                }
+                continue;
+            }
+            const pooled = Limits.pooled(next);
+            const changedSource = next && was && pooled !== Limits.pooled(was);
+            if (pooled || changedSource) {
+                delete balances[id];
+            }
+            if (!pooled && next?.credits !== undefined) {
                 balances[id] = next.credits;
             }
             // A report that can't tell what the plan allows keeps what the
@@ -575,14 +669,16 @@ Item {
             // which is when Claude's program is needed, and the windows the
             // plan lets it start, which decide the provider's setting.
             latest[id] = { status: next.status, message: next.message ?? "", program: next.program,
-                           starter: next.starter?.enabled === true, windows: windows };
-            if (next.status === "ok" || next.status === "signed_out") {
+                           starter: next.starter?.enabled === true, windows: windows, source: next.source,
+                           proxyStatus: next.proxyStatus, accounts: next.accounts?.length,
+                           starterPaused: pooled || next.starter?.reason === "proxy-source" ? true : undefined };
+            if (pooled || next.status === "ok" || next.status === "signed_out") {
                 merged[id] = next;
             } else if (was || loading(id)) {
-                merged[id] = Object.assign({}, was ?? { status: next.status },
+                merged[id] = Object.assign({}, changedSource ? { status: next.status } : was ?? { status: next.status },
                                            { lastError: next.message ?? next.status, lastErrorAt: at,
                                              reason: next.reason ?? "other", host: next.host ?? "",
-                                             retryAt: next.retryAt ?? at });
+                                             retryAt: next.retryAt ?? at, proxyStatus: next.proxyStatus });
             }
         }
         const reported = ids.filter(id => report.providers[id] && !answered.includes(id));
@@ -590,7 +686,8 @@ Item {
         // A credit ring represents spending, so it must not replay a weekly
         // percentage's reset when entering or leaving that display.
         for (const id of ids) {
-            if (creditUsed(id, now * 1000) || Credits.used(merged[id], balances[id], refreshMinutes, now * 1000)) {
+            if (Limits.pooled(entries[id]) || Limits.pooled(merged[id]) || creditUsed(id, now * 1000)
+                || Credits.used(merged[id], balances[id], refreshMinutes, now * 1000)) {
                 Object.keys(events).filter(key => key.startsWith(id + ".")).forEach(key => { delete events[key]; });
             }
         }
@@ -600,7 +697,11 @@ Item {
         // Each provider this check reported on, against the check before.
         const falling = Object.assign({}, drains);
         ids.filter(id => report.providers[id]).forEach(id => {
-            falling[id] = Drain.step(drains[id], entries[id], merged[id], credits[id], balances[id], refreshMinutes, now);
+            if (Limits.pooled(entries[id]) || Limits.pooled(merged[id])) {
+                delete falling[id];
+            } else {
+                falling[id] = Drain.step(drains[id], entries[id], merged[id], credits[id], balances[id], refreshMinutes, now);
+            }
         });
         entries = merged;
         credits = balances;
@@ -717,10 +818,13 @@ Item {
     }
 
     Component.onCompleted: {
+        lastProxySettings = proxySettings;
         requestDisable("claude");
         requestDisable("codex");
         requestDisable("opencode");
     }
+
+    onProxySettingsChanged: updateRoutes()
 
     // Also sent while the widget starts; a choice made before any reading
     // has nothing to add to what is stored.
@@ -751,6 +855,10 @@ Item {
         connectedSources: []
         onNewData: (source, data) => {
             disconnectSource(source);
+            const obsolete = source in usage.runRevisions && usage.runRevisions[source] !== usage.routeRevision;
+            const revisions = Object.assign({}, usage.runRevisions);
+            delete revisions[source];
+            usage.runRevisions = revisions;
             const disabling = usage.starterDisableRun(source);
             if (disabling) {
                 usage.starterDisableRunning = Object.assign({}, usage.starterDisableRunning, { [disabling]: false });
@@ -769,7 +877,7 @@ Item {
             const set = usage.starterSet(source);
             const started = usage.startedIds(source);
             const writeGeneration = usage.starterWrites[source];
-            const settled = set && writeGeneration === usage.starterWantedGeneration[set.id]
+            const wanted = set && writeGeneration === usage.starterWantedGeneration[set.id]
                 && usage.starterWanted[set.id] === set.on ? set.id : "";
             let report = null;
             try {
@@ -779,7 +887,18 @@ Item {
             }
             usage.writeEvents(report?.events);
             const failure = Report.helperFailure(data);
-            if (!report?.providers && started.length > 0) {
+            const switchOnly = / --starter-switch-only --starter-set /.test(source);
+            const written = set ? report?.providers?.[set.id]?.starter : null;
+            const settled = wanted && (!obsolete || written && failure.detail === "") ? wanted : "";
+            if (obsolete || switchOnly && report?.providers) {
+                if (obsolete && usage.waitingForOldPoll) {
+                    Qt.callLater(usage.refresh);
+                }
+                if (!obsolete && written) {
+                    const windows = written.windows ?? usage.knownWindows(set.id);
+                    usage.starters = Object.assign({}, usage.starters, { [set.id]: Object.assign({}, written, { windows: windows }) });
+                }
+            } else if (!report?.providers && started.length > 0) {
                 Log.write(journal, "warning", "the session starter run for " + started.join(",") + " failed: "
                           + usage.troubleText(failure));
                 usage.startFailed(started, usage.failureText(failure));
@@ -803,8 +922,7 @@ Item {
                 const first = usage.ids.filter(id => polled.includes(id) && usage.loading(id));
                 const loaded = Object.assign({}, usage.entries);
                 first.forEach(id => { loaded[id] = { status: "error" }; });
-                usage.entries = Report.markFailed(loaded, usage.helperError, usage.nowSeconds(),
-                                                  Report.failureReason(failure));
+                usage.entries = Report.markFailed(loaded, usage.helperError, usage.nowSeconds(), Report.failureReason(failure));
                 usage.answered = usage.answered.concat(first);
                 usage.writeStatus();
             } else {
@@ -818,10 +936,9 @@ Item {
                 if (started.length > 0) {
                     usage.startLeftDue(started, reason);
                 }
-                if (settled && reason !== "" && report.providers[settled]?.starter
-                    && usage.onText(report.providers[settled].starter) !== set.on) {
-                    usage.switchRefused(settled, set.on, reason);
-                }
+            }
+            if (settled && failure.detail !== "" && written && usage.onText(written) !== set.on) {
+                usage.switchRefused(settled, set.on, failure.detail);
             }
             if (disabling) {
                 const failed = !report?.providers || failure.detail !== ""
@@ -851,6 +968,8 @@ Item {
             if (set) {
                 usage.writeStarter();
                 usage.startDue();
+            } else if (!obsolete && report?.providers && usage.routeRevision > 0 && Object.keys(usage.starterWanted).length > 0) {
+                usage.writeStarter();
             }
         }
     }
@@ -899,7 +1018,8 @@ Item {
     Timer {
         objectName: "starterTimer"
         interval: 30000
-        running: usage.ids.some(id => usage.starterEnabled(id) && usage.starters[id]?.enabled === true && Number.isFinite(usage.starters[id].next))
+        running: usage.ids.some(id => usage.starterEnabled(id) && !usage.starterPaused(id)
+            && usage.starters[id]?.enabled === true && Number.isFinite(usage.starters[id].next))
         repeat: true
         onTriggered: usage.startDue()
     }

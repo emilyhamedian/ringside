@@ -718,6 +718,8 @@ TestRoot {
                                                            codex: [{ id: "gpt5", label: "GPT-5", reported: true }] }) };
             const programs = { itemOrder: ["cpu", "claude", "codex", "opencode"], hiddenItems: [],
                                usageStatus: JSON.stringify(programStates()["notfound-on"].status) };
+            const sources = { itemOrder: everyItem, hiddenItems: [],
+                              usageStatus: JSON.stringify({ kimi: { proxyStatus: "region-needed" } }) };
             const listed = page => { page.listed = root.listed; };
             return [
                 { tag: "updateInterval", source: general, drive: page => spinUp(page, "Update interval"),
@@ -764,6 +766,20 @@ TestRoot {
                   saved: { usageRefreshMinutes: 10 } },
                 { tag: "showCredits", source: providers,
                   drive: page => press(page, "Show remaining credits"), saved: { showCredits: false } },
+                { tag: "proxyUrl", source: providers,
+                  drive: page => typeInto(page, "Hub URL", "http://127.0.0.1:8320"),
+                  saved: { proxyUrl: "http://127.0.0.1:8320" } },
+                { tag: "proxyKeyFile", source: providers,
+                  drive: page => typeInto(page, "Management key file", "~/secrets/hub key"),
+                  saved: { proxyKeyFile: "~/secrets/hub key" } },
+                { tag: "proxyKimiRegion", source: providers, start: sources,
+                  drive: page => pickIn(page, "Kimi region", 2), saved: { proxyKimiRegion: "china" } },
+                { tag: "claudeUsageSource", source: providers, start: sources,
+                  drive: page => pickIn(page, "Claude usage source", 1), saved: { claudeUsageSource: "direct" } },
+                { tag: "codexUsageSource", source: providers, start: sources,
+                  drive: page => pickIn(page, "OpenAI usage source", 1), saved: { codexUsageSource: "direct" } },
+                { tag: "kimiUsageSource", source: providers, start: sources,
+                  drive: page => pickIn(page, "Kimi usage source", 1), saved: { kimiUsageSource: "direct" } },
                 { tag: "claudeSessionStarter", source: providers, start: programs,
                   drive: page => press(page, "Claude: Auto start session"), saved: { claudeSessionStarter: false } },
                 { tag: "codexSessionStarter", source: providers, start: programs,

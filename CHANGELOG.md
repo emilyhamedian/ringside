@@ -6,6 +6,11 @@ follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Claude, Codex and Kimi rings show pooled usage and the next account reset
+  when a local CLIProxyAPI hub is available.
+
 ## [0.5.0] - 2026-11-12
 
 ### Added

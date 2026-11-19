@@ -3,6 +3,7 @@
 
 import QtQuick
 import "code/format.js" as Format
+import "code/limits.js" as Limits
 import "code/providers.js" as Providers
 import "code/hardware.js" as Hardware
 import "code/history.js" as History
@@ -17,6 +18,7 @@ QtObject {
 
     // Monitor.qml, or anything shaped like it.
     required property var monitor
+    readonly property PoolWords poolWords: PoolWords {}
 
     function describe(item, nowMs) {
         switch (item) {
@@ -134,8 +136,9 @@ QtObject {
             return lines(i18nc("@info a percentage", "%1%", "––"), 0, true, "–" + timeUnits()[0], 0);
         }
         const used = weekly ? weekly.percent : NaN;
-        const left = spelled(countdownParts(weekly ? weekly.resetsAt : null, nowMs, true)) || "–";
-        const failed = !entry || entry.lastError !== undefined;
+        const reset = Limits.pooled(entry) ? Limits.nextReset(weekly, nowMs) : weekly?.resetsAt;
+        const left = spelled(countdownParts(reset, nowMs, true)) || "–";
+        const failed = !entry || entry.lastError !== undefined || Limits.allStale(entry);
         return lines(reading(used), failed || monitor.usage.creditUsed(item, nowMs) ? 0 : Format.level(used), failed, left, 0);
     }
 
@@ -204,6 +207,22 @@ QtObject {
         if (entry.status === "signed_out") {
             return i18nc("@info:tooltip", "Signed out");
         }
+        if (Limits.pooled(entry)) {
+            const main = entry.weekly;
+            const extra = usage.inner(item);
+            const left = duration(Limits.nextReset(main, nowMs), nowMs);
+            return [
+                main ? poolWords.average(main.period) : i18nc("@info:tooltip", "CLIProxyAPI pooled usage"),
+                main?.accountAverage === true ? i18nc("@info:tooltip percentage of usage averaged across accounts", "Account average: %1 used",
+                                                       percentText(main.percent))
+                    : main ? i18nc("@info:tooltip", "%1 used", percentText(main.percent)) : poolWords.sourceStatus(entry.proxyStatus),
+                extra ? i18nc("@info:tooltip model and used percentage", "%1 %2", extra.label, percentText(extra.percent)) : "",
+                left ? (main.incomplete ? i18nc("@info:tooltip time left", "Next known reset in %1", left)
+                                        : i18nc("@info:tooltip time left", "Next reset in %1", left)) : "",
+                poolWords.quality(entry),
+                poolWords.incomplete(entry) ? i18nc("@info:tooltip", "Some readings are incomplete.") : ""
+            ].filter(Boolean).join("\n");
+        }
         if (!entry.weekly && entry.lastError !== undefined) {
             return failedText(item, entry, "", nowMs);
         }
@@ -224,7 +243,9 @@ QtObject {
         if (usage.creditUsed(item, nowMs)) {
             text += "\n" + i18nc("@info:tooltip a credit balance fell between the two most recent checks", "Credits used since the previous check.");
         }
-        return entry.lastError === undefined ? text : failedText(item, entry, text, nowMs);
+        const direct = poolWords.directStatus(entry);
+        const status = entry.lastError === undefined ? text : failedText(item, entry, text, nowMs);
+        return direct ? status + "\n" + direct : status;
     }
 
     // A failed check in words, a sentence a line: when it failed and why;
@@ -465,6 +486,9 @@ QtObject {
     // follows it ("Tue 10/13/26 3:33 AM").
     function starterStatus(item, starter, nowMs) {
         const s = starter ?? { state: "off" };
+        if (s.reason === "proxy-source") {
+            return poolWords.paused();
+        }
         const claude = item === "claude";
         // OpenCode Go has only a session to start, so its sentences are its own.
         const opencode = item === "opencode";

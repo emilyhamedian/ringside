@@ -78,7 +78,7 @@ PlasmaExtras.PlasmoidHeading {
             // Level with the lead's content. The lead's own room above and
             // below it is the button's too, or the button would be centred on
             // that room instead.
-            readonly property Item leadItem: lead.visible ? lead.children[0] : null
+            readonly property Item leadItem: lead.visible ? Array.from(lead.children).find(child => child.visible) ?? null : null
             Layout.alignment: Qt.AlignVCenter
             Layout.topMargin: leadItem?.Layout.topMargin ?? 0
             Layout.bottomMargin: leadItem?.Layout.bottomMargin ?? 0

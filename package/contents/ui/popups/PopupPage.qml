@@ -18,6 +18,7 @@ ColumnLayout {
     property alias systemMonitorShown: footer.systemMonitorShown
     property alias footerLeading: footer.leading
     property alias footerLeadingShown: footer.leadingShown
+    readonly property real footerHeight: footer.implicitHeight
     // The moment marked across the popup's graphs. A popup with several
     // devices gives each its own, so a device's graphs follow only each other.
     readonly property GraphCursor graphCursor: GraphCursor {
