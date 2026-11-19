@@ -299,7 +299,7 @@ ConfigPage {
         }
 
         Note {
-            text: i18nc("@info", "Balances for direct logins and hub accounts are checked even when hidden. Claude checks its Anthropic balance at most once every 5 minutes per account. For hub accounts, it first checks the profile to see whether prepaid credits are enabled. Codex and Kimi use their existing usage checks.")
+            text: i18nc("@info", "Ringside checks balances even when hidden. Claude's balance needs an extra check with Anthropic.")
         }
 
         Item {
@@ -334,7 +334,7 @@ ConfigPage {
 
         Note {
             text: i18nc("@info under the CLIProxyAPI settings",
-                        "Automatic prefers accounts managed by the hub. Direct uses the provider's local login. Enter the path to the key file; Ringside saves the path.")
+                        "Automatic tries the hub first. Direct uses your own login. The key file must be readable only by you.")
         }
 
         // Each provider's section shows only while it has something to set.
@@ -388,7 +388,7 @@ ConfigPage {
         Note {
             visible: page.claudeHasLimits
             text: Limits.pooled(page.usageStatus.claude)
-                ? i18nc("@info Claude inner ring", "Automatic prefers the pooled Fable limit when the hub reports it.")
+                ? i18nc("@info Claude inner ring", "Automatic shows Fable if the hub reports it, or the only model limit.")
                 : page.automaticLine
         }
 

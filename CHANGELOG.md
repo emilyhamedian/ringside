@@ -8,20 +8,13 @@ follows [Semantic Versioning](https://semver.org/).
 
 ### Added
 
-- Claude, Codex and Kimi rings show pooled usage and the next account reset
-  when a local CLIProxyAPI hub is available.
-- Hub popups show each account's banked reset count and remaining credits.
-- Hub popups show pooled five-hour usage for multiple linked accounts when
-  at least one reports a five-hour window.
-- Hub popups graph the last seven days of pooled usage.
+- Claude, Codex and Kimi show pooled usage, the next account reset and
+  seven days of history through a local CLIProxyAPI hub.
 
 ### Changed
 
-- Usage popups list five-hour, weekly and monthly bars before model limits.
-
-### Fixed
-
-- Pooled usage excludes pre-reset usage and explains why hub readings failed.
+- Usage popups list the five-hour, weekly and monthly bars before model
+  limits.
 
 ## [0.5.0] - 2026-11-12
 

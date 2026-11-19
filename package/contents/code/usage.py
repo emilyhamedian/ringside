@@ -2307,7 +2307,7 @@ def proxy_report(backend, layout, now, affinity, failure=None, *, show_credits=F
             retry_at = max(retry_at, failure["retryAt"])
         report.update(status="rate_limited" if limited else "error", retryAt=retry_at,
                       reason="rate-limited" if limited else "proxy-read", host="",
-                      message="CLIProxyAPI could not read the account limits")
+                      message="The hub couldn't read the accounts' limits.")
         if limited:
             report["retryAfter"] = retry_at - now
     if management_hold:

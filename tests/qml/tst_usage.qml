@@ -2916,11 +2916,13 @@ TestRoot {
 
         function test_poolShowsWhyAllReadingsFailed() {
             monitor.usage.entries = { claude: { source: "cliproxyapi", proxyStatus: "connected", status: "error",
+                reason: "proxy-read", lastError: "helper diagnostic",
                 accounts: [{ state: "unavailable", reason: "upstream-auth" }] } };
             const popup = load("claude");
             const body = findChild(popup, "usagePool");
-            verify(root.find(body, child => child.visible && child.text === "The hub could not read usage for these accounts."));
+            verify(root.find(body, child => child.visible && child.text === "The hub can't read these accounts' usage."));
             verify(root.find(body, child => child.visible && child.text === "Unavailable · Sign in again in CLIProxyAPI"));
+            verify(!root.find(body, child => child.visible && child.text === "helper diagnostic"));
         }
 
         function test_poolShowsBalancesUnderTheirOwnAccount() {

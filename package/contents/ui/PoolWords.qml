@@ -15,19 +15,19 @@ QtObject {
                          "Connected · %2 account", "Connected · %2 accounts", count, Format.whole(count))
                 : i18nc("@info CLIProxyAPI connection status", "Connected");
         case "key-needed":
-            return i18nc("@info CLIProxyAPI connection status", "A readable management key file is needed.");
+            return i18nc("@info CLIProxyAPI connection status", "Ringside can't read the management key file.");
         case "unauthorized":
-            return i18nc("@info CLIProxyAPI connection status", "The hub declined the management key.");
+            return i18nc("@info CLIProxyAPI connection status", "The hub rejected the management key.");
         case "offline":
-            return i18nc("@info CLIProxyAPI connection status", "The hub could not be reached.");
+            return i18nc("@info CLIProxyAPI connection status", "Can't reach the hub.");
         case "rate-limited":
             return i18nc("@info CLIProxyAPI connection status", "The hub asked Ringside to wait before checking again.");
         case "no-accounts":
             return i18nc("@info CLIProxyAPI connection status", "The hub has no enabled accounts for this provider.");
         case "unsupported":
-            return i18nc("@info CLIProxyAPI connection status", "The hub could not read usage for these accounts.");
+            return i18nc("@info CLIProxyAPI connection status", "The hub can't read these accounts' usage.");
         case "region-needed":
-            return i18nc("@info CLIProxyAPI connection status", "Choose the region for the imported Kimi credentials in AI Providers.");
+            return i18nc("@info CLIProxyAPI connection status", "Choose a Kimi region under AI Providers.");
         case "configuration":
             return i18nc("@info CLIProxyAPI connection status", "Check the hub URL and management key file.");
         default:
@@ -39,6 +39,9 @@ QtObject {
         const source = entry?.proxyStatus;
         if (source && source !== "connected") {
             return sourceStatus(source);
+        }
+        if (entry?.reason === "proxy-read") {
+            return sourceStatus("unsupported");
         }
         if (entry?.lastError !== undefined) {
             return entry.lastError;
@@ -56,7 +59,7 @@ QtObject {
         case "rate-limited":
             return i18nc("@info:status usage of a pooled account", "Rate limited");
         case "offline":
-            return i18nc("@info:status usage of a pooled account", "Could not connect");
+            return i18nc("@info:status usage of a pooled account", "Can't connect");
         case "timeout":
             return i18nc("@info:status usage of a pooled account", "Check timed out");
         case "server":
