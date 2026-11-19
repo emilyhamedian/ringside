@@ -2826,6 +2826,8 @@ TestRoot {
             tryVerify(() => pooledSession.y < pooledModel("Fable").y);
             const session = root.find(accounts[0], child => child.objectName === "poolLimit" && child.label === root.localized("5-hour session"));
             verify(session.resetText !== "");
+            verify(root.find(session, child => child.visible && child.text === "· " + session.resetText));
+            verify(!root.find(pooledSession, child => child.visible && child.text?.startsWith("·")));
             verify(!root.find(accounts[1], child => child.objectName === "poolLimit" && child.label === root.localized("5-hour session")));
             const accountModel = root.find(accounts[0], child => child.objectName === "poolLimit" && child.label === "Weekly · Fable");
             verify(accountModel.resetText !== "");
@@ -2938,7 +2940,7 @@ TestRoot {
             compare(root.find(credits[0], child => child.label === credits[0].label && child !== credits[0]).text, "Credits remaining");
             compare(credits[0].value, root.localized("18.42"));
             compare(credits[0].unit, "USD");
-            compare(credits[1].label, "Credits remaining · cached");
+            compare(credits[1].label, "Credits remaining (cached)");
             verify(credits[1].Accessible.description.includes("could not be reached"));
             usage.showCredits = false;
             tryVerify(() => credits.every(row => !row.visible));
@@ -2973,7 +2975,7 @@ TestRoot {
             verify(!row.plain);
             compare(row.value, root.localized(data.value));
             compare(row.unit, data.currency || "credits");
-            compare(row.label, data.status === "ok" ? "Credits remaining" : "Credits remaining · cached");
+            compare(row.label, data.status === "ok" ? "Credits remaining" : "Credits remaining (cached)");
             const when = new Date(at * 1000).toLocaleString(Qt.locale(), Locale.ShortFormat);
             verify(row.detail.includes(when));
             compare(row.Accessible.description, row.detail);

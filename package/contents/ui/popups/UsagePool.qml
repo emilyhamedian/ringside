@@ -139,8 +139,14 @@ PlasmaComponents.ScrollView {
             Text {
                 Accessible.ignored: true
                 visible: row.resetText !== ""
-                text: row.resetCaption ? i18nc("@info time until a pooled usage reset", "%1 · %2", row.resetText, row.resetCaption)
-                                       : row.resetText
+                text: {
+                    const countdown = row.resetCaption
+                        ? i18nc("@info time until a pooled usage reset", "%1 · %2", row.resetText, row.resetCaption)
+                        : row.resetText;
+                    return Number.isFinite(row.window.percent)
+                        ? i18nc("@info separator between usage percentage and reset countdown", "· %1", countdown)
+                        : countdown;
+                }
                 font.features: ({ "tnum": 1 })
                 textFormat: Text.PlainText
                 color: Style.dim(Kirigami.Theme.textColor)
