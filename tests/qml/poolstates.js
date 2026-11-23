@@ -46,5 +46,33 @@ function example(now, provider = "claude") {
         accounts[0].credits.balance = { amount: 1250.5, currency: "", precision: 2 };
         accounts[1].otherPeriods = [monthly];
     }
+    if (provider === "antigravity") {
+        const gemA = Object.assign(weekly(42, first), { label: "Gemini" });
+        const gemB = Object.assign(weekly(18, second), { label: "Gemini" });
+        const tpA = Object.assign(weekly(86, first), { id: "3p-weekly", label: "Claude & GPT" });
+        const tpB = Object.assign(weekly(34, second), { id: "3p-weekly", label: "Claude & GPT" });
+        const agAccounts = [
+            { state: "ok", weekly: gemA, scoped: [tpA],
+              session: { period: "session", percent: 24, windowSeconds: 18000, resetsAt: now + 3 * 3600 + 12 * 60 },
+              credits: { status: "ok", balance: { amount: 1250, currency: "", precision: 0 }, fetchedAt: now } },
+            { state: "ok", weekly: gemB, scoped: [tpB],
+              credits: { status: "ok", balance: { amount: 500, currency: "", precision: 0 }, fetchedAt: now } }
+        ];
+        const agEntry = {
+            source: "cliproxyapi",
+            pool: "demo-ag",
+            status: "ok",
+            proxyStatus: "connected",
+            fetchedAt: now,
+            weekly: average([gemA, gemB], 30),
+            session: average([agAccounts[0].session], 12),
+            scoped: [average([tpA, tpB], 60)],
+            accounts: agAccounts,
+            affinity: { enabled: true, ttlSeconds: 3600 }
+        };
+        agEntry.weekly.history = history.map(([days, used]) => [now - Math.round(days * day), Math.round(used * 0.5)]);
+        agEntry.scoped[0].history = history.map(([days, , tp]) => [now - Math.round(days * day), Math.round(tp * 0.75)]);
+        return agEntry;
+    }
     return entry;
 }

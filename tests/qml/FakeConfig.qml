@@ -32,10 +32,12 @@ QtObject {
     property string diskTemperatureSensor: ""
     property string claudeInnerLimit: ""
     property string codexInnerLimit: ""
+    property string antigravityInnerLimit: ""
     property bool showCredits: true
     property bool claudeSessionStarter: true
     property bool codexSessionStarter: true
     property bool opencodeSessionStarter: true
+    property bool antigravitySessionStarter: true
     property string codexMark: "codex"
     property string proxyUrl: ""
     property string proxyKeyFile: ""
@@ -43,9 +45,11 @@ QtObject {
     property string claudeUsageSource: "auto"
     property string codexUsageSource: "auto"
     property string kimiUsageSource: "auto"
+    property string antigravityUsageSource: "auto"
     property string claudeProgram: ""
     property string codexProgram: ""
     property string opencodeProgram: ""
+    property string antigravityProgram: ""
     property string knownLimits: ""
     property string usageStatus: ""
     property string seenResets: ""

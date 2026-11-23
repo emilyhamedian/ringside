@@ -4,15 +4,16 @@
 // SPDX-FileCopyrightText: Moonshot AI
 // SPDX-FileCopyrightText: 2023 LobeHub
 // SPDX-FileCopyrightText: 2025 opencode
-// SPDX-License-Identifier: GPL-3.0-or-later AND LicenseRef-Anthropic-Trademark AND LicenseRef-OpenAI-Trademark AND LicenseRef-Moonshot-Trademark AND MIT AND LicenseRef-OpenCode-Trademark
+// SPDX-FileCopyrightText: Google LLC
+// SPDX-License-Identifier: GPL-3.0-or-later AND LicenseRef-Anthropic-Trademark AND LicenseRef-OpenAI-Trademark AND LicenseRef-Moonshot-Trademark AND MIT AND LicenseRef-OpenCode-Trademark AND LicenseRef-Google-Trademark
 
 .pragma library
 
-// The Claude, Codex, OpenAI, Moonshot AI and OpenCode marks as SVG path data
-// with the viewBox they were drawn in, [x, y, size], copied from
-// ../../icons/claude.svg, codex.svg, openai.svg, moonshot.svg and
-// opencode.svg, which stay the source. Drawn as paths, like the rings, a mark
-// lands on a ring's centre exactly; an icon texture is snapped to whole
+// The Claude, Codex, OpenAI, Moonshot AI, OpenCode and Antigravity marks as
+// SVG path data with the viewBox they were drawn in, [x, y, size], copied from
+// ../../icons/claude.svg, codex.svg, openai.svg, moonshot.svg, opencode.svg
+// and antigravity.svg, which stay the source. Drawn as paths, like the rings,
+// a mark lands on a ring's centre exactly; an icon texture is snapped to whole
 // device pixels.
 // The Codex cloud is the logo's cloud stroked 1.5 units wide with round joins
 // (Qt's path stroker, merged into one outer and one inner edge), filled like
@@ -28,8 +29,8 @@
 // in its place by a setting and drawn as it was then: with no scale or
 // minimum, the size of the Claude star.
 // The marks identify the services the usage items poll; Ringside holds no
-// rights to them and isn't endorsed by Anthropic, OpenAI, Moonshot AI or
-// OpenCode. See LICENSES/LicenseRef-*-Trademark.txt.
+// rights to them and isn't endorsed by Anthropic, OpenAI, Moonshot AI,
+// OpenCode or Google. See LICENSES/LicenseRef-*-Trademark.txt.
 
 var CLAUDE = {
     box: [0.0, 0.0, 248.0],
@@ -59,4 +60,9 @@ var OPENCODE = {
     box: [96.0, 96.0, 320.0],
     scale: 0.85,
     path: "M384 416H128V96H384V416ZM320 160H192V352H320V160Z"
+};
+
+var ANTIGRAVITY = {
+    box: [12.0, 13.0, 88.0],
+    path: "M89.6992 93.695C94.3659 97.195 101.366 94.8617 94.9492 88.445C75.6992 69.7783 79.7825 18.445 55.8659 18.445C31.9492 18.445 36.0325 69.7783 16.7825 88.445C9.78251 95.445 17.3658 97.195 22.0325 93.695C40.1159 81.445 38.9492 59.8617 55.8659 59.8617C72.7825 59.8617 71.6159 81.445 89.6992 93.695Z"
 };

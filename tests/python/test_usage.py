@@ -79,12 +79,15 @@ class Isolated(unittest.TestCase):
             "CLAUDE_CONFIG_DIR": str(self.tmp / "claude"),
             "CODEX_HOME": str(self.tmp / "codex"),
             "KIMI_CODE_HOME": str(self.tmp / "kimi"),
+            "GEMINI_DIR": str(self.tmp / "gemini"),
         }))
         paths = load_helper()
         self.enterContext(mock.patch.multiple(usage, **{name: getattr(paths, name) for name in (
             "CLAUDE_CREDENTIALS", "CODEX_AUTH", "CACHE_DIR", "CACHE_FILE", "HISTORY_FILE",
             "LOCK_FILE", "APPLETSRC", "STARTER_FILE", "STATE_DIR", "STARTER_STATE", "SWITCH_LOCK",
-            "WORK_DIR", "CODEX_MODEL_CACHE", "KIMI_HOME", "OPENCODE_DATA")}))
+            "WORK_DIR", "CODEX_MODEL_CACHE", "KIMI_HOME", "OPENCODE_DATA",
+            "ANTIGRAVITY_GEMINI_DIR", "ANTIGRAVITY_T3_DIR", "ANTIGRAVITY_IDE_DBS")}))
+        self.enterContext(mock.patch.object(usage, "ANTIGRAVITY_KEYRING", False))
         self.enterContext(mock.patch.object(usage.urllib.request, "urlopen",
                                             side_effect=AssertionError("a test reached the network")))
         self.enterContext(mock.patch.object(usage, "run_cli", side_effect=AssertionError("a test ran a CLI")))
@@ -1463,7 +1466,7 @@ class ProviderChoice(Isolated):
         report = self.run_main("--providers", "codex")
         self.assertEqual(list(report["providers"]), ["codex"])
         self.claude.assert_not_called()
-        self.assertEqual(set(self.run_main()["providers"]), {"claude", "codex", "kimi", "opencode"})
+        self.assertEqual(set(self.run_main()["providers"]), {"claude", "codex", "kimi", "opencode", "antigravity"})
         self.assertEqual(set(self.run_main("--providers", "codex,claude")["providers"]), {"claude", "codex"})
         self.assertEqual(self.claude.call_count, 1)
         self.assertEqual(self.codex.call_count, 1)
@@ -1507,7 +1510,8 @@ class ProviderChoice(Isolated):
         self.assertEqual(run.returncode, 0, run.stderr)
         report = json.loads(run.stdout)
         self.assertEqual({name: entry["status"] for name, entry in report["providers"].items()},
-                         {"claude": "signed_out", "codex": "signed_out", "kimi": "signed_out", "opencode": "signed_out"})
+                         {"claude": "signed_out", "codex": "signed_out", "kimi": "signed_out",
+                          "opencode": "signed_out", "antigravity": "signed_out"})
         self.assertEqual(report["providers"]["claude"]["starter"], OFF)
         self.assertEqual((report["providers"]["codex"]["starter"]["enabled"],
                           report["providers"]["codex"]["starter"]["state"]), (True, "failed"))
@@ -2288,6 +2292,138 @@ selectedTimeZones=Local,America/New_York
         cached = json.loads(usage.CACHE_FILE.read_text())["claude"]
         self.assertNotIn("clockZone", cached["weekly"])
         self.assertNotIn("clockZone", cached["scoped"][0])
+
+
+class AntigravityDirect(Isolated):
+    def write_token(self, path, access="ya29.fresh-token", refresh="1//refresh-token",
+                    expiry="2099-01-01T00:00:00.123456789-08:00"):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({
+            "token": {"access_token": access, "refresh_token": refresh, "expiry": expiry},
+            "auth_method": "consumer",
+        }))
+
+    def test_parses_dual_group_quota_summary(self):
+        report = usage.parse_antigravity(fixture("antigravity_quota.json"))
+        self.assertEqual(report["weekly"]["percent"], 38)
+        self.assertFalse(report["weekly"]["exhausted"])
+        self.assertEqual(report["weekly"]["windowSeconds"], WEEK)
+        self.assertEqual(report["session"]["percent"], 14)
+        self.assertEqual(report["session"]["label"], "Gemini")
+        self.assertEqual(report["session"]["windowSeconds"], 5 * 3600)
+        self.assertEqual(len(report["scoped"]), 1)
+        self.assertEqual((report["scoped"][0]["id"], report["scoped"][0]["label"], report["scoped"][0]["percent"]),
+                         ("3p-weekly", "Claude & GPT", 82))
+        self.assertEqual(len(report["extraSessions"]), 1)
+        self.assertEqual((report["extraSessions"][0]["id"], report["extraSessions"][0]["label"],
+                          report["extraSessions"][0]["percent"]),
+                         ("3p-5h", "Claude & GPT", 44))
+
+    def test_exhausted_bucket_and_disabled_bucket_handling(self):
+        body = fixture("antigravity_quota.json")
+        body["groups"][0]["buckets"][0]["remainingFraction"] = 0
+        body["groups"][1]["buckets"][0]["disabled"] = True
+        report = usage.parse_antigravity(body)
+        self.assertEqual(report["weekly"]["percent"], 100)
+        self.assertTrue(report["weekly"]["exhausted"])
+        self.assertEqual(report["scoped"], [])
+        self.assertEqual(len(report["extraSessions"]), 1)
+
+    def test_nanosecond_expiry_and_t3_newest_mtime_discovery(self):
+        older = usage.ANTIGRAVITY_T3_DIR / "acct-old" / "antigravity-acp" / "antigravity-oauth-token"
+        newer = usage.ANTIGRAVITY_T3_DIR / "acct-new" / "antigravity-acp" / "antigravity-oauth-token"
+        self.write_token(older, access="ya29.older")
+        self.write_token(newer, access="ya29.newer")
+        os.utime(older, (1_700_000_000, 1_700_000_000))
+        os.utime(newer, (1_800_000_000, 1_800_000_000))
+        fresh_list, expired_list = usage.antigravity_credentials(1_800_000_000)
+        self.assertEqual(expired_list, [])
+        self.assertEqual([c["token"] for c in fresh_list], ["ya29.newer", "ya29.older"])
+        self.assertEqual(fresh_list[0]["acp"], (newer.parent.parent, "antigravity-acp"))
+
+    def test_discovers_ide_sqlite_read_only_and_keyring(self):
+        import base64
+        import sqlite3
+        db = usage.ANTIGRAVITY_IDE_DBS[0]
+        db.parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(db)
+        try:
+            conn.execute("CREATE TABLE ItemTable (key TEXT UNIQUE, value BLOB)")
+            blob = base64.b64encode(b"\x0a\x1fya29.ide-token-1234567890abcdef").decode()
+            conn.execute("INSERT INTO ItemTable VALUES ('antigravityUnifiedStateSync.oauthToken', ?)", (blob,))
+            conn.commit()
+        finally:
+            conn.close()
+        keyring_payload = json.dumps({"token": {"access_token": "ya29.keyring-tok", "expiry": "2099-01-01T00:00:00Z"}})
+        fake_run = mock.Mock(return_value=subprocess.CompletedProcess([], 0, keyring_payload.encode(), b""))
+        with mock.patch.object(usage, "ANTIGRAVITY_KEYRING", True), \
+                mock.patch.dict(os.environ, {"DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/bus"}), \
+                mock.patch.object(usage.shutil, "which", return_value="/usr/bin/secret-tool"), \
+                mock.patch.object(usage.subprocess, "run", fake_run):
+            fresh_list, _ = usage.antigravity_credentials(1_800_000_000)
+        self.assertEqual([c["token"] for c in fresh_list], ["ya29.keyring-tok", "ya29.ide-token-1234567890abcdef"])
+
+    def test_gzipped_response_and_silent_acp_renewal(self):
+        import gzip
+        path = usage.ANTIGRAVITY_GEMINI_DIR / "antigravity-cli" / "antigravity-oauth-token"
+        self.write_token(path, access="ya29.stale", expiry="2020-01-01T00:00:00Z")
+
+        def renew(acp):
+            self.assertEqual(acp, (usage.ANTIGRAVITY_GEMINI_DIR, "antigravity-cli"))
+            self.write_token(path, access="ya29.renewed", expiry="2099-01-01T00:00:00Z")
+            return True
+
+        compressed = gzip.compress(json.dumps(fixture("antigravity_quota.json")).encode())
+
+        class GzipResponse(io.BytesIO):
+            headers = {"Content-Encoding": "gzip"}
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                self.close()
+
+        seen = []
+
+        def fake_urlopen(request, timeout):
+            seen.append((request.full_url, request.get_method(), dict(request.header_items())))
+            return GzipResponse(compressed)
+
+        usage.EVENTS.clear()
+        with mock.patch.object(usage, "antigravity_refresh", side_effect=renew) as refreshed, \
+                mock.patch.object(usage.urllib.request, "urlopen", side_effect=fake_urlopen):
+            report = usage.antigravity_usage()
+        refreshed.assert_called_once()
+        self.assertEqual(report["weekly"]["percent"], 38)
+        self.assertEqual(seen[0][0], usage.ANTIGRAVITY_QUOTA_URL)
+        self.assertEqual(seen[0][1], "POST")
+        self.assertEqual(seen[0][2]["Authorization"], "Bearer ya29.renewed")
+        self.assertEqual(seen[0][2]["User-agent"], usage.ANTIGRAVITY_USER_AGENT)
+        self.assertIn("renewed", [e["kind"] for e in usage.EVENTS])
+
+    def test_expired_without_agy_reports_expired_and_signed_out_when_missing(self):
+        with self.assertRaises(usage.SignedOut):
+            usage.antigravity_usage()
+        path = usage.ANTIGRAVITY_GEMINI_DIR / "antigravity-cli" / "antigravity-oauth-token"
+        self.write_token(path, access="ya29.stale", expiry="2020-01-01T00:00:00Z")
+        with self.assertRaises(usage.CheckFailed) as raised:
+            usage.antigravity_usage()
+        self.assertEqual(raised.exception.reason, "expired")
+
+    def test_find_cli_maps_antigravity_to_agy_and_extra_sessions_get_clock_zone(self):
+        local_agy = Path.home() / ".local" / "bin" / "agy"
+        local_agy.parent.mkdir(parents=True)
+        local_agy.write_text("#!/bin/sh\n")
+        local_agy.chmod(0o755)
+        self.assertEqual(REAL_FIND_CLI("antigravity"), (str(local_agy), ""))
+        providers = {"antigravity": {
+            "weekly": {"resetsAt": 1788537600},
+            "session": {"resetsAt": 1788537600},
+            "extraSessions": [{"id": "3p-5h", "label": "Claude & GPT", "resetsAt": 1793638800}],
+        }}
+        usage.show_in_zone(providers, usage.zone_named("America/New_York"))
+        self.assertEqual(providers["antigravity"]["extraSessions"][0]["clockZone"]["abbreviation"], "EST")
 
 
 if __name__ == "__main__":

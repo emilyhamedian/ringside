@@ -1117,8 +1117,9 @@ class StarterRuns(Isolated):
     # window there was to start.
     def test_a_switch_stored_as_true_is_on_for_every_window(self):
         usage.STARTER_FILE.parent.mkdir(parents=True)
-        usage.STARTER_FILE.write_text('{"claude": true, "codex": true, "opencode": true}')
-        self.assertEqual(usage.read_switches(), {"claude": ["session"], "codex": ["session", "week"], "opencode": ["session"]})
+        usage.STARTER_FILE.write_text('{"claude": true, "codex": true, "opencode": true, "antigravity": true}')
+        self.assertEqual(usage.read_switches(), {"claude": ["session"], "codex": ["session", "week"],
+                                                 "opencode": ["session"], "antigravity": ["session", "week"]})
 
     def test_a_switch_that_cant_be_written_reports_it_unchanged(self):
         self.run_main("--providers", "claude", "--starter-set", "claude=on")
@@ -1418,7 +1419,8 @@ class Report(Isolated):
         providers = self.run_main()["providers"]
         self.assertEqual({name: entry.get("starter") for name, entry in providers.items()},
                          {"claude": dict(OFF, windows=["session"]), "codex": dict(OFF, windows=["session", "week"]),
-                          "kimi": None, "opencode": dict(OFF, windows=None)})
+                          "kimi": None, "opencode": dict(OFF, windows=None),
+                          "antigravity": dict(OFF, windows=None, window="week")})
 
     def test_the_current_reading_names_the_window_before_stored_state(self):
         record = dict(usage.blank_record(), period=SESSION)
@@ -1700,6 +1702,90 @@ class Session(Isolated):
         fetch = mock.Mock(return_value={"weekly": week(1, NOW + 86400), "scoped": [], "session": None})
         self.assertEqual(usage.collect({"claude": fetch}, NOW)["claude"]["status"], "ok")
         fetch.assert_called_once()
+
+
+class AntigravityStarter(Isolated):
+    def agy_reading(self, fetched, *, gem_week=(10, 3 * 86400), gem_5h=(0, SESSION),
+                    tp_week=(0, WEEK), tp_5h=(0, SESSION)):
+        return {
+            "status": "ok",
+            "fetchedAt": fetched,
+            "weekly": week(gem_week[0], fetched + gem_week[1]),
+            "session": {"label": "Gemini", **week(gem_5h[0], fetched + gem_5h[1], SESSION)},
+            "scoped": [{"id": "3p-weekly", "label": "Claude & GPT", **week(tp_week[0], fetched + tp_week[1])}],
+            "extraSessions": [{"id": "3p-5h", "label": "Claude & GPT", **week(tp_5h[0], fetched + tp_5h[1], SESSION)}],
+        }
+
+    def test_dual_group_needed_groups_and_used_up(self):
+        # Gemini running (3h left), Claude & GPT idle (5h from fetchedAt, 0%)
+        r = self.agy_reading(NOW, gem_5h=(12, 3 * HOUR), tp_5h=(0, SESSION))
+        self.assertEqual(usage.startable("antigravity", r), ["session", "week"])
+        self.assertEqual(usage.antigravity_needed_groups(r, NOW, ["session"]), ["3p"])
+        self.assertIsNone(usage.aimed_running("antigravity", r, NOW, ["session"]))
+
+        # Both running -> waits for soonest reset
+        both_running = self.agy_reading(NOW, gem_5h=(12, 3 * HOUR), tp_5h=(8, 2 * HOUR), tp_week=(5, 4 * 86400))
+        self.assertEqual(usage.antigravity_needed_groups(both_running, NOW, ["session", "week"]), [])
+        self.assertEqual(usage.aimed_running("antigravity", both_running, NOW, ["session", "week"])["resetsAt"],
+                         NOW + 2 * HOUR)
+
+        # Gemini weekly exhausted, Claude & GPT idle -> not fully used up; only starts 3p
+        gem_exhausted = self.agy_reading(NOW, gem_week=(100, 2 * 86400), tp_week=(10, 4 * 86400), tp_5h=(0, SESSION))
+        self.assertIsNone(usage.used_up(gem_exhausted, "antigravity"))
+        self.assertEqual(usage.antigravity_needed_groups(gem_exhausted, NOW, ["session"]), ["3p"])
+
+        # Both weekly exhausted -> used_up waits for soonest weekly reset
+        all_exhausted = self.agy_reading(NOW, gem_week=(100, 3 * 86400), tp_week=(100, 2 * 86400))
+        self.assertEqual(usage.used_up(all_exhausted, "antigravity")["resetsAt"], NOW + 2 * 86400)
+
+    def test_picks_cheapest_gemini_and_claude_gpt_models(self):
+        models = [
+            {"modelId": "gemini-3.8-pro-high"},
+            {"modelId": "gemini-3.8-flash-medium"},
+            {"modelId": "gemini-3.8-flash-low"},
+            {"modelId": "claude-opus-5-5-low"},
+            {"modelId": "claude-sonnet-5-5-low"},
+            {"modelId": "gpt-oss-120b-medium"},
+        ]
+        self.assertEqual(usage.antigravity_pick_models(models, ("gemini", "3p")),
+                         [("gemini", "gemini-3.8-flash-low"), ("3p", "gpt-oss-120b-medium")])
+        # Falls back to haiku / sonnet-low when gpt-oss isn't listed
+        no_gpt = [m for m in models if not m["modelId"].startswith("gpt-")]
+        self.assertEqual(usage.antigravity_pick_models(no_gpt, ("3p",)),
+                         [("3p", "claude-sonnet-5-5-low")])
+        # Returns None if a needed group has no model
+        self.assertIsNone(usage.antigravity_pick_models([{"modelId": "gemini-3.8-flash-low"}], ("gemini", "3p")))
+
+    def test_send_antigravity_drives_acp_for_needed_groups(self):
+        token_path = usage.ANTIGRAVITY_T3_DIR / "acct1" / "antigravity-acp" / "antigravity-oauth-token"
+        token_path.parent.mkdir(parents=True)
+        token_path.write_text(json.dumps({"token": {"access_token": "ya29.ok", "expiry": "2099-01-01T00:00:00Z"}}))
+
+        calls = []
+
+        def fake_call(proc, req_id, method, params, deadline):
+            calls.append((method, params))
+            if method == "session/new":
+                return {
+                    "sessionId": f"sess-{req_id}",
+                    "models": {"availableModels": [
+                        {"modelId": "gemini-3.8-flash-low"},
+                        {"modelId": "gpt-oss-120b-medium"},
+                    ]},
+                }
+            return {}
+
+        fake_proc = mock.Mock(pid=999999, stdin=mock.Mock(), stdout=mock.Mock())
+        with mock.patch.object(usage, "antigravity_acp_start", return_value=fake_proc) as started, \
+                mock.patch.object(usage, "antigravity_acp_call", side_effect=fake_call), \
+                mock.patch.object(usage, "stop_process_group") as stopped:
+            usage.send_antigravity("/usr/bin/agy", switched_on, groups=("gemini", "3p"))
+        started.assert_called_once_with("/usr/bin/agy", (token_path.parent.parent, "antigravity-acp"))
+        stopped.assert_called_once_with(fake_proc)
+        set_models = [p["modelId"] for m, p in calls if m == "session/set_model"]
+        prompts = [p["prompt"][0]["text"] for m, p in calls if m == "session/prompt"]
+        self.assertEqual(set_models, ["gemini-3.8-flash-low", "gpt-oss-120b-medium"])
+        self.assertEqual(prompts, ["Hi", "Hi"])
 
 
 if __name__ == "__main__":

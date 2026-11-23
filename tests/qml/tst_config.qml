@@ -587,14 +587,14 @@ TestRoot {
                   // Haiku was picked earlier and is no longer reported.
                   before: { claudeInnerLimit: "Haiku" }, key: "claudeInnerLimit", value: "",
                   report: "knownLimits",
-                  answer: JSON.stringify({ claude: [{ id: "Fable", label: "Fable", reported: true }], codex: [], kimi: [], opencode: [] }) },
+                  answer: JSON.stringify({ claude: [{ id: "Fable", label: "Fable", reported: true }], codex: [], kimi: [], opencode: [], antigravity: [] }) },
                 { tag: "bothItemsSwitchedOff", source: "config/ConfigItems.qml",
-                  before: {}, key: "hiddenItems", value: ["disk", "claude", "codex", "kimi", "opencode"],
+                  before: {}, key: "hiddenItems", value: ["disk", "claude", "codex", "kimi", "opencode", "antigravity"],
                   report: "usageStatus", answer: JSON.stringify({ helperError: "" }) }
             ]);
         }
         function test_applyKeepsTheWidgetsAnswer(data) {
-            const values = Object.assign(settings(), { itemOrder: Items.SYSTEM.concat(Items.USAGE), hiddenItems: ["disk", "kimi", "opencode"] },
+            const values = Object.assign(settings(), { itemOrder: Items.SYSTEM.concat(Items.USAGE), hiddenItems: ["disk", "kimi", "opencode", "antigravity"] },
                                          data.before);
             const config = fakeConfiguration(values);
             const usage = usageOn(config);
@@ -650,7 +650,10 @@ TestRoot {
                   value: "/opt/my tools/codex" },
                 { tag: "ProvidersOpencodeSessionStarter", source: "config/ConfigProviders.qml", key: "opencodeSessionStarter", value: false },
                 { tag: "ProvidersOpencodeProgram", source: "config/ConfigProviders.qml", key: "opencodeProgram",
-                  value: "~/.opencode/bin/opencode" }
+                  value: "~/.opencode/bin/opencode" },
+                { tag: "ProvidersAntigravitySessionStarter", source: "config/ConfigProviders.qml", key: "antigravitySessionStarter", value: false },
+                { tag: "ProvidersAntigravityProgram", source: "config/ConfigProviders.qml", key: "antigravityProgram",
+                  value: "~/.local/bin/agy" }
             ]);
         }
         function test_applySavesTheChange(data) {
@@ -713,10 +716,11 @@ TestRoot {
             const items = "config/ConfigItems.qml";
             const sensors = "config/ConfigSensors.qml";
             const providers = "config/ConfigProviders.qml";
-            const everyItem = ["cpu", "gpu", "memory", "network", "disk", "claude", "codex", "kimi", "opencode"];
+            const everyItem = ["cpu", "gpu", "memory", "network", "disk", "claude", "codex", "kimi", "opencode", "antigravity"];
             const limits = { knownLimits: JSON.stringify({ claude: [{ id: "opus", label: "Opus", reported: true }],
-                                                           codex: [{ id: "gpt5", label: "GPT-5", reported: true }] }) };
-            const programs = { itemOrder: ["cpu", "claude", "codex", "opencode"], hiddenItems: [],
+                                                           codex: [{ id: "gpt5", label: "GPT-5", reported: true }],
+                                                           antigravity: [{ id: "3p-weekly", label: "Claude & GPT", reported: true }] }) };
+            const programs = { itemOrder: ["cpu", "claude", "codex", "opencode", "antigravity"], hiddenItems: [],
                                usageStatus: JSON.stringify(programStates()["notfound-on"].status) };
             const sources = { itemOrder: everyItem, hiddenItems: [],
                               usageStatus: JSON.stringify({ kimi: { proxyStatus: "region-needed" } }) };
@@ -743,10 +747,10 @@ TestRoot {
                   drive: page => { pickIn(page, "Service", 2); typeInto(page, "IPv6 URL", "https://ip6.example.org/"); },
                   saved: { publicAddressUrl6: "https://ip6.example.org/" } },
                 { tag: "itemOrder", source: items, drive: page => press(page, "Move Memory up"),
-                  saved: { itemOrder: ["cpu", "memory", "gpu", "network", "disk", "claude", "codex", "kimi", "opencode"],
-                           hiddenItems: ["disk", "claude", "codex", "kimi", "opencode"] } },
+                  saved: { itemOrder: ["cpu", "memory", "gpu", "network", "disk", "claude", "codex", "kimi", "opencode", "antigravity"],
+                           hiddenItems: ["disk", "claude", "codex", "kimi", "opencode", "antigravity"] } },
                 { tag: "hiddenItems", source: items, drive: page => press(page, "Disk"),
-                  saved: { itemOrder: everyItem, hiddenItems: ["claude", "codex", "kimi", "opencode"] } },
+                  saved: { itemOrder: everyItem, hiddenItems: ["claude", "codex", "kimi", "opencode", "antigravity"] } },
                 { tag: "ringsOnly", source: items, drive: page => pickIn(page, "What CPU shows", 1), saved: { ringsOnly: ["cpu"] } },
                 { tag: "cpuTemperatureSensor", source: sensors, drive: page => { listed(page); pickIn(page, "CPU temperature", 3); },
                   saved: { cpuTemperatureSensor: "lmsensors/k10temp-pci-00c3/temp1" } },
@@ -780,16 +784,22 @@ TestRoot {
                   drive: page => pickIn(page, "OpenAI usage source", 1), saved: { codexUsageSource: "direct" } },
                 { tag: "kimiUsageSource", source: providers, start: sources,
                   drive: page => pickIn(page, "Kimi usage source", 1), saved: { kimiUsageSource: "direct" } },
+                { tag: "antigravityUsageSource", source: providers, start: sources,
+                  drive: page => pickIn(page, "Antigravity usage source", 1), saved: { antigravityUsageSource: "direct" } },
                 { tag: "claudeSessionStarter", source: providers, start: programs,
                   drive: page => press(page, "Claude: Auto start session"), saved: { claudeSessionStarter: false } },
                 { tag: "codexSessionStarter", source: providers, start: programs,
                   drive: page => press(page, "OpenAI: Auto start session or week"), saved: { codexSessionStarter: false } },
                 { tag: "opencodeSessionStarter", source: providers, start: programs,
                   drive: page => press(page, "OpenCode Go: Auto start session"), saved: { opencodeSessionStarter: false } },
+                { tag: "antigravitySessionStarter", source: providers, start: programs,
+                  drive: page => press(page, "Antigravity: Auto start session or week"), saved: { antigravitySessionStarter: false } },
                 { tag: "claudeInnerLimit", source: providers, start: limits, drive: page => pickIn(page, "Claude inner ring", 2),
                   saved: { claudeInnerLimit: "opus" } },
                 { tag: "codexInnerLimit", source: providers, start: limits, drive: page => pickIn(page, "OpenAI inner ring", 2),
                   saved: { codexInnerLimit: "gpt5" } },
+                { tag: "antigravityInnerLimit", source: providers, start: limits, drive: page => pickIn(page, "Antigravity inner ring", 2),
+                  saved: { antigravityInnerLimit: "3p-weekly" } },
                 { tag: "codexMark", source: providers, start: { itemOrder: ["cpu", "codex"], hiddenItems: [] },
                   drive: page => press(page, "ChatGPT"), saved: { codexMark: "openai" } },
                 { tag: "claudeProgram", source: providers, start: programs,
@@ -798,7 +808,9 @@ TestRoot {
                   drive: page => typeInto(page, "Path to codex", "~/.npm-global/bin/codex"),
                   saved: { codexProgram: "~/.npm-global/bin/codex" } },
                 { tag: "opencodeProgram", source: providers, start: programs,
-                  drive: page => typeInto(page, "Path to opencode", "~/bin/opencode"), saved: { opencodeProgram: "~/bin/opencode" } }
+                  drive: page => typeInto(page, "Path to opencode", "~/bin/opencode"), saved: { opencodeProgram: "~/bin/opencode" } },
+                { tag: "antigravityProgram", source: providers, start: programs,
+                  drive: page => typeInto(page, "Path to agy", "~/bin/agy"), saved: { antigravityProgram: "~/bin/agy" } }
             ];
         }
 
@@ -1000,7 +1012,8 @@ TestRoot {
                 "notfound-on": { claude: "", codex: "", status: {
                     claude: { status: "ok", starter: true, program: program("", false) },
                     codex: { status: "error", starter: false, program: program("", false) },
-                    opencode: { status: "ok", starter: true, program: program("", false) } } },
+                    opencode: { status: "ok", starter: true, program: program("", false) },
+                    antigravity: { status: "ok", starter: true, program: program("", false) } } },
                 custom: { claude: "~/.bun/bin/claude", codex: "HOME/.nvm/versions/node/v22.12.0/bin/codex", status: {
                     claude: { status: "ok", starter: true, program: program("HOME/.bun/bin/claude", true) },
                     codex: { status: "ok", starter: false, program: program("HOME/.nvm/versions/node/v22.12.0/bin/codex", true) } } },
@@ -1510,33 +1523,42 @@ TestRoot {
         }
 
         function test_sessionStarterSettingsArePerProvider() {
-            const page = make(providers, { cfg_itemOrder: ["claude", "codex", "opencode"], cfg_hiddenItems: [],
+            const page = make(providers, { cfg_itemOrder: ["claude", "codex", "opencode", "antigravity"], cfg_hiddenItems: [],
                                            cfg_claudeSessionStarter: true, cfg_codexSessionStarter: true,
-                                           cfg_opencodeSessionStarter: true, knownLimits: {} });
+                                           cfg_opencodeSessionStarter: true, cfg_antigravitySessionStarter: true, knownLimits: {} });
             const claude = accessible(page, "Claude: Auto start session");
             const codex = accessible(page, "OpenAI: Auto start session or week");
             const opencode = accessible(page, "OpenCode Go: Auto start session");
-            verify(claude.visible && claude.checked && codex.visible && codex.checked && opencode.visible && opencode.checked);
-            compare(all(page, i => typeof i.text === "string" && i.text.startsWith("Auto start") && i.toggled !== undefined).length, 3);
+            const antigravity = accessible(page, "Antigravity: Auto start session or week");
+            verify(claude.visible && claude.checked && codex.visible && codex.checked
+                   && opencode.visible && opencode.checked && antigravity.visible && antigravity.checked);
+            compare(all(page, i => typeof i.text === "string" && i.text.startsWith("Auto start") && i.toggled !== undefined).length, 4);
             claude.toggle();
             claude.toggled();
-            verify(!page.cfg_claudeSessionStarter && page.cfg_codexSessionStarter && page.cfg_opencodeSessionStarter,
+            verify(!page.cfg_claudeSessionStarter && page.cfg_codexSessionStarter
+                   && page.cfg_opencodeSessionStarter && page.cfg_antigravitySessionStarter,
                    "Claude's switch doesn't change the others'");
             codex.toggle();
             codex.toggled();
-            verify(!page.cfg_codexSessionStarter && page.cfg_opencodeSessionStarter);
+            verify(!page.cfg_codexSessionStarter && page.cfg_opencodeSessionStarter && page.cfg_antigravitySessionStarter);
             opencode.toggle();
             opencode.toggled();
-            verify(!page.cfg_opencodeSessionStarter);
-            page.cfg_hiddenItems = ["claude", "codex", "opencode"];
+            verify(!page.cfg_opencodeSessionStarter && page.cfg_antigravitySessionStarter);
+            antigravity.toggle();
+            antigravity.toggled();
+            verify(!page.cfg_antigravitySessionStarter);
+            page.cfg_hiddenItems = ["claude", "codex", "opencode", "antigravity"];
             page.cfg_hiddenItems = [];
-            verify(!page.cfg_claudeSessionStarter && !page.cfg_codexSessionStarter && !page.cfg_opencodeSessionStarter,
+            verify(!page.cfg_claudeSessionStarter && !page.cfg_codexSessionStarter
+                   && !page.cfg_opencodeSessionStarter && !page.cfg_antigravitySessionStarter,
                    "turning items on again keeps each opt-out");
-            page.usageStatus = { claude: { source: "cliproxyapi", starterPaused: true }, codex: { starterPaused: true } };
-            verify(!claude.visible && codex.visible && opencode.visible,
+            page.usageStatus = { claude: { source: "cliproxyapi", starterPaused: true }, codex: { starterPaused: true },
+                                 antigravity: { source: "cliproxyapi", starterPaused: true } };
+            verify(!claude.visible && codex.visible && opencode.visible && !antigravity.visible,
                    "hide the hub switch and keep direct opt-out available while a fresh reading is pending");
             page.cfg_itemOrder = ["claude", "codex"];
             verify(!opencode.visible, "OpenCode Go's setting shows only while its item is on");
+            verify(!antigravity.visible, "Antigravity's setting shows only while its item is on");
         }
 
         // Each provider's setting names what its plan lets Ringside start,

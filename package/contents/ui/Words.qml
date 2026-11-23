@@ -50,6 +50,7 @@ QtObject {
         case "codex":
         case "kimi":
         case "opencode":
+        case "antigravity":
             return usageText(item, nowMs);
         }
         return "";
@@ -74,10 +75,13 @@ QtObject {
     }
 
     // What to run to sign a provider in. Kimi's limits can be read with
-    // Kimi Code's own sign-in or with the key OpenCode keeps for it.
+    // Kimi Code's own sign-in or with the key OpenCode keeps for it;
+    // Antigravity's with Antigravity or its CLI.
     function signInHint(item) {
         return item === "kimi"
             ? i18nc("@info", "Sign in to Kimi Code, or connect Kimi For Coding in OpenCode.")
+            : item === "antigravity"
+            ? i18nc("@info", "Sign in to Antigravity, or run agy in a terminal.")
             : i18nc("@info %1 is a command, such as claude", "Run %1 in a terminal to sign in.", Providers.FACTS[item].command);
     }
 
@@ -88,6 +92,7 @@ QtObject {
         return item === "claude" ? i18nc("@title", "Claude")
              : item === "kimi" ? i18nc("@title", "Kimi")
              : item === "opencode" ? i18nc("@title", "OpenCode Go")
+             : item === "antigravity" ? i18nc("@title", "Antigravity")
              : monitor.codexMark === "openai" ? i18nc("@title the OpenAI weekly limits, with the OpenAI logo chosen for their ring", "ChatGPT")
              : i18nc("@title", "Codex");
     }
@@ -492,6 +497,7 @@ QtObject {
         const claude = item === "claude";
         // OpenCode Go has only a session to start, so its sentences are its own.
         const opencode = item === "opencode";
+        const antigravity = item === "antigravity";
         // Older reports and test stand-ins default to Claude's session and
         // Codex's week; current reports name the detected window explicitly.
         const session = s.window ? s.window === "session" : claude || opencode;
@@ -517,6 +523,13 @@ QtObject {
                 ? i18nc("@info under the session starter's switch while it is off", "When a session ends, Ringside sends OpenCode Go a one-word message to start the next one.")
                 : claude
                 ? i18nc("@info under the session starter's switch while it is off", "When a session ends, Ringside sends Claude a one-word message to start the next one.")
+                : antigravity
+                ? (can.includes("session") && can.includes("week")
+                    ? i18nc("@info under the Auto start session and Auto start week switches while they are off; either is a session or a week",
+                            "When either ends, Ringside sends Antigravity a one-word message to start the next one.")
+                    : can.includes("session")
+                    ? i18nc("@info under the session starter's switch while it is off", "When a session ends, Ringside sends Antigravity a one-word message to start the next one.")
+                    : i18nc("@info under the session starter's switch while it is off", "When a week ends, Ringside sends Antigravity a one-word message to start the next one."))
                 : can.includes("session") && can.includes("week")
                 ? i18nc("@info under the Auto start session and Auto start week switches while they are off; either is a session or a week",
                         "When either ends, Ringside sends Codex a one-word message to start the next one.")
@@ -571,6 +584,28 @@ QtObject {
                 case "not-responding":
                     return onDay(s.next, i18nc("@info %1 is a time today", "Can't start a session: OpenCode isn't responding. Trying again at %1.", time(s.next)),
                                  i18nc("@info %1 is a weekday, or a weekday and date, %2 a time", "Can't start a session: OpenCode isn't responding. Trying again %1 %2.", day(s.next), time(s.next)));
+                }
+            }
+            if (antigravity) {
+                switch (s.reason) {
+                case "not-installed":
+                    return session ? i18nc("@info", "Can't start a session: Antigravity CLI (agy) isn't installed.")
+                                   : i18nc("@info", "Can't start a week: Antigravity CLI (agy) isn't installed.");
+                case "program":
+                    return session ? i18nc("@info", "Can't start a session: the agy program set in Settings can't be run.")
+                                   : i18nc("@info", "Can't start a week: the agy program set in Settings can't be run.");
+                case "signed-out":
+                    return session ? i18nc("@info", "Can't start a session: Antigravity is signed out. Run agy in a terminal to sign in.")
+                                   : i18nc("@info", "Can't start a week: Antigravity is signed out. Run agy in a terminal to sign in.");
+                case "no-model":
+                    return session ? i18nc("@info", "Can't start a session: Antigravity lists no model Ringside can send its message with.")
+                                   : i18nc("@info", "Can't start a week: Antigravity lists no model Ringside can send its message with.");
+                case "not-responding":
+                    return session
+                        ? onDay(s.next, i18nc("@info %1 is a time today", "Can't start a session: Antigravity isn't responding. Trying again at %1.", time(s.next)),
+                                i18nc("@info %1 is a weekday, or a weekday and date, %2 a time", "Can't start a session: Antigravity isn't responding. Trying again %1 %2.", day(s.next), time(s.next)))
+                        : onDay(s.next, i18nc("@info %1 is a time today", "Can't start a week: Antigravity isn't responding. Trying again at %1.", time(s.next)),
+                                i18nc("@info %1 is a weekday, or a weekday and date, %2 a time", "Can't start a week: Antigravity isn't responding. Trying again %1 %2.", day(s.next), time(s.next)));
                 }
             }
             if (s.reason === "not-installed") {

@@ -79,7 +79,9 @@ Tile {
         Caption {
             id: allModels
             Layout.minimumWidth: implicitWidth
-            text: i18nc("@label graph legend, the solid line", "— All models")
+            text: graph.window?.label
+                ? i18nc("@label graph legend, the solid line; %1 is a model group", "— %1", graph.window.label)
+                : i18nc("@label graph legend, the solid line", "— All models")
         }
 
         Caption {

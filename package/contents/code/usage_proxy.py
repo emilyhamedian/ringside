@@ -34,8 +34,12 @@ WEEK = 7 * DAY
 TOKEN = "Bearer $TOKEN$"
 CODEX_WHAM = "https://chatgpt.com/backend-api/wham"
 CODEX_HEADERS = {"Content-Type": "application/json", "User-Agent": "codex-tui"}
+ANTIGRAVITY_BASE_URL = "https://daily-cloudcode-pa.googleapis.com"
+ANTIGRAVITY_QUOTA_URL = ANTIGRAVITY_BASE_URL + "/v1internal:retrieveUserQuotaSummary"
+ANTIGRAVITY_LOAD_URL = ANTIGRAVITY_BASE_URL + "/v1internal:loadCodeAssist"
+ANTIGRAVITY_HEADERS = {"Content-Type": "application/json", "User-Agent": "antigravity/2.24.0 linux/amd64"}
 KIMI_REGIONS = {"kimi-ai": "global", "kimi": "china"}
-PROVIDERS = {"claude": "claude", "codex": "codex", "kimi": "kimi", "kimi-ai": "kimi"}
+PROVIDERS = {"claude": "claude", "codex": "codex", "kimi": "kimi", "kimi-ai": "kimi", "antigravity": "antigravity"}
 MODEL_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}")
 ROUTING_ID = re.compile(r"[A-Za-z0-9_-]{1,128}")
 EMAIL = re.compile(r"[^\s@]+@[^\s@]+\.[^\s@]+")
@@ -231,13 +235,18 @@ def discover(url, *, deadline=None):
 
 
 class Client:
-    def __init__(self, url, key_file, *, claude_usage_url, claude_profile_url, claude_headers, kimi_usage_urls):
+    def __init__(self, url, key_file, *, claude_usage_url, claude_profile_url, claude_headers, kimi_usage_urls,
+                 antigravity_usage_url=ANTIGRAVITY_QUOTA_URL, antigravity_load_url=ANTIGRAVITY_LOAD_URL,
+                 antigravity_headers=ANTIGRAVITY_HEADERS):
         self._host, self._port = loopback_address(url)
         self._key, revision = read_key(key_file)
         self._claude_usage_url = claude_usage_url
         self._claude_profile_url = claude_profile_url
         self._claude_headers = claude_headers
         self._kimi_usage_urls = kimi_usage_urls
+        self._antigravity_usage_url = antigravity_usage_url
+        self._antigravity_load_url = antigravity_load_url
+        self._antigravity_headers = antigravity_headers
         self.configuration_fingerprint = self._fingerprint("configuration", revision)
 
     def _fingerprint(self, *parts):
@@ -252,7 +261,7 @@ class Client:
         response = self._request("/credentials", deadline=deadline)
         if not isinstance(response, dict) or not isinstance(response.get("files"), list):
             raise ProxyError("invalid-response")
-        by_provider = {"claude": {}, "codex": {}, "kimi": {}}
+        by_provider = {"claude": {}, "codex": {}, "kimi": {}, "antigravity": {}}
         for row in response["files"]:
             if not isinstance(row, dict):
                 continue
@@ -286,15 +295,16 @@ class Client:
         return {provider: sorted(rows.values(), key=lambda row: row.fingerprint)
                 for provider, rows in by_provider.items()}
 
-    def _account_get(self, credential, url, headers, deadline, *, limit=RESPONSE_LIMIT):
+    def _account_request(self, credential, url, headers, deadline, *, method="GET", body=None, limit=RESPONSE_LIMIT):
         if credential.requires_sign_in:
             raise ProxyError("upstream-auth")
         headers = {**headers, "Authorization": TOKEN, "Accept": "application/json"}
         if credential.provider == "codex" and credential.account_id:
             headers["Chatgpt-Account-Id"] = credential.account_id
-        response = self._request("/requests/api-call", deadline=deadline, request={
-            "auth_index": credential.index, "method": "GET", "url": url, "header": headers,
-        })
+        payload = {"auth_index": credential.index, "method": method, "url": url, "header": headers}
+        if body is not None:
+            payload["data"] = json.dumps(body)
+        response = self._request("/requests/api-call", deadline=deadline, request=payload)
         status = response.get("status_code") if isinstance(response, dict) else None
         if type(status) is not int or not 100 <= status <= 599:
             raise ProxyError("invalid-response")
@@ -309,6 +319,9 @@ class Client:
                 body.get("account_id", body.get("accountId", credential.account_id)) != credential.account_id):
             raise ProxyError("invalid-response")
         return body
+
+    def _account_get(self, credential, url, headers, deadline, *, limit=RESPONSE_LIMIT):
+        return self._account_request(credential, url, headers, deadline, limit=limit)
 
     def usage(self, credential, now, *, claude_parser, kimi_parser, kimi_region="auto", deadline=None, extras=None):
         if credential.requires_sign_in:
@@ -326,6 +339,10 @@ class Client:
                 raise ProxyError("unsupported-credential")
             body = self._account_get(credential, self._kimi_usage_urls[region], {}, deadline)
             reading = parse_kimi(body, kimi_parser)
+        elif credential.provider == "antigravity":
+            body = self._account_request(credential, self._antigravity_usage_url, self._antigravity_headers,
+                                         deadline, method="POST", body={})
+            reading = parse_antigravity(body)
         else:
             raise ProxyError("unsupported-credential")
         if not any((reading.get("weekly"), reading.get("scoped"), reading.get("week"), "session" in reading)):
@@ -346,6 +363,11 @@ class Client:
     def codex_reset_details(self, credential, *, deadline):
         return self._account_get(credential, CODEX_WHAM + "/rate-limit-reset-credits", CODEX_HEADERS,
                                  deadline, limit=EXTRA_RESPONSE_LIMIT)
+
+    def antigravity_credits(self, credential, *, deadline):
+        return self._account_request(credential, self._antigravity_load_url, self._antigravity_headers,
+                                     deadline, method="POST", body={"metadata": {"ideType": "ANTIGRAVITY"}},
+                                     limit=EXTRA_RESPONSE_LIMIT)
 
     def affinity(self, *, deadline=None):
         until = time.monotonic() + 1
@@ -410,7 +432,8 @@ def reset_time(value):
         return int(stamp) if 0 < stamp <= 253402300799 else None
     if isinstance(value, str) and len(value) <= 64:
         with suppress(ValueError, OSError, OverflowError):
-            stamp = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            text = re.sub(r"(\.\d{6})\d+", r"\1", value.replace("Z", "+00:00"))
+            stamp = datetime.fromisoformat(text)
             if stamp.tzinfo is None:
                 stamp = stamp.replace(tzinfo=timezone.utc)
             return int(stamp.timestamp())
@@ -606,6 +629,97 @@ def parse_kimi(body, kimi_parser):
             reading["sessionUnknown"] = True
         else:
             reading["_sessionAbsent"] = True
+    return reading
+
+
+def antigravity_group_info(group, buckets):
+    ids = [str(bucket.get("bucketId") or "").casefold() for bucket in buckets]
+    display = group.get("displayName") if isinstance(group.get("displayName"), str) else ""
+    folded = display.casefold()
+    if any(bid.startswith("gemini-") for bid in ids) or "gemini" in folded:
+        return "gemini", "Gemini"
+    if any(bid.startswith("3p-") for bid in ids) or ("claude" in folded and "gpt" in folded):
+        return "3p", "Claude & GPT"
+    name = display.strip()
+    if MODEL_NAME.fullmatch(name):
+        return name.casefold(), name
+    first = next((bid.split("-", 1)[0] for bid in ids if bid), "")
+    return (first, first) if first and MODEL_NAME.fullmatch(first) else ("", "")
+
+
+def antigravity_bucket_kind(bucket):
+    span = str(bucket.get("window") or "").strip().casefold()
+    bid = str(bucket.get("bucketId") or "").strip().casefold()
+    if span in ("weekly", "week", "7d") or bid.endswith("-weekly") or bid.endswith("-7d"):
+        return "week", WEEK
+    if span in ("5h", "five_hour", "session") or bid.endswith("-5h"):
+        return "session", SESSION
+    return None, None
+
+
+def parse_antigravity(body):
+    reading = {"scoped": []}
+    parsed_groups = []
+    for raw_group in sequence(body.get("groups")):
+        group = record(raw_group)
+        buckets = [record(row) for row in sequence(group.get("buckets")) if isinstance(row, dict) and row.get("disabled") is not True]
+        if not buckets:
+            continue
+        key, label = antigravity_group_info(group, buckets)
+        if not label:
+            continue
+        week_win, week_id, week_seen = None, "", False
+        session_win, session_seen = None, False
+        for bucket in buckets:
+            period, length = antigravity_bucket_kind(bucket)
+            if period is None:
+                continue
+            rem = number(bucket.get("remainingFraction"))
+            reset = reset_time(bucket.get("resetTime"))
+            candidate = window((1.0 - rem) * 100.0, reset, length, period) if rem is not None and 0 <= rem <= 1 and reset is not None else None
+            if period == "week":
+                week_seen = True
+                if candidate and week_win is None:
+                    week_win = candidate
+                    bid = bucket.get("bucketId")
+                    week_id = bid if isinstance(bid, str) and ROUTING_ID.fullmatch(bid) else f"{key}-weekly"
+            else:
+                session_seen = True
+                if candidate and session_win is None:
+                    session_win = candidate
+        if week_seen or session_seen:
+            parsed_groups.append((key, label, week_id, week_win, week_seen, session_win, session_seen))
+
+    primary = next((item for item in parsed_groups if item[0] == "gemini" and (item[3] or item[5])), None)
+    if primary is None:
+        primary = next((item for item in parsed_groups if item[3] or item[5]), None)
+    if primary is None:
+        return reading
+
+    _, primary_label, _, primary_week, _, primary_session, primary_session_seen = primary
+    if primary_week:
+        reading["weekly"] = {**primary_week, "label": primary_label}
+        if primary_session:
+            reading["session"] = primary_session
+        elif primary_session_seen:
+            reading["sessionUnknown"] = True
+        else:
+            reading["_sessionAbsent"] = True
+    elif primary_session:
+        reading["weekly"] = {**primary_session, "label": primary_label}
+        reading["_sessionAbsent"] = True
+
+    unknown_scoped = []
+    for item in parsed_groups:
+        if item is primary:
+            continue
+        key, label, week_id, week_win, week_seen, _, _ = item
+        if week_win:
+            scoped_window(reading["scoped"], label, week_win, week_id)
+        elif week_seen:
+            unknown_scoped.append(week_id or f"{key}-weekly")
+    if unknown_scoped:
+        reading["_unknownScoped"] = sorted(unknown_scoped)
     return reading
 
 

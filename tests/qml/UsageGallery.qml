@@ -42,7 +42,8 @@ ColumnLayout {
         id: poolMonitor
         usage: FakeUsage {
             id: pooled
-            entries: ({ claude: PoolStates.example(pooled.createdAt), codex: PoolStates.example(pooled.createdAt, "codex") })
+            entries: ({ claude: PoolStates.example(pooled.createdAt), codex: PoolStates.example(pooled.createdAt, "codex"),
+                        antigravity: PoolStates.example(pooled.createdAt, "antigravity") })
         }
     }
 
@@ -57,6 +58,11 @@ ColumnLayout {
         GalleryFrame {
             label: "Codex · CLIProxyAPI with mixed periods"
             UsagePopup { monitor: poolMonitor; item: "codex" }
+        }
+
+        GalleryFrame {
+            label: "Antigravity · CLIProxyAPI"
+            UsagePopup { monitor: poolMonitor; item: "antigravity" }
         }
     }
 
@@ -665,6 +671,58 @@ ColumnLayout {
         }
     }
 
+    // Antigravity: Gemini weekly on the outer ring, Claude & GPT weekly on
+    // the inner ring, both five-hour limits and AI Credits.
+    FakeMonitor {
+        id: antigravityMonitor
+        usage: FakeUsage {
+            id: antigravityUsage
+            ids: ["claude", "codex", "antigravity"]
+            entries: ({
+                antigravity: {
+                    status: "ok",
+                    fetchedAt: antigravityUsage.createdAt,
+                    weekly: Object.assign({ label: "Gemini" }, antigravityUsage.window(38, 5 * antigravityUsage.day + 4 * 3600, section.history(2, 38))),
+                    session: { label: "Gemini", percent: 14, resetsAt: antigravityUsage.createdAt + 3 * 3600 + 25 * 60, windowSeconds: 5 * 3600 },
+                    extraSessions: [{ id: "3p-5h", label: "Claude & GPT", percent: 44,
+                                      resetsAt: antigravityUsage.createdAt + 2 * 3600 + 10 * 60, windowSeconds: 5 * 3600 }],
+                    scoped: [Object.assign({ id: "3p-weekly", label: "Claude & GPT" },
+                                           antigravityUsage.window(82, 4 * antigravityUsage.day + 16 * 3600, section.history(2.3, 82)))]
+                }
+            })
+            credits: ({
+                antigravity: { status: "ok", balance: { amount: 1250, currency: "", precision: 0 }, fetchedAt: antigravityUsage.createdAt }
+            })
+            starters: ({
+                antigravity: { enabled: true, on: ["session", "week"], windows: ["session", "week"], state: "waiting",
+                               at: null, next: antigravityUsage.createdAt + 2 * 3600 + 10 * 60, reason: null, window: "session" }
+            })
+        }
+    }
+
+    Panel {
+        label: "Antigravity · panel · 46 px · Gemini 38 % with Claude & GPT 82 % inside (amber)"
+        thickness: 46
+        monitor: antigravityMonitor
+        items: ["cpu", "memory", "antigravity"]
+    }
+
+    Panel {
+        label: "Antigravity · panel · 30 px"
+        thickness: 30
+        monitor: antigravityMonitor
+        items: ["cpu", "memory", "antigravity"]
+    }
+
+    RowLayout {
+        spacing: 2 * Kirigami.Units.gridUnit
+
+        GalleryFrame {
+            label: "Antigravity · Gemini 38 %, Claude & GPT 82 % · both 5-hour limits · 1,250 AI Credits"
+            UsagePopup { monitor: antigravityMonitor; item: "antigravity" }
+        }
+    }
+
     RowLayout {
         spacing: 2 * Kirigami.Units.gridUnit
 
@@ -910,6 +968,12 @@ ColumnLayout {
                 label: "Breeze Light · Claude · reset early 3h ago"
                 flat: true
                 UsagePopup { monitor: resetEarly; item: "claude" }
+            }
+
+            GalleryFrame {
+                label: "Breeze Light · Antigravity · Gemini + Claude & GPT + AI Credits"
+                flat: true
+                UsagePopup { monitor: antigravityMonitor; item: "antigravity" }
             }
         }
     }

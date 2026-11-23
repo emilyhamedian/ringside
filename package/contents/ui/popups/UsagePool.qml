@@ -70,7 +70,9 @@ PlasmaComponents.ScrollView {
             rows.push({ label: periodLabel(session), window: session });
         }
         if (account.weekly) {
-            rows.push({ label: i18nc("@label:group a period and its scope", "%1 · All models", periodLabel(account.weekly)),
+            rows.push({ label: account.weekly.label
+                ? i18nc("@label:group a period and a model", "%1 · %2", periodLabel(account.weekly), account.weekly.label)
+                : i18nc("@label:group a period and its scope", "%1 · All models", periodLabel(account.weekly)),
                         window: account.weekly });
         }
         if (account.week) {

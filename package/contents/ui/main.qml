@@ -29,6 +29,7 @@ PlasmoidItem {
                                                                : k === "codex" ? readings.usage.codexPresent
                                                                : k === "kimi" ? readings.usage.kimiPresent
                                                                : k === "opencode" ? readings.usage.opencodePresent
+                                                               : k === "antigravity" ? readings.usage.antigravityPresent
                                                                : true)
 
     // The height an open popup's page has: the screen's, less its panels,

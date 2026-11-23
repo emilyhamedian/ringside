@@ -4,7 +4,7 @@
 .pragma library
 .import "items.js" as Items
 
-const POOL_PROVIDERS = ["claude", "codex", "kimi"];
+const POOL_PROVIDERS = ["claude", "codex", "kimi", "antigravity"];
 
 // Model-specific weekly limits: which one a Claude or Codex ring draws inside
 // its weekly arc, and what the settings page offers to choose from.

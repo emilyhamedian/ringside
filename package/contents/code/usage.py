@@ -2,20 +2,21 @@
 # SPDX-FileCopyrightText: 2026 Emily Hamedian <me@emily.dev>
 # SPDX-License-Identifier: GPL-3.0-or-later
 
-"""Report the usage windows of Claude Code, Codex, Kimi Code and OpenCode Go
-as one JSON object: Claude's and Codex's weeks, and Kimi's and OpenCode Go's
-months.
+"""Report the usage windows of Claude Code, Codex, Kimi Code, OpenCode Go and
+Antigravity as one JSON object: Claude's, Codex's and Antigravity's weeks, and
+Kimi's and OpenCode Go's months.
 
-Ringside runs this on a timer while a Claude, Codex, Kimi or OpenCode Go item
-is switched on. Each provider is queried on its own, so a failure on one
-side never hides the others. Output shape:
+Ringside runs this on a timer while a Claude, Codex, Kimi, OpenCode Go or
+Antigravity item is switched on. Each provider is queried on its own, so a
+failure on one side never hides the others. Output shape:
 
     {"fetchedAt": <epoch seconds>,
      "providers": {
-         "claude": {"status": "ok", "fetchedAt": ..., "weekly": {...}, "scoped": [...]},
-         "codex":  {"status": "ok", "fetchedAt": ..., "weekly": {...}, "scoped": [...]},
-         "kimi":   {"status": "ok", "fetchedAt": ..., "weekly": {...}, "scoped": []},
-         "opencode": {"status": "ok", "fetchedAt": ..., "weekly": {...}, "scoped": []}}}
+         "claude":      {"status": "ok", "fetchedAt": ..., "weekly": {...}, "scoped": [...]},
+         "codex":       {"status": "ok", "fetchedAt": ..., "weekly": {...}, "scoped": [...]},
+         "kimi":        {"status": "ok", "fetchedAt": ..., "weekly": {...}, "scoped": []},
+         "opencode":    {"status": "ok", "fetchedAt": ..., "weekly": {...}, "scoped": []},
+         "antigravity": {"status": "ok", "fetchedAt": ..., "weekly": {...}, "scoped": [...]}}}
 
 --credits-providers names providers whose prepaid credits may be collected
 and reported alongside weekly usage, at most once per five minutes including
@@ -149,14 +150,17 @@ time, makes it due at once (see replan_starters()).
 """
 
 import argparse
+import base64
 import calendar
 import concurrent.futures
 import contextlib
 import contextvars
 import errno
 import fcntl
+import gzip
 import hashlib
 import importlib.util
+import io
 import json
 import math
 import os
@@ -187,11 +191,13 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 VERSION = "0.5.0"
 
-PROVIDERS = ("claude", "codex", "kimi", "opencode")
+PROVIDERS = ("claude", "codex", "kimi", "opencode", "antigravity")
 # The providers with prepaid credits, and those whose CLI Ringside can be
 # told where to find (--program) and runs for the session starter.
-CREDITED = ("claude", "codex", "kimi")
-CLIS = ("claude", "codex", "opencode")
+CREDITED = ("claude", "codex", "kimi", "antigravity")
+CLIS = ("claude", "codex", "opencode", "antigravity")
+# The executable name looked up on PATH / ~/.local/bin for each CLI provider.
+CLI_COMMANDS = {"claude": "claude", "codex": "codex", "opencode": "opencode", "antigravity": "agy"}
 
 WEEK_MINUTES = 7 * 24 * 60
 WEEK_SECONDS = WEEK_MINUTES * 60
@@ -232,7 +238,7 @@ CACHE_FILE = CACHE_DIR / "usage.json"
 HISTORY_FILE = CACHE_DIR / "usage-history.json"
 LOCK_FILE = CACHE_DIR / "usage.lock"
 CACHE_TTL = 5 * 60
-PROXY_PROVIDERS = ("claude", "codex", "kimi")
+PROXY_PROVIDERS = ("claude", "codex", "kimi", "antigravity")
 PROXY_URL = "http://127.0.0.1:8317"
 PROXY_TIMEOUT = 15
 PROXY_WORKERS = 4
@@ -380,20 +386,23 @@ CODEX_TRANSPORT = re.compile(
 # token, so none of those can reach the journal.
 EVENTS = []
 
-NAMES = {"claude": "Claude", "codex": "Codex", "kimi": "Kimi", "opencode": "OpenCode Go"}
+NAMES = {"claude": "Claude", "codex": "Codex", "kimi": "Kimi", "opencode": "OpenCode Go", "antigravity": "Antigravity"}
 # What signs a provider in, as the journal names it.
-PRODUCTS = {"claude": "Claude Code", "codex": "the Codex CLI", "kimi": "Kimi Code", "opencode": "OpenCode"}
+PRODUCTS = {"claude": "Claude Code", "codex": "the Codex CLI", "kimi": "Kimi Code", "opencode": "OpenCode",
+            "antigravity": "Antigravity"}
 # Who asks Ringside to wait, when the refusal names no host.
-COMPANIES = {"claude": "Anthropic", "codex": "OpenAI", "kimi": "Moonshot AI", "opencode": "OpenCode"}
+COMPANIES = {"claude": "Anthropic", "codex": "OpenAI", "kimi": "Moonshot AI", "opencode": "OpenCode",
+             "antigravity": "Google"}
 # The windows a provider's starter can ever start, in order: Claude's week
-# resets on a set schedule, while Codex's, like a session, waits for a message.
-# OpenCode Go's week and month run on set schedules too. Kimi has no starter:
-# its five-hour windows follow one another on a fixed clock, so no message
-# starts one sooner.
-OFFERED = {"claude": ("session",), "codex": ("session", "week"), "kimi": (), "opencode": ("session",)}
+# resets on a set schedule, while Codex's and Antigravity's, like a session,
+# wait for a message. OpenCode Go's week and month run on set schedules too.
+# Kimi has no starter: its five-hour windows follow one another on a fixed
+# clock, so no message starts one sooner.
+OFFERED = {"claude": ("session",), "codex": ("session", "week"), "kimi": (), "opencode": ("session",),
+           "antigravity": ("session", "week")}
 STARTERS = tuple(name for name in PROVIDERS if OFFERED[name])
 # The window each names before a reading has told it the plan.
-WINDOWS = {"claude": "session", "codex": "week", "opencode": "session"}
+WINDOWS = {"claude": "session", "codex": "week", "opencode": "session", "antigravity": "week"}
 
 MESSAGES = {
     "check": "{name}: checked in {ms} ms",
@@ -411,7 +420,7 @@ MESSAGES = {
     "cli": "{name}: asking {cli} app-server",
     "cli-error": "{name}: app-server answered with an error, code {code}",
     "credential": "{name}: asking with {source}",
-    "renewed": "{name}: renewed the Claude Code login",
+    "renewed": "{name}: renewed the {product} login",
     "early-reset": "{name}: {which} reset early",
     "starter-on": "{name} session starter switched on for: {windows}",
     "starter-off": "{name} session starter switched off",
@@ -437,7 +446,7 @@ STARTER_WHY = {
     "not-responding": "the CLI didn't answer its check before sending",
     "unchecked": "the limits couldn't be read",
     "not-sent": "the message couldn't be sent",
-    "no-model": "OpenCode lists none of the Go models it sends with",
+    "no-model": "the CLI lists none of the models it sends with",
 }
 
 
@@ -453,7 +462,7 @@ def own_host(host):
     """host if it is one Ringside asks, else "": a cache that was tampered
     with can't put anything else in the journal."""
     return host if host in (CLAUDE_USAGE_URL.split("/")[2], CLAUDE_TOKEN_URL.split("/")[2], *KIMI_HOSTS.values(),
-                            OPENCODE_GO_URL.split("/")[2]) else ""
+                            OPENCODE_GO_URL.split("/")[2], ANTIGRAVITY_BASE_URL.split("/")[2]) else ""
 
 
 def failure_why(name, failure, asked=None, hold=None):
@@ -498,7 +507,8 @@ def program_why(name, chosen):
     """Why the program chosen for name can't run, naming it as the settings
     show it, with the home folder as ~. The path is the user's own setting."""
     path, problem = find_cli(name, chosen)
-    why = f"the {name} program set in Settings, {shown_path(path)}, can't be run"
+    command = CLI_COMMANDS.get(name, name)
+    why = f"the {command} program set in Settings, {shown_path(path)}, can't be run"
     return why + (f": {PROGRAM_PROBLEMS[problem]}" if problem in PROGRAM_PROBLEMS else "")
 
 
@@ -562,10 +572,11 @@ def find_cli(name, chosen=""):
         if not stat.S_ISREG(mode) or not os.access(path, os.X_OK):
             return path, "not-executable"
         return path, ""
-    wrapper = Path.home() / ".local" / "bin" / name
+    command = CLI_COMMANDS.get(name, name)
+    wrapper = Path.home() / ".local" / "bin" / command
     if os.access(wrapper, os.X_OK):
         return str(wrapper), ""
-    return shutil.which(name) or "", ""
+    return shutil.which(command) or "", ""
 
 
 def program(name):
@@ -822,6 +833,26 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
+def read_response_json(response, max_bytes):
+    headers = getattr(response, "headers", None)
+    encoding = (headers.get("Content-Encoding") or "").lower() if headers else ""
+    if encoding != "gzip":
+        if max_bytes is None:
+            return json.load(response)
+        raw = response.read(max_bytes + 1)
+        if len(raw) > max_bytes:
+            raise ValueError("reply too large")
+        return json.loads(raw)
+    raw = response.read() if max_bytes is None else response.read(max_bytes + 1)
+    if max_bytes is not None and len(raw) > max_bytes:
+        raise ValueError("reply too large")
+    with gzip.GzipFile(fileobj=io.BytesIO(raw)) as stream:
+        decoded = stream.read() if max_bytes is None else stream.read(max_bytes + 1)
+    if max_bytes is not None and len(decoded) > max_bytes:
+        raise ValueError("reply too large")
+    return json.loads(decoded)
+
+
 def http_json(url, headers, body=None, *, timeout=ANSWER_TIMEOUT, redirects=True, max_bytes=None):
     host = url.split("/")[2]
     data = json.dumps(body).encode() if body is not None else None
@@ -830,12 +861,7 @@ def http_json(url, headers, body=None, *, timeout=ANSWER_TIMEOUT, redirects=True
     try:
         open_request = urllib.request.urlopen if redirects else urllib.request.build_opener(NoRedirect()).open
         with open_request(request, timeout=timeout) as response:
-            if max_bytes is None:
-                return json.load(response)
-            raw = response.read(max_bytes + 1)
-            if len(raw) > max_bytes:
-                raise ValueError("reply too large")
-            return json.loads(raw)
+            return read_response_json(response, max_bytes)
     except urllib.error.HTTPError as err:
         if err.code == 401:
             raise SignedOut() from err
@@ -1086,7 +1112,7 @@ def claude_access_token(margin=CLAUDE_EXPIRY_MARGIN):
             return latest["accessToken"]
         raise
     store_claude(path, current["refreshToken"], fresh)
-    event("debug", "claude", "renewed")
+    event("debug", "claude", "renewed", product=PRODUCTS["claude"])
     if "accessToken" not in fresh:
         raise RuntimeError("the token refresh returned no usable access token")
     return fresh["accessToken"]
@@ -1501,6 +1527,450 @@ def opencode_usage():
     return parse_opencode_go(body)
 
 
+# --- Antigravity -----------------------------------------------------------
+
+# Antigravity's quota summary and credits endpoints. Google's endpoint rejects
+# generic User-Agents with HTTP 403 and omits Gemini buckets for older client
+# versions, so these requests identify themselves as Antigravity.
+ANTIGRAVITY_BASE_URL = "https://daily-cloudcode-pa.googleapis.com"
+ANTIGRAVITY_QUOTA_URL = ANTIGRAVITY_BASE_URL + "/v1internal:retrieveUserQuotaSummary"
+ANTIGRAVITY_LOAD_URL = ANTIGRAVITY_BASE_URL + "/v1internal:loadCodeAssist"
+ANTIGRAVITY_USER_AGENT = "antigravity/2.24.0 linux/amd64"
+ANTIGRAVITY_HEADERS = {
+    "Content-Type": "application/json",
+    "Accept": "application/json",
+    "Accept-Encoding": "gzip",
+    "User-Agent": ANTIGRAVITY_USER_AGENT,
+}
+ANTIGRAVITY_GEMINI_DIR = Path(os.environ.get("GEMINI_DIR") or Path.home() / ".gemini")
+ANTIGRAVITY_T3_DIR = Path.home() / ".t3" / "userdata" / "providers" / "antigravity"
+ANTIGRAVITY_IDE_DBS = (
+    CONFIG_HOME / "Antigravity" / "User" / "globalStorage" / "state.vscdb",
+    Path.home() / ".antigravity" / "User" / "globalStorage" / "state.vscdb",
+)
+# Read-only lookup in the desktop keyring when secret-tool is present. Tests
+# set this to False so they never touch the host's keyring.
+ANTIGRAVITY_KEYRING = True
+ANTIGRAVITY_GOOGLE_TOKEN = re.compile(r"ya29\.[A-Za-z0-9._-]{20,}")
+
+
+def parse_antigravity_oauth(data, now):
+    """Extract (access_token, identity, is_expired, refreshable) from a stored
+    Antigravity OAuth JSON object, or None when it holds no usable token."""
+    if not isinstance(data, dict):
+        return None
+    record = data.get("token") if isinstance(data.get("token"), dict) else data
+    if not isinstance(record, dict):
+        return None
+    access = record.get("access_token") or record.get("accessToken") or record.get("apiKey")
+    if not usable(access):
+        return None
+    refresh = record.get("refresh_token") or record.get("refreshToken")
+    refresh = refresh if usable(refresh) else None
+    raw_expiry = record.get("expiry", record.get("expires_at", record.get("expiresAt")))
+    expiry = None
+    if type(raw_expiry) in (int, float) and math.isfinite(raw_expiry):
+        expiry = int(raw_expiry / 1000) if raw_expiry > 1e12 else int(raw_expiry)
+    elif isinstance(raw_expiry, str):
+        expiry = epoch_seconds(raw_expiry)
+    is_expired = expiry is not None and expiry - now <= SIGN_IN_MARGIN
+    identity = hashlib.sha256((refresh or access).encode()).hexdigest()
+    return access, identity, is_expired, refresh is not None
+
+
+def antigravity_file_credential(path, source, acp, now):
+    try:
+        data = read_json(path)
+    except (OSError, ValueError):
+        return None
+    parsed = parse_antigravity_oauth(data, now)
+    if parsed is None:
+        return None
+    access, identity, is_expired, refreshable = parsed
+    return {"source": source, "token": access, "identity": identity, "expired": is_expired,
+            "refreshable": refreshable, "acp": acp, "path": path}
+
+
+def antigravity_keyring_credentials(now):
+    """Read an Antigravity OAuth payload from the desktop Secret Service when
+    secret-tool is available, without prompting or blocking."""
+    if not ANTIGRAVITY_KEYRING or not os.environ.get("DBUS_SESSION_BUS_ADDRESS"):
+        return []
+    tool = shutil.which("secret-tool")
+    if not tool:
+        return []
+    try:
+        result = subprocess.run([tool, "lookup", "service", "antigravity"], stdin=subprocess.DEVNULL,
+                                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=2, check=False)
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    if result.returncode != 0 or not result.stdout:
+        return []
+    text = result.stdout.decode("utf-8", "ignore").strip()
+    if not text:
+        return []
+    with contextlib.suppress(ValueError):
+        parsed = parse_antigravity_oauth(json.loads(text), now)
+        if parsed is not None:
+            access, identity, is_expired, refreshable = parsed
+            return [{"source": "Antigravity's keyring sign-in", "token": access, "identity": identity,
+                     "expired": is_expired, "refreshable": refreshable,
+                     "acp": (ANTIGRAVITY_GEMINI_DIR, "antigravity-cli"), "path": None}]
+    if usable(text) and text.startswith("ya29."):
+        return [{"source": "Antigravity's keyring sign-in", "token": text,
+                 "identity": hashlib.sha256(text.encode()).hexdigest(), "expired": False,
+                 "refreshable": False, "acp": None, "path": None}]
+    return []
+
+
+def antigravity_ide_value(raw, now):
+    """Parse one ItemTable value from Antigravity IDE's state.vscdb."""
+    if not isinstance(raw, (str, bytes)):
+        return None
+    text = raw.decode("utf-8", "ignore") if isinstance(raw, bytes) else raw
+    with contextlib.suppress(ValueError):
+        parsed = parse_antigravity_oauth(json.loads(text), now)
+        if parsed is not None:
+            return parsed
+    # Unified state sync values can be base64-encoded JSON or protobuf bytes.
+    stripped = text.strip()
+    if stripped and len(stripped) <= 65536:
+        with contextlib.suppress(ValueError):
+            decoded = base64.b64decode(stripped, validate=False)
+            with contextlib.suppress(ValueError, UnicodeDecodeError):
+                parsed = parse_antigravity_oauth(json.loads(decoded.decode("utf-8")), now)
+                if parsed is not None:
+                    return parsed
+            match = ANTIGRAVITY_GOOGLE_TOKEN.search(decoded.decode("latin-1"))
+            if match and usable(match.group(0)):
+                token = match.group(0)
+                return token, hashlib.sha256(token.encode()).hexdigest(), False, False
+    return None
+
+
+def antigravity_ide_credentials(now):
+    """Read-only lookup in Antigravity IDE's SQLite state database."""
+    if not sqlite3:
+        return []
+    found = []
+    for database in ANTIGRAVITY_IDE_DBS:
+        if not database.exists():
+            continue
+        try:
+            connection = sqlite3.connect(database.as_uri() + "?mode=ro", uri=True, timeout=2)
+            try:
+                rows = connection.execute(
+                    "SELECT key, value FROM ItemTable WHERE key IN "
+                    "('antigravityAuthStatus', 'antigravityUnifiedStateSync.oauthToken')"
+                ).fetchall()
+            finally:
+                connection.close()
+        except sqlite3.Error:
+            continue
+        for _, value in rows:
+            parsed = antigravity_ide_value(value, now)
+            if parsed is not None:
+                access, identity, is_expired, refreshable = parsed
+                found.append({"source": "Antigravity IDE's sign-in", "token": access, "identity": identity,
+                              "expired": is_expired, "refreshable": refreshable, "acp": None, "path": None})
+    return found
+
+
+def antigravity_t3_credentials(now):
+    """Antigravity OAuth tokens stored by T3 Code, newest file first."""
+    if not ANTIGRAVITY_T3_DIR.is_dir():
+        return []
+    paths = []
+    for candidate in ANTIGRAVITY_T3_DIR.glob("*/antigravity-acp/antigravity-oauth-token"):
+        with contextlib.suppress(OSError):
+            paths.append((candidate.stat().st_mtime_ns, str(candidate), candidate))
+    paths.sort(reverse=True)
+    found = []
+    for _, _, path in paths:
+        acp = (path.parent.parent, path.parent.name)
+        cred = antigravity_file_credential(path, "T3 Code's Antigravity sign-in", acp, now)
+        if cred is not None:
+            found.append(cred)
+    return found
+
+
+def antigravity_credentials(now):
+    """Discover Antigravity OAuth credentials across the CLI, standalone app,
+    OS keyring, Antigravity IDE and T3 Code, split into (fresh, expired)."""
+    candidates = []
+    static_files = (
+        (ANTIGRAVITY_GEMINI_DIR / "antigravity-cli" / "antigravity-oauth-token",
+         "Antigravity CLI's sign-in", (ANTIGRAVITY_GEMINI_DIR, "antigravity-cli")),
+        (ANTIGRAVITY_GEMINI_DIR / "antigravity" / "antigravity-oauth-token",
+         "Antigravity's sign-in", (ANTIGRAVITY_GEMINI_DIR, "antigravity")),
+        (ANTIGRAVITY_GEMINI_DIR / "antigravity" / "jetski-standalone-oauth-token",
+         "Antigravity's sign-in", None),
+        (ANTIGRAVITY_GEMINI_DIR / "jetski-standalone-oauth-token",
+         "Antigravity's sign-in", None),
+    )
+    for path, source, acp in static_files:
+        if cred := antigravity_file_credential(path, source, acp, now):
+            candidates.append(cred)
+    candidates.extend(antigravity_keyring_credentials(now))
+    candidates.extend(antigravity_ide_credentials(now))
+    candidates.extend(antigravity_t3_credentials(now))
+    fresh_list, expired_list, seen = [], [], set()
+    for cred in candidates:
+        key = (cred["token"], cred["acp"])
+        if key in seen:
+            continue
+        seen.add(key)
+        (expired_list if cred["expired"] else fresh_list).append(cred)
+    return fresh_list, expired_list
+
+
+def antigravity_fresh_token(now=None):
+    """Return (token, identity) for the first unexpired Antigravity login, or
+    None. Never triggers an OAuth renewal."""
+    fresh_list, _ = antigravity_credentials(time.time() if now is None else now)
+    if fresh_list:
+        return fresh_list[0]["token"], fresh_list[0]["identity"]
+    return None
+
+
+def antigravity_acp_command(binary, acp):
+    argv = [binary, "acp", "--stdio", "--disable-telemetry"]
+    if acp is not None:
+        gemini_dir, app_data_dir = acp
+        argv.extend(["--gemini-dir", str(gemini_dir), "--app-data-dir", app_data_dir])
+    return argv
+
+
+def stop_process_group(proc):
+    if proc.stdin:
+        with contextlib.suppress(OSError):
+            proc.stdin.close()
+    with contextlib.suppress(ProcessLookupError, OSError):
+        os.killpg(proc.pid, signal.SIGKILL)
+    with contextlib.suppress(OSError):
+        proc.wait(timeout=5)
+
+
+def antigravity_acp_start(binary, acp):
+    private_state_dir()
+    WORK_DIR.mkdir(mode=0o700, exist_ok=True)
+    return subprocess.Popen(
+        antigravity_acp_command(binary, acp),
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+        cwd=WORK_DIR, env=cli_environment("GEMINI_DIR"), text=True, start_new_session=True,
+    )
+
+
+def antigravity_acp_call(proc, req_id, method, params, deadline):
+    """Send one JSON-RPC 2.0 request to `agy acp --stdio` and wait for its
+    matching response, skipping notifications."""
+    proc.stdin.write(json.dumps({"jsonrpc": "2.0", "id": req_id, "method": method, "params": params}) + "\n")
+    proc.stdin.flush()
+    for line in lines_until(proc.stdout, deadline):
+        try:
+            msg = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(msg, dict) or msg.get("id") != req_id:
+            continue
+        if "error" in msg:
+            err = msg["error"]
+            if isinstance(err, dict):
+                raise AppServerError(err.get("message") or str(err), err.get("code"))
+            raise AppServerError(str(err))
+        return msg.get("result")
+    raise RuntimeError("agy acp closed before answering")
+
+
+def antigravity_refresh(acp):
+    """Ask `agy acp --stdio` to silently renew an expired OAuth token via
+    initialize + authenticate, sending no prompt and spending no quota."""
+    binary, reason = cli_or_reason("antigravity")
+    if reason or not binary:
+        return False
+    deadline = time.monotonic() + ANSWER_TIMEOUT
+    try:
+        proc = antigravity_acp_start(binary, acp)
+    except OSError:
+        return False
+    try:
+        antigravity_acp_call(proc, 1, "initialize", {
+            "protocolVersion": 1, "clientCapabilities": {},
+            "clientInfo": {"name": "ringside", "version": VERSION},
+        }, deadline)
+        antigravity_acp_call(proc, 2, "authenticate", {"methodId": "oauth-personal"}, deadline)
+        return True
+    except (OSError, TimeoutError, AppServerError, RuntimeError):
+        return False
+    finally:
+        stop_process_group(proc)
+
+
+def antigravity_reread(candidate, now):
+    """Re-read a candidate's token after `agy acp` renewed it."""
+    if candidate["path"] is not None:
+        return antigravity_file_credential(candidate["path"], candidate["source"], candidate["acp"], now)
+    for item in antigravity_keyring_credentials(now):
+        if item["acp"] == candidate["acp"]:
+            return item
+    return None
+
+
+def antigravity_group_info(group, buckets):
+    ids = [str(bucket.get("bucketId") or "").casefold() for bucket in buckets]
+    display = group.get("displayName") if isinstance(group.get("displayName"), str) else ""
+    folded = display.casefold()
+    if any(bid.startswith("gemini-") for bid in ids) or "gemini" in folded:
+        return "gemini", "Gemini"
+    if any(bid.startswith("3p-") for bid in ids) or ("claude" in folded and "gpt" in folded):
+        return "3p", "Claude & GPT"
+    name = display.strip()
+    if name:
+        return name.casefold(), name
+    first = next((bid.split("-", 1)[0] for bid in ids if bid), "")
+    return (first, first) if first else ("", "")
+
+
+def antigravity_bucket_kind(bucket):
+    span = str(bucket.get("window") or "").strip().casefold()
+    bid = str(bucket.get("bucketId") or "").strip().casefold()
+    if span in ("weekly", "week", "7d") or bid.endswith("-weekly") or bid.endswith("-7d"):
+        return "week", WEEK_SECONDS
+    if span in ("5h", "five_hour", "session") or bid.endswith("-5h"):
+        return "session", SESSION_SECONDS
+    return None, None
+
+
+def parse_antigravity(body):
+    """Read a v1internal:retrieveUserQuotaSummary reply.
+
+    Antigravity tracks separate rolling weekly and 5-hour quotas for Gemini
+    Models and Claude and GPT models. Gemini's weekly quota becomes "weekly"
+    (the outer ring), Gemini's 5-hour quota becomes "session", Claude & GPT's
+    weekly quota becomes a scoped limit (drawn on the inner ring), and
+    Claude & GPT's 5-hour quota goes into "extraSessions" for the popup bars
+    and dual-group session starter."""
+    groups = body.get("groups") if isinstance(body, dict) else None
+    if not isinstance(groups, list):
+        raise RuntimeError("no quota groups in Antigravity reply")
+    parsed_groups = []
+    for group in groups:
+        if not isinstance(group, dict):
+            continue
+        raw_buckets = group.get("buckets")
+        if not isinstance(raw_buckets, list):
+            continue
+        buckets = [bucket for bucket in raw_buckets if isinstance(bucket, dict) and bucket.get("disabled") is not True]
+        if not buckets:
+            continue
+        key, label = antigravity_group_info(group, buckets)
+        if not label:
+            continue
+        week_win, week_id = None, ""
+        session_win, session_id = None, ""
+        for bucket in buckets:
+            kind, length = antigravity_bucket_kind(bucket)
+            if kind is None:
+                continue
+            rem = bucket.get("remainingFraction")
+            if not finite_share(rem) or not 0 <= rem <= 1:
+                continue
+            reset = epoch_seconds(bucket.get("resetTime"))
+            if reset is None:
+                continue
+            win = window_from((1.0 - rem) * 100.0, reset, length)
+            bid = bucket.get("bucketId") if isinstance(bucket.get("bucketId"), str) else ""
+            if kind == "week" and week_win is None:
+                week_win = win
+                week_id = bid or f"{key}-weekly"
+            elif kind == "session" and session_win is None:
+                session_win = win
+                session_id = bid or f"{key}-5h"
+        if week_win is not None or session_win is not None:
+            parsed_groups.append((key, label, week_id, week_win, session_id, session_win))
+
+    primary = next((item for item in parsed_groups if item[0] == "gemini"), None)
+    if primary is None:
+        primary = next((item for item in parsed_groups if item[3] is not None), None)
+    if primary is None and parsed_groups:
+        primary = parsed_groups[0]
+    if primary is None:
+        raise RuntimeError("no quota windows in Antigravity reply")
+
+    _, primary_label, _, primary_week, _, primary_session = primary
+    reading = {"weekly": primary_week or primary_session, "scoped": []}
+    extra_sessions = []
+    for item in parsed_groups:
+        if item is primary:
+            continue
+        _, label, week_id, week_win, session_id, session_win = item
+        if week_win is not None:
+            reading["scoped"].append({"id": week_id, "label": label, **week_win})
+        if session_win is not None:
+            extra_sessions.append({"id": session_id, "label": label, **session_win})
+    if reading["scoped"] or extra_sessions:
+        reading["weekly"] = {**reading["weekly"], "label": primary_label}
+    if primary_week is not None and primary_session is not None:
+        reading["session"] = {**primary_session, "label": primary_label} if extra_sessions else primary_session
+    if extra_sessions:
+        reading["extraSessions"] = extra_sessions
+    return reading
+
+
+def antigravity_usage():
+    """Ask Antigravity with each discovered credential in turn. When a token's
+    1-hour access token has expired and `agy` is available, renew it silently
+    via `agy acp --stdio` (sending no prompt) and retry once."""
+    now = time.time()
+    fresh_list, expired_list = antigravity_credentials(now)
+    if not fresh_list and not expired_list:
+        raise SignedOut()
+
+    def query(candidate):
+        event("debug", "antigravity", "credential", source=candidate["source"])
+        body = http_json(ANTIGRAVITY_QUOTA_URL,
+                         {**ANTIGRAVITY_HEADERS, "Authorization": f"Bearer {candidate['token']}"}, {})
+        context = CREDITS_CONTEXT.get()
+        if context is not None:
+            context["observed"]["antigravity"] = {"token": candidate["token"], "identity": candidate["identity"]}
+        return parse_antigravity(body)
+
+    tried_refresh = set()
+    had_expired = bool(expired_list)
+
+    for candidate in fresh_list:
+        try:
+            return query(candidate)
+        except SignedOut:
+            acp = candidate["acp"]
+            if acp is not None and candidate["refreshable"] and acp not in tried_refresh:
+                tried_refresh.add(acp)
+                if antigravity_refresh(acp):
+                    renewed = antigravity_reread(candidate, time.time())
+                    if renewed and not renewed["expired"]:
+                        event("debug", "antigravity", "renewed", product=PRODUCTS["antigravity"])
+                        with contextlib.suppress(SignedOut):
+                            return query(renewed)
+                had_expired = True
+
+    for candidate in expired_list:
+        acp = candidate["acp"]
+        if acp is None or not candidate["refreshable"] or acp in tried_refresh:
+            continue
+        tried_refresh.add(acp)
+        if not antigravity_refresh(acp):
+            continue
+        renewed = antigravity_reread(candidate, time.time())
+        if renewed and not renewed["expired"]:
+            event("debug", "antigravity", "renewed", product=PRODUCTS["antigravity"])
+            with contextlib.suppress(SignedOut):
+                return query(renewed)
+
+    if had_expired:
+        raise CheckFailed("Antigravity's sign-in has expired; open Antigravity to renew it", "expired")
+    raise SignedOut()
+
+
 # --- prepaid credits -------------------------------------------------------
 
 
@@ -1629,21 +2099,58 @@ def parse_kimi_credits(raw, region):
     return "ok", {"amount": cents / 100, "currency": currency, "precision": 2} if cents else None
 
 
+def parse_antigravity_credits(body):
+    """Return Antigravity's AI Credits balance from v1internal:loadCodeAssist.
+
+    The paid tier carries availableCredits entries; GOOGLE_ONE_AI holds the
+    integer creditAmount (omitted in proto3 JSON when 0)."""
+    if not isinstance(body, dict):
+        raise ValueError("invalid credits")
+    paid = body.get("paidTier")
+    credits = paid.get("availableCredits") if isinstance(paid, dict) else body.get("availableCredits")
+    if not isinstance(credits, list):
+        return "unavailable", None
+    matched = [row for row in credits if isinstance(row, dict) and row.get("creditType") == "GOOGLE_ONE_AI"]
+    if not matched:
+        return ("ok", None) if isinstance(paid, dict) else ("unavailable", None)
+    total = 0
+    for row in matched:
+        raw = row.get("creditAmount", 0)
+        if type(raw) is int and raw >= 0:
+            total += raw
+        elif isinstance(raw, str) and re.fullmatch(r"[0-9]{1,18}", raw):
+            total += int(raw)
+        else:
+            raise ValueError("invalid credits")
+    return "ok", {"amount": total, "currency": "", "precision": 0} if total > 0 else None
+
+
 def credit_snapshot(name, record, observed=None):
     """Return what ties a balance to the login it was read with. For Claude
     that's (identity, organisation); for Codex, the digest of its login
-    file. For Kimi it's the digest of the credential this run's usage check
-    used or, in a run that didn't check, of the credential the balance was
-    last read with."""
+    file. For Antigravity it's the digest of the active credential's refresh
+    or access token. For Kimi it's the digest of the credential this run's
+    usage check used or, in a run that didn't check, of the credential the
+    balance was last read with."""
     if name == "claude":
         return claude_credit_identity()
     if name == "codex":
         return credential_digest(CODEX_AUTH)
+    if name == "antigravity":
+        if (observed or {}).get("identity"):
+            return observed["identity"]
+        fresh_token = antigravity_fresh_token()
+        return fresh_token[1] if fresh_token else (record if isinstance(record, dict) else {}).get("identity")
     return (observed or {}).get("identity") or (record if isinstance(record, dict) else {}).get("identity")
 
 
 def anthropic_hold(cache, now):
     at = cache.get("_anthropicHold")
+    return max(0, at - now) if type(at) is int else 0
+
+
+def antigravity_hold(cache, now):
+    at = cache.get("_antigravityHold")
     return max(0, at - now) if type(at) is int else 0
 
 
@@ -1691,7 +2198,7 @@ def collect_credits(cache, providers, now, started):
     # Remember an explicit provider refusal even when a caller does not ask
     # for credits, so another widget cannot retry a disabled balance.
     for name, observed in context["observed"].items():
-        raw = observed["raw"]
+        raw = observed.get("raw")
         if name == "claude":
             extra = raw.get("extra_usage") if isinstance(raw, dict) else None
             enabled = extra.get("is_enabled") if isinstance(extra, dict) else None
@@ -1742,6 +2249,41 @@ def collect_credits(cache, providers, now, started):
             elif providers[name].get("status") != "ok":
                 reason = "signed-out" if providers[name].get("status") == "signed_out" else providers[name].get("reason", "other")
                 record.update(status="error", reason=reason, retryAt=providers[name].get("retryAt"))
+        elif name == "antigravity":
+            wait = max(antigravity_hold(cache, now), held(cache.get(name), now, PROGRAMS.get(name, "")))
+            if wait:
+                record.update(status="error", retryAt=max(record.get("retryAt") or 0, now + wait),
+                              reason="rate-limited" if antigravity_hold(cache, now) or cache.get(name, {}).get("status") == "rate_limited" else "other")
+            elif now >= (record.get("retryAt") or 0):
+                record["retryAt"] = now + CREDITS_INTERVAL
+                cache["_credits"] = records
+                write_private(CACHE_FILE, cache)
+                try:
+                    token = observed.get("token")
+                    if not token:
+                        fresh_token = antigravity_fresh_token()
+                        if not fresh_token or fresh_token[1] != identity:
+                            raise SignedOut()
+                        token = fresh_token[0]
+                    body = http_json(ANTIGRAVITY_LOAD_URL,
+                                     {**ANTIGRAVITY_HEADERS, "Authorization": f"Bearer {token}"},
+                                     {"metadata": {"ideType": "ANTIGRAVITY"}},
+                                     timeout=CREDITS_TIMEOUT, redirects=False, max_bytes=65536)
+                    status, balance = parse_antigravity_credits(body)
+                    record.update(status=status, balance=balance,
+                                  spent=credits_spent(record, balance) if status == "ok" else False,
+                                  fetchedAt=now + int(time.monotonic() - started), reason=None)
+                except RateLimited as err:
+                    response_at = now + math.ceil(time.monotonic() - started)
+                    cache["_antigravityHold"] = response_at + max(CREDITS_INTERVAL, err.retry_after)
+                    record.update(status="error", retryAt=cache["_antigravityHold"], reason="rate-limited")
+                except SignedOut:
+                    record.update(status="error", reason="signed-out")
+                except Exception as err:  # noqa: BLE001 - no response text leaves this path
+                    reason = getattr(err, "reason", "other")
+                    record.update(status="error", reason=reason if reason in ("offline", "timeout", "server") else "other")
+                    if getattr(err, "status", None) == 403:
+                        record["retryAt"] = now + math.ceil(time.monotonic() - started) + 3600
         else:
             wait = max(anthropic_hold(cache, now), held(cache.get(name), now, PROGRAMS.get(name, "")))
             if wait:
@@ -1815,12 +2357,13 @@ def clamp_percent(value):
 
 def epoch_seconds(value):
     """Accept epoch seconds or an ISO-8601 timestamp; None when unparseable."""
-    if value is None:
+    if value is None or isinstance(value, bool):
         return None
     if isinstance(value, (int, float)):
-        return int(value)
+        return int(value) if math.isfinite(value) else None
     try:
-        stamp = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        text = re.sub(r"(\.\d{6})\d+", r"\1", str(value).replace("Z", "+00:00"))
+        stamp = datetime.fromisoformat(text)
     except ValueError:
         return None
     if stamp.tzinfo is None:
@@ -1939,9 +2482,11 @@ def fresh(entry, now, name):
     return (isinstance(entry, dict) and entry.get("status") == "ok"
             and type(entry.get("fetchedAt")) is int and 0 <= now - entry["fetchedAt"] < CACHE_TTL
             and well_formed(entry.get("weekly")) and isinstance(entry.get("scoped", []), list)
+            and isinstance(entry.get("extraSessions", []), list)
             and all(entry.get(key) is None or well_formed(entry[key]) for key in ("session", "week"))
             and all(well_formed(entry.get(key)) for key in ALWAYS.get(name, ()))
             and all(well_formed(w, scoped=True) for w in entry.get("scoped", []))
+            and all(well_formed(w, scoped=True) for w in entry.get("extraSessions", []))
             and ("bankedResets" not in entry or banked_resets_well_formed(entry["bankedResets"])))
 
 
@@ -2034,7 +2579,10 @@ def proxy_backend():
 def proxy_client(url, key):
     return proxy_backend().Client(url, key, claude_usage_url=CLAUDE_USAGE_URL + CLAUDE_USAGE_QUERY,
                                   claude_profile_url=CLAUDE_OAUTH_URL + "/profile", claude_headers=CLAUDE_READ_HEADERS,
-                                  kimi_usage_urls=KIMI_USAGE_URLS)
+                                  kimi_usage_urls=KIMI_USAGE_URLS, antigravity_usage_url=ANTIGRAVITY_QUOTA_URL,
+                                  antigravity_load_url=ANTIGRAVITY_LOAD_URL,
+                                  antigravity_headers={"Content-Type": "application/json",
+                                                       "User-Agent": ANTIGRAVITY_USER_AGENT})
 
 
 def read_proxy_cache():
@@ -2087,6 +2635,8 @@ def proxy_reading_extras(name, body, region, now, eligible):
         extra_usage = body.get("extra_usage")
         if isinstance(extra_usage, dict) and type(enabled := extra_usage.get("is_enabled")) is bool:
             extras["_creditsEnabled"] = enabled
+        return extras
+    if name == "antigravity":
         return extras
 
     if name == "codex":
@@ -2211,8 +2761,9 @@ def proxy_read_extras(backend, client, work, now, started, deadline, eligible, p
         banked = reading.get("bankedResets")
         claude = (credential.provider == "claude" and "claude" in eligible
                   and record.get("creditsEnabled") is not False)
+        antigravity = (credential.provider == "antigravity" and "antigravity" in eligible)
         codex = (credential.provider == "codex" and banked and len(banked["expires"]) < banked["count"])
-        if not (claude or codex):
+        if not (claude or antigravity or codex):
             continue
         # Rotate accounts that missed the last budget ahead of those already checked.
         # Save the attempt before the GET so an interrupted run still observes the interval.
@@ -2229,6 +2780,10 @@ def proxy_read_extras(backend, client, work, now, started, deadline, eligible, p
                 reply = client.claude_credits(credential, org=org, prepaid_request=claude_prepaid_request,
                                               deadline=account_deadline)
                 proxy_store_credit(record, "ok", parse_claude_credits(reply), now)
+            elif antigravity:
+                reply = client.antigravity_credits(credential, deadline=account_deadline)
+                status, balance = parse_antigravity_credits(reply)
+                proxy_store_credit(record, status, balance, now)
             else:
                 reply = client.codex_reset_details(credential, deadline=account_deadline)
                 details = codex_banked_resets(reply)
@@ -2245,13 +2800,13 @@ def proxy_read_extras(backend, client, work, now, started, deadline, eligible, p
             retry_after = 3600 if reason == "upstream-auth" else getattr(err, "retry_after", None)
             finished = now + math.ceil(time.monotonic() - started)
             failure = proxy_failure(reason, finished, retry_after)
-            if claude:
-                if reason in ("upstream-auth", "invalid-response"):
+            if claude or antigravity:
+                if claude and reason in ("upstream-auth", "invalid-response"):
                     record.pop("creditOrganization", None)
                 proxy_store_credit(record, "error", None, now, proxy_credit_reason(reason))
             if reason in PROXY_MANAGEMENT_STOP:
                 return dict(failure, optional=True)
-            if claude and reason == "rate-limited":
+            if (claude or antigravity) and reason == "rate-limited":
                 failure["holdsUsage"] = True
             record["extrasHold"] = failure
     return None
@@ -2592,10 +3147,11 @@ def collect_locked(fetchers, now, *, initial=(), retrying=(), rechecked=None):
             providers[name] = entry
             event("debug", name, "cached", age=now - entry["fetchedAt"])
             continue
-        shared = anthropic_hold(cache, now) if name == "claude" else 0
+        shared = anthropic_hold(cache, now) if name == "claude" else antigravity_hold(cache, now) if name == "antigravity" else 0
         if shared:
+            hold_host = "api.anthropic.com" if name == "claude" else ANTIGRAVITY_BASE_URL.split("/")[2]
             providers[name] = replay(hold({"status": "rate_limited", "retryAfter": shared,
-                                           "reason": "rate-limited", "host": "api.anthropic.com"},
+                                           "reason": "rate-limited", "host": hold_host},
                                           now, ""), shared, now)
             continue
         wait = held(entry, now, PROGRAMS.get(name, ""))
@@ -2623,6 +3179,9 @@ def collect_locked(fetchers, now, *, initial=(), retrying=(), rechecked=None):
         if name == "claude" and report["status"] == "rate_limited" and (
                 context and "claude" in context["eligible"] or isinstance(credit_records, dict) and "claude" in credit_records):
             cache["_anthropicHold"] = now + math.ceil(last_at[name] - started) + max(CREDITS_INTERVAL, report["retryAfter"])
+        if name == "antigravity" and report["status"] == "rate_limited" and (
+                context and "antigravity" in context["eligible"] or isinstance(credit_records, dict) and "antigravity" in credit_records):
+            cache["_antigravityHold"] = now + math.ceil(last_at[name] - started) + max(CREDITS_INTERVAL, report["retryAfter"])
         retry.pop(name, None)
         if again and time.monotonic() < deadline:
             retry[name] = time.monotonic() + INITIAL_RETRY_DELAY
@@ -3205,7 +3764,7 @@ class Starter:
         except Unreadable as err:
             self.back_off(err.wait)
             return
-        limit = used_up(reading)
+        limit = used_up(reading, self.name)
         if limit and limit["resetsAt"] is None:
             # Reached, with no word of when it resets: as good as unread.
             self.back_off()
@@ -3298,22 +3857,75 @@ def weekly_running(reading, now):
     return week
 
 
-def used_up(reading):
+def rolling_running(window, fetched_at, now):
+    """A rolling window while it runs, else None. An idle account may report
+    0% and a reset one window from whenever it is asked, which moves with the
+    clock; that is no active window."""
+    if not window:
+        return None
+    reset = window["resetsAt"]
+    if reset is None and window["percent"] > 0:
+        raise Unreadable()
+    if reset is None or reset <= now:
+        return None
+    if window["percent"] == 0 and abs(reset - fetched_at - window["windowSeconds"]) <= ROLLING_SLACK:
+        return None
+    return window
+
+
+def antigravity_groups(reading):
+    """Antigravity's independent model groups as (group_id, weekly, session)."""
+    groups = [("gemini", reading["weekly"], reading.get("session"))]
+    extras = list(reading.get("extraSessions") or [])
+    for scoped in reading.get("scoped") or []:
+        sid = str(scoped.get("id") or "").casefold()
+        prefix = sid.rsplit("-", 1)[0] if "-" in sid else sid
+        group_id = "3p" if prefix == "3p" or "claude" in str(scoped.get("label") or "").casefold() else (prefix or sid)
+        matched = next((item for item in extras
+                        if str(item.get("id") or "").casefold().startswith(prefix + "-")
+                        or item.get("label") == scoped.get("label")), None)
+        groups.append((group_id, scoped, matched))
+    return groups
+
+
+def antigravity_needed_groups(reading, now, windows):
+    """The Antigravity model groups whose weekly limit isn't exhausted and
+    which have at least one aimed window not currently running."""
+    needed = []
+    fetched_at = reading["fetchedAt"]
+    for group_id, weekly, session in antigravity_groups(reading):
+        if weekly["percent"] >= 100:
+            continue
+        for window in windows:
+            target = weekly if window == "week" else (session if session is not None else weekly)
+            if rolling_running(target, fetched_at, now) is None:
+                needed.append(group_id)
+                break
+    return needed
+
+
+def used_up(reading, name=None):
     """The reading's used-up limit that every model waits on longest, or
-    None: its "weekly" one, and OpenCode Go's week beside its month. One
-    that doesn't say when it resets comes first, since it can't be waited
-    out."""
+    None: its "weekly" one, and OpenCode Go's week beside its month. For
+    Antigravity's independent model groups, it holds only when every group's
+    weekly limit is reached, and waits until the soonest one resets. One that
+    doesn't say when it resets comes first, since it can't be waited out."""
+    if name == "antigravity":
+        weeklies = [weekly for _, weekly, _ in antigravity_groups(reading)]
+        if weeklies and all(window["percent"] >= 100 for window in weeklies):
+            return min(weeklies, key=lambda window: (window["resetsAt"] is not None, window["resetsAt"] or 0))
+        return None
     reached = [window for window in (reading["weekly"], reading.get("week")) if window and window["percent"] >= 100]
     return min(reached, key=lambda window: (window["resetsAt"] is not None, -(window["resetsAt"] or 0)), default=None)
 
 
 def startable(name, reading):
     """The windows the reading's plan lets the starter start, in order: a
-    five-hour session where the plan has that limit, and for Codex its week,
-    unless its only window is five hours long. A garbled session is still a
-    limit the plan has."""
+    five-hour session where the plan has that limit, and for Codex and
+    Antigravity their week, unless its only window is five hours long. A
+    garbled session is still a limit the plan has."""
     session = "session" in reading or reading.get("sessionUnknown") is True
-    if name == "codex" and not session and reading["weekly"]["windowSeconds"] == SESSION_SECONDS:
+    if name in ("codex", "antigravity") and not session and reading["weekly"]["windowSeconds"] == SESSION_SECONDS:
         return ["session"]
     return [window for window in OFFERED[name] if window == "week" or session]
 
@@ -3336,8 +3948,31 @@ def window_running(name, window, reading, now):
 
 def aimed_running(name, reading, now, windows):
     """With each of the windows running, the one that ends first; with any
-    not running, None, since one message starts it. Raises Unreadable when
-    the reading can't tell."""
+    not running, None, since one message starts it. For Antigravity, checks
+    every non-exhausted model group so an idle group is still started while
+    another is already running. Raises Unreadable when the reading can't tell."""
+    if name == "antigravity":
+        fetched_at = reading["fetchedAt"]
+        running, exhausted = [], []
+        for _, weekly, session in antigravity_groups(reading):
+            if weekly["percent"] >= 100:
+                if weekly["resetsAt"] is not None and weekly["resetsAt"] > now:
+                    exhausted.append(weekly)
+                continue
+            for window in windows:
+                target = weekly if window == "week" else (session if session is not None else weekly)
+                active = rolling_running(target, fetched_at, now)
+                if active is None:
+                    return None
+                running.append(active)
+        if not running:
+            return None
+        soonest = min(running, key=lambda window: window["resetsAt"])
+        if exhausted:
+            earliest_reset = min(exhausted, key=lambda window: window["resetsAt"])
+            if earliest_reset["resetsAt"] < soonest["resetsAt"]:
+                return earliest_reset
+        return soonest
     running = [window_running(name, window, reading, now) for window in windows]
     if any(window is None for window in running):
         return None
@@ -3567,16 +4202,124 @@ def send_opencode(binary, wanted):
         pass
 
 
+def antigravity_model_rank(model_id, group):
+    """Rank available Antigravity model IDs so the cheapest usable model in
+    `group` ("gemini" or "3p") sorts first, or None if not in that group."""
+    lower = model_id.casefold()
+    if any(skip in lower for skip in ("image", "tts", "embed", "audio", "video")):
+        return None
+    effort = 0 if lower.endswith("-minimal") else 1 if lower.endswith("-low") else 2 if lower.endswith("-medium") else 3 if lower.endswith("-high") else 2
+    if group == "gemini":
+        if not lower.startswith("gemini-"):
+            return None
+        tier = 0 if ("flash-lite" in lower or "flash_lite" in lower) else 1 if "flash" in lower else 2 if "pro" in lower else 3
+        return tier, effort
+    if group == "3p":
+        if not (lower.startswith("claude-") or lower.startswith("gpt-") or re.match(r"o[1-9]-", lower)):
+            return None
+        tier = (0 if ("gpt-oss" in lower or "-nano" in lower or "-mini" in lower)
+                else 1 if "haiku" in lower
+                else 2 if ("sonnet" in lower or lower.startswith("gpt-"))
+                else 3 if "opus" in lower
+                else 4)
+        return tier, effort
+    return None
+
+
+def antigravity_pick_models(available_models, groups):
+    """Pick the cheapest available model ID for each needed Antigravity group."""
+    ids = [row.get("modelId") for row in (available_models or [])
+           if isinstance(row, dict) and isinstance(row.get("modelId"), str) and row.get("modelId")]
+    chosen = []
+    for group in groups:
+        ranked = [(antigravity_model_rank(mid, group), index, mid)
+                  for index, mid in enumerate(ids)]
+        ranked = [entry for entry in ranked if entry[0] is not None]
+        if not ranked:
+            return None
+        ranked.sort()
+        chosen.append((group, ranked[0][2]))
+    return chosen
+
+
+def send_antigravity(binary, wanted, groups=("gemini", "3p")):
+    """Send Antigravity one word per idle model group (cheapest available
+    Gemini model and/or cheapest available Claude/GPT model) through
+    `agy acp --stdio`, if wanted() still says so. As for the other starters,
+    the reading five minutes later decides whether it worked."""
+    fresh_list, expired_list = antigravity_credentials(time.time())
+    candidates = fresh_list + expired_list
+    if not candidates:
+        raise Failed("signed-out")
+    acp = next((cred["acp"] for cred in candidates if cred["acp"] is not None), None)
+    deadline = time.monotonic() + PREFLIGHT_TIMEOUT
+    try:
+        proc = antigravity_acp_start(binary, acp)
+    except OSError:
+        raise NotSent("not-responding") from None
+    try:
+        try:
+            antigravity_acp_call(proc, 1, "initialize", {
+                "protocolVersion": 1, "clientCapabilities": {},
+                "clientInfo": {"name": "ringside", "version": VERSION},
+            }, deadline)
+            antigravity_acp_call(proc, 2, "authenticate", {"methodId": "oauth-personal"}, deadline)
+            session = antigravity_acp_call(proc, 3, "session/new", {"cwd": str(WORK_DIR), "mcpServers": []}, deadline)
+        except AppServerError as err:
+            if CODEX_SIGNED_OUT.search(str(err)):
+                raise Failed("signed-out") from None
+            raise NotSent("not-responding") from None
+        except (OSError, TimeoutError, RuntimeError):
+            raise NotSent("not-responding") from None
+        if not isinstance(session, dict) or not isinstance(session.get("sessionId"), str):
+            raise NotSent("not-responding")
+        models_block = session.get("models") if isinstance(session.get("models"), dict) else {}
+        picked = antigravity_pick_models(models_block.get("availableModels"), groups)
+        if not picked:
+            raise Failed("no-model")
+        if not wanted():
+            raise SwitchedOff()
+        req_id = 4
+        sent_any = False
+        for index, (_, model_id) in enumerate(picked):
+            if index > 0 and not wanted():
+                break
+            send_deadline = time.monotonic() + SEND_TIMEOUT
+            try:
+                if index == 0:
+                    sid = session["sessionId"]
+                else:
+                    created = antigravity_acp_call(proc, req_id, "session/new",
+                                                   {"cwd": str(WORK_DIR), "mcpServers": []}, send_deadline)
+                    req_id += 1
+                    sid = created.get("sessionId") if isinstance(created, dict) else session["sessionId"]
+                antigravity_acp_call(proc, req_id, "session/set_model",
+                                     {"sessionId": sid, "modelId": model_id}, send_deadline)
+                req_id += 1
+                sent_any = True
+                antigravity_acp_call(proc, req_id, "session/prompt",
+                                     {"sessionId": sid, "prompt": [{"type": "text", "text": PROMPT}]}, send_deadline)
+                req_id += 1
+            except TimeoutError:
+                pass
+            except (OSError, AppServerError, RuntimeError):
+                if not sent_any:
+                    raise NotSent() from None
+    finally:
+        stop_process_group(proc)
+
+
 # The per-provider tables are functions so that the names are looked up
 # when a run needs them: the tests patch the fetchers and senders on the
 # module, which a dict built at import would not see.
 def fetchers():
-    return {"claude": claude_usage, "codex": codex_usage, "kimi": kimi_usage, "opencode": opencode_usage}
+    return {"claude": claude_usage, "codex": codex_usage, "kimi": kimi_usage, "opencode": opencode_usage,
+            "antigravity": antigravity_usage}
 
 
 # How each provider's starter sends its message.
 def senders():
-    return {"claude": send_claude, "codex": send_codex, "opencode": send_opencode}
+    return {"claude": send_claude, "codex": send_codex, "opencode": send_opencode, "antigravity": send_antigravity}
 
 
 def run_starter(name):
@@ -3607,11 +4350,25 @@ def run_starter_locked(name):
         write_private(STARTER_STATE, states)
 
     sender = senders()[name]
+    last_aim = {}
+
+    def aim(reading):
+        windows = [window for window in startable(name, reading) if window in on]
+        last_aim["reading"], last_aim["windows"] = reading, windows
+        return windows
+
+    def send(binary):
+        wanted = lambda: set(on) <= set(read_switches()[name])  # noqa: E731
+        if name == "antigravity" and "reading" in last_aim:
+            groups = antigravity_needed_groups(last_aim["reading"], int(time.time()), last_aim["windows"])
+            return sender(binary, wanted, groups=tuple(groups or ("gemini",)))
+        return sender(binary, wanted)
+
     Starter(name, record,
             read=lambda not_before: starter_read(name, int(time.time()), not_before),
             check=lambda: installed(name),
-            send=lambda binary: sender(binary, lambda: set(on) <= set(read_switches()[name])),
-            aim=lambda reading: [window for window in startable(name, reading) if window in on],
+            send=send,
+            aim=aim,
             persist=persist, clock=lambda: int(time.time())).step()
     if record["next"] is not None:
         event("debug", name, "starter-next", state=record["state"],
@@ -3695,7 +4452,7 @@ def overtaken(name, record, reading, now, on):
         return False
     awaited = record["next"] - 1
     if record["state"] == "weekly":
-        limit = used_up(reading)
+        limit = used_up(reading, name)
         return limit is None or limit["resetsAt"] is not None and abs(limit["resetsAt"] - awaited) > RESET_MOVED
     windows = [window for window in startable(name, reading) if window in on]
     if not windows:
@@ -3812,8 +4569,12 @@ def show_in_zone(providers, zone):
     """
     for entry in providers.values():
         times = [(window, "clockZone", window.get("resetsAt")) for window in windows(entry)]
-        if entry.get("session"):
-            times.append((entry["session"], "clockZone", entry["session"].get("resetsAt")))
+        for slot in ("session", "week"):
+            if entry.get(slot):
+                times.append((entry[slot], "clockZone", entry[slot].get("resetsAt")))
+        for extra in entry.get("extraSessions") or []:
+            if isinstance(extra, dict):
+                times.append((extra, "clockZone", extra.get("resetsAt")))
         if entry.get("starter"):
             starter = entry["starter"]
             times.append((starter, "clockZone",
@@ -3860,9 +4621,9 @@ def chosen_program(text):
 
 
 def arguments(argv):
-    parser = argparse.ArgumentParser(description="Report the usage limits of Claude Code, Codex, Kimi Code and OpenCode Go as JSON.")
+    parser = argparse.ArgumentParser(description="Report the usage limits of Claude Code, Codex, Kimi Code, OpenCode Go and Antigravity as JSON.")
     parser.add_argument("--providers", type=provider_list, default=list(PROVIDERS),
-                        help="comma-separated providers to poll and report (default: claude,codex,kimi,opencode)")
+                        help="comma-separated providers to poll and report (default: claude,codex,kimi,opencode,antigravity)")
     parser.add_argument("--credits-providers", type=provider_list, default=[],
                         help="providers whose prepaid credits may be reported")
     parser.add_argument("--initial-providers", type=provider_list, default=[],

@@ -579,6 +579,57 @@ class Credits(Isolated):
         for secret in ("test-access", "test-refresh", ACCOUNT, ORG):
             self.assertNotIn(secret, serialized)
 
+    def test_antigravity_credit_parsing_and_direct_collection(self):
+        self.assertEqual(usage.parse_antigravity_credits({
+            "paidTier": {"availableCredits": [{"creditType": "GOOGLE_ONE_AI", "creditAmount": "1250"}]}
+        }), ("ok", {"amount": 1250, "currency": "", "precision": 0}))
+        self.assertEqual(usage.parse_antigravity_credits({
+            "paidTier": {"availableCredits": [{"creditType": "GOOGLE_ONE_AI"}]}
+        }), ("ok", None))
+        self.assertEqual(usage.parse_antigravity_credits({}), ("unavailable", None))
+        with self.assertRaises(ValueError):
+            usage.parse_antigravity_credits({
+                "paidTier": {"availableCredits": [{"creditType": "GOOGLE_ONE_AI", "creditAmount": "-5"}]}
+            })
+
+        token_path = usage.ANTIGRAVITY_GEMINI_DIR / "antigravity-cli" / "antigravity-oauth-token"
+        token_path.parent.mkdir(parents=True)
+        token_path.write_text(json.dumps({
+            "token": {"access_token": "ya29.a1", "refresh_token": "1//stable-refresh", "expiry": "2099-01-01T00:00:00Z"}
+        }))
+        replies = [
+            fixture("antigravity_quota.json"),
+            {"paidTier": {"availableCredits": [{"creditType": "GOOGLE_ONE_AI", "creditAmount": "1250"}]}},
+            fixture("antigravity_quota.json"),
+            {"paidTier": {"availableCredits": [{"creditType": "GOOGLE_ONE_AI", "creditAmount": "1200"}]}},
+        ]
+        with mock.patch.object(usage, "http_json", side_effect=replies):
+            first = self.collect(1000, provider="antigravity", fetch=usage.antigravity_usage, eligible=("antigravity",))
+            self.assertEqual(first["credits"]["balance"], {"amount": 1250, "currency": "", "precision": 0})
+            self.assertFalse(first["credits"]["spent"])
+            # Rotate access_token while keeping the same refresh_token: spent still detects the drop.
+            token_path.write_text(json.dumps({
+                "token": {"access_token": "ya29.a2", "refresh_token": "1//stable-refresh", "expiry": "2099-01-01T00:00:00Z"}
+            }))
+            second = self.collect(1300, provider="antigravity", fetch=usage.antigravity_usage, eligible=("antigravity",))
+            self.assertEqual(second["credits"]["balance"], {"amount": 1200, "currency": "", "precision": 0})
+            self.assertTrue(second["credits"]["spent"])
+
+    def test_antigravity_credit_rate_limit_holds_usage_too(self):
+        token_path = usage.ANTIGRAVITY_GEMINI_DIR / "antigravity-cli" / "antigravity-oauth-token"
+        token_path.parent.mkdir(parents=True)
+        token_path.write_text(json.dumps({
+            "token": {"access_token": "ya29.a1", "refresh_token": "1//r", "expiry": "2099-01-01T00:00:00Z"}
+        }))
+        self.write_cache({"antigravity": dict(status="ok", fetchedAt=1000, **reading(1, 50000))})
+        with mock.patch.object(usage, "http_json",
+                               side_effect=usage.RateLimited(900, "daily-cloudcode-pa.googleapis.com")):
+            result = self.collect(1001, provider="antigravity", eligible=("antigravity",))
+        self.assertEqual(result["credits"]["reason"], "rate-limited")
+        fetch = mock.Mock(side_effect=AssertionError("rate limit hold should pause usage"))
+        later = self.collect(1400, provider="antigravity", fetch=fetch, eligible=("antigravity",))
+        self.assertEqual(later["status"], "rate_limited")
+
 
 if __name__ == "__main__":
     unittest.main()

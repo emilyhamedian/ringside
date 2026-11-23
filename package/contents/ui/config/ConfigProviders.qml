@@ -25,6 +25,7 @@ ConfigPage {
     // Array.from: the lists may be Qt sequences.
     readonly property bool claudeHasLimits: Array.from(knownLimits.claude || []).length > 0 || cfg_claudeInnerLimit !== ""
     readonly property bool codexHasLimits: Array.from(knownLimits.codex || []).length > 0 || cfg_codexInnerLimit !== ""
+    readonly property bool antigravityHasLimits: Array.from(knownLimits.antigravity || []).length > 0 || cfg_antigravityInnerLimit !== ""
     readonly property var enabledItems: Items.enabled(cfg_itemOrder, cfg_hiddenItems)
     // The Codex ring's logo is offered while the item is on or Codex has
     // reported its limits.
@@ -57,13 +58,15 @@ ConfigPage {
     // Array.from: it may be a Qt sequence.
     function startable(id) {
         const known = usageStatus[id]?.windows;
-        return known ? Array.from(known) : id === "codex" ? ["session", "week"] : ["session"];
+        return known ? Array.from(known) : id === "codex" || id === "antigravity" ? ["session", "week"] : ["session"];
     }
     readonly property var claudeWindows: startable("claude")
     readonly property var codexWindows: startable("codex")
     readonly property var opencodeWindows: startable("opencode")
+    readonly property var antigravityWindows: startable("antigravity")
     readonly property bool claudeStarterAvailable: !Limits.pooled(usageStatus.claude)
     readonly property bool codexStarterAvailable: !Limits.pooled(usageStatus.codex)
+    readonly property bool antigravityStarterAvailable: !Limits.pooled(usageStatus.antigravity)
 
     // A provider's setting, named for what its plan can start.
     function starterText(windows) {
@@ -86,6 +89,7 @@ ConfigPage {
 
     readonly property bool opencodeOn: enabledItems.includes("opencode")
     readonly property bool kimiOn: enabledItems.includes("kimi")
+    readonly property bool antigravityOn: enabledItems.includes("antigravity")
     readonly property bool hubChanged: !!live && (cfg_proxyUrl !== live.proxyUrl || cfg_proxyKeyFile !== live.proxyKeyFile)
     readonly property var sourceChoices: [
         { text: i18nc("@item:inlistbox usage source", "Automatic"), value: "auto" },
@@ -116,23 +120,29 @@ ConfigPage {
                                                              || usageStatus.claude?.starter === true && !runs("claude"))
     readonly property bool opencodeProgramWanted: opencodeOn && (cfg_opencodeProgram !== ""
                                                                  || usageStatus.opencode?.starter === true && !runs("opencode"))
+    readonly property bool antigravityProgramWanted: antigravityOn && (cfg_antigravityProgram !== ""
+                                                                       || usageStatus.antigravity?.starter === true && !runs("antigravity"))
     // Once shown, a Program line stays while the page is open, so emptying
     // the field to type another path, or to go back to automatic, doesn't
     // take it away mid-edit.
     property bool codexProgramKept: false
     property bool claudeProgramKept: false
     property bool opencodeProgramKept: false
+    property bool antigravityProgramKept: false
     onCodexProgramWantedChanged: if (codexProgramWanted) codexProgramKept = true
     onClaudeProgramWantedChanged: if (claudeProgramWanted) claudeProgramKept = true
     onOpencodeProgramWantedChanged: if (opencodeProgramWanted) opencodeProgramKept = true
+    onAntigravityProgramWantedChanged: if (antigravityProgramWanted) antigravityProgramKept = true
     Component.onCompleted: {
         codexProgramKept = codexProgramWanted;
         claudeProgramKept = claudeProgramWanted;
         opencodeProgramKept = opencodeProgramWanted;
+        antigravityProgramKept = antigravityProgramWanted;
     }
     readonly property bool codexProgramShown: codexOn && (codexProgramWanted || codexProgramKept)
     readonly property bool claudeProgramShown: claudeOn && (claudeProgramWanted || claudeProgramKept)
     readonly property bool opencodeProgramShown: opencodeOn && (opencodeProgramWanted || opencodeProgramKept)
+    readonly property bool antigravityProgramShown: antigravityOn && (antigravityProgramWanted || antigravityProgramKept)
 
     // Under each inner ring picker.
     readonly property string automaticLine: i18nc("@info", "Automatic shows the per-model limit when your plan has just one. With more than one, pick it here.")
@@ -299,7 +309,7 @@ ConfigPage {
         }
 
         Note {
-            text: i18nc("@info", "Ringside checks balances even when hidden. Claude's balance needs an extra check with Anthropic.")
+            text: i18nc("@info", "Ringside checks balances even when hidden. Claude and Antigravity balances need an extra check.")
         }
 
         Item {
@@ -556,6 +566,70 @@ ConfigPage {
 
         ProgramNote {
             program: opencodeProgram
+        }
+
+        Item {
+            id: antigravityHeading
+            Kirigami.FormData.isSection: true
+            Kirigami.FormData.label: i18nc("@title:group settings for the Antigravity item", "Antigravity")
+            visible: page.antigravityOn || page.antigravityHasLimits || page.antigravityProgramShown
+        }
+
+        SourcePicker {
+            visible: page.antigravityOn
+            provider: i18nc("@title", "Antigravity")
+            current: page.cfg_antigravityUsageSource
+            onPicked: value => page.cfg_antigravityUsageSource = value
+        }
+
+        SourceNote {
+            providerId: "antigravity"
+        }
+
+        QQC2.CheckBox {
+            visible: antigravityHeading.visible && page.antigravityStarterAvailable && page.antigravityWindows.length > 0
+            text: page.starterText(page.antigravityWindows)
+            Accessible.name: i18nc("@option:check %1 is the check box's text, such as Auto start session or week", "Antigravity: %1", text)
+            Accessible.description: page.antigravityWindows.length > 1
+                ? i18nc("@info", "When a session or week ends, Ringside sends Antigravity a one-word message to start the next one. Turn this off to hide the popup switches.")
+                : page.antigravityWindows[0] === "session"
+                ? i18nc("@info", "When a session ends, Ringside sends Antigravity a one-word message to start the next one. Turn this off to hide the popup switch.")
+                : i18nc("@info", "When a week ends, Ringside sends Antigravity a one-word message to start the next one. Turn this off to hide the popup switch.")
+            checked: page.cfg_antigravitySessionStarter
+            onToggled: page.cfg_antigravitySessionStarter = checked
+            QQC2.ToolTip.text: Accessible.description
+            QQC2.ToolTip.visible: hovered
+            QQC2.ToolTip.delay: Kirigami.Units.toolTipDelay
+        }
+
+        Picker {
+            visible: page.antigravityHasLimits
+            Kirigami.FormData.label: i18nc("@label:listbox which per-model limit the inner ring shows, under a Claude, OpenAI or Antigravity heading", "Inner ring:")
+            Accessible.name: i18nc("@label:listbox", "Antigravity inner ring")
+            current: page.cfg_antigravityInnerLimit
+            choices: page.limitChoices("antigravity")
+            onPicked: value => page.cfg_antigravityInnerLimit = value
+        }
+
+        Note {
+            visible: page.antigravityHasLimits
+            text: page.automaticLine
+        }
+
+        ProgramField {
+            id: antigravityProgram
+            visible: page.antigravityProgramShown
+            command: "agy"
+            chosen: page.cfg_antigravityProgram
+            found: page.program("antigravity")
+            note: i18nc("@info under Antigravity's Program", "Used to start sessions and renew an expired login. Usage is read without it.")
+            lostNote: i18nc("@info under Antigravity's Program: Not found, shown while the session starter is on",
+                            "Not in ~/.local/bin or on Plasma's PATH. Starting sessions needs it; if agy is installed elsewhere, choose it.")
+            onChoose: path => page.cfg_antigravityProgram = path
+        }
+
+        ProgramNote {
+            program: antigravityProgram
         }
     }
 }

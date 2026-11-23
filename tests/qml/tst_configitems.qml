@@ -82,10 +82,10 @@ TestRoot {
             const page = openPage();
             verify(!button(page, "Move CPU up").enabled);
             verify(button(page, "Move CPU down").enabled);
-            // Claude, OpenAI, Kimi and OpenCode Go trail the list by default,
-            // so OpenCode Go is the last row.
-            verify(button(page, "Move OpenCode Go up").enabled);
-            verify(!button(page, "Move OpenCode Go down").enabled);
+            // Claude, OpenAI, Kimi, OpenCode Go and Antigravity trail the list
+            // by default, so Antigravity is the last row.
+            verify(button(page, "Move Antigravity up").enabled);
+            verify(!button(page, "Move Antigravity down").enabled);
             const up = button(page, "Move GPU up");
             const down = button(page, "Move GPU down");
             compare(up.display, QQC2.AbstractButton.IconOnly);
@@ -93,46 +93,46 @@ TestRoot {
             up.forceActiveFocus(Qt.TabFocusReason);
             tryVerify(() => up.visualFocus);
             keyClick(Qt.Key_Space);
-            compare(page.cfg_itemOrder, ["gpu", "cpu", "memory", "network", "disk", "claude", "codex", "kimi", "opencode"]);
+            compare(page.cfg_itemOrder, ["gpu", "cpu", "memory", "network", "disk", "claude", "codex", "kimi", "opencode", "antigravity"]);
             tryVerify(() => !up.enabled);
             tryVerify(() => down.activeFocus, 5000, "focus moved to Move GPU down");
             tryVerify(() => down.visualFocus, 5000, "keyboard focus stays visible");
             keyClick(Qt.Key_Space);
-            compare(page.cfg_itemOrder, ["cpu", "gpu", "memory", "network", "disk", "claude", "codex", "kimi", "opencode"]);
+            compare(page.cfg_itemOrder, ["cpu", "gpu", "memory", "network", "disk", "claude", "codex", "kimi", "opencode", "antigravity"]);
             verify(down.activeFocus, "focus stays on the pressed button");
             tryVerify(() => up.enabled);
             keyClick(Qt.Key_Space);
-            compare(page.cfg_itemOrder, ["cpu", "memory", "gpu", "network", "disk", "claude", "codex", "kimi", "opencode"]);
+            compare(page.cfg_itemOrder, ["cpu", "memory", "gpu", "network", "disk", "claude", "codex", "kimi", "opencode", "antigravity"]);
             verify(down.activeFocus);
         }
 
-        // Claude, Codex, Kimi and OpenCode Go trail every stored order, so
-        // they are the four at the bottom of the list.
+        // Claude, Codex, Kimi, OpenCode Go and Antigravity trail every stored
+        // order, so they are the five at the bottom of the list.
         function test_keyboard_down_to_bottom() {
             const page = openPage();
-            const down = button(page, "Move Kimi down");
-            const up = button(page, "Move Kimi up");
+            const down = button(page, "Move OpenCode Go down");
+            const up = button(page, "Move OpenCode Go up");
             down.forceActiveFocus(Qt.TabFocusReason);
             keyClick(Qt.Key_Space);
-            compare(page.cfg_itemOrder, ["cpu", "gpu", "memory", "network", "disk", "claude", "codex", "opencode", "kimi"]);
+            compare(page.cfg_itemOrder, ["cpu", "gpu", "memory", "network", "disk", "claude", "codex", "kimi", "antigravity", "opencode"]);
             tryVerify(() => !down.enabled);
-            verify(up.activeFocus, "focus moved to Move Kimi up");
+            verify(up.activeFocus, "focus moved to Move OpenCode Go up");
         }
 
         function test_mouse() {
             const page = openPage();
             const up = button(page, "Move Memory up");
             mouseClick(up);
-            compare(page.cfg_itemOrder, ["cpu", "memory", "gpu", "network", "disk", "claude", "codex", "kimi", "opencode"]);
+            compare(page.cfg_itemOrder, ["cpu", "memory", "gpu", "network", "disk", "claude", "codex", "kimi", "opencode", "antigravity"]);
             mouseClick(button(page, "Move Memory up"));
-            compare(page.cfg_itemOrder, ["memory", "cpu", "gpu", "network", "disk", "claude", "codex", "kimi", "opencode"]);
+            compare(page.cfg_itemOrder, ["memory", "cpu", "gpu", "network", "disk", "claude", "codex", "kimi", "opencode", "antigravity"]);
             verify(!up.enabled);
         }
 
-        // Claude, Codex, Kimi and OpenCode Go are opt-in: a 0.1-era config, with or
-        // without a hidden list, never had a chance to list them in the
-        // stored order, so all start unchecked. Loading the page must not
-        // write anything back on its own.
+        // Claude, Codex, Kimi, OpenCode Go and Antigravity are opt-in: a 0.1-era
+        // config, with or without a hidden list, never had a chance to list
+        // them in the stored order, so all start unchecked. Loading the page
+        // must not write anything back on its own.
         function test_aiRowsUnchecked_data() {
             return [
                 { tag: "noStoredLists", order: ["cpu", "gpu", "memory", "network", "disk"], hidden: [] },
@@ -145,6 +145,7 @@ TestRoot {
             verify(!checkbox(page, "OpenAI").checked, "OpenAI starts unchecked");
             verify(!checkbox(page, "Kimi").checked, "Kimi starts unchecked");
             verify(!checkbox(page, "OpenCode Go").checked, "OpenCode Go starts unchecked");
+            verify(!checkbox(page, "Antigravity").checked, "Antigravity starts unchecked");
             compare(page.cfg_itemOrder, data.order, "loading writes nothing back");
             compare(page.cfg_hiddenItems, data.hidden, "loading writes nothing back");
         }
@@ -161,15 +162,15 @@ TestRoot {
         function test_checkingClaudeWritesOrderAndHiddenNormalised() {
             const page = openPage({ cfg_itemOrder: ["cpu", "gpu", "memory", "network", "disk"], cfg_hiddenItems: [] });
             mouseClick(checkbox(page, "Claude"));
-            compare(page.cfg_itemOrder, ["cpu", "gpu", "memory", "network", "disk", "claude", "codex", "kimi", "opencode"]);
-            compare(page.cfg_hiddenItems, ["codex", "kimi", "opencode"]);
+            compare(page.cfg_itemOrder, ["cpu", "gpu", "memory", "network", "disk", "claude", "codex", "kimi", "opencode", "antigravity"]);
+            compare(page.cfg_hiddenItems, ["codex", "kimi", "opencode", "antigravity"]);
         }
 
         function test_movingCpuDoesNotSwitchAiOn() {
             const page = openPage({ cfg_itemOrder: ["cpu", "gpu", "memory", "network", "disk"], cfg_hiddenItems: [] });
             mouseClick(button(page, "Move CPU down"));
-            compare(page.cfg_itemOrder, ["gpu", "cpu", "memory", "network", "disk", "claude", "codex", "kimi", "opencode"]);
-            compare(page.cfg_hiddenItems, ["claude", "codex", "kimi", "opencode"], "moving never switches an opted-out AI item on");
+            compare(page.cfg_itemOrder, ["gpu", "cpu", "memory", "network", "disk", "claude", "codex", "kimi", "opencode", "antigravity"]);
+            compare(page.cfg_hiddenItems, ["claude", "codex", "kimi", "opencode", "antigravity"], "moving never switches an opted-out AI item on");
         }
 
         // The hint column reads usageStatus from the page; these rows set that
