@@ -8,173 +8,100 @@
   <a href="LICENSE"><img src="https://img.shields.io/github/license/emilyhamedian/ringside" alt="License: GPL-3.0-or-later"></a>
 </p>
 
-Ringside shows your CPU, GPU, memory, network and disk as rings in your KDE
-Plasma 6 panel. It can also show how much of your Claude, Codex, Kimi Code,
-OpenCode Go or Antigravity usage limits you've used.
+A KDE Plasma 6 panel widget that shows CPU, GPU, memory, network, and disk
+activity as rings, with optional usage limit tracking for Claude, Codex,
+Kimi Code, OpenCode Go, and Antigravity.
 
-![Ringside in a panel: CPU, GPU and memory rings with their names inside, each with its usage over its temperature or the memory in use, a Claude ring with its weekly usage over the days to its reset and its Fable limit in amber on the inner ring, then network rates](docs/panel.png)
+![Ringside in a Plasma panel showing CPU, GPU, memory, Claude usage, and network activity](docs/panel.png)
 
-- CPU, GPU and memory at a glance, with their temperatures beside them.
-- Network and disk activity.
-- Your AI usage limits: how much you've used, when they reset, and whether
-  you're on pace to run out. These are off until you turn them on.
-- Click any item for graphs of the last minute, hour or day, the busiest
-  processes and more.
-- It follows your Plasma theme and units. Rings turn amber, then red, when
-  something runs hot or fills up.
+- **System monitors:** CPU, GPU, and memory rings with temperatures, plus
+  network and disk throughput. Click any item for graphs, top processes, and
+  hardware details.
+- **AI usage limits (opt-in):** Weekly or monthly quotas, per-model limits,
+  run-out pace, remaining credits, banked resets, and optional session
+  auto-start.
+- **Native Plasma integration:** Follows your Plasma theme and data units,
+  reads sensors from `ksystemstats`, and leaves sleeping discrete GPUs asleep.
 
-![The CPU, GPU, memory, network and disk popups](docs/popups.png)
+![Ringside popups for CPU, GPU, memory, network, and disk](docs/popups.png)
 
 ## Install
 
 Download `ringside.plasmoid` from the
-[latest release](https://github.com/emilyhamedian/ringside/releases/latest),
-then install it from *Add or Manage Widgets… → Get New… → Install Widget From
+[latest release](https://github.com/emilyhamedian/ringside/releases/latest)
+and install it via *Add or Manage Widgets… → Get New… → Install Widget From
 Local File…*, or from a terminal:
 
 ```bash
 kpackagetool6 --type Plasma/Applet --install ringside.plasmoid
 ```
 
-Then add **Ringside** to a panel like any other widget.
+Then add **Ringside** to a panel.
 
-- **Update:** run the same command with `--upgrade` instead of `--install`,
-  then log out and back in, or run
-  `systemctl --user restart plasma-plasmashell`.
-- **Remove:** take it off your panel, then run
+- **Update:** rerun with `--upgrade`, then restart Plasma
+  (`systemctl --user restart plasma-plasmashell`) or log out and back in.
+- **Remove:** remove the widget from your panel, then run
   `kpackagetool6 --type Plasma/Applet --remove dev.emily.ringside`.
-- **From source:** clone this repository and run `scripts/install.sh`.
+- **From source:** clone the repo and run `scripts/install.sh`.
 
-### What you need
+### Requirements
 
-- KDE Plasma 6.8 or later, with ksystemstats and libksysguard, which come
-  with Plasma's System Monitor. Older Plasma 6 versions may work, but aren't
-  supported.
-- Python 3.11 or later, only for the AI usage items.
-- Qt's LocalStorage module, only to keep graphs across restarts
-  (`qml6-module-qtquick-localstorage` on Debian and Ubuntu).
-
-### Known limits
-
-- Ringside shows what your hardware and drivers report. Anything they don't
-  report shows as a dash.
-- Intel GPUs on the i915 driver don't report temperature or video memory. On
-  xe, that depends on your hardware and kernel.
-- Listing the processes using an NVIDIA GPU needs `nvidia-smi`, and shows only
-  your own. GPU use the kernel doesn't count, such as ROCm compute work, shows
-  as a dash.
+- **KDE Plasma 6.8+** with `ksystemstats` and `libksysguard` (included with
+  Plasma System Monitor).
+- **Python 3.11+** *(optional)* — only needed if you enable AI usage items.
+- **Qt LocalStorage** *(optional)* — only needed to keep graph history across
+  restarts (`qml6-module-qtquick-localstorage` on Debian/Ubuntu).
 
 ## AI usage limits
 
-![The Claude popup: the weekly limit, the Fable limit in amber, a graph of this week's usage with a dashed amber line at the time the Fable limit runs out, and a line under it saying when that is](docs/usage.png)
+![Ringside AI usage popup showing weekly and per-model limits, usage graph, and run-out pace](docs/usage.png)
 
-Turn them on in *Configure Ringside… → Panel Items*. Direct checks use
-these logins.
+All AI items are disabled by default. Enable them in
+*Configure Ringside… → Panel Items* and configure providers under
+*AI Providers*.
 
-- **Claude:** [Claude Code](https://docs.claude.com/en/docs/claude-code),
-  signed in with a subscription.
-- **Codex:** the [Codex CLI](https://github.com/openai/codex), signed in.
-- **Kimi:** a Kimi Code subscription, signed in to
-  [Kimi Code](https://www.kimi.com/code) or connected as *Kimi For Coding* in
-  [OpenCode](https://opencode.ai).
-- **OpenCode Go:** an
-  [OpenCode Go](https://opencode.ai/docs/console/go/) subscription, with
-  OpenCode signed in to the OpenCode Console
-  (`opencode auth login opencode`).
-- **Antigravity:** [Antigravity](https://antigravity.google), signed in
-  through the Antigravity CLI (`agy`), desktop app, OS keyring, IDE or
-  T3 Code.
+| Provider | Sign-in used for direct checks |
+| --- | --- |
+| **Claude** | [Claude Code](https://docs.claude.com/en/docs/claude-code) subscription login |
+| **Codex** | [Codex CLI](https://github.com/openai/codex) login |
+| **Kimi** | [Kimi Code](https://www.kimi.com/code) login or *Kimi For Coding* key in [OpenCode](https://opencode.ai) |
+| **OpenCode Go** | [OpenCode](https://opencode.ai/docs/console/go/) Console login (`opencode auth login opencode`) |
+| **Antigravity** | [Antigravity](https://antigravity.google) login (`agy`, desktop app, IDE, or OS keyring) |
 
-**CLIProxyAPI.** Claude, Codex, Kimi and Antigravity pool usage through a
-local CLIProxyAPI v8 hub and use the logins above when it's unavailable. Keep
-the management key in `~/.config/cliproxyapi/management.key`, readable only by
-you. The default address is `http://127.0.0.1:8317`. Change either under
-*AI Providers*, or choose *Direct* to use your own login.
-
-Each ring shows how much of your limit you've used and how long until it
-resets. If your plan also has a per-model limit, it shows as an inner ring.
-Click the ring for a graph and shorter limits such as the five-hour limit.
-Direct checks show whether you're on pace to run out. With a hub, the ring
-averages the accounts' usage percentages and counts down to the next
-account's reset. The graph shows the last seven days.
-
-If a check fails, the popup says why. With direct checks, the ring greys out
-and is crossed out if checks keep failing. The popup also tells you if a
-limit resets early. Ringside keeps Claude Code signed in, and renews expired
-Antigravity logins through `agy` when installed. If your Kimi Code or OpenCode
-sign-in expires, open that app and Ringside picks it up within five minutes.
-If Plasma can't find `claude`, `codex`, `opencode` or `agy`, tell it where
-they are under *AI Providers*.
-
-**Credits.** The popup shows remaining credits for Claude, Codex, Kimi and
-Antigravity, including Kimi's Extra Usage balance and Antigravity's AI
-Credits. With direct checks, the ring turns blue while you spend credits
-beyond a limit. *Show remaining credits* under *AI Providers* hides them.
-
-**Banked resets.** The popup shows a ticket for each banked reset on Claude
-and Codex, or a count through the hub. A ticket turns amber with three days
-or less left. Use the resets in Claude's or Codex's own settings.
-
-**Auto start.** Ringside can start your next five-hour session on Claude,
-Codex, OpenCode Go or Antigravity, or your next Codex or Antigravity week, as
-soon as the last one ends, so the clock is already running when you're back.
-Turn it on with the switch at the bottom of the popup. Each start sends a
-one-word message (on Antigravity, using the cheapest available Gemini and
-Claude/GPT models for whichever pool isn't running), which counts toward your
-limits. Kimi's five-hour windows follow each other on a fixed schedule, so
-there's nothing to start. Auto start pauses while a provider's readings come
-through the hub.
+- **CLIProxyAPI:** Claude, Codex, Kimi, and Antigravity can pool accounts
+  through a local CLIProxyAPI v8 hub (`http://127.0.0.1:8317`, management key
+  at `~/.config/cliproxyapi/management.key` with `0600` permissions), falling
+  back to direct logins when unavailable.
+- **Auto start:** Popups for Claude, Codex, OpenCode Go, and Antigravity
+  include an opt-in switch to start the next rolling window automatically by
+  sending a one-word message through the provider's CLI (counts toward quota;
+  pauses while using a hub).
+- **Custom CLI paths:** If Plasma's `PATH` doesn't include `claude`, `codex`,
+  `opencode`, or `agy`, set their paths under *AI Providers*.
 
 ## Privacy
 
-Ringside doesn't contact anything outside your computer unless you turn on a
-feature that needs it:
+A fresh install makes no network requests. AI usage checks, CLIProxyAPI
+queries, and the optional public IP lookup in the Network popup stay off until
+you enable them. See [SECURITY.md](SECURITY.md) for the exact hosts contacted,
+local files read, and caching behaviour.
 
-- If you want your **Claude** limits, Ringside has to send your Claude Code
-  login to Anthropic (`api.anthropic.com`, and `platform.claude.com` to keep
-  it signed in).
-- If you want your **Codex** limits, Ringside asks the Codex CLI on your
-  computer, which checks with OpenAI using its own login.
-- If you want your **Kimi** limits, Ringside has to send your Kimi Code
-  sign-in or key to Kimi (`api.kimi.ai`, or `api.kimi.com` in China).
-- If you want your **OpenCode Go** limits, Ringside has to send OpenCode's
-  sign-in to OpenCode (`opencode.ai`).
-- If you want your **Antigravity** limits, Ringside has to send your
-  Antigravity sign-in to Google (`daily-cloudcode-pa.googleapis.com`), and
-  asks `agy` on your computer to renew an expired login when installed.
-- With **CLIProxyAPI**, Ringside sends the management key only to the hub
-  on your computer. The hub asks each provider for limits and credits.
-- If you want your **public address** in the network popup, Ringside has to
-  fetch it from [ipify.org](https://www.ipify.org), Mullvad (which can also
-  tell you your city) or a service you choose. It asks only while the popup
-  is open, at most once a minute, and never saves the answer. Turn it on
-  under *General*.
+## Troubleshooting
 
-Everything else stays on your computer. System readings come from Plasma's
-System Monitor service and a small script,
-[`ringside-info.sh`](package/contents/code/ringside-info.sh), that reads
-`/proc`, `/sys` and udev. Usage readings are kept in `~/.cache/ringside/`.
-Graphs are kept in memory, or in `~/.local/share/plasmashell/` if you turn on
-*Keep the last hour and day across restarts* under *General*; turning it off
-deletes them.
+- **Missing hardware readings:** Ringside only shows what your kernel drivers
+  expose (for example, Intel `i915` does not report temperature or VRAM, and
+  NVIDIA process lists require `nvidia-smi`).
+- **Logs:** Ringside writes warnings and errors to the user journal without
+  tokens, addresses, or account details:
 
-## If something looks wrong
+  ```bash
+  journalctl --user --since today QT_CATEGORY=ringside.usage QT_CATEGORY=ringside.network QT_CATEGORY=ringside.gpu QT_CATEGORY=ringside.setup
+  ```
 
-Ringside logs problems to Plasma's journal, never with tokens, addresses or
-account details. To see today's:
+  Enable `ringside.*.debug=true` in `kdebugsettings` (and restart Plasma) for
+  per-check timing and debug logs.
 
-```bash
-journalctl --user --since today QT_CATEGORY=ringside.usage QT_CATEGORY=ringside.network QT_CATEGORY=ringside.gpu QT_CATEGORY=ringside.setup
-```
+## Contributing & License
 
-For every check and how long it took, add the rule `ringside.*.debug=true` in
-KDE's Debug Settings (`kdebugsettings`) and restart Plasma.
-
-## Contributing
-
-Want to help? [CONTRIBUTING.md](CONTRIBUTING.md) covers the tests and the code
-style.
-
-## License
-
-GPL-3.0-or-later. See [LICENSE](LICENSE).
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, tests, and code
+style. Licensed under [GPL-3.0-or-later](LICENSE).
