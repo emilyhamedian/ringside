@@ -1780,12 +1780,64 @@ class AntigravityStarter(Isolated):
                 mock.patch.object(usage, "antigravity_acp_call", side_effect=fake_call), \
                 mock.patch.object(usage, "stop_process_group") as stopped:
             usage.send_antigravity("/usr/bin/agy", switched_on, groups=("gemini", "3p"))
-        started.assert_called_once_with("/usr/bin/agy", (token_path.parent.parent, "antigravity-acp"))
+        started.assert_called_once_with("/usr/bin/agy", (token_path.parent.parent, "antigravity-acp"),
+                                        file_storage=True)
         stopped.assert_called_once_with(fake_proc)
         set_models = [p["modelId"] for m, p in calls if m == "session/set_model"]
         prompts = [p["prompt"][0]["text"] for m, p in calls if m == "session/prompt"]
         self.assertEqual(set_models, ["gemini-3.8-flash-low", "gpt-oss-120b-medium"])
         self.assertEqual(prompts, ["Hi", "Hi"])
+
+    def test_send_antigravity_falls_through_signed_out_keyring_to_file_target(self):
+        token_path = usage.ANTIGRAVITY_T3_DIR / "acct1" / "antigravity-acp" / "antigravity-oauth-token"
+        token_path.parent.mkdir(parents=True)
+        token_path.write_text(json.dumps({"token": {"access_token": "ya29.file-ok", "expiry": "2099-01-01T00:00:00Z"}}))
+        keyring_payload = json.dumps({"token": {"access_token": "ya29.kr-revoked", "expiry": "2099-01-01T00:00:00Z"}})
+
+        procs = [mock.Mock(pid=101, stdin=mock.Mock(), stdout=mock.Mock()),
+                 mock.Mock(pid=102, stdin=mock.Mock(), stdout=mock.Mock())]
+        seen_procs = []
+
+        def fake_call(proc, req_id, method, params, deadline):
+            seen_procs.append((proc.pid, method))
+            if proc.pid == 101 and method == "authenticate":
+                raise usage.AppServerError(
+                    "No browser is available here (this is a remote (SSH) session). Run `agy acp --login`."
+                )
+            if method == "session/new":
+                return {"sessionId": "s1", "models": {"availableModels": [{"modelId": "gemini-3.8-flash-low"}]}}
+            return {}
+
+        with mock.patch.object(usage, "ANTIGRAVITY_KEYRING", True), \
+                mock.patch.dict(os.environ, {"DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/bus"}), \
+                mock.patch.object(usage.shutil, "which", return_value="/usr/bin/secret-tool"), \
+                mock.patch.object(usage.subprocess, "run",
+                                  return_value=subprocess.CompletedProcess([], 0, keyring_payload.encode(), b"")), \
+                mock.patch.object(usage, "antigravity_acp_start", side_effect=procs) as started, \
+                mock.patch.object(usage, "antigravity_acp_call", side_effect=fake_call), \
+                mock.patch.object(usage, "stop_process_group") as stopped:
+            usage.send_antigravity("/usr/bin/agy", switched_on, groups=("gemini",))
+        self.assertEqual(started.call_args_list, [
+            mock.call("/usr/bin/agy", (usage.ANTIGRAVITY_GEMINI_DIR, "antigravity-cli"), file_storage=False),
+            mock.call("/usr/bin/agy", (token_path.parent.parent, "antigravity-acp"), file_storage=True),
+        ])
+        self.assertEqual(stopped.call_args_list, [mock.call(procs[0]), mock.call(procs[1])])
+        self.assertIn((102, "session/prompt"), seen_procs)
+
+        # When every candidate fails with the SSH/no-browser message, report signed-out.
+        only_proc = mock.Mock(pid=103, stdin=mock.Mock(), stdout=mock.Mock())
+
+        def always_no_browser(proc, req_id, method, params, deadline):
+            if method == "authenticate":
+                raise usage.AppServerError("No browser is available here. Run `agy acp --login`.")
+            return {}
+
+        with mock.patch.object(usage, "antigravity_acp_start", return_value=only_proc), \
+                mock.patch.object(usage, "antigravity_acp_call", side_effect=always_no_browser), \
+                mock.patch.object(usage, "stop_process_group"):
+            with self.assertRaises(usage.Failed) as raised:
+                usage.send_antigravity("/usr/bin/agy", switched_on, groups=("gemini",))
+        self.assertEqual(raised.exception.reason, "signed-out")
 
 
 if __name__ == "__main__":

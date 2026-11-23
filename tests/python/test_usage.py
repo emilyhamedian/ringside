@@ -2362,14 +2362,43 @@ class AntigravityDirect(Isolated):
                 mock.patch.object(usage.subprocess, "run", fake_run):
             fresh_list, _ = usage.antigravity_credentials(1_800_000_000)
         self.assertEqual([c["token"] for c in fresh_list], ["ya29.keyring-tok", "ya29.ide-token-1234567890abcdef"])
+        self.assertEqual(fake_run.call_args_list[0].args[0],
+                         ["/usr/bin/secret-tool", "lookup", "service", "gemini", "username", "antigravity"])
+
+        # Falls back to service=antigravity when service=gemini/username=antigravity is absent.
+        fallback_payload = json.dumps({"token": {"access_token": "ya29.fallback-tok", "expiry": "2099-01-01T00:00:00Z"}})
+        fallback_run = mock.Mock(side_effect=[
+            subprocess.CompletedProcess([], 1, b"", b""),
+            subprocess.CompletedProcess([], 0, fallback_payload.encode(), b""),
+        ])
+        with mock.patch.object(usage, "ANTIGRAVITY_KEYRING", True), \
+                mock.patch.dict(os.environ, {"DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/bus"}), \
+                mock.patch.object(usage.shutil, "which", return_value="/usr/bin/secret-tool"), \
+                mock.patch.object(usage.subprocess, "run", fallback_run):
+            creds = usage.antigravity_keyring_credentials(1_800_000_000)
+        self.assertEqual([c["token"] for c in creds], ["ya29.fallback-tok"])
+        self.assertEqual([call.args[0] for call in fallback_run.call_args_list], [
+            ["/usr/bin/secret-tool", "lookup", "service", "gemini", "username", "antigravity"],
+            ["/usr/bin/secret-tool", "lookup", "service", "antigravity"],
+        ])
+
+    def test_acp_environment_preserves_file_storage_for_file_backed_tokens(self):
+        with mock.patch.dict(os.environ, {"DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/bus", "SSH_CONNECTION": "old"}):
+            file_env = usage.antigravity_acp_environment(file_storage=True)
+            keyring_env = usage.antigravity_acp_environment(file_storage=False)
+        self.assertNotIn("DBUS_SESSION_BUS_ADDRESS", file_env)
+        self.assertEqual(file_env["SSH_CONNECTION"], "127.0.0.1 0 127.0.0.1 0")
+        self.assertEqual(keyring_env["DBUS_SESSION_BUS_ADDRESS"], "unix:path=/tmp/bus")
+        self.assertNotIn("SSH_CONNECTION", keyring_env)
 
     def test_gzipped_response_and_silent_acp_renewal(self):
         import gzip
         path = usage.ANTIGRAVITY_GEMINI_DIR / "antigravity-cli" / "antigravity-oauth-token"
         self.write_token(path, access="ya29.stale", expiry="2020-01-01T00:00:00Z")
 
-        def renew(acp):
+        def renew(acp, file_storage=False):
             self.assertEqual(acp, (usage.ANTIGRAVITY_GEMINI_DIR, "antigravity-cli"))
+            self.assertTrue(file_storage)
             self.write_token(path, access="ya29.renewed", expiry="2099-01-01T00:00:00Z")
             return True
 
@@ -2394,13 +2423,40 @@ class AntigravityDirect(Isolated):
         with mock.patch.object(usage, "antigravity_refresh", side_effect=renew) as refreshed, \
                 mock.patch.object(usage.urllib.request, "urlopen", side_effect=fake_urlopen):
             report = usage.antigravity_usage()
-        refreshed.assert_called_once()
+        refreshed.assert_called_once_with((usage.ANTIGRAVITY_GEMINI_DIR, "antigravity-cli"), file_storage=True)
         self.assertEqual(report["weekly"]["percent"], 38)
         self.assertEqual(seen[0][0], usage.ANTIGRAVITY_QUOTA_URL)
         self.assertEqual(seen[0][1], "POST")
         self.assertEqual(seen[0][2]["Authorization"], "Bearer ya29.renewed")
         self.assertEqual(seen[0][2]["User-agent"], usage.ANTIGRAVITY_USER_AGENT)
         self.assertIn("renewed", [e["kind"] for e in usage.EVENTS])
+
+    def test_keyring_renewal_keeps_keyring_storage(self):
+        stale = json.dumps({"token": {"access_token": "ya29.stale-kr", "refresh_token": "1//kr",
+                                      "expiry": "2020-01-01T00:00:00Z"}})
+        fresh = json.dumps({"token": {"access_token": "ya29.fresh-kr", "refresh_token": "1//kr",
+                                      "expiry": "2099-01-01T00:00:00Z"}})
+        state = {"payload": stale}
+
+        def fake_run(argv, **kwargs):
+            return subprocess.CompletedProcess(argv, 0, state["payload"].encode(), b"")
+
+        def renew(acp, file_storage=False):
+            self.assertEqual(acp, (usage.ANTIGRAVITY_GEMINI_DIR, "antigravity-cli"))
+            self.assertFalse(file_storage)
+            state["payload"] = fresh
+            return True
+
+        with mock.patch.object(usage, "ANTIGRAVITY_KEYRING", True), \
+                mock.patch.dict(os.environ, {"DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/bus"}), \
+                mock.patch.object(usage.shutil, "which", return_value="/usr/bin/secret-tool"), \
+                mock.patch.object(usage.subprocess, "run", side_effect=fake_run), \
+                mock.patch.object(usage, "antigravity_refresh", side_effect=renew) as refreshed, \
+                mock.patch.object(usage, "http_json", return_value=fixture("antigravity_quota.json")) as queried:
+            report = usage.antigravity_usage()
+        refreshed.assert_called_once_with((usage.ANTIGRAVITY_GEMINI_DIR, "antigravity-cli"), file_storage=False)
+        self.assertEqual(queried.call_args.args[1]["Authorization"], "Bearer ya29.fresh-kr")
+        self.assertEqual(report["weekly"]["percent"], 38)
 
     def test_expired_without_agy_reports_expired_and_signed_out_when_missing(self):
         with self.assertRaises(usage.SignedOut):

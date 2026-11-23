@@ -1551,7 +1551,18 @@ ANTIGRAVITY_IDE_DBS = (
 # Read-only lookup in the desktop keyring when secret-tool is present. Tests
 # set this to False so they never touch the host's keyring.
 ANTIGRAVITY_KEYRING = True
+# zalando/go-keyring stores `agy`'s OAuth payload under service="gemini",
+# username="antigravity" in the Freedesktop Secret Service; fall back to
+# service="antigravity" for setups keyed by the product name.
+ANTIGRAVITY_KEYRING_LOOKUPS = (
+    ("service", "gemini", "username", "antigravity"),
+    ("service", "antigravity"),
+)
 ANTIGRAVITY_GOOGLE_TOKEN = re.compile(r"ya29\.[A-Za-z0-9._-]{20,}")
+ANTIGRAVITY_SIGNED_OUT = re.compile(
+    r"not logged in|not signed in|logged out|unauthori[sz]ed|login required|no browser|agy acp --login",
+    re.IGNORECASE,
+)
 
 
 def parse_antigravity_oauth(data, now):
@@ -1599,27 +1610,28 @@ def antigravity_keyring_credentials(now):
     tool = shutil.which("secret-tool")
     if not tool:
         return []
-    try:
-        result = subprocess.run([tool, "lookup", "service", "antigravity"], stdin=subprocess.DEVNULL,
-                                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=2, check=False)
-    except (OSError, subprocess.TimeoutExpired):
-        return []
-    if result.returncode != 0 or not result.stdout:
-        return []
-    text = result.stdout.decode("utf-8", "ignore").strip()
-    if not text:
-        return []
-    with contextlib.suppress(ValueError):
-        parsed = parse_antigravity_oauth(json.loads(text), now)
-        if parsed is not None:
-            access, identity, is_expired, refreshable = parsed
-            return [{"source": "Antigravity's keyring sign-in", "token": access, "identity": identity,
-                     "expired": is_expired, "refreshable": refreshable,
-                     "acp": (ANTIGRAVITY_GEMINI_DIR, "antigravity-cli"), "path": None}]
-    if usable(text) and text.startswith("ya29."):
-        return [{"source": "Antigravity's keyring sign-in", "token": text,
-                 "identity": hashlib.sha256(text.encode()).hexdigest(), "expired": False,
-                 "refreshable": False, "acp": None, "path": None}]
+    for query in ANTIGRAVITY_KEYRING_LOOKUPS:
+        try:
+            result = subprocess.run([tool, "lookup", *query], stdin=subprocess.DEVNULL,
+                                    stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=2, check=False)
+        except (OSError, subprocess.TimeoutExpired):
+            return []
+        if result.returncode != 0 or not result.stdout:
+            continue
+        text = result.stdout.decode("utf-8", "ignore").strip()
+        if not text:
+            continue
+        with contextlib.suppress(ValueError):
+            parsed = parse_antigravity_oauth(json.loads(text), now)
+            if parsed is not None:
+                access, identity, is_expired, refreshable = parsed
+                return [{"source": "Antigravity's keyring sign-in", "token": access, "identity": identity,
+                         "expired": is_expired, "refreshable": refreshable,
+                         "acp": (ANTIGRAVITY_GEMINI_DIR, "antigravity-cli"), "path": None}]
+        if usable(text) and text.startswith("ya29."):
+            return [{"source": "Antigravity's keyring sign-in", "token": text,
+                     "identity": hashlib.sha256(text.encode()).hexdigest(), "expired": False,
+                     "refreshable": False, "acp": None, "path": None}]
     return []
 
 
@@ -1751,13 +1763,29 @@ def stop_process_group(proc):
         proc.wait(timeout=5)
 
 
-def antigravity_acp_start(binary, acp):
+# T3 Code and SSH sessions keep `agy`'s OAuth token in a per-directory file
+# instead of the desktop keyring. Running `agy acp` against a file-backed
+# token without telling it to stay in file storage lets compositeTokenStorage
+# migrate the token into the keyring and delete the file, signing the owning
+# tool out. Setting SSH_CONNECTION matches how T3 Code selects file storage,
+# and dropping DBUS_SESSION_BUS_ADDRESS ensures it cannot reach the Secret
+# Service even if that heuristic changes.
+def antigravity_acp_environment(file_storage=False):
+    env = cli_environment("GEMINI_DIR")
+    if file_storage:
+        env.pop("DBUS_SESSION_BUS_ADDRESS", None)
+        env["SSH_CONNECTION"] = "127.0.0.1 0 127.0.0.1 0"
+    return env
+
+
+def antigravity_acp_start(binary, acp, file_storage=False):
     private_state_dir()
     WORK_DIR.mkdir(mode=0o700, exist_ok=True)
     return subprocess.Popen(
         antigravity_acp_command(binary, acp),
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-        cwd=WORK_DIR, env=cli_environment("GEMINI_DIR"), text=True, start_new_session=True,
+        cwd=WORK_DIR, env=antigravity_acp_environment(file_storage=file_storage),
+        text=True, start_new_session=True,
     )
 
 
@@ -1782,7 +1810,7 @@ def antigravity_acp_call(proc, req_id, method, params, deadline):
     raise RuntimeError("agy acp closed before answering")
 
 
-def antigravity_refresh(acp):
+def antigravity_refresh(acp, file_storage=False):
     """Ask `agy acp --stdio` to silently renew an expired OAuth token via
     initialize + authenticate, sending no prompt and spending no quota."""
     binary, reason = cli_or_reason("antigravity")
@@ -1790,7 +1818,7 @@ def antigravity_refresh(acp):
         return False
     deadline = time.monotonic() + ANSWER_TIMEOUT
     try:
-        proc = antigravity_acp_start(binary, acp)
+        proc = antigravity_acp_start(binary, acp, file_storage=file_storage)
     except OSError:
         return False
     try:
@@ -1943,9 +1971,11 @@ def antigravity_usage():
             return query(candidate)
         except SignedOut:
             acp = candidate["acp"]
-            if acp is not None and candidate["refreshable"] and acp not in tried_refresh:
-                tried_refresh.add(acp)
-                if antigravity_refresh(acp):
+            file_storage = candidate["path"] is not None
+            key = (acp, file_storage)
+            if acp is not None and candidate["refreshable"] and key not in tried_refresh:
+                tried_refresh.add(key)
+                if antigravity_refresh(acp, file_storage=file_storage):
                     renewed = antigravity_reread(candidate, time.time())
                     if renewed and not renewed["expired"]:
                         event("debug", "antigravity", "renewed", product=PRODUCTS["antigravity"])
@@ -1955,10 +1985,12 @@ def antigravity_usage():
 
     for candidate in expired_list:
         acp = candidate["acp"]
-        if acp is None or not candidate["refreshable"] or acp in tried_refresh:
+        file_storage = candidate["path"] is not None
+        key = (acp, file_storage)
+        if acp is None or not candidate["refreshable"] or key in tried_refresh:
             continue
-        tried_refresh.add(acp)
-        if not antigravity_refresh(acp):
+        tried_refresh.add(key)
+        if not antigravity_refresh(acp, file_storage=file_storage):
             continue
         renewed = antigravity_reread(candidate, time.time())
         if renewed and not renewed["expired"]:
@@ -4251,62 +4283,74 @@ def send_antigravity(binary, wanted, groups=("gemini", "3p")):
     candidates = fresh_list + expired_list
     if not candidates:
         raise Failed("signed-out")
-    acp = next((cred["acp"] for cred in candidates if cred["acp"] is not None), None)
-    deadline = time.monotonic() + PREFLIGHT_TIMEOUT
-    try:
-        proc = antigravity_acp_start(binary, acp)
-    except OSError:
-        raise NotSent("not-responding") from None
-    try:
+    targets = []
+    for cred in candidates:
+        if cred["acp"] is not None:
+            target = (cred["acp"], cred["path"] is not None)
+            if target not in targets:
+                targets.append(target)
+    if not targets:
+        targets.append((None, False))
+
+    for target_index, (acp, file_storage) in enumerate(targets):
+        deadline = time.monotonic() + PREFLIGHT_TIMEOUT
         try:
-            antigravity_acp_call(proc, 1, "initialize", {
-                "protocolVersion": 1, "clientCapabilities": {},
-                "clientInfo": {"name": "ringside", "version": VERSION},
-            }, deadline)
-            antigravity_acp_call(proc, 2, "authenticate", {"methodId": "oauth-personal"}, deadline)
-            session = antigravity_acp_call(proc, 3, "session/new", {"cwd": str(WORK_DIR), "mcpServers": []}, deadline)
-        except AppServerError as err:
-            if CODEX_SIGNED_OUT.search(str(err)):
-                raise Failed("signed-out") from None
+            proc = antigravity_acp_start(binary, acp, file_storage=file_storage)
+        except OSError:
             raise NotSent("not-responding") from None
-        except (OSError, TimeoutError, RuntimeError):
-            raise NotSent("not-responding") from None
-        if not isinstance(session, dict) or not isinstance(session.get("sessionId"), str):
-            raise NotSent("not-responding")
-        models_block = session.get("models") if isinstance(session.get("models"), dict) else {}
-        picked = antigravity_pick_models(models_block.get("availableModels"), groups)
-        if not picked:
-            raise Failed("no-model")
-        if not wanted():
-            raise SwitchedOff()
-        req_id = 4
-        sent_any = False
-        for index, (_, model_id) in enumerate(picked):
-            if index > 0 and not wanted():
-                break
-            send_deadline = time.monotonic() + SEND_TIMEOUT
+        try:
             try:
-                if index == 0:
-                    sid = session["sessionId"]
-                else:
-                    created = antigravity_acp_call(proc, req_id, "session/new",
-                                                   {"cwd": str(WORK_DIR), "mcpServers": []}, send_deadline)
+                antigravity_acp_call(proc, 1, "initialize", {
+                    "protocolVersion": 1, "clientCapabilities": {},
+                    "clientInfo": {"name": "ringside", "version": VERSION},
+                }, deadline)
+                antigravity_acp_call(proc, 2, "authenticate", {"methodId": "oauth-personal"}, deadline)
+                session = antigravity_acp_call(proc, 3, "session/new", {"cwd": str(WORK_DIR), "mcpServers": []}, deadline)
+            except AppServerError as err:
+                if ANTIGRAVITY_SIGNED_OUT.search(str(err)):
+                    if target_index + 1 < len(targets):
+                        continue
+                    raise Failed("signed-out") from None
+                raise NotSent("not-responding") from None
+            except (OSError, TimeoutError, RuntimeError):
+                raise NotSent("not-responding") from None
+            if not isinstance(session, dict) or not isinstance(session.get("sessionId"), str):
+                raise NotSent("not-responding")
+            models_block = session.get("models") if isinstance(session.get("models"), dict) else {}
+            picked = antigravity_pick_models(models_block.get("availableModels"), groups)
+            if not picked:
+                raise Failed("no-model")
+            if not wanted():
+                raise SwitchedOff()
+            req_id = 4
+            sent_any = False
+            for index, (_, model_id) in enumerate(picked):
+                if index > 0 and not wanted():
+                    break
+                send_deadline = time.monotonic() + SEND_TIMEOUT
+                try:
+                    if index == 0:
+                        sid = session["sessionId"]
+                    else:
+                        created = antigravity_acp_call(proc, req_id, "session/new",
+                                                       {"cwd": str(WORK_DIR), "mcpServers": []}, send_deadline)
+                        req_id += 1
+                        sid = created.get("sessionId") if isinstance(created, dict) else session["sessionId"]
+                    antigravity_acp_call(proc, req_id, "session/set_model",
+                                         {"sessionId": sid, "modelId": model_id}, send_deadline)
                     req_id += 1
-                    sid = created.get("sessionId") if isinstance(created, dict) else session["sessionId"]
-                antigravity_acp_call(proc, req_id, "session/set_model",
-                                     {"sessionId": sid, "modelId": model_id}, send_deadline)
-                req_id += 1
-                sent_any = True
-                antigravity_acp_call(proc, req_id, "session/prompt",
-                                     {"sessionId": sid, "prompt": [{"type": "text", "text": PROMPT}]}, send_deadline)
-                req_id += 1
-            except TimeoutError:
-                pass
-            except (OSError, AppServerError, RuntimeError):
-                if not sent_any:
-                    raise NotSent() from None
-    finally:
-        stop_process_group(proc)
+                    sent_any = True
+                    antigravity_acp_call(proc, req_id, "session/prompt",
+                                         {"sessionId": sid, "prompt": [{"type": "text", "text": PROMPT}]}, send_deadline)
+                    req_id += 1
+                except TimeoutError:
+                    pass
+                except (OSError, AppServerError, RuntimeError):
+                    if not sent_any:
+                        raise NotSent() from None
+            return
+        finally:
+            stop_process_group(proc)
 
 
 # The per-provider tables are functions so that the names are looked up

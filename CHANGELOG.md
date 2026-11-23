@@ -6,6 +6,12 @@ follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Antigravity token renewal and auto start no longer remove file-based logins
+  such as T3 Code's when a desktop keyring is available.
+- Antigravity now reads sign-ins stored by `agy` in the desktop keyring.
+
 ## [0.5.1] - 2026-11-22
 
 ### Added
