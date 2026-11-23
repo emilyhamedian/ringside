@@ -6,6 +6,8 @@ follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-11-22
+
 ### Added
 
 - Antigravity item: your Antigravity Gemini weekly quota as the outer ring and
@@ -350,7 +352,8 @@ follows [Semantic Versioning](https://semver.org/).
   and one reader per GPU is shared across widgets so a second Ringside
   doesn't keep it awake.
 
-[Unreleased]: https://github.com/emilyhamedian/ringside/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/emilyhamedian/ringside/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/emilyhamedian/ringside/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/emilyhamedian/ringside/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/emilyhamedian/ringside/compare/v0.3.2...v0.4.0
 [0.3.2]: https://github.com/emilyhamedian/ringside/compare/v0.3.1...v0.3.2
