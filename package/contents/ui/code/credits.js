@@ -17,5 +17,6 @@ function used(entry, credit, refreshMinutes, nowMs) {
     const exhausted = window => window?.exhausted === true && Number.isFinite(window.percent)
         && Number.isFinite(window.resetsAt) && window.resetsAt > now;
     return exhausted(entry.weekly) || exhausted(entry.session)
+        || (Array.isArray(entry.extraSessions) && entry.extraSessions.some(exhausted))
         || (Array.isArray(entry.scoped) && entry.scoped.some(exhausted));
 }

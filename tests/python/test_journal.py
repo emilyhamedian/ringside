@@ -477,6 +477,21 @@ class Privacy(Isolated):
                 self.assertIn("starter-failed", [e["kind"] for e in events])
                 self.assert_clean(events)
 
+    def test_antigravity_failures_never_leak_tokens_or_account_details(self):
+        path = usage.ANTIGRAVITY_GEMINI_DIR / "antigravity-cli" / "antigravity-oauth-token"
+        path.parent.mkdir(parents=True)
+        path.write_text(json.dumps({
+            "token": {"access_token": SECRETS[0], "refresh_token": SECRETS[1], "expiry": "2099-01-01T00:00:00Z"},
+            "id_token_email": SECRETS[4],
+        }))
+        err = urllib.error.HTTPError(usage.ANTIGRAVITY_QUOTA_URL, 503, LEAKY,
+                                     email.message.Message(), io.BytesIO(LEAKY.encode()))
+        self.addCleanup(err.close)
+        with mock.patch.object(usage.urllib.request, "urlopen", side_effect=err):
+            events = self.run_main("--providers", "antigravity")["events"]
+        self.assert_clean(events)
+        self.assertIn("daily-cloudcode-pa.googleapis.com", json.dumps(events))
+
 
 if __name__ == "__main__":
     unittest.main()

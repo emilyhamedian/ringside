@@ -54,6 +54,7 @@ TestCase {
         compare(result.codex, []);
         compare(result.kimi, []);
         compare(result.opencode, []);
+        compare(result.antigravity, []);
     }
 
     function test_knownKeepsAPickedUnreportedLimitsStoredLabel() {
@@ -65,7 +66,8 @@ TestCase {
                      { id: "old", label: "Old Model", reported: false }],
             codex: [],
             kimi: [],
-            opencode: []
+            opencode: [],
+            antigravity: []
         });
     }
 
@@ -77,7 +79,7 @@ TestCase {
 
     function test_knownProviderWithoutAReadingKeepsWhatWasStored() {
         const stored = { claude: [{ id: "x", label: "X" }] };
-        compare(Limits.known({}, stored, {}), { claude: [{ id: "x", label: "X" }], codex: [], kimi: [], opencode: [] });
+        compare(Limits.known({}, stored, {}), { claude: [{ id: "x", label: "X" }], codex: [], kimi: [], opencode: [], antigravity: [] });
     }
 
     // Automatic ("") and none never add an extra unreported entry: only a

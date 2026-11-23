@@ -35,10 +35,10 @@ path = ".github/**"
 SPDX-FileCopyrightText = "2026 Emily Hamedian <me@emily.dev>"
 SPDX-License-Identifier = "GPL-3.0-or-later"
 
-# The Claude, Codex, OpenAI, Moonshot AI and OpenCode marks identify the
-# services Ringside's optional usage items poll; Ringside doesn't hold rights
-# to them and isn't endorsed by Anthropic, OpenAI, Moonshot AI or OpenCode. See
-# LICENSES/LicenseRef-*-Trademark.txt.
+# The Claude, Codex, OpenAI, Moonshot AI, OpenCode and Antigravity marks
+# identify the services Ringside's optional usage items poll; Ringside doesn't
+# hold rights to them and isn't endorsed by Anthropic, OpenAI, Moonshot AI,
+# OpenCode or Google. See LICENSES/LicenseRef-*-Trademark.txt.
 # package/contents/ui/code/marks.js copies their outlines and names the same
 # licences in its own header.
 
@@ -61,3 +61,8 @@ SPDX-License-Identifier = "MIT AND LicenseRef-Moonshot-Trademark"
 path = "package/contents/icons/opencode.svg"
 SPDX-FileCopyrightText = "2025 opencode"
 SPDX-License-Identifier = "MIT AND LicenseRef-OpenCode-Trademark"
+
+[[annotations]]
+path = "package/contents/icons/antigravity.svg"
+SPDX-FileCopyrightText = "Google LLC"
+SPDX-License-Identifier = "LicenseRef-Google-Trademark"

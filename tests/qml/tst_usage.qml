@@ -513,7 +513,7 @@ TestRoot {
             compare(usage.inner("codex"), null);
             compare(usage.helperError, "");
             compare(JSON.parse(config.knownLimits),
-                    { claude: [{ id: "Fable", label: "Fable", reported: true }], codex: [], kimi: [], opencode: [] });
+                    { claude: [{ id: "Fable", label: "Fable", reported: true }], codex: [], kimi: [], opencode: [], antigravity: [] });
             const found = name => ({ path: "/usr/bin/" + name, chosen: false, problem: "" });
             compare(JSON.parse(config.usageStatus), { claude: { status: "ok", message: "", program: found("claude"), starter: false,
                                                                 windows: ["session"] },
@@ -3150,7 +3150,15 @@ TestRoot {
                   entry: { session: u => ({ percent: 40, resetsAt: null, windowSeconds: hours }) },
                   bars: [["5-hour limit", 40, ""]] },
                 { tag: "Codex five hours only", item: "codex",
-                  entry: { weekly: u => Object.assign(u.window(24, 3 * 3600, []), { windowSeconds: hours }) }, bars: [] }
+                  entry: { weekly: u => Object.assign(u.window(24, 3 * 3600, []), { windowSeconds: hours }) }, bars: [] },
+                { tag: "Antigravity dual 5-hour", item: "antigravity",
+                  entry: {
+                      weekly: u => u.window(38, 5 * u.day, []),
+                      scoped: u => [Object.assign({ id: "3p-weekly", label: "Claude & GPT" }, u.window(82, 4 * u.day, []))],
+                      session: u => ({ label: "Gemini", percent: 14, resetsAt: u.createdAt + 3 * 3600, windowSeconds: hours }),
+                      extraSessions: u => [{ id: "3p-5h", label: "Claude & GPT", percent: 44, resetsAt: u.createdAt + 2 * 3600, windowSeconds: hours }]
+                  },
+                  bars: [["Gemini 5-hour limit", 14, "3h 0m"], ["Claude & GPT 5-hour limit", 44, "2h 0m"]], models: 2 }
             ];
         }
         function test_shorterLimits(data) {
@@ -4918,6 +4926,15 @@ TestRoot {
                     "This OpenCode account doesn't have OpenCode Go.");
         }
 
+        function test_antigravitysOwnWords() {
+            compare(words.providerName("antigravity"), "Antigravity");
+            compare(words.signInHint("antigravity"), "Sign in to Antigravity, or run agy in a terminal.");
+            compare(words.failureReason("antigravity", { reason: "expired", host: "", lastError: "x" }),
+                    "Antigravity's sign-in has expired. Open Antigravity to renew it.");
+            compare(words.failureReason("antigravity", { reason: "rate-limited", retryAt: Date.now() / 1000 + 3000 }),
+                    "Google asked Ringside to wait before checking again.");
+        }
+
         function test_timeOfDay() {
             const noon = new Date(2026, 8, 27, 12, 0).getTime();
             const earlier = new Date(2026, 8, 27, 9, 15);
@@ -5115,6 +5132,19 @@ TestRoot {
                     "Can't start a session: OpenCode lists none of the Go models Ringside sends its message with.");
             compare(words.starterStatus("opencode", { state: "paused", next: 3600, window: "session" }, 0),
                     "Couldn't confirm two sessions in a row. Paused until " + words.shortTime(new Date(3600000)) + ".");
+        }
+
+        function test_antigravityStarterStatus() {
+            compare(words.starterStatus("antigravity", { state: "off", windows: ["session", "week"] }, 0),
+                    "When either ends, Ringside sends Antigravity a one-word message to start the next one.");
+            compare(words.starterStatus("antigravity", { state: "failed", reason: "not-installed", window: "session" }, 0),
+                    "Can't start a session: Antigravity CLI (agy) isn't installed.");
+            compare(words.starterStatus("antigravity", { state: "failed", reason: "program", window: "week" }, 0),
+                    "Can't start a week: the agy program set in Settings can't be run.");
+            compare(words.starterStatus("antigravity", { state: "failed", reason: "signed-out", window: "session" }, 0),
+                    "Can't start a session: Antigravity is signed out. Run agy in a terminal to sign in.");
+            compare(words.starterStatus("antigravity", { state: "failed", reason: "no-model", window: "session" }, 0),
+                    "Can't start a session: Antigravity lists no model Ringside can send its message with.");
         }
 
         function test_starterStatusOfAnUnknownState() {

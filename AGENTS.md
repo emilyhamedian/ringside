@@ -1,9 +1,9 @@
 # Ringside
 
 A KDE Plasma 6 panel widget: CPU, GPU, memory, network and disk, plus optional
-Claude Code, Codex, Kimi Code and OpenCode Go usage limits, as rings in the
-panel, each opening a popup. Pure QML with two helper scripts; plugin id
-`dev.emily.ringside`; GPL-3.0-or-later.
+Claude Code, Codex, Kimi Code, OpenCode Go and Antigravity usage limits, as
+rings in the panel, each opening a popup. Pure QML with two helper scripts;
+plugin id `dev.emily.ringside`; GPL-3.0-or-later.
 
 ## Where things are
 
@@ -13,8 +13,8 @@ panel, each opening a popup. Pure QML with two helper scripts; plugin id
     ksystemstats.
   - `ui/GpuReader.qml` with `ui/code/gpugate.js`: when a discrete GPU may
     be read.
-  - `ui/UsageData.qml`: runs `code/usage.py` for the Claude, Codex, Kimi and
-    OpenCode Go items and the opt-in session starter.
+  - `ui/UsageData.qml`: runs `code/usage.py` for the Claude, Codex, Kimi,
+    OpenCode Go and Antigravity items and the opt-in session starter.
   - `ui/PublicAddress.qml`: asks for the address the network popup shows.
   - `ui/HistoryStore.qml`: keeps the graphs' hour and day when that setting
     is on; the only file that imports Qt's optional LocalStorage module.
@@ -54,7 +54,7 @@ unless there's a good reason to differ, and may is allowed but optional.
   until they turn it on, plain about what it sends and to whom, sending no
   more than it needs and as rarely as it can, and keeping what it learns on
   the machine.
-- A guest in the user's Claude, Codex, Kimi and OpenCode accounts. Their
+- A guest in the user's Claude, Codex, Kimi, OpenCode and Antigravity accounts. Their
   own tools share the same logins and limits, so Ringside must never cost
   them a sign-in, a rate limit or usage they didn't ask for, and anything
   that spends usage must be a switch only the user turns on.

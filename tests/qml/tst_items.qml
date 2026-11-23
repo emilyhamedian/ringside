@@ -14,6 +14,7 @@ TestCase {
             { tag: "codex", item: "codex", expected: true },
             { tag: "kimi", item: "kimi", expected: true },
             { tag: "opencode", item: "opencode", expected: true },
+            { tag: "antigravity", item: "antigravity", expected: true },
             { tag: "cpu", item: "cpu", expected: false },
             { tag: "unknown", item: "bogus", expected: false }
         ];
@@ -41,30 +42,30 @@ TestCase {
         ];
     }
     function test_orderWithNothingStoredIsTheDefaultOrder(data) {
-        compare(Items.order(data.stored), ["cpu", "gpu", "memory", "network", "disk", "claude", "codex", "kimi", "opencode"]);
+        compare(Items.order(data.stored), ["cpu", "gpu", "memory", "network", "disk", "claude", "codex", "kimi", "opencode", "antigravity"]);
     }
 
     function test_orderKeepsStoredOrderFirstThenAppendsTheRest() {
-        compare(Items.order(["network", "cpu"]), ["network", "cpu", "gpu", "memory", "disk", "claude", "codex", "kimi", "opencode"]);
+        compare(Items.order(["network", "cpu"]), ["network", "cpu", "gpu", "memory", "disk", "claude", "codex", "kimi", "opencode", "antigravity"]);
     }
 
     function test_orderDropsUnknownIds() {
-        compare(Items.order(["bogus", "cpu"]), ["cpu", "gpu", "memory", "network", "disk", "claude", "codex", "kimi", "opencode"]);
+        compare(Items.order(["bogus", "cpu"]), ["cpu", "gpu", "memory", "network", "disk", "claude", "codex", "kimi", "opencode", "antigravity"]);
     }
 
     function test_orderDedupesRepeatedIds() {
-        compare(Items.order(["cpu", "cpu", "gpu"]), ["cpu", "gpu", "memory", "network", "disk", "claude", "codex", "kimi", "opencode"]);
+        compare(Items.order(["cpu", "cpu", "gpu"]), ["cpu", "gpu", "memory", "network", "disk", "claude", "codex", "kimi", "opencode", "antigravity"]);
     }
 
     // A stored order without the usage items leaves them trailing, like
     // any other item the order doesn't mention; an order that already lists
     // one keeps it in place.
     function test_orderWithoutAiItemsAppendsThemLast() {
-        compare(Items.order(["disk", "network"]), ["disk", "network", "cpu", "gpu", "memory", "claude", "codex", "kimi", "opencode"]);
+        compare(Items.order(["disk", "network"]), ["disk", "network", "cpu", "gpu", "memory", "claude", "codex", "kimi", "opencode", "antigravity"]);
     }
 
     function test_orderAlreadyListingAnAiItemKeepsItsPosition() {
-        compare(Items.order(["claude", "cpu"]), ["claude", "cpu", "gpu", "memory", "network", "disk", "codex", "kimi", "opencode"]);
+        compare(Items.order(["claude", "cpu"]), ["claude", "cpu", "gpu", "memory", "network", "disk", "codex", "kimi", "opencode", "antigravity"]);
     }
 
     function test_hiddenWithNothingStoredOptsOutEveryAiItem_data() {
@@ -74,21 +75,21 @@ TestCase {
         ];
     }
     function test_hiddenWithNothingStoredOptsOutEveryAiItem(data) {
-        compare(Items.hidden(data.stored, data.stored), ["claude", "codex", "kimi", "opencode"]);
+        compare(Items.hidden(data.stored, data.stored), ["claude", "codex", "kimi", "opencode", "antigravity"]);
     }
 
     function test_hiddenAiItemListedInOrderStaysOn() {
-        compare(Items.hidden(["cpu", "claude"], []), ["codex", "kimi", "opencode"]);
+        compare(Items.hidden(["cpu", "claude"], []), ["codex", "kimi", "opencode", "antigravity"]);
     }
 
     function test_hiddenKeepsStoredHiddenAndDedupesUnknownIds() {
-        compare(Items.hidden(["cpu"], ["disk", "disk", "bogus"]), ["disk", "claude", "codex", "kimi", "opencode"]);
+        compare(Items.hidden(["cpu"], ["disk", "disk", "bogus"]), ["disk", "claude", "codex", "kimi", "opencode", "antigravity"]);
     }
 
     // Explicitly hiding an AI item that the order also lists keeps it off:
     // the hidden list always wins.
     function test_hiddenExplicitlyHiddenAiItemStaysHiddenEvenWhenOrdered() {
-        compare(Items.hidden(["claude", "cpu"], ["claude"]), ["claude", "codex", "kimi", "opencode"]);
+        compare(Items.hidden(["claude", "cpu"], ["claude"]), ["claude", "codex", "kimi", "opencode", "antigravity"]);
     }
 
     function test_enabledOnEmptyStoredIsEverySystemItem() {

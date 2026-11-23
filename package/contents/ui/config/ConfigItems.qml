@@ -24,7 +24,8 @@ ConfigPage {
         claude: i18nc("@item panel item", "Claude"),
         codex: i18nc("@item panel item: the OpenAI weekly limits, read through Codex", "OpenAI"),
         kimi: i18nc("@item panel item: the Kimi Code monthly limit", "Kimi"),
-        opencode: i18nc("@item panel item: the OpenCode Go monthly limit", "OpenCode Go")
+        opencode: i18nc("@item panel item: the OpenCode Go monthly limit", "OpenCode Go"),
+        antigravity: i18nc("@item panel item: the Antigravity usage limits", "Antigravity")
     })
     // A vertical panel shows rings without their readings, whatever the setting.
     readonly property bool vertical: Plasmoid.formFactor === PlasmaCore.Types.Vertical
@@ -43,7 +44,8 @@ ConfigPage {
         claude: usageHint("claude"),
         codex: usageHint("codex"),
         kimi: usageHint("kimi"),
-        opencode: usageHint("opencode")
+        opencode: usageHint("opencode"),
+        antigravity: usageHint("antigravity")
     })
 
     function usageHint(id) {
@@ -59,10 +61,12 @@ ConfigPage {
         case "ok":
             return i18nc("@info:usagetip", "Signed in");
         case "signed_out":
-            // Kimi's limits are read with Kimi Code's sign-in or OpenCode's key.
+            // Kimi's limits are read with Kimi Code's sign-in or OpenCode's key;
+            // Antigravity's with Antigravity or its CLI.
             return id === "kimi" ? i18nc("@info:usagetip", "Not signed in to Kimi Code or OpenCode")
-                                 : i18nc("@info:usagetip %1 is a command, such as claude", "Not signed in: run %1 in a terminal",
-                                         Providers.FACTS[id].command);
+                 : id === "antigravity" ? i18nc("@info:usagetip", "Not signed in to Antigravity")
+                 : i18nc("@info:usagetip %1 is a command, such as claude", "Not signed in: run %1 in a terminal",
+                         Providers.FACTS[id].command);
         case "error":
         case "rate_limited":
             return String(entry.message || "");

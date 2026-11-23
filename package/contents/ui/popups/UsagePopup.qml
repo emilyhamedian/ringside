@@ -73,8 +73,15 @@ PopupPage {
         };
         // Claude reports null when no session is running. The key is missing
         // when the plan has no five-hour limit, or the reply couldn't be read.
+        const extraSessions = Array.from(entry.extraSessions ?? []);
         if (entry.session !== undefined) {
-            add(entry.session, i18nc("@label a limit on the usage in any five hours", "5-hour limit"));
+            add(entry.session, extraSessions.length > 0
+                ? i18nc("@label a model group's five-hour limit, e.g. Gemini 5-hour limit", "%1 5-hour limit",
+                        entry.session?.label || i18nc("@label Gemini models", "Gemini"))
+                : i18nc("@label a limit on the usage in any five hours", "5-hour limit"));
+        }
+        for (const extra of extraSessions) {
+            add(extra, i18nc("@label a model group's five-hour limit, e.g. Claude & GPT 5-hour limit", "%1 5-hour limit", extra.label));
         }
         if (entry.week) {
             add(entry.week, i18nc("@label the weekly limit, under a monthly one", "Weekly limit"));

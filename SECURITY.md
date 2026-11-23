@@ -11,25 +11,29 @@ latest release.
 Most of Ringside just draws what Plasma already knows. The parts that do more
 are the two helper scripts it runs as you:
 
-- [`usage.py`](package/contents/code/usage.py) runs the Claude, Codex, Kimi
-  and OpenCode Go items. It reads Claude Code's login to ask Anthropic for your limits,
+- [`usage.py`](package/contents/code/usage.py) runs the Claude, Codex, Kimi,
+  OpenCode Go and Antigravity items. It reads Claude Code's login to ask Anthropic for your limits,
   and when the login expires it renews it and saves it back the way Claude
   Code does. For Codex it asks the Codex CLI and reads the CLI's login file
   to keep cached balances with the right login. For Kimi it reads, and never
   writes, Kimi Code's settings and sign-in in `~/.kimi-code/` and the Kimi
   Code keys OpenCode keeps in `~/.local/share/opencode/`. For OpenCode Go it
   reads, and never writes or renews, OpenCode's sign-in to the OpenCode
-  Console in the same folder.
+  Console in the same folder. For Antigravity it reads, and never writes
+  directly, Antigravity's OAuth token from `~/.gemini/`, the desktop Secret
+  Service (via `secret-tool`, when present), Antigravity IDE's `state.vscdb`
+  (read-only) or T3 Code's Antigravity provider folder; when a token expires,
+  it asks `agy acp --stdio` to renew it without sending any prompt.
 - [`ringside-info.sh`](package/contents/code/ringside-info.sh) reads `/proc`,
   `/sys` and udev. While the network popup shows your public address, it
   also runs `ip route get` every 3 seconds to see which interface you're
   going out through. That only looks at the routing table; it sends
   nothing.
 
-With the session starter on, `usage.py` also runs the `claude`, `codex` or
-`opencode` CLI to send one word. They run in an empty folder of their own,
-`~/.local/state/ringside/work`, with a trimmed-down environment, so API keys
-and provider overrides from your session aren't passed on.
+With the session starter on, `usage.py` also runs the `claude`, `codex`,
+`opencode` or `agy` CLI to send one word. They run in an empty folder of
+their own, `~/.local/state/ringside/work`, with a trimmed-down environment,
+so API keys and provider overrides from your session aren't passed on.
 
 If you set a program under *AI Providers*, Ringside runs whatever is at that
 path as you. It only checks that it's an executable file.
@@ -38,10 +42,10 @@ path as you. It only checks that it's an executable file.
 
 Nothing, until you turn on something that needs it.
 
-- **CLIProxyAPI** reads Claude, Codex and Kimi limits through a hub on your
-  computer. Ringside sends the hub's management key only to the loopback
-  address you set and trusts the process listening there. It bypasses HTTP
-  proxies and disables redirects. If the hub rejects the key during a
+- **CLIProxyAPI** reads Claude, Codex, Kimi and Antigravity limits through a
+  hub on your computer. Ringside sends the hub's management key only to the
+  loopback address you set and trusts the process listening there. It bypasses
+  HTTP proxies and disables redirects. If the hub rejects the key during a
   quota check, Ringside waits at least an hour before trying it again.
   Changing the key file clears the wait. The hub sends the account's
   credentials to its provider's usage endpoint. For Codex, it also asks
@@ -68,22 +72,36 @@ Nothing, until you turn on something that needs it.
   organisation it belongs to only to `opencode.ai`, and only when that
   sign-in is for opencode.ai's Console. Each result is reused for five
   minutes, as for Kimi.
+- **Antigravity** sends your Antigravity sign-in only to Google's Antigravity
+  backend (`daily-cloudcode-pa.googleapis.com`). The requests identify
+  themselves as Antigravity (`antigravity/2.24.0 linux/amd64`), because the
+  endpoint rejects generic clients with HTTP 403 and omits Gemini quota
+  buckets for older client versions. When a one-hour access token expires and
+  `agy` is installed, Ringside asks `agy acp --stdio` to run `authenticate`
+  with `--disable-telemetry` and no prompt so `agy` refreshes its own token.
+  Each result is reused for five minutes.
 - **Remaining credits** are checked even when hidden. Claude's balance
-  needs a request to `api.anthropic.com` at most once every five minutes per
-  account across all widgets, counting failed attempts. Ringside uses the
-  current login. An Anthropic rate limit pauses both the balance and usage
-  checks. For hub accounts, Ringside reads the profile for the organization
-  ID and reuses it while the credential revision stays the same. Codex and
-  Kimi return balances with their limits. None of these checks sends a
-  model request or starts a session.
-- **The session starter** sends "Hi" through the Claude Code, Codex or
-  OpenCode CLI when a session or week ends. It counts against your limits
-  like any other message. It pauses while that provider's readings come
-  through the hub, until a fresh direct reading. To pick Codex's model it reads
-  `~/.codex/models_cache.json`. For OpenCode Go it asks `opencode models`
-  which Go models there are and sends with the cheapest it knows, through a
-  private OpenCode server that stops with it; OpenCode keeps the message as
-  an archived session titled "Ringside".
+  needs a request to `api.anthropic.com` and Antigravity's AI Credits balance
+  needs a request to `daily-cloudcode-pa.googleapis.com`, each at most once
+  every five minutes per account across all widgets, counting failed attempts.
+  Ringside uses the current login without renewing it. A rate limit pauses
+  both the balance and usage checks for that provider. For hub accounts,
+  Ringside reads Claude's profile for the organization ID and reuses it while
+  the credential revision stays the same, and asks Google's `loadCodeAssist`
+  endpoint for Antigravity's AI Credits. Codex and Kimi return balances with
+  their limits. None of these checks sends a model request or starts a
+  session.
+- **The session starter** sends "Hi" through the Claude Code, Codex, OpenCode
+  or Antigravity (`agy`) CLI when a session or week ends. It counts against
+  your limits like any other message. It pauses while that provider's readings
+  come through the hub, until a fresh direct reading. To pick Codex's model it
+  reads `~/.codex/models_cache.json`. For OpenCode Go it asks
+  `opencode models` which Go models there are and sends with the cheapest it
+  knows, through a private OpenCode server that stops with it; OpenCode keeps
+  the message as an archived session titled "Ringside". For Antigravity it
+  starts `agy acp --stdio --disable-telemetry` with no MCP servers, reads the
+  available models, and sends "Hi" using the cheapest available Gemini and/or
+  Claude/GPT model for whichever model pool isn't currently running.
 - **The public address** asks one service, the one you pick: ipify.org
   (`api.ipify.org` and `api6.ipify.org`), Mullvad (`ipv4.am.i.mullvad.net`
   and `ipv6.am.i.mullvad.net`), or URLs you set. It asks when the network
@@ -105,7 +123,7 @@ Nothing, until you turn on something that needs it.
 
 ## What stays on your computer
 
-- **Claude, Codex, Kimi and OpenCode Go readings** are kept in `~/.cache/ringside/`.
+- **Claude, Codex, Kimi, OpenCode Go and Antigravity readings** are kept in `~/.cache/ringside/`.
   Claude's and Codex's readings can include the number of banked resets
   and their expiry dates. The same
   private cache keeps each balance, when it was read, when it may be checked
@@ -127,7 +145,7 @@ Nothing, until you turn on something that needs it.
   database and the `.ini` beside it that names it `ringside` while Plasma
   isn't running.
 - **The journal** gets what goes wrong: failed checks and why, the Anthropic,
-  Kimi or OpenCode host or address service involved, the session starter's
+  Kimi, OpenCode or Google host or address service involved, the session starter's
   steps, a weekly or monthly limit that resets early, a discrete GPU sleeping
   or waking, and sensors that don't answer. Never tokens, addresses, places, account names or file
   contents. Program paths show your home folder as `~`. Anyone who can read

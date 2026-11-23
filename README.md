@@ -9,8 +9,8 @@
 </p>
 
 Ringside shows your CPU, GPU, memory, network and disk as rings in your KDE
-Plasma 6 panel. It can also show how much of your Claude, Codex, Kimi Code or
-OpenCode Go usage limits you've used.
+Plasma 6 panel. It can also show how much of your Claude, Codex, Kimi Code,
+OpenCode Go or Antigravity usage limits you've used.
 
 ![Ringside in a panel: CPU, GPU and memory rings with their names inside, each with its usage over its temperature or the memory in use, a Claude ring with its weekly usage over the days to its reset and its Fable limit in amber on the inner ring, then network rates](docs/panel.png)
 
@@ -81,10 +81,13 @@ these logins.
   [OpenCode Go](https://opencode.ai/docs/console/go/) subscription, with
   OpenCode signed in to the OpenCode Console
   (`opencode auth login opencode`).
+- **Antigravity:** [Antigravity](https://antigravity.google), signed in
+  through the Antigravity CLI (`agy`), desktop app, OS keyring, IDE or
+  T3 Code.
 
-**CLIProxyAPI.** Claude, Codex and Kimi pool usage through a local
-CLIProxyAPI v8 hub and use the logins above when it's unavailable. Keep the
-management key in `~/.config/cliproxyapi/management.key`, readable only by
+**CLIProxyAPI.** Claude, Codex, Kimi and Antigravity pool usage through a
+local CLIProxyAPI v8 hub and use the logins above when it's unavailable. Keep
+the management key in `~/.config/cliproxyapi/management.key`, readable only by
 you. The default address is `http://127.0.0.1:8317`. Change either under
 *AI Providers*, or choose *Direct* to use your own login.
 
@@ -97,27 +100,30 @@ account's reset. The graph shows the last seven days.
 
 If a check fails, the popup says why. With direct checks, the ring greys out
 and is crossed out if checks keep failing. The popup also tells you if a
-limit resets early. Ringside keeps Claude Code signed in. If your Kimi Code
-or OpenCode sign-in expires, open that app and Ringside picks it up within
-five minutes. If Plasma can't find `claude` or `codex`, tell it where they are
-under *AI Providers*.
+limit resets early. Ringside keeps Claude Code signed in, and renews expired
+Antigravity logins through `agy` when installed. If your Kimi Code or OpenCode
+sign-in expires, open that app and Ringside picks it up within five minutes.
+If Plasma can't find `claude`, `codex`, `opencode` or `agy`, tell it where
+they are under *AI Providers*.
 
-**Credits.** The popup shows remaining credits for Claude, Codex and Kimi,
-including Kimi's Extra Usage balance. With direct checks, the ring turns
-blue while you spend credits beyond a limit. *Show remaining credits*
-under *AI Providers* hides them.
+**Credits.** The popup shows remaining credits for Claude, Codex, Kimi and
+Antigravity, including Kimi's Extra Usage balance and Antigravity's AI
+Credits. With direct checks, the ring turns blue while you spend credits
+beyond a limit. *Show remaining credits* under *AI Providers* hides them.
 
 **Banked resets.** The popup shows a ticket for each banked reset on Claude
 and Codex, or a count through the hub. A ticket turns amber with three days
 or less left. Use the resets in Claude's or Codex's own settings.
 
 **Auto start.** Ringside can start your next five-hour session on Claude,
-Codex or OpenCode Go, or your next Codex week, as soon as the last one ends,
-so the clock is already running when you're back. Turn it on with the switch
-at the bottom of the popup. Each start sends a one-word message, which counts
-toward your limits. Kimi's five-hour windows follow each other on a fixed
-schedule, so there's nothing to start. Auto start pauses while a
-provider's readings come through the hub.
+Codex, OpenCode Go or Antigravity, or your next Codex or Antigravity week, as
+soon as the last one ends, so the clock is already running when you're back.
+Turn it on with the switch at the bottom of the popup. Each start sends a
+one-word message (on Antigravity, using the cheapest available Gemini and
+Claude/GPT models for whichever pool isn't running), which counts toward your
+limits. Kimi's five-hour windows follow each other on a fixed schedule, so
+there's nothing to start. Auto start pauses while a provider's readings come
+through the hub.
 
 ## Privacy
 
@@ -133,6 +139,9 @@ feature that needs it:
   sign-in or key to Kimi (`api.kimi.ai`, or `api.kimi.com` in China).
 - If you want your **OpenCode Go** limits, Ringside has to send OpenCode's
   sign-in to OpenCode (`opencode.ai`).
+- If you want your **Antigravity** limits, Ringside has to send your
+  Antigravity sign-in to Google (`daily-cloudcode-pa.googleapis.com`), and
+  asks `agy` on your computer to renew an expired login when installed.
 - With **CLIProxyAPI**, Ringside sends the management key only to the hub
   on your computer. The hub asks each provider for limits and credits.
 - If you want your **public address** in the network popup, Ringside has to

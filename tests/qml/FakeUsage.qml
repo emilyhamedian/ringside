@@ -60,10 +60,10 @@ QtObject {
     function creditUsed(id, nowMs) {
         return ids.includes(id) && Credits.used(entry(id), credits[id], refreshMinutes, nowMs);
     }
-    // Stands in for claudeInnerLimit and codexInnerLimit.
-    property var innerChoices: ({ claude: "", codex: "" })
+    // Stands in for claudeInnerLimit, codexInnerLimit and antigravityInnerLimit.
+    property var innerChoices: ({ claude: "", codex: "", antigravity: "" })
     // Each provider's setting, which hides its starter control and stops its runs.
-    property var starterOptions: ({ claude: true, codex: true, opencode: true })
+    property var starterOptions: ({ claude: true, codex: true, opencode: true, antigravity: true })
     // The session starter per provider, as the helper reports it: Claude's
     // plan has a five-hour limit and Codex's, as its reading shows, only a week.
     property var starters: ({
@@ -85,6 +85,7 @@ QtObject {
     readonly property bool codexPresent: present("codex")
     readonly property bool kimiPresent: present("kimi")
     readonly property bool opencodePresent: present("opencode")
+    readonly property bool antigravityPresent: present("antigravity")
     property int refreshMinutes: 5
     property bool checking: false
     // The timer's last tick, a minute before creation.
@@ -184,7 +185,8 @@ QtObject {
 
     // As UsageData's.
     function startable(id) {
-        return Array.from(starter(id)?.windows ?? ({ claude: ["session"], codex: ["session", "week"], opencode: ["session"] })[id] ?? []);
+        return Array.from(starter(id)?.windows ?? ({ claude: ["session"], codex: ["session", "week"],
+                                                     opencode: ["session"], antigravity: ["session", "week"] })[id] ?? []);
     }
 
     function starterWindows(id) {

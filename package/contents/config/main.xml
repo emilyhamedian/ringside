@@ -117,11 +117,19 @@
       <label>Allow OpenCode Go's session starter; turning this off stops its automatic starts</label>
       <default>true</default>
     </entry>
+    <entry name="antigravitySessionStarter" type="Bool">
+      <label>Allow Antigravity's session starter; turning this off stops its automatic starts</label>
+      <default>true</default>
+    </entry>
     <entry name="claudeInnerLimit" type="String">
       <label>Per-model limit on Claude's inner ring: empty for automatic, "none", or its id</label>
       <default></default>
     </entry>
     <entry name="codexInnerLimit" type="String">
+      <default></default>
+    </entry>
+    <entry name="antigravityInnerLimit" type="String">
+      <label>Per-model limit on Antigravity's inner ring: empty for automatic, "none", or its id</label>
       <default></default>
     </entry>
     <entry name="codexMark" type="String">
@@ -149,6 +157,9 @@
     <entry name="kimiUsageSource" type="String">
       <default>auto</default>
     </entry>
+    <entry name="antigravityUsageSource" type="String">
+      <default>auto</default>
+    </entry>
     <entry name="claudeProgram" type="String">
       <label>Where the claude program is, for the session starter, as shown with ~; empty finds it automatically</label>
       <default></default>
@@ -159,6 +170,10 @@
     </entry>
     <entry name="opencodeProgram" type="String">
       <label>Where the opencode program is, for the session starter, as shown with ~; empty finds it automatically</label>
+      <default></default>
+    </entry>
+    <entry name="antigravityProgram" type="String">
+      <label>Where the agy program is, for Antigravity's session starter and login renewal, as shown with ~; empty finds it automatically</label>
       <default></default>
     </entry>
     <entry name="knownLimits" type="String">

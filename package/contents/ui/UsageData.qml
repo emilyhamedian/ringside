@@ -65,6 +65,7 @@ Item {
     readonly property bool codexPresent: present("codex")
     readonly property bool kimiPresent: present("kimi")
     readonly property bool opencodePresent: present("opencode")
+    readonly property bool antigravityPresent: present("antigravity")
     // Minutes between checks.
     readonly property int refreshMinutes: config.usageRefreshMinutes
     // A check is running, and when the timer's current interval started:
@@ -80,10 +81,11 @@ Item {
     // quoted (see code/shell.js). -B keeps Python from writing bytecode into
     // the package.
     readonly property string command: helperCommand(ids, "")
-    // The claude, codex and opencode programs chosen in the settings; empty
+    // The claude, codex, opencode and agy programs chosen in the settings; empty
     // finds them. Every run passes them, so choosing one checks it at once.
     readonly property var programs: ({ claude: String(config.claudeProgram ?? ""), codex: String(config.codexProgram ?? ""),
-                                       opencode: String(config.opencodeProgram ?? "") })
+                                       opencode: String(config.opencodeProgram ?? ""),
+                                       antigravity: String(config.antigravityProgram ?? "") })
     readonly property var proxySettings: ({
         url: String(config.proxyUrl ?? "").trim(),
         keyFile: String(config.proxyKeyFile ?? "").trim(),
@@ -94,7 +96,8 @@ Item {
     property var runRevisions: ({})
     property var lastProxySettings: null
     property bool waitingForOldPoll: false
-    readonly property var innerChoices: ({ claude: config.claudeInnerLimit, codex: config.codexInnerLimit })
+    readonly property var innerChoices: ({ claude: config.claudeInnerLimit, codex: config.codexInnerLimit,
+                                           antigravity: config.antigravityInnerLimit })
     // The last poll's status per id, as the settings page reads it.
     property var statuses: ({})
     // The polled ids with a report, or a failure of a helper run that
@@ -112,9 +115,10 @@ Item {
     readonly property var windowOrder: ["session", "week"]
     // What a provider's plan is taken to allow before any report says:
     // Claude's week and OpenCode Go's week and month run on set schedules,
-    // so only a session can be started; Codex's week starts with a message,
-    // as its session does.
-    readonly property var assumedWindows: ({ claude: ["session"], codex: ["session", "week"], opencode: ["session"] })
+    // so only a session can be started; Codex's and Antigravity's weeks
+    // start with a message, as their sessions do.
+    readonly property var assumedWindows: ({ claude: ["session"], codex: ["session", "week"], opencode: ["session"],
+                                             antigravity: ["session", "week"] })
     // The switch positions asked for and not yet reported back, per id, as
     // the set of windows written: "session,week", or "" for none.
     property var starterWanted: ({})
@@ -816,6 +820,7 @@ Item {
         function onClaudeSessionStarterChanged() { usage.requestDisable("claude"); }
         function onCodexSessionStarterChanged() { usage.requestDisable("codex"); }
         function onOpencodeSessionStarterChanged() { usage.requestDisable("opencode"); }
+        function onAntigravitySessionStarterChanged() { usage.requestDisable("antigravity"); }
     }
 
     Component.onCompleted: {
@@ -823,6 +828,7 @@ Item {
         requestDisable("claude");
         requestDisable("codex");
         requestDisable("opencode");
+        requestDisable("antigravity");
     }
 
     onProxySettingsChanged: updateRoutes()

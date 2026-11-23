@@ -155,6 +155,7 @@ class ProxyClient(unittest.TestCase):
                 {"provider": "kimi", "auth_index": "delta", "oauth_provider": "kimi-ai"},
                 {"provider": "kimi", "auth_index": "echo", "oauth_provider": "kimi"},
                 {"provider": "kimi", "auth_index": "missing", "oauth_provider": "unknown"},
+                {"provider": "antigravity", "auth_index": "foxtrot", "email": PRIVATE_MEMBER},
                 {"provider": "opencode", "auth_index": "unknown"},
             ],
         }
@@ -169,7 +170,7 @@ class ProxyClient(unittest.TestCase):
             roster = client.credentials()
             self.assertEqual(client.affinity(), {"enabled": True, "ttlSeconds": 5400})
         self.assertEqual({provider: len(entries) for provider, entries in roster.items()},
-                         {"claude": 1, "codex": 3, "kimi": 3})
+                         {"claude": 1, "codex": 3, "kimi": 3, "antigravity": 1})
         self.assertEqual(proxy.pool_fingerprint(roster["codex"]), proxy.pool_fingerprint(reversed(roster["codex"])))
         self.assertNotIn(PRIVATE_ACCOUNT, repr(roster))
         self.assertNotIn(PRIVATE_MEMBER, repr(roster))
@@ -290,6 +291,55 @@ class ProxyClient(unittest.TestCase):
         with self.assertRaisesRegex(proxy.ProxyError, "^timeout$"):
             client.credentials(deadline=started + .15)
         self.assertLess(time.monotonic() - started, 1)
+
+    def test_antigravity_post_quota_credits_and_aggregation(self):
+        quota_a = {"groups": [
+            {"displayName": "Gemini Models", "buckets": [
+                {"bucketId": "gemini-weekly", "window": "weekly", "resetTime": NOW + 3600, "remainingFraction": 0.6},
+                {"bucketId": "gemini-5h", "window": "5h", "resetTime": NOW + 1800, "remainingFraction": 0.8},
+            ]},
+            {"displayName": "Claude and GPT models", "buckets": [
+                {"bucketId": "3p-weekly", "window": "weekly", "resetTime": NOW + 7200, "remainingFraction": 0.2},
+            ]},
+        ]}
+        quota_b = {"groups": [
+            {"displayName": "Gemini Models", "buckets": [
+                {"bucketId": "gemini-weekly", "window": "weekly", "resetTime": NOW + 9000, "remainingFraction": 0.8},
+                {"bucketId": "gemini-5h", "window": "5h", "resetTime": NOW + 3600, "remainingFraction": 1.0},
+            ]},
+            {"displayName": "Claude and GPT models", "buckets": [
+                {"bucketId": "3p-weekly", "window": "weekly", "resetTime": NOW + 9000, "remainingFraction": 0.6},
+            ]},
+        ]}
+        cred = proxy.Credential("antigravity", "fp-a", "ag-a")
+        server, client = self.server(**{"/requests/api-call": (200, wrapped(quota_a), {})})
+        reading_a = self.usage(client, cred)
+        req = json.loads(server.requests[-1][3])
+        self.assertEqual(req["method"], "POST")
+        self.assertEqual(req["url"], usage.ANTIGRAVITY_QUOTA_URL)
+        self.assertEqual(req["data"], "{}")
+        self.assertEqual(req["header"]["User-Agent"], usage.ANTIGRAVITY_USER_AGENT)
+        self.assertEqual((reading_a["weekly"]["percent"], reading_a["weekly"]["label"]), (40, "Gemini"))
+        self.assertEqual(reading_a["scoped"][0]["label"], "Claude & GPT")
+        self.assertEqual(reading_a["scoped"][0]["percent"], 80)
+
+        reading_b = proxy.parse_antigravity(quota_b)
+        pooled = proxy.aggregate([dict(reading_a, state="ok"), dict(reading_b, state="ok")], NOW)
+        self.assertEqual(pooled["weekly"]["percent"], 30)
+        self.assertEqual(pooled["session"]["percent"], 10)
+        self.assertEqual(pooled["scoped"][0]["percent"], 60)
+
+        server, client = self.server(**{
+            "/requests/api-call": (200, wrapped({"paidTier": {"availableCredits": [
+                {"creditType": "GOOGLE_ONE_AI", "creditAmount": "750"}
+            ]}}), {}),
+        })
+        credit_body = client.antigravity_credits(cred, deadline=time.monotonic() + 5)
+        cred_req = json.loads(server.requests[-1][3])
+        self.assertEqual((cred_req["method"], cred_req["url"]), ("POST", usage.ANTIGRAVITY_LOAD_URL))
+        self.assertEqual(json.loads(cred_req["data"]), {"metadata": {"ideType": "ANTIGRAVITY"}})
+        self.assertEqual(usage.parse_antigravity_credits(credit_body),
+                         ("ok", {"amount": 750, "currency": "", "precision": 0}))
 
 
 class ProxyWindows(unittest.TestCase):

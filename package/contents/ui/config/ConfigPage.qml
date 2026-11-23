@@ -74,6 +74,8 @@ KCM.SimpleKCM {
     property string cfg_claudeInnerLimitDefault
     property string cfg_codexInnerLimit
     property string cfg_codexInnerLimitDefault
+    property string cfg_antigravityInnerLimit
+    property string cfg_antigravityInnerLimitDefault
     property bool cfg_showCredits
     property bool cfg_showCreditsDefault
     property bool cfg_claudeSessionStarter
@@ -82,6 +84,8 @@ KCM.SimpleKCM {
     property bool cfg_codexSessionStarterDefault
     property bool cfg_opencodeSessionStarter
     property bool cfg_opencodeSessionStarterDefault
+    property bool cfg_antigravitySessionStarter
+    property bool cfg_antigravitySessionStarterDefault
     property string cfg_codexMark
     property string cfg_codexMarkDefault
     property string cfg_proxyUrl
@@ -96,12 +100,16 @@ KCM.SimpleKCM {
     property string cfg_codexUsageSourceDefault
     property string cfg_kimiUsageSource: "auto"
     property string cfg_kimiUsageSourceDefault
+    property string cfg_antigravityUsageSource: "auto"
+    property string cfg_antigravityUsageSourceDefault
     property string cfg_claudeProgram
     property string cfg_claudeProgramDefault
     property string cfg_codexProgram
     property string cfg_codexProgramDefault
     property string cfg_opencodeProgram
     property string cfg_opencodeProgramDefault
+    property string cfg_antigravityProgram
+    property string cfg_antigravityProgramDefault
     property string cfg_knownLimits
     property string cfg_knownLimitsDefault
     property string cfg_usageStatus

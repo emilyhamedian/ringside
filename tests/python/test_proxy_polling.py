@@ -734,3 +734,25 @@ class ProxyPolling(Isolated):
         self.assertEqual(usage.read_starter_states()["claude"]["proxyPaused"], True)
         self.assertEqual(json.loads(usage.STARTER_STATE.read_text())["claude"]["proxyPaused"], True)
         self.direct.assert_not_called()
+
+    def test_antigravity_hub_pools_usage_and_fetches_per_account_credits(self):
+        ag_a = self.backend.Credential("antigravity", "ag-fp-a", "ag-a")
+        ag_b = self.backend.Credential("antigravity", "ag-fp-b", "ag-b")
+        self.client.credentials.return_value = {"antigravity": [ag_a, ag_b]}
+        self.client.usage.side_effect = lambda credential, now, **kwargs: {
+            "weekly": {**self.backend.window(20 if credential.index == "ag-a" else 60, self.now + 86400, usage.WEEK_SECONDS, "week"),
+                       "label": "Gemini"},
+            "session": self.backend.window(10 if credential.index == "ag-a" else 30, self.now + 3600, usage.SESSION_SECONDS, "session"),
+            "scoped": [dict(self.backend.window(80 if credential.index == "ag-a" else 40, self.now + 86400, usage.WEEK_SECONDS, "week"),
+                            id="3p-weekly", label="Claude & GPT")],
+        }
+        self.client.antigravity_credits.side_effect = lambda credential, **kwargs: {
+            "paidTier": {"availableCredits": [{"creditType": "GOOGLE_ONE_AI",
+                                               "creditAmount": "1250" if credential.index == "ag-a" else "500"}]}
+        }
+        report = self.run_main("--providers", "antigravity", "--credits-providers", "antigravity",
+                               "--proxy-url", usage.PROXY_URL)["providers"]["antigravity"]
+        self.assertEqual(report["source"], "cliproxyapi")
+        self.assertEqual(report["weekly"]["percent"], 40)
+        self.assertEqual(report["scoped"][0]["percent"], 60)
+        self.assertEqual([a["credits"]["balance"]["amount"] for a in report["accounts"]], [1250, 500])

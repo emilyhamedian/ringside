@@ -8,8 +8,13 @@ follows [Semantic Versioning](https://semver.org/).
 
 ### Added
 
-- Claude, Codex and Kimi show pooled usage, the next account reset and
-  seven days of history through a local CLIProxyAPI hub.
+- Antigravity item: your Antigravity Gemini weekly quota as the outer ring and
+  Claude & GPT weekly quota on the inner ring, with a popup showing both
+  five-hour limits, the week graph and pace, remaining AI Credits, CLIProxyAPI
+  hub pooling, silent login renewal via `agy`, and auto start for both model
+  pools. Off until you turn it on.
+- Claude, Codex, Kimi and Antigravity show pooled usage, the next account
+  reset and seven days of history through a local CLIProxyAPI hub.
 
 ### Changed
 
