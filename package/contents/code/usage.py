@@ -189,7 +189,7 @@ from email.utils import parsedate_to_datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-VERSION = "0.5.1"
+VERSION = "0.5.2"
 
 PROVIDERS = ("claude", "codex", "kimi", "opencode", "antigravity")
 # The providers with prepaid credits, and those whose CLI Ringside can be
